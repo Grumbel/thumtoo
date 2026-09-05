@@ -45,8 +45,11 @@
         libwebp
         pango
         fribidi
+        libthai        # libthai.pc (pango)
+        libdatrie      # libdatrie.pc (libthai)
         libtiff
         librsvg
+        libxml2        # libxml-2.0.pc (librsvg / others)
         dav1d
         matio
         hdf5
@@ -55,6 +58,7 @@
         libraw
         openjpeg
         libhwy
+        libxdmcp       # xdmcp.pc (X11 transitive via pango/cairo)
       ];
     in {
       packages = forAllSystems ({ pkgs }: {
