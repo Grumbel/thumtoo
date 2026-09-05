@@ -15,9 +15,30 @@
 #include <random>
 #include <fstream>
 #include <sstream>
+#include <string_view>
 
 namespace thumtoo {
 namespace {
+
+std::string format_from_member(std::string_view member) {
+  const auto slash = member.find_last_of("/\\");
+  const auto name =
+      slash == std::string_view::npos ? member : member.substr(slash + 1);
+  const auto dot = name.find_last_of('.');
+  if (dot == std::string_view::npos) return "unknown";
+  std::string ext(name.substr(dot));
+  for (char& ch : ext)
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  if (ext == ".jpg" || ext == ".jpeg") return "jpeg";
+  if (ext == ".png") return "png";
+  if (ext == ".gif") return "gif";
+  if (ext == ".bmp") return "bmp";
+  if (ext == ".webp") return "webp";
+  if (ext == ".jxl") return "jxl";
+  if (ext == ".tif" || ext == ".tiff") return "tiff";
+  return "unknown";
+}
+
 
 std::string make_provisional_id() {
   static thread_local std::mt19937_64 rng{std::random_device{}()};

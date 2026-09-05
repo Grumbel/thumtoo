@@ -311,8 +311,8 @@ std::vector<LevelBlob> build_ladder_buffer(const std::uint8_t* data,
     VipsImage* thumb = nullptr;
     // Thumbnail from buffer via new_from_buffer + resize equivalent:
     // vips_thumbnail_buffer
-    if (vips_thumbnail_buffer(data, size, &thumb, edge, "size", VIPS_SIZE_DOWN,
-                              nullptr) != 0 ||
+    if (vips_thumbnail_buffer(const_cast<std::uint8_t*>(data), size, &thumb, edge,
+                              "size", VIPS_SIZE_DOWN, nullptr) != 0 ||
         !thumb) {
       continue;
     }
