@@ -10,6 +10,7 @@
 
 #include <cstring>
 #include <cctype>
+#include <unordered_map>
 
 namespace thumtoo {
 namespace {
@@ -125,65 +126,103 @@ std::optional<std::vector<ArchiveMember>> read_archive_toc(
   return out;
 }
 
-std::optional<std::vector<std::uint8_t>> extract_archive_member(
-    const std::filesystem::path& archive_path, std::string_view member_path) {
-  if (is_unsafe_archive_member_path(member_path)) return std::nullopt;
+namespace {
+
+std::optional<std::vector<std::uint8_t>> read_entry_bytes(
+    struct archive* a, struct archive_entry* entry) {
+  if (archive_entry_filetype(entry) == AE_IFDIR) return std::nullopt;
+
+  const la_int64_t declared = archive_entry_size(entry);
+  if (declared > 0 &&
+      static_cast<std::uint64_t>(declared) >
+          kArchiveMaxMemberUncompressedBytes) {
+    return std::nullopt;
+  }
+
+  std::vector<std::uint8_t> buf;
+  if (declared > 0) buf.reserve(static_cast<std::size_t>(declared));
+
+  char block[65536];
+  for (;;) {
+    const la_ssize_t n = archive_read_data(a, block, sizeof(block));
+    if (n < 0) return std::nullopt;
+    if (n == 0) break;
+    if (buf.size() + static_cast<std::size_t>(n) >
+        kArchiveMaxMemberUncompressedBytes) {
+      return std::nullopt;
+    }
+    buf.insert(buf.end(), block, block + n);
+  }
+  return buf;
+}
+
+}  // namespace
+
+std::unordered_map<std::string, std::vector<std::uint8_t>>
+extract_archive_members(const std::filesystem::path& archive_path,
+                        const std::vector<std::string>& member_paths) {
+  std::unordered_map<std::string, std::vector<std::uint8_t>> out;
+  if (member_paths.empty()) return out;
+
+  // Drop unsafe requests; keep original strings as result keys.
+  std::vector<std::string> wanted;
+  wanted.reserve(member_paths.size());
+  for (const auto& m : member_paths) {
+    if (!is_unsafe_archive_member_path(m)) wanted.push_back(m);
+  }
+  if (wanted.empty()) return out;
 
   struct archive* a = archive_read_new();
-  if (!a) return std::nullopt;
+  if (!a) return out;
   archive_read_support_filter_all(a);
   archive_read_support_format_all(a);
 
   if (archive_read_open_filename(a, archive_path.string().c_str(), 10240) !=
       ARCHIVE_OK) {
     archive_read_free(a);
-    return std::nullopt;
+    return out;
   }
 
   struct archive_entry* entry = nullptr;
   while (archive_read_next_header(a, &entry) == ARCHIVE_OK) {
-    const char* path = archive_entry_pathname(entry);
-    if (!path || !member_paths_equal(path, member_path)) {
+    if (out.size() >= wanted.size()) {
       archive_read_data_skip(a);
       continue;
     }
-    if (archive_entry_filetype(entry) == AE_IFDIR) {
-      archive_read_free(a);
-      return std::nullopt;
+    const char* path = archive_entry_pathname(entry);
+    if (!path) {
+      archive_read_data_skip(a);
+      continue;
     }
 
-    const la_int64_t declared = archive_entry_size(entry);
-    if (declared > 0 &&
-        static_cast<std::uint64_t>(declared) >
-            kArchiveMaxMemberUncompressedBytes) {
-      archive_read_free(a);
-      return std::nullopt;
-    }
-
-    std::vector<std::uint8_t> buf;
-    if (declared > 0) buf.reserve(static_cast<std::size_t>(declared));
-
-    char block[65536];
-    for (;;) {
-      const la_ssize_t n = archive_read_data(a, block, sizeof(block));
-      if (n < 0) {
-        archive_read_free(a);
-        return std::nullopt;
+    const std::string* key = nullptr;
+    for (const auto& m : wanted) {
+      if (out.count(m)) continue;
+      if (member_paths_equal(path, m)) {
+        key = &m;
+        break;
       }
-      if (n == 0) break;
-      if (buf.size() + static_cast<std::size_t>(n) >
-          kArchiveMaxMemberUncompressedBytes) {
-        archive_read_free(a);
-        return std::nullopt;
-      }
-      buf.insert(buf.end(), block, block + n);
     }
-    archive_read_free(a);
-    return buf;
+    if (!key) {
+      archive_read_data_skip(a);
+      continue;
+    }
+
+    auto buf = read_entry_bytes(a, entry);
+    if (buf) out.emplace(*key, std::move(*buf));
   }
 
   archive_read_free(a);
-  return std::nullopt;
+  return out;
+}
+
+std::optional<std::vector<std::uint8_t>> extract_archive_member(
+    const std::filesystem::path& archive_path, std::string_view member_path) {
+  auto map = extract_archive_members(archive_path,
+                                     {std::string(member_path)});
+  auto it = map.find(std::string(member_path));
+  if (it == map.end()) return std::nullopt;
+  return std::move(it->second);
 }
 
 

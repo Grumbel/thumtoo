@@ -51,7 +51,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 - [x] Archive TOC read (libarchive) + `archive_entries` cache
 - [x] Extract member bytes + probe/ladder for `//archive:member` URIs
 - [x] Size / ratio caps on extract (`kArchiveMaxMemberUncompressedBytes`)
-- [ ] Batch vs on-demand coalesce for archives (open once, many members)
+- [x] Batch vs on-demand coalesce for archives (open once, many members)
 - [x] `thumtoo-prepare` archive expand (register all image members)
 
 ## Later

@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace thumtoo {
@@ -27,9 +28,15 @@ struct ParsedArchiveUri {
 [[nodiscard]] std::optional<std::vector<ArchiveMember>> read_archive_toc(
     const std::filesystem::path& archive_path);
 
-/// Extract one regular-file member into memory (enforces size / ratio caps).
+/// Extract one regular-file member into memory (enforces size caps).
 [[nodiscard]] std::optional<std::vector<std::uint8_t>> extract_archive_member(
     const std::filesystem::path& archive_path, std::string_view member_path);
+
+/// Open the archive once and extract every requested member (same size caps).
+/// Keys in the result are the requested member_path strings that succeeded.
+[[nodiscard]] std::unordered_map<std::string, std::vector<std::uint8_t>>
+extract_archive_members(const std::filesystem::path& archive_path,
+                        const std::vector<std::string>& member_paths);
 
 /// file:///abs.zip//archive  or  file:///abs.zip//archive:member
 [[nodiscard]] std::string archive_uri(const std::filesystem::path& archive_path,

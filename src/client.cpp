@@ -328,7 +328,9 @@ void Client::drain() {
 
 void Client::worker_main() {
   for (;;) {
-    Job job;
+    std::vector<Job> batch;
+    Job single;
+    bool use_batch = false;
     {
       std::unique_lock lock(mu_);
       if (stop_ && queue_.empty()) return;
@@ -340,14 +342,73 @@ void Client::worker_main() {
       // Claim the job under the lock before removing it so drain() cannot
       // observe (empty queue && inflight==0) while work is still about to run.
       if (!queue_.front().uri.empty()) ++inflight_;
-      job = std::move(queue_.front());
+      single = std::move(queue_.front());
       queue_.erase(queue_.begin());
-      if (stop_ && job.uri.empty()) return;
+      if (stop_ && single.uri.empty()) return;
+
+      // Coalesce further ProbeSize jobs for the same archive into one open.
+      if (single.kind == JobKind::ProbeSize && !single.uri.empty()) {
+        if (auto arch = parse_archive_uri(single.uri);
+            arch && !arch->member_path.empty()) {
+          batch.push_back(std::move(single));
+          for (auto it = queue_.begin(); it != queue_.end();) {
+            if (it->kind != JobKind::ProbeSize || it->uri.empty()) {
+              ++it;
+              continue;
+            }
+            auto other = parse_archive_uri(it->uri);
+            if (!other || other->member_path.empty() ||
+                other->archive_path != arch->archive_path) {
+              ++it;
+              continue;
+            }
+            ++inflight_;
+            batch.push_back(std::move(*it));
+            it = queue_.erase(it);
+          }
+          use_batch = true;
+        }
+      }
     }
-    if (job.uri.empty()) continue;
+
+    if (use_batch) {
+      std::vector<std::string> members;
+      members.reserve(batch.size());
+      std::filesystem::path archive_path;
+      for (const auto& j : batch) {
+        auto arch = parse_archive_uri(j.uri);
+        if (!arch) {
+          members.emplace_back();
+          continue;
+        }
+        archive_path = arch->archive_path;
+        members.push_back(arch->member_path);
+      }
+      auto extracted =
+          extract_archive_members(archive_path, members);
+      for (size_t i = 0; i < batch.size(); ++i) {
+        try {
+          std::optional<std::vector<std::uint8_t>> pre;
+          if (i < members.size() && !members[i].empty()) {
+            if (auto it = extracted.find(members[i]); it != extracted.end()) {
+              pre = std::move(it->second);
+            }
+          }
+          handle_probe_size(batch[i], pre);
+        } catch (...) {
+        }
+        {
+          std::lock_guard lock(mu_);
+          --inflight_;
+        }
+      }
+      continue;
+    }
+
+    if (single.uri.empty()) continue;
     try {
-      if (job.kind == JobKind::ProbeSize) handle_probe_size(job);
-      else if (job.kind == JobKind::EnsurePixels) handle_ensure_pixels(job);
+      if (single.kind == JobKind::ProbeSize) handle_probe_size(single);
+      else if (single.kind == JobKind::EnsurePixels) handle_ensure_pixels(single);
     } catch (...) {
       // Always release inflight_; status stays pending/failed for retry.
     }
@@ -358,7 +419,9 @@ void Client::worker_main() {
   }
 }
 
-void Client::handle_probe_size(Job& job) {
+void Client::handle_probe_size(
+    Job& job,
+    const std::optional<std::vector<std::uint8_t>>& preextracted) {
   auto loc = db_->find_locator(job.uri);
   if (!loc || !loc->content_id) {
     if (job.size_cb) {
@@ -387,7 +450,10 @@ void Client::handle_probe_size(Job& job) {
       row.status = ContentStatus::Unsupported;
       row.error_code = "archive_root_not_image";
     } else {
-      auto bytes = extract_archive_member(arch->archive_path, arch->member_path);
+      std::optional<std::vector<std::uint8_t>> bytes = preextracted;
+      if (!bytes) {
+        bytes = extract_archive_member(arch->archive_path, arch->member_path);
+      }
       if (!bytes) {
         row.status = ContentStatus::Failed;
         row.error_code = "archive_extract_failed";

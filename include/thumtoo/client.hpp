@@ -8,6 +8,7 @@
 #include "thumtoo/executor.hpp"
 #include "thumtoo/types.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -96,7 +97,9 @@ class Client {
 
   void worker_main();
   void enqueue(Job job);
-  void handle_probe_size(Job& job);
+  void handle_probe_size(
+      Job& job,
+      const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);
   void handle_ensure_pixels(Job& job);
 
   [[nodiscard]] std::optional<PixelLevel> load_level(
