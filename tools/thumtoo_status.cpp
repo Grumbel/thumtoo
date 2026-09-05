@@ -62,6 +62,7 @@ int main(int argc, char** argv) {
     if (mode == "summary") {
       std::cout << "cache_root:     " << db.cache_root() << "\n"
                 << "db_path:        " << db.db_path() << "\n"
+                << "blobs_path:     " << (db.cache_root() / "blobs.sqlite") << "\n"
                 << "schema_version: " << db.schema_version()
                 << " (build " << thumtoo::kSchemaVersion << ")\n";
       if (auto v = db.meta_get(thumtoo::kSchemaMetaLadderEdgesKey))
