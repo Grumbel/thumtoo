@@ -11,6 +11,41 @@
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f {
         pkgs = import nixpkgs { inherit system; };
       });
+
+      # libvips + JPEG-XL, and the Requires.private packages whose .pc files
+      # pkg-config looks for when probing vips (same set biltoo uses to silence
+      # "Package '…' was not found" spam). We do not necessarily link all of
+      # these into thumtoo; they only need to be on PKG_CONFIG_PATH.
+      vipsInputs = pkgs: with pkgs; [
+        vips
+        libjxl
+
+        # glib Requires.private: sysprof-capture-4
+        glib
+        libsysprof-capture
+
+        # vips Requires.private (and common transitive .pc names)
+        fftw
+        cfitsio
+        libimagequant
+        libarchive
+        cgif
+        libexif
+        libultrahdr
+        libwebp
+        pango
+        fribidi
+        libtiff
+        librsvg
+        dav1d
+        matio
+        hdf5
+        lcms2
+        openexr
+        libraw
+        openjpeg
+        libhwy
+      ];
     in {
       packages = forAllSystems ({ pkgs }: {
         default = pkgs.stdenv.mkDerivation {
@@ -18,13 +53,7 @@
           version = "0.1.0";
           src = self;
           nativeBuildInputs = [ pkgs.cmake pkgs.ninja pkgs.pkg-config ];
-          buildInputs = with pkgs; [
-            vips
-            libjxl
-            glib
-            # glib.pc may require sysprof-capture-4.pc at configure time.
-            libsysprof-capture
-          ];
+          buildInputs = vipsInputs pkgs;
           cmakeFlags = [
             "-GNinja"
             "-DTHUMTOO_BUILD_TESTS=ON"
@@ -48,14 +77,9 @@
             clang-tools
             gdb
             pkg-config
-            vips
-            libjxl
-            glib
-            libsysprof-capture
-            # Later: ffmpeg libarchive
-          ];
+          ] ++ vipsInputs pkgs;
           shellHook = ''
-            echo "thumtoo dev shell (vips + libjxl)"
+            echo "thumtoo dev shell (vips + libjxl + private .pc deps)"
             echo "  cmake -B build && cmake --build build && ctest --test-dir build"
           '';
         };
