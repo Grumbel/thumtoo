@@ -44,10 +44,11 @@ Sister docs inside those trees (when present): biltoo `DOMAIN.md` / `IDENTITY.md
 
 ## Status
 
-**Design only** — ready for review. No library implementation in this repository
-yet. Schema sketch covers images, archives (Location `//archive:` form), and
-video stills (`content.still_count` + `levels.frame_idx`). See [DESIGN.md](DESIGN.md)
-for the full plan and [TODO.md](TODO.md) for open items.
+**Design only** — review feedback incorporated. No library implementation yet.
+Schema covers images, archives (Location `//archive:`), video stills
+(`still_count` + `frame_idx`), status enum, schema versioning, and normative
+archive-security / threading rules. Phase 0 = freeze constants; then Phase 1
+headers + SQLite spike. See [DESIGN.md](DESIGN.md) and [TODO.md](TODO.md).
 
 ## Name
 

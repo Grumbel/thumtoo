@@ -22,16 +22,22 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 | File | Purpose |
 |------|---------|
 | [README.md](README.md) | What / links / status |
-| [DESIGN.md](DESIGN.md) | Goals, schema sketch, phases, non-goals |
+| [DESIGN.md](DESIGN.md) | Goals, schema, normative rules, phases |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Planned tree and dependencies |
+| [TODO.md](TODO.md) | Done / Phase 0 freezes / Later |
 
-## Handoff (review-ready)
+## Handoff
 
-- **Identity**: content-id (sha256) + Location URIs (`file:///…//archive:member`)
-- **Ladder**: fixed long-edge levels; blobs under XDG only
-- **Video**: `content.still_count` + `levels.frame_idx` (N=16 fixed for now);
-  no storyboard in cache; subprocess preferred for decode
-- **Next implementation**: Phase 0 freeze constants → Phase 1 headers + SQLite spike
+Design has absorbed an external review pass. Before Phase 1 code:
+
+1. Freeze URI + provisional-id + status enum + schema_version=1.
+2. Freeze callback/executor threading contract for biltoo.
+3. Keep directory snapshots (cache-first folder open on sleeping USB/NAS).
+4. Archive path sanitization + decompression caps are normative.
+
+Latest tip documents: status enum, schema_meta, still_count/frame_idx video
+model, Location `//archive:` form, WAL + priority queues, cache lifecycle as
+named Later gap.
 
 ## Commits
 

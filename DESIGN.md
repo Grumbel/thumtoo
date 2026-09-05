@@ -103,7 +103,10 @@ Optional **tags attached to content hash** (not path), same idea as dirtoo:
 
 - Survive renames and moves.
 - Library API for list/add/remove; UI stays in apps (dirtoo Tag Manager, etc.).
-- Phase may trail the pixel ladder; schema should not paint us into a corner.
+- Phase may trail the pixel ladder; schema includes optional `source` /
+  `created_at` so we do not paint into a corner.
+- **Reconcile with dirtoo’s checksum-tag schema before implementation** so the
+  two stores can interoperate or share identity without a later migration.
 
 ### Network URLs (later)
 
@@ -167,14 +170,22 @@ durable pixels or tags.
 ### Schema (sketch)
 
 ```text
+schema_meta (
+  key TEXT PRIMARY KEY,          -- e.g. 'schema_version', 'ladder_edges', 'webp_quality'
+  value TEXT
+)
+-- schema_version starts at 1; bump on incompatible SQLite or blob layout changes.
+-- ladder_edges / webp_quality recorded so an old cache can be detected vs new policy.
+
 content (
-  content_id TEXT PRIMARY KEY,   -- sha256:hex when known; provisional ids allowed
+  content_id TEXT PRIMARY KEY,   -- see "Provisional ids" below
   width INTEGER,
   height INTEGER,
   format TEXT,
   duration_ms INTEGER,           -- NULL for pure images; set for video
   still_count INTEGER,           -- planned video stills N (e.g. 16); NULL for images
-  status INTEGER,
+  status INTEGER NOT NULL,       -- enum: see Status below
+  error_code TEXT,               -- optional machine code when status=failed/unsupported
   updated_at INTEGER
 )
 
@@ -221,16 +232,21 @@ levels (
   pts_ms INTEGER,                       -- optional timestamp for video frames
   width INTEGER,
   height INTEGER,
-  codec TEXT,
+  codec TEXT,             -- e.g. webp
+  quality INTEGER,        -- encoder quality used; helps detect policy drift
   path TEXT,              -- relative under blob root (never next to sources)
   PRIMARY KEY (content_id, max_edge, frame_idx)
 )
 
 tags (
   content_id TEXT,
-  tag TEXT,
+  tag TEXT,               -- align with dirtoo checksum-tags; no namespace yet
+  source TEXT,            -- 'user' | 'auto' | app id; optional
+  created_at INTEGER,
   PRIMARY KEY (content_id, tag)
 )
+-- Value-bearing or namespaced tags deferred; reconcile with dirtoo before coding.
+
 ```
 
 Default locations (**only** under XDG cache, never in source trees):
@@ -317,6 +333,103 @@ Same operations on a session service (e.g. `local.Thumtoo1`). Client library
 selects backend via config/env (`THUMTOO_MODE=local|dbus`). Not required for
 biltoo MVP.
 
+
+### Status enum (normative)
+
+`content.status` is not a free integer. Values:
+
+| Value | Name | Meaning |
+|-------|------|---------|
+| 0 | `pending` | Known locator; not yet successfully probed |
+| 1 | `ready` | Size (and any requested levels) valid |
+| 2 | `failed` | Probe/decode failed; may retry later (I/O, transient) |
+| 3 | `unsupported` | Recognized as media but codec/container not handled |
+| 4 | `incomplete` | Partial success (e.g. size known, some levels missing) |
+
+UI must distinguish these: show placeholder for `pending`/`incomplete`, allow
+retry for `failed`, and stop retrying `unsupported`. Never block the GUI waiting
+for a transition out of `pending`.
+
+### Provisional content ids
+
+Until a content hash is known, a **provisional id** is allowed:
+
+- Format: `prov:<uuid-v4>` (stable for the life of the row).
+- Created when the first locator is inserted without a hash.
+- **Promotion**: when SHA-256 of the bytes is computed, either
+  1. update `content_id` in place if no conflicting `sha256:…` row exists, or
+  2. merge into the existing `sha256:…` row and rewrite `locators`, `levels`,
+     and `tags` foreign keys, then delete the provisional row.
+- Levels/tags always follow the content row; promotion must be atomic on the
+  single writer queue so no duplicate ladders remain.
+
+### Directory snapshots (justified)
+
+`directory_snapshots` / `directory_entries` stay in thumtoo, not dirtoo:
+
+- Cache-first **folder open** is the same product rule as cache-first image
+  browse: a sleeping USB HDD or NAS must not gate scrolling or entering a
+  directory when a snapshot exists.
+- Snapshots are keyed by dir locator + outer size/mtime fingerprint; marked
+  `incomplete` when listing was truncated or unverified.
+- dirtoo remains free to keep its own live listing UX; thumtoo only supplies
+  the durable snapshot for cold-start / offline-ish browse.
+
+### Archive security (normative)
+
+Alongside “never write into source trees”:
+
+- **Member path sanitization**: reject or strip `..`, absolute paths, and
+  nul bytes in archive member names before storing TOC or extracting.
+- **Decompression limits**: hard caps on uncompressed size and
+  compressed:uncompressed ratio per member (and per archive for batch
+  prepare). Zip-bomb class inputs must fail closed (`status=failed` /
+  `unsupported`), not fill the disk.
+- Extraction is always into the cache blob area or a private temp dir under
+  the cache root — never into the source tree.
+
+### Concurrency and SQLite
+
+- **WAL mode** is required for the index DB so a GUI process and
+  `thumtoo-prepare` can coexist.
+- **Single writer queue** inside each process; cross-process writers rely on
+  SQLite locking + short transactions.
+- **Priority**: interactive `request_*` (visible UI) preempts background
+  `prepare` / idle prewarm. Implementation: two queues or a priority field on
+  work items.
+- **Backpressure**: unbounded `request_pixels` fan-out (e.g. opening a 10k
+  folder) must not spawn unbounded workers. Cap concurrent decodes; coalesce
+  duplicate (content_id, max_edge, frame_idx) work; excess requests wait or
+  return “scheduled”.
+- Callbacks **never** run on an arbitrary worker thread without a documented
+  marshal path (see API contract).
+
+### API threading contract
+
+For biltoo (Qt) and other GUI hosts:
+
+- `get_*` / `list_cached_*` / `get_meta` — **synchronous, non-blocking**,
+  cache-only; safe on the GUI thread.
+- `request_*` / `prepare` / `refresh` — schedule work; return immediately.
+- Completion callbacks run on a **caller-supplied executor** (e.g. Qt event
+  loop via `QMetaObject::invokeMethod`, or a user `post(fn)` hook registered
+  at `open()`). The library does **not** assume a particular GUI toolkit and
+  does **not** call application code from worker threads by default.
+- Optional `std::future`-style wrappers may exist for CLI/tools; GUI path
+  stays callback + executor.
+
+### Cache lifecycle (named gap)
+
+MVP may omit automatic eviction, but the design acknowledges unbounded growth:
+
+- Ladder edges × images + 16 video stills per video will accumulate.
+- Planned (Later): size or age cap, LRU or “least recently `get_*`” eviction,
+  orphan sweep (locators whose outer path/mtime no longer match and no other
+  locator remains), and `thumtoo-status` / `thumtoo-gc` CLI.
+- Until then: document that the cache is append-mostly; operators may delete
+  `$XDG_CACHE_HOME/thumtoo/` safely (regenerable).
+
+
 ## 7. Phases
 
 | Phase | Deliverable |
@@ -344,6 +457,8 @@ biltoo MVP.
 - Key durable pixels by biltoo session edit id.
 - Block the GUI on archive listing, network readdir, or encode.
 - Touch source trees (xattrs, sidecars, AppleDouble, …).
+- Extract archive members without path sanitization or size/ratio caps.
+- Call GUI/app callbacks directly from worker threads.
 - Require JPEG-XL or http(s) for MVP.
 - Vendor galapix/dirtoo sources into biltoo; keep thumtoo as its own repo.
 
