@@ -26,6 +26,9 @@
         libsysprof-capture
         pcre2          # libpcre2-8.pc
 
+        # gio-2.0 Requires.private (pulled in via glib/vips)
+        util-linux     # mount.pc
+
         # libarchive Requires.private
         libarchive
         openssl        # libcrypto.pc
