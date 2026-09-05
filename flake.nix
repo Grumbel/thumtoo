@@ -28,6 +28,7 @@
 
         # gio-2.0 Requires.private (pulled in via glib/vips)
         util-linux     # mount.pc
+        libselinux     # libselinux.pc
 
         # libarchive Requires.private
         libarchive
