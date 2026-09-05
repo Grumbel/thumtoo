@@ -32,9 +32,9 @@ Design is **implementable**. Second review pass closed; directory snapshot
 boundary is visible in the README scope table (thumtoo = durable snapshot
 storage; dirtoo = live listing / when to snapshot).
 
-Phase 0 constants are in DESIGN §6b (edges 128…2048, WebP q=80, archive
-512 MiB / 100:1 / 2 GiB, WAL, still_count=16). Next work is Phase 1 headers +
-SQLite spike and a biltoo adapter note.
+Phase 0 constants are in DESIGN §6b. Directory snapshots justified by
+10–30s USB/NAS spin-up (harder than pixel latency). Next: Phase 1 headers +
+SQLite spike and biltoo adapter note.
 
 ## Commits
 

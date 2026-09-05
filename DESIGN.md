@@ -65,9 +65,13 @@ pixels, consumable by biltoo first and optionally dirtoo later.
 ### Cache-first browse
 
 The UI may browse **entirely from local cache** with **no I/O to source
-volumes** until detail level or an explicit/idle refresh requires it. Waiting
-for a USB HDD to spin up or a NAS to wake must not gate scrolling, folder
-open (when a snapshot exists), or painting known previews.
+volumes** until detail level or an explicit/idle refresh requires it.
+
+Spinning-down USB/external HDDs and sleeping NAS shares commonly take
+**10–30 seconds** to respond to the first I/O after idle. That latency must
+not gate scrolling, folder open (when a snapshot exists), or painting known
+previews — the user cannot even see what is in a folder to decide what to do
+next if open blocks on spin-up.
 
 - `get_*` / `list_cached_*` — local SQLite + blob files only.
 - `request_*` / `prepare` / `refresh` — only place that touches sources.
@@ -365,17 +369,26 @@ Until a content hash is known, a **provisional id** is allowed:
 
 ### Directory snapshots (justified)
 
-`directory_snapshots` / `directory_entries` stay in thumtoo, not dirtoo:
+`directory_snapshots` / `directory_entries` stay in thumtoo, not dirtoo.
 
-- Cache-first **folder open** is the same product rule as cache-first image
-  browse: a sleeping USB HDD or NAS must not gate scrolling or entering a
-  directory when a snapshot exists.
+Spinning-down USB/external HDDs and sleeping NAS shares commonly take
+**10–30 s** to respond to the first I/O after idle. A folder-open or scroll
+must never block on that latency when a snapshot exists — this is a harder
+real-time constraint than pixel/preview latency and is the primary reason
+directory snapshots are owned here rather than left to live listing alone.
+
+This is the same job as the pixel ladder (durable index of something
+expensive to re-discover so the app never blocks on source hardware), applied
+to directory contents instead of pixels.
+
 - Snapshots are keyed by dir locator + outer size/mtime fingerprint; marked
   `incomplete` when listing was truncated or unverified.
-- dirtoo remains free to keep its own live listing UX and the decision of
-  *when* to write or refresh a snapshot; thumtoo only supplies the durable
-  snapshot storage for cold-start / offline-ish browse.
-- This split is visible in the README scope table.
+- **Boundary:** dirtoo owns live listing, watching, and mutation
+  (rename/move/delete) and decides *when* to write or refresh a snapshot;
+  thumtoo owns the durable last-known-good snapshot consulted before the live
+  listing resolves (or when source I/O is pending/unavailable).
+- Visible in the README scope table so the split survives later boundary
+  debates without relying on oral history of the 30-second number.
 
 ### Archive security (normative)
 
