@@ -60,6 +60,56 @@ pixels, consumable by biltoo first and optionally dirtoo later.
    crash isolation.
 5. GPL-3.0-or-later, REUSE headers, testable without a GUI.
 
+## 3a. Hard product rules (normative)
+
+### Cache-first browse
+
+The UI may browse **entirely from local cache** with **no I/O to source
+volumes** until detail level or an explicit/idle refresh requires it. Waiting
+for a USB HDD to spin up or a NAS to wake must not gate scrolling, folder
+open (when a snapshot exists), or painting known previews.
+
+- `get_*` / `list_cached_*` — local SQLite + blob files only.
+- `request_*` / `prepare` / `refresh` — only place that touches sources.
+
+Stale cache is acceptable; mark incomplete/unverified rather than block.
+
+### Storage location
+
+All durable state lives under **`$XDG_CACHE_HOME/thumtoo/`** (or an explicit
+cache root for tests). **Never** write into the user’s directory trees:
+
+- no sidecar files next to images
+- no extended attributes on source files
+- no `.DS_Store`, `Thumbs.db`, or other pollutants in source trees
+
+The cache is **strictly read-only with respect to source data**.
+
+### Content identity (hashes)
+
+Couple durable media rows to **content** when possible, not only to path:
+
+- Path + `(size, mtime)` remains a fast invalidation fingerprint.
+- **Checksum (e.g. SHA-256)** is the stable id when directory layout changes
+  (rename, reorganize, copy). Same bytes → same size/ladder/tags.
+- Path indexes are convenience aliases that may point at a content id.
+
+dirtoo’s checksum store and **tags-on-checksum** model are the reference;
+thumtoo should align so apps can share identity.
+
+### Tags (planned)
+
+Optional **tags attached to content hash** (not path), same idea as dirtoo:
+
+- Survive renames and moves.
+- Library API for list/add/remove; UI stays in apps (dirtoo Tag Manager, etc.).
+- Phase may trail the pixel ladder; schema should not paint us into a corner.
+
+### Network URLs (later)
+
+**http(s)** source URIs are a future extension (download/cache policy, TTL).
+**Plain local files first**, then archives, then remote URLs.
+
 ## 4. Non-goals (initial)
 
 - Full image editor or session/project file format.
@@ -92,31 +142,43 @@ Apps: biltoo · dirtoo · thumtoo-prepare
 
 ### Identity
 
-Canonical **source URI** string, for example:
+Two layers:
 
-- File: `file:/absolute/path/to/image.jpg`
-- Archive member: `archive:/absolute/path/to/book.zip!member/path.jpg`
+1. **Locator URI** (how to find bytes today):
 
-Fingerprint of the **outer** file: `(size, mtime_ns)`. Mismatch → stale meta and
-levels. Optional later: content hash (dirtoo-style) for rename-stable keys.
+   - File: `file:/absolute/path/to/image.jpg`
+   - Archive member: `archive:/absolute/path/to/book.zip!member/path.jpg`
+   - Later: `https://example.com/…` (not phase 1)
+
+2. **Content id** (what the bytes are): `sha256:<hex>` when known.
+
+Path/mtime fingerprint of the **outer** file is a **fast** staleness check.
+When the checksum is known, **levels, size, and tags** key primarily by content
+id so renames do not orphan the ladder. Locators are many-to-one aliases onto
+content rows.
 
 Biltoo **SessionImageId** remains session/edit identity and must **not** key
-durable pixels.
+durable pixels or tags.
 
 ### Schema (sketch)
 
 ```text
-sources (
-  id INTEGER PRIMARY KEY,
-  uri TEXT UNIQUE NOT NULL,
-  outer_path TEXT,
-  member_path TEXT,
-  size INTEGER,
-  mtime_ns INTEGER,
+content (
+  content_id TEXT PRIMARY KEY,   -- sha256:hex when known; provisional ids allowed
   width INTEGER,
   height INTEGER,
   format TEXT,
   status INTEGER,
+  updated_at INTEGER
+)
+
+locators (
+  uri TEXT PRIMARY KEY,          -- file: / archive: / (later https:)
+  content_id TEXT,               -- nullable until hashed
+  outer_path TEXT,
+  member_path TEXT,
+  size INTEGER,
+  mtime_ns INTEGER,              -- fingerprint of outer file
   updated_at INTEGER
 )
 
@@ -127,18 +189,43 @@ archive_entries (
   PRIMARY KEY (archive_uri, member_path)
 )
 
+-- Optional: directory listing snapshots (cache-first folder browse)
+directory_snapshots (
+  dir_uri TEXT PRIMARY KEY,
+  size INTEGER,
+  mtime_ns INTEGER,
+  listed_at INTEGER,
+  incomplete INTEGER
+)
+
+directory_entries (
+  dir_uri TEXT,
+  name TEXT,
+  child_uri TEXT,
+  is_dir INTEGER,
+  size INTEGER,
+  mtime_ns INTEGER,
+  PRIMARY KEY (dir_uri, name)
+)
+
 levels (
-  source_id INTEGER,
+  content_id TEXT,
   max_edge INTEGER,
   width INTEGER,
   height INTEGER,
   codec TEXT,
-  path TEXT,              -- relative under blob root (preferred over BLOB)
-  PRIMARY KEY (source_id, max_edge)
+  path TEXT,              -- relative under blob root (never next to sources)
+  PRIMARY KEY (content_id, max_edge)
+)
+
+tags (
+  content_id TEXT,
+  tag TEXT,
+  PRIMARY KEY (content_id, tag)
 )
 ```
 
-Default locations (XDG):
+Default locations (**only** under XDG cache, never in source trees):
 
 - Index: `$XDG_CACHE_HOME/thumtoo/index.sqlite`
 - Blobs: `$XDG_CACHE_HOME/thumtoo/blobs/…`
@@ -189,9 +276,11 @@ biltoo MVP.
 ## 9. What not to do
 
 - Store multi-megapixel full frames in SQLite BLOBs by default.
-- Key durable pixels by session edit id.
-- Block the GUI on archive listing or encode.
-- Require JPEG-XL for MVP.
+- Key durable pixels or tags by path alone when a content hash is known.
+- Key durable pixels by biltoo session edit id.
+- Block the GUI on archive listing, network readdir, or encode.
+- Touch source trees (xattrs, sidecars, AppleDouble, …).
+- Require JPEG-XL or http(s) for MVP.
 - Vendor galapix/dirtoo sources into biltoo; keep thumtoo as its own repo.
 
 ## 10. License

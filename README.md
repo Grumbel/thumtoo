@@ -13,6 +13,12 @@ re-decode the same files on every session.
 It is a **library first** (optional D-Bus service later). It is **not** an
 image viewer and **not** a full file manager.
 
+**Cache-first, source-read-only:** all durable data lives under
+`$XDG_CACHE_HOME/thumtoo/`. Source trees are never modified (no xattrs, no
+sidecars). Browse paths can run from cache alone until detail or refresh needs
+source I/O. Content hashes couple previews and tags to file bytes across
+renames; http(s) URLs are a later extension.
+
 | Concern | thumtoo | Not thumtoo |
 |---------|---------|-------------|
 | Native width × height | Yes (SQLite) | — |

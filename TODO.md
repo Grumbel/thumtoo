@@ -12,11 +12,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Next
 
-- [ ] Phase 0: freeze URI + fingerprint rules in DESIGN (normative subsection)
-- [ ] Phase 1: `include/thumtoo/` public headers + SQLite `sources` spike
+- [x] Normative rules: cache-first browse, XDG-only, no source pollution, hash identity
+- [ ] Phase 0: freeze URI + content-id rules (implementable constants)
+- [ ] Phase 1: `include/thumtoo/` public headers + SQLite content/locator spike
 - [ ] `thumtoo-prepare` CLI skeleton
 - [ ] biltoo integration note: map `imageSizeForPath` / soft preview to Client API
 - [ ] Decide default ladder edges and WebP quality
+- [ ] Tag API sketch aligned with dirtoo checksum tags
 
 ## Later
 

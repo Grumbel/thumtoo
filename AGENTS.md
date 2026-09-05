@@ -27,9 +27,9 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 
 ## Handoff
 
-- Latest: design-only repo bootstrap
-- Next: phase 0/1 spike (size table + API sketch in headers), or biltoo adapter
-  design note linking `imageSizeForPath` → thumtoo
+- Latest: cache-first / XDG-only / hash identity / tags / deferred http(s)
+- Next: phase 0/1 spike (content + locator tables + API sketch), or biltoo
+  adapter note linking `imageSizeForPath` → thumtoo
 
 ## Commits
 
