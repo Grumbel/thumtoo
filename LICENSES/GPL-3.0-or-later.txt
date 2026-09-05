@@ -1,0 +1,12 @@
+GNU GENERAL PUBLIC LICENSE
+Version 3, 29 June 2007
+
+Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
+
+This repository’s source is licensed under GPL-3.0-or-later.
+The full license text is available at:
+https://www.gnu.org/licenses/gpl-3.0.txt
+
+For REUSE compliance, this file identifies the SPDX license id
+GPL-3.0-or-later. Prefer the complete GPL-3.0 text from gnu.org when
+distributing binaries; packages may replace this stub with the full text.
