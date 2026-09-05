@@ -29,12 +29,19 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 
 ## Handoff
 
-Phase 1: Client + worker + prepare; **libvips + JPEG-XL** for probe/ladder
-(required deps from flake.nix). Content id → `sha256:…`; blobs as `.jxl`.
+## Status (2026-09-06)
 
-**Next:** archive member extract + ladder; biltoo wiring against INTEGRATION.md.
+**Phase 1 done:** Client, prepare/status CLIs, system SQLite, libvips+JXL ladder,
+get/request size & pixels, biltoo INTEGRATION.md.
 
-System SQLite via pkg-config/Nix. Optional vendored code goes under `external/`.
+**Phase 2 in progress:** archive TOC + **member extract** for
+`file:///…//archive:member` → sha256 identity + JXL ladder (same as plain files).
+Caps: 512 MiB member uncompressed.
+
+**Next:** archive batch coalesce (one open, many members); prepare expands
+archive image members; tag API vs dirtoo; biltoo wiring.
+
+System SQLite via pkg-config/Nix. Optional vendored code under `external/`.
 
 ## Commits
 

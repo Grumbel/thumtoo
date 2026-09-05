@@ -9,6 +9,7 @@
 #include "thumtoo/constants.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <condition_variable>
 #include <random>
@@ -283,9 +284,76 @@ void Client::handle_probe_size(Job& job) {
 
   std::optional<Size> size_out;
 
-  if (is_archive_uri(job.uri)) {
-    row.status = ContentStatus::Unsupported;
-    row.error_code = "archive_not_implemented";
+  if (auto arch = parse_archive_uri(job.uri)) {
+    if (arch->member_path.empty()) {
+      row.status = ContentStatus::Unsupported;
+      row.error_code = "archive_root_not_image";
+    } else {
+      auto bytes = extract_archive_member(arch->archive_path, arch->member_path);
+      if (!bytes) {
+        row.status = ContentStatus::Failed;
+        row.error_code = "archive_extract_failed";
+      } else {
+        const auto hex = sha256_bytes_hex(bytes->data(), bytes->size());
+        std::string new_id = old_id;
+        if (!hex.empty()) new_id = std::string(kContentIdSha256Prefix) + hex;
+
+        if (new_id != old_id) {
+          if (auto existing = db_->find_content(new_id)) {
+            row = *existing;
+            db_->update_locator_content_id(job.uri, new_id);
+            if (old_id.rfind(std::string(kContentIdProvisionalPrefix), 0) == 0) {
+              db_->delete_content(old_id);
+            }
+          } else {
+            row.content_id = new_id;
+            db_->upsert_content(row);
+            db_->update_locator_content_id(job.uri, new_id);
+            if (old_id.rfind(std::string(kContentIdProvisionalPrefix), 0) == 0) {
+              db_->delete_content(old_id);
+            }
+          }
+        }
+
+        auto probe = probe_image_buffer(bytes->data(), bytes->size(),
+                                        format_from_member(arch->member_path));
+        if (!probe) {
+          row.status = ContentStatus::Unsupported;
+          row.error_code = "unrecognized_image";
+        } else {
+          row.width = probe->size.width;
+          row.height = probe->size.height;
+          row.format = probe->format;
+          row.error_code = std::nullopt;
+          size_out = probe->size;
+          auto levels = build_ladder_buffer(bytes->data(), bytes->size(),
+                                            row.content_id, kDefaultJxlQuality);
+          for (const auto& lvl : levels) {
+            const auto abs_blob = db_->cache_root() / lvl.relative_path;
+            std::error_code ec;
+            std::filesystem::create_directories(abs_blob.parent_path(), ec);
+            std::ofstream out(abs_blob, std::ios::binary);
+            if (out) {
+              out.write(reinterpret_cast<const char*>(lvl.bytes.data()),
+                        static_cast<std::streamsize>(lvl.bytes.size()));
+            }
+            Database::LevelRow lr;
+            lr.content_id = row.content_id;
+            lr.max_edge = lvl.max_edge;
+            lr.frame_idx = lvl.frame_idx;
+            lr.width = lvl.width;
+            lr.height = lvl.height;
+            lr.codec = lvl.codec;
+            lr.quality = lvl.quality;
+            lr.path = lvl.relative_path;
+            db_->upsert_level(lr);
+          }
+          row.status =
+              levels.empty() ? ContentStatus::Incomplete : ContentStatus::Ready;
+          if (levels.empty()) row.error_code = "ladder_encode_failed";
+        }
+      }
+    }
   } else if (auto path = path_from_file_uri(job.uri)) {
     if (!std::filesystem::is_regular_file(*path)) {
       row.status = ContentStatus::Failed;

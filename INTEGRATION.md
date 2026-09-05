@@ -17,7 +17,8 @@ must not key durable pixels or tags.
 | Soft preview (Gallery / filmstrip / Image mode) | `get_pixels(uri, max_edge)` / `request_pixels(uri, max_edge, cb)` |
 | Known-good meta without I/O | `get_meta(uri)` (status, format, still_count, …) |
 | Prewarm session paths | `prepare_paths` or CLI `thumtoo-prepare` |
-| Archive open without re-walk | Phase 2: cached TOC (`list_archive` / `archive_entries`) |
+| Archive open without re-walk | `refresh_archive_toc` / `get_archive_entries` |
+| Image inside zip/cbz/… | URI `file:///…//archive:member` + normal get/request size/pixels |
 
 Suggested `max_edge` starting points (tunable in biltoo):
 

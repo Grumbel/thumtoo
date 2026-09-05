@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "thumtoo/archive.hpp"
+#include "thumtoo/constants.hpp"
 #include "thumtoo/uri.hpp"
 
 #include <archive.h>
@@ -10,6 +11,42 @@
 #include <cstring>
 
 namespace thumtoo {
+namespace {
+
+bool member_paths_equal(std::string_view a, std::string_view b) {
+  // Archives may use \ or leading ./ — normalize lightly.
+  auto strip = [](std::string_view s) {
+    while (s.starts_with("./")) s.remove_prefix(2);
+    return s;
+  };
+  a = strip(a);
+  b = strip(b);
+  if (a == b) return true;
+  std::string aa(a), bb(b);
+  for (char& c : aa)
+    if (c == '\\') c = '/';
+  for (char& c : bb)
+    if (c == '\\') c = '/';
+  return aa == bb;
+}
+
+}  // namespace
+
+bool is_unsafe_archive_member_path(std::string_view member_path) {
+  if (member_path.empty()) return true;
+  if (member_path.find('\0') != std::string_view::npos) return true;
+  if (member_path.front() == '/' || member_path.front() == '\\') return true;
+  // Reject .. path segments.
+  std::string_view s = member_path;
+  while (!s.empty()) {
+    const auto slash = s.find('/');
+    const auto seg = slash == std::string_view::npos ? s : s.substr(0, slash);
+    if (seg == "..") return true;
+    if (slash == std::string_view::npos) break;
+    s.remove_prefix(slash + 1);
+  }
+  return false;
+}
 
 std::string archive_uri(const std::filesystem::path& archive_path,
                         std::string_view member_path) {
@@ -20,6 +57,30 @@ std::string archive_uri(const std::filesystem::path& archive_path,
     uri += member_path;
   }
   return uri;
+}
+
+std::optional<ParsedArchiveUri> parse_archive_uri(std::string_view uri) {
+  constexpr std::string_view kPipe = "//archive";
+  const auto pipe = uri.find(kPipe);
+  if (pipe == std::string_view::npos) return std::nullopt;
+
+  const auto outer = uri.substr(0, pipe);
+  auto path = path_from_file_uri(outer);
+  if (!path) {
+    // path_from_file_uri expects full file:// URI; outer still includes file://
+    path = path_from_file_uri(std::string(outer));
+  }
+  if (!path) return std::nullopt;
+
+  ParsedArchiveUri out;
+  out.archive_path = *path;
+  std::string_view rest = uri.substr(pipe + kPipe.size());
+  if (rest.starts_with(':')) {
+    rest.remove_prefix(1);
+    out.member_path = std::string(rest);
+    if (is_unsafe_archive_member_path(out.member_path)) return std::nullopt;
+  }
+  return out;
 }
 
 std::optional<std::vector<ArchiveMember>> read_archive_toc(
@@ -43,10 +104,8 @@ std::optional<std::vector<ArchiveMember>> read_archive_toc(
       archive_read_data_skip(a);
       continue;
     }
-    // Path sanitization (DESIGN archive security): reject .. and absolute.
     const std::string member = path;
-    if (member.find("..") != std::string::npos ||
-        (!member.empty() && member[0] == '/')) {
+    if (is_unsafe_archive_member_path(member)) {
       archive_read_data_skip(a);
       continue;
     }
@@ -63,6 +122,67 @@ std::optional<std::vector<ArchiveMember>> read_archive_toc(
   }
   archive_read_free(a);
   return out;
+}
+
+std::optional<std::vector<std::uint8_t>> extract_archive_member(
+    const std::filesystem::path& archive_path, std::string_view member_path) {
+  if (is_unsafe_archive_member_path(member_path)) return std::nullopt;
+
+  struct archive* a = archive_read_new();
+  if (!a) return std::nullopt;
+  archive_read_support_filter_all(a);
+  archive_read_support_format_all(a);
+
+  if (archive_read_open_filename(a, archive_path.string().c_str(), 10240) !=
+      ARCHIVE_OK) {
+    archive_read_free(a);
+    return std::nullopt;
+  }
+
+  struct archive_entry* entry = nullptr;
+  while (archive_read_next_header(a, &entry) == ARCHIVE_OK) {
+    const char* path = archive_entry_pathname(entry);
+    if (!path || !member_paths_equal(path, member_path)) {
+      archive_read_data_skip(a);
+      continue;
+    }
+    if (archive_entry_filetype(entry) == AE_IFDIR) {
+      archive_read_free(a);
+      return std::nullopt;
+    }
+
+    const la_int64_t declared = archive_entry_size(entry);
+    if (declared > 0 &&
+        static_cast<std::uint64_t>(declared) >
+            kArchiveMaxMemberUncompressedBytes) {
+      archive_read_free(a);
+      return std::nullopt;
+    }
+
+    std::vector<std::uint8_t> buf;
+    if (declared > 0) buf.reserve(static_cast<std::size_t>(declared));
+
+    char block[65536];
+    for (;;) {
+      const la_ssize_t n = archive_read_data(a, block, sizeof(block));
+      if (n < 0) {
+        archive_read_free(a);
+        return std::nullopt;
+      }
+      if (n == 0) break;
+      if (buf.size() + static_cast<std::size_t>(n) >
+          kArchiveMaxMemberUncompressedBytes) {
+        archive_read_free(a);
+        return std::nullopt;
+      }
+      buf.insert(buf.end(), block, block + n);
+    }
+    archive_read_free(a);
+    return buf;
+  }
+
+  archive_read_free(a);
+  return std::nullopt;
 }
 
 }  // namespace thumtoo

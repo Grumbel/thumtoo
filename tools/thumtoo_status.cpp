@@ -5,6 +5,7 @@
 #include "thumtoo/database.hpp"
 #include "thumtoo/status.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -26,7 +27,7 @@ std::filesystem::path default_cache_root() {
 
 void usage(const char* argv0) {
   std::cerr
-      << "Usage: " << argv0 << " [--cache DIR] [summary|locators|content|levels]\n"
+      << "Usage: " << argv0 << " [--cache DIR] [summary|locators|content|levels|archives]\n"
       << "  Inspect a thumtoo cache (index.sqlite under DIR).\n"
       << "  Default DIR: $XDG_CACHE_HOME/thumtoo or ~/.cache/thumtoo\n";
 }
@@ -47,7 +48,7 @@ int main(int argc, char** argv) {
       cache = argv[++i];
       continue;
     }
-    if (a == "summary" || a == "locators" || a == "content" || a == "levels") {
+    if (a == "summary" || a == "locators" || a == "content" || a == "levels" || a == "archives") {
       mode = a;
       continue;
     }
@@ -105,6 +106,26 @@ int main(int argc, char** argv) {
             std::cout << "  " << *lv.width << "x" << *lv.height;
           if (lv.codec) std::cout << "  " << *lv.codec;
           if (lv.path) std::cout << "  " << *lv.path;
+          std::cout << "\n";
+        }
+      }
+      return 0;
+    }
+    if (mode == "archives") {
+      // List members for every archive_uri that has locator rows or entries.
+      // Simple: scan locators with //archive and unique outer, then entries.
+      std::vector<std::string> seen;
+      for (const auto& loc : db.list_locators(5000)) {
+        if (loc.uri.find("//archive") == std::string::npos) continue;
+        auto pipe = loc.uri.find("//archive");
+        std::string root = loc.uri.substr(0, pipe + std::string("//archive").size());
+        if (std::find(seen.begin(), seen.end(), root) != seen.end()) continue;
+        seen.push_back(root);
+        auto entries = db.list_archive_entries(root);
+        std::cout << root << "  members=" << entries.size() << "\n";
+        for (const auto& e : entries) {
+          std::cout << "  " << e.member_path;
+          if (e.uncompressed_size) std::cout << "  size=" << *e.uncompressed_size;
           std::cout << "\n";
         }
       }

@@ -186,6 +186,23 @@ std::optional<ProbeResult> probe_image_file(const std::filesystem::path& path) {
   return ProbeResult{Size{w, h}, format_from_path(path)};
 }
 
+std::optional<ProbeResult> probe_image_buffer(const std::uint8_t* data,
+                                             std::size_t size,
+                                             std::string_view hint_format) {
+  ensure_vips();
+  if (!data || size == 0) return std::nullopt;
+  VipsImage* img = vips_image_new_from_buffer(
+      data, size, nullptr, "access", VIPS_ACCESS_SEQUENTIAL, nullptr);
+  if (!img) return std::nullopt;
+  const int w = vips_image_get_width(img);
+  const int h = vips_image_get_height(img);
+  g_object_unref(img);
+  if (w <= 0 || h <= 0) return std::nullopt;
+  std::string fmt = std::string(hint_format);
+  if (fmt.empty()) fmt = "unknown";
+  return ProbeResult{Size{w, h}, fmt};
+}
+
 std::vector<LevelBlob> build_ladder(const std::filesystem::path& path,
                                     const std::string& content_id,
                                     int jxl_quality) {
@@ -266,6 +283,89 @@ std::vector<LevelBlob> build_ladder(const std::filesystem::path& path,
   return levels;
 }
 
+
+std::vector<LevelBlob> build_ladder_buffer(const std::uint8_t* data,
+                                           std::size_t size,
+                                           const std::string& content_id,
+                                           int jxl_quality) {
+  ensure_vips();
+  std::vector<LevelBlob> levels;
+  if (!data || size == 0) return levels;
+
+  VipsImage* full = vips_image_new_from_buffer(data, size, nullptr, nullptr);
+  if (!full) return levels;
+  const int src_w = vips_image_get_width(full);
+  const int src_h = vips_image_get_height(full);
+  const int long_edge = std::max(src_w, src_h);
+  g_object_unref(full);
+  if (long_edge <= 0) return levels;
+
+  const int q = std::clamp(jxl_quality, 1, 100);
+  std::string id_path = content_id;
+  for (char& c : id_path) {
+    if (c == ':' || c == '/') c = '_';
+  }
+
+  for (int edge : kLadderEdges) {
+    if (edge > long_edge) continue;
+    VipsImage* thumb = nullptr;
+    // Thumbnail from buffer via new_from_buffer + resize equivalent:
+    // vips_thumbnail_buffer
+    if (vips_thumbnail_buffer(data, size, &thumb, edge, "size", VIPS_SIZE_DOWN,
+                              nullptr) != 0 ||
+        !thumb) {
+      continue;
+    }
+    void* buf = nullptr;
+    size_t len = 0;
+    if (vips_jxlsave_buffer(thumb, &buf, &len, "Q", q, nullptr) != 0 || !buf) {
+      g_object_unref(thumb);
+      continue;
+    }
+    LevelBlob b;
+    b.max_edge = edge;
+    b.frame_idx = 0;
+    b.width = vips_image_get_width(thumb);
+    b.height = vips_image_get_height(thumb);
+    b.codec = "jxl";
+    b.quality = q;
+    std::ostringstream rel;
+    rel << "blobs/" << id_path << "/" << edge << "_f0.jxl";
+    b.relative_path = rel.str();
+    auto* bytes = static_cast<std::uint8_t*>(buf);
+    b.bytes.assign(bytes, bytes + len);
+    g_free(buf);
+    g_object_unref(thumb);
+    levels.push_back(std::move(b));
+  }
+
+  if (levels.empty() && long_edge > 0) {
+    VipsImage* img = vips_image_new_from_buffer(data, size, nullptr, nullptr);
+    if (img) {
+      void* buf = nullptr;
+      size_t len = 0;
+      if (vips_jxlsave_buffer(img, &buf, &len, "Q", q, nullptr) == 0 && buf) {
+        LevelBlob b;
+        b.max_edge = kLadderEdges.front();
+        b.frame_idx = 0;
+        b.width = vips_image_get_width(img);
+        b.height = vips_image_get_height(img);
+        b.codec = "jxl";
+        b.quality = q;
+        std::ostringstream rel;
+        rel << "blobs/" << id_path << "/" << b.max_edge << "_f0.jxl";
+        b.relative_path = rel.str();
+        auto* bytes = static_cast<std::uint8_t*>(buf);
+        b.bytes.assign(bytes, bytes + len);
+        g_free(buf);
+        levels.push_back(std::move(b));
+      }
+      g_object_unref(img);
+    }
+  }
+  return levels;
+}
+
 std::string sha256_file_hex(const std::filesystem::path& path) {
   std::ifstream in(path, std::ios::binary);
   if (!in) return {};
@@ -279,6 +379,21 @@ std::string sha256_file_hex(const std::filesystem::path& path) {
                  static_cast<std::size_t>(n));
     }
   }
+  const auto hash = ctx.final();
+  static constexpr char kHex[] = "0123456789abcdef";
+  std::string out;
+  out.resize(64);
+  for (int i = 0; i < 32; ++i) {
+    out[static_cast<std::size_t>(i) * 2] = kHex[hash[i] >> 4];
+    out[static_cast<std::size_t>(i) * 2 + 1] = kHex[hash[i] & 0xf];
+  }
+  return out;
+}
+
+std::string sha256_bytes_hex(const std::uint8_t* data, std::size_t size) {
+  if (!data || size == 0) return {};
+  Sha256 ctx;
+  ctx.update(data, size);
   const auto hash = ctx.final();
   static constexpr char kHex[] = "0123456789abcdef";
   std::string out;

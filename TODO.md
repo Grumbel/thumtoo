@@ -42,8 +42,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 ## Phase 2 (started)
 
 - [x] Archive TOC read (libarchive) + `archive_entries` cache
-- [ ] Extract member bytes / ladder for archive members
-- [ ] Batch vs on-demand coalesce for archives
+- [x] Extract member bytes + probe/ladder for `//archive:member` URIs
+- [x] Size / ratio caps on extract (`kArchiveMaxMemberUncompressedBytes`)
+- [ ] Batch vs on-demand coalesce for archives (open once, many members)
+- [ ] `thumtoo-prepare` archive expand (register all image members)
 
 ## Later
 

@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace thumtoo {
@@ -29,17 +30,24 @@ struct LevelBlob {
   std::vector<std::uint8_t> bytes;
 };
 
-/// Call once from main/tools before any image work (vips_init).
 void image_library_init();
 
 [[nodiscard]] std::optional<ProbeResult> probe_image_file(
     const std::filesystem::path& path);
 
-/// Build long-edge ladder as JPEG-XL via libvips (no upscale).
+[[nodiscard]] std::optional<ProbeResult> probe_image_buffer(
+    const std::uint8_t* data, std::size_t size, std::string_view hint_format = {});
+
 [[nodiscard]] std::vector<LevelBlob> build_ladder(
     const std::filesystem::path& path, const std::string& content_id,
     int jxl_quality);
 
+[[nodiscard]] std::vector<LevelBlob> build_ladder_buffer(
+    const std::uint8_t* data, std::size_t size, const std::string& content_id,
+    int jxl_quality);
+
 [[nodiscard]] std::string sha256_file_hex(const std::filesystem::path& path);
+[[nodiscard]] std::string sha256_bytes_hex(const std::uint8_t* data,
+                                           std::size_t size);
 
 }  // namespace thumtoo
