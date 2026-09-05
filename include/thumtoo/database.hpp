@@ -118,6 +118,23 @@ class Database {
   [[nodiscard]] std::vector<ArchiveEntryRow> list_archive_entries(
       std::string_view archive_uri, int limit = 10000) const;
 
+  // --- tags (content_id keyed; align with dirtoo sha256 identity) ---
+  struct TagRow {
+    std::string content_id;
+    std::string tag;
+    std::optional<std::string> source;
+    std::optional<std::int64_t> created_at;
+  };
+
+  /// Insert or ignore; empty tag is a no-op.
+  void add_tag(std::string_view content_id, std::string_view tag,
+               std::string_view source = "user");
+  bool remove_tag(std::string_view content_id, std::string_view tag);
+  [[nodiscard]] std::vector<std::string> tags_for_content(
+      std::string_view content_id) const;
+  [[nodiscard]] std::vector<std::string> content_ids_for_tag(
+      std::string_view tag, int limit = 1000) const;
+
  private:
   explicit Database(sqlite3* db, std::filesystem::path cache_root,
                     std::filesystem::path db_path, int schema_version);

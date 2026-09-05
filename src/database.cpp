@@ -716,4 +716,91 @@ std::vector<Database::ArchiveEntryRow> Database::list_archive_entries(
   return rows;
 }
 
+
+void Database::add_tag(std::string_view content_id, std::string_view tag,
+                       std::string_view source) {
+  if (content_id.empty() || tag.empty()) return;
+  // trim-ish: reject all-whitespace later via empty after simple skip
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "INSERT OR IGNORE INTO tags(content_id, tag, source, created_at) "
+      "VALUES(?1,?2,?3,strftime('%s','now'));";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(),
+                    static_cast<int>(content_id.size()), SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 2, tag.data(), static_cast<int>(tag.size()),
+                    SQLITE_STATIC);
+  if (source.empty())
+    sqlite3_bind_null(stmt, 3);
+  else
+    sqlite3_bind_text(stmt, 3, source.data(), static_cast<int>(source.size()),
+                      SQLITE_STATIC);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_finalize(stmt);
+}
+
+bool Database::remove_tag(std::string_view content_id, std::string_view tag) {
+  if (content_id.empty() || tag.empty()) return false;
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "DELETE FROM tags WHERE content_id = ?1 AND tag = ?2;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(),
+                    static_cast<int>(content_id.size()), SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 2, tag.data(), static_cast<int>(tag.size()),
+                    SQLITE_STATIC);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  const bool changed = sqlite3_changes(db_) > 0;
+  sqlite3_finalize(stmt);
+  return changed;
+}
+
+std::vector<std::string> Database::tags_for_content(
+    std::string_view content_id) const {
+  std::vector<std::string> out;
+  if (content_id.empty()) return out;
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT tag FROM tags WHERE content_id = ?1 ORDER BY tag;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(),
+                    static_cast<int>(content_id.size()), SQLITE_STATIC);
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    out.emplace_back(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)));
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+std::vector<std::string> Database::content_ids_for_tag(std::string_view tag,
+                                                      int limit) const {
+  std::vector<std::string> out;
+  if (tag.empty()) return out;
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT content_id FROM tags WHERE tag = ?1 ORDER BY content_id LIMIT ?2;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, tag.data(), static_cast<int>(tag.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, limit);
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    out.emplace_back(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)));
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
 }  // namespace thumtoo

@@ -26,6 +26,7 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Tree and dependencies |
 | [TODO.md](TODO.md) | Phase tracking |
 | [INTEGRATION.md](INTEGRATION.md) | biltoo API mapping |
+| [TAGS.md](TAGS.md) | content-hash tags vs dirtoo TagStore |
 
 ## Handoff
 
@@ -42,7 +43,9 @@ Caps: 512 MiB member uncompressed.
 
 **Note:** prepare re-queues non-ready locators; drain claims jobs before dequeue.
 
-**Next:** tag API vs dirtoo; biltoo wiring.
+**Next:** biltoo wiring.
+
+**Done recently:** tag API sketch (content_id keyed) + TAGS.md vs dirtoo.
 
 **Done recently:** prepare expands archive image members; worker coalesces
 same-archive probe jobs into one libarchive open (`extract_archive_members`).

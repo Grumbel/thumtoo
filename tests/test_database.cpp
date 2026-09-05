@@ -90,6 +90,23 @@ int main() {
     expect(!read_archive_toc("/no/such/archive.zip").has_value(), "missing archive");
   }
 
+  {
+    auto db = Database::open(root);
+    const std::string cid = "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+    Database::ContentRow c;
+    c.content_id = cid;
+    c.status = ContentStatus::Ready;
+    db.upsert_content(c);
+    db.add_tag(cid, "favorite", "user");
+    db.add_tag(cid, "wallpaper", "user");
+    db.add_tag(cid, "favorite", "user");  // ignore dup
+    auto tags = db.tags_for_content(cid);
+    expect(tags.size() == 2, "two tags");
+    expect(db.content_ids_for_tag("favorite").size() == 1, "one content for favorite");
+    expect(db.remove_tag(cid, "wallpaper"), "remove wallpaper");
+    expect(db.tags_for_content(cid).size() == 1, "one tag left");
+  }
+
   std::error_code ec;
   fs::remove_all(root, ec);
 

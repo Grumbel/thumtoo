@@ -70,3 +70,10 @@ explicit root. biltoo should not write beside source images.
 - Crop / flip / session edits → biltoo `SessionImageId`
 - Desktop icon thumbnailers → Freedesktop Thumbnailer1 (dirtoo client)
 - Live directory watching → dirtoo (thumtoo only stores optional snapshots)
+
+## Tags
+
+Tags are optional and **content-keyed** (`sha256:…`). See [TAGS.md](TAGS.md) for
+dirtoo `TagStore` alignment. biltoo should not invent path-only tags; resolve
+URI → content via `get_meta` / locator before writing labels.
+

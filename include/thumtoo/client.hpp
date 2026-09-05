@@ -80,6 +80,13 @@ class Client {
 
   void drain();
 
+  /// Tags attach to content_id (sha256:… preferred). URI resolves via locator.
+  [[nodiscard]] std::vector<std::string> get_tags(std::string_view uri) const;
+  /// Returns false if uri has no content_id yet.
+  bool add_tag(std::string_view uri, std::string_view tag,
+               std::string_view source = "user");
+  bool remove_tag(std::string_view uri, std::string_view tag);
+
  private:
   explicit Client(std::unique_ptr<Database> db,
                   std::unique_ptr<BlobStore> blobs, Executor executor);

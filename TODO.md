@@ -39,7 +39,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 - [x] flake: add libselinux for gio `libselinux.pc` (silence pkg-config noise)
 - [x] flake: add libsepol for libselinux `libsepol.pc` (silence pkg-config noise)
 - [x] flake: add libthai, libdatrie, libxdmcp, libxml2 (silence pkg-config noise)
-- [ ] Tag API sketch reconciled with dirtoo checksum tags
+- [x] Tag API sketch reconciled with dirtoo checksum tags (`TAGS.md` + list/add/remove)
 
 ## Design open / discuss
 

@@ -614,4 +614,25 @@ void Client::handle_ensure_pixels(Job& job) {
   }
 }
 
+
+std::vector<std::string> Client::get_tags(std::string_view uri) const {
+  auto loc = db_->find_locator(uri);
+  if (!loc || !loc->content_id) return {};
+  return db_->tags_for_content(*loc->content_id);
+}
+
+bool Client::add_tag(std::string_view uri, std::string_view tag,
+                     std::string_view source) {
+  auto loc = db_->find_locator(uri);
+  if (!loc || !loc->content_id) return false;
+  db_->add_tag(*loc->content_id, tag, source);
+  return true;
+}
+
+bool Client::remove_tag(std::string_view uri, std::string_view tag) {
+  auto loc = db_->find_locator(uri);
+  if (!loc || !loc->content_id) return false;
+  return db_->remove_tag(*loc->content_id, tag);
+}
+
 }  // namespace thumtoo
