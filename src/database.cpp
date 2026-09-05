@@ -575,4 +575,80 @@ void Database::delete_content(std::string_view content_id) {
   sqlite3_finalize(stmt);
 }
 
+
+std::optional<Database::LevelRow> Database::find_best_level(
+    std::string_view content_id, int max_edge, int frame_idx) const {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT content_id, max_edge, frame_idx, pts_ms, width, height, codec, "
+      "quality, path FROM levels WHERE content_id = ?1 AND frame_idx = ?2 "
+      "AND max_edge <= ?3 ORDER BY max_edge DESC LIMIT 1;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(),
+                    static_cast<int>(content_id.size()), SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, frame_idx);
+  sqlite3_bind_int(stmt, 3, max_edge);
+  std::optional<LevelRow> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    LevelRow r;
+    r.content_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    r.max_edge = sqlite3_column_int(stmt, 1);
+    r.frame_idx = sqlite3_column_int(stmt, 2);
+    if (sqlite3_column_type(stmt, 3) != SQLITE_NULL)
+      r.pts_ms = sqlite3_column_int64(stmt, 3);
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+      r.width = sqlite3_column_int(stmt, 4);
+    if (sqlite3_column_type(stmt, 5) != SQLITE_NULL)
+      r.height = sqlite3_column_int(stmt, 5);
+    if (sqlite3_column_type(stmt, 6) != SQLITE_NULL)
+      r.codec = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
+    if (sqlite3_column_type(stmt, 7) != SQLITE_NULL)
+      r.quality = sqlite3_column_int(stmt, 7);
+    if (sqlite3_column_type(stmt, 8) != SQLITE_NULL)
+      r.path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
+    out = std::move(r);
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+std::vector<Database::LevelRow> Database::list_levels(
+    std::string_view content_id, int limit) const {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT content_id, max_edge, frame_idx, pts_ms, width, height, codec, "
+      "quality, path FROM levels WHERE content_id = ?1 "
+      "ORDER BY frame_idx, max_edge LIMIT ?2;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(),
+                    static_cast<int>(content_id.size()), SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, limit);
+  std::vector<LevelRow> rows;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    LevelRow r;
+    r.content_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    r.max_edge = sqlite3_column_int(stmt, 1);
+    r.frame_idx = sqlite3_column_int(stmt, 2);
+    if (sqlite3_column_type(stmt, 3) != SQLITE_NULL)
+      r.pts_ms = sqlite3_column_int64(stmt, 3);
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+      r.width = sqlite3_column_int(stmt, 4);
+    if (sqlite3_column_type(stmt, 5) != SQLITE_NULL)
+      r.height = sqlite3_column_int(stmt, 5);
+    if (sqlite3_column_type(stmt, 6) != SQLITE_NULL)
+      r.codec = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
+    if (sqlite3_column_type(stmt, 7) != SQLITE_NULL)
+      r.quality = sqlite3_column_int(stmt, 7);
+    if (sqlite3_column_type(stmt, 8) != SQLITE_NULL)
+      r.path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
+    rows.push_back(std::move(r));
+  }
+  sqlite3_finalize(stmt);
+  return rows;
+}
+
 }  // namespace thumtoo

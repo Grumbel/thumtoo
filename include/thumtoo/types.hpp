@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace thumtoo {
 
@@ -27,3 +28,13 @@ struct ContentMeta {
 };
 
 }  // namespace thumtoo
+
+/// Encoded ladder level from cache (JPEG-XL bytes by default).
+struct PixelLevel {
+  int max_edge = 0;
+  int frame_idx = 0;
+  int width = 0;
+  int height = 0;
+  std::string codec;  // "jxl"
+  std::vector<std::uint8_t> bytes;
+};

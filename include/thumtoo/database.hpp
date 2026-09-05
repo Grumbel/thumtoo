@@ -100,6 +100,13 @@ class Database {
   /// Delete a content row (after merge/promotion).
   void delete_content(std::string_view content_id);
 
+  /// Best level with frame_idx and max_edge <= requested (largest such edge).
+  [[nodiscard]] std::optional<LevelRow> find_best_level(
+      std::string_view content_id, int max_edge, int frame_idx = 0) const;
+
+  [[nodiscard]] std::vector<LevelRow> list_levels(std::string_view content_id,
+                                                  int limit = 32) const;
+
  private:
   explicit Database(sqlite3* db, std::filesystem::path cache_root,
                     std::filesystem::path db_path, int schema_version);

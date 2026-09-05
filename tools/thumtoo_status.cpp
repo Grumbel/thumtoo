@@ -26,7 +26,7 @@ std::filesystem::path default_cache_root() {
 
 void usage(const char* argv0) {
   std::cerr
-      << "Usage: " << argv0 << " [--cache DIR] [summary|locators|content]\n"
+      << "Usage: " << argv0 << " [--cache DIR] [summary|locators|content|levels]\n"
       << "  Inspect a thumtoo cache (index.sqlite under DIR).\n"
       << "  Default DIR: $XDG_CACHE_HOME/thumtoo or ~/.cache/thumtoo\n";
 }
@@ -47,7 +47,7 @@ int main(int argc, char** argv) {
       cache = argv[++i];
       continue;
     }
-    if (a == "summary" || a == "locators" || a == "content") {
+    if (a == "summary" || a == "locators" || a == "content" || a == "levels") {
       mode = a;
       continue;
     }
@@ -93,6 +93,20 @@ int main(int argc, char** argv) {
         if (r.duration_ms) std::cout << "  duration_ms=" << *r.duration_ms;
         if (r.error_code) std::cout << "  error=" << *r.error_code;
         std::cout << "\n";
+      }
+      return 0;
+    }
+    if (mode == "levels") {
+      for (const auto& c : db.list_content(500)) {
+        for (const auto& lv : db.list_levels(c.content_id)) {
+          std::cout << c.content_id << "  edge=" << lv.max_edge
+                    << "  frame=" << lv.frame_idx;
+          if (lv.width && lv.height)
+            std::cout << "  " << *lv.width << "x" << *lv.height;
+          if (lv.codec) std::cout << "  " << *lv.codec;
+          if (lv.path) std::cout << "  " << *lv.path;
+          std::cout << "\n";
+        }
       }
       return 0;
     }

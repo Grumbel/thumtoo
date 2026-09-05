@@ -102,6 +102,21 @@ int main() {
     expect(meta && meta->content_id.find("sha256:") == 0, "sha256 content id");
     expect(client->db().count_levels() >= 1, "levels written");
 
+    auto px = client->get_pixels(uri, 256);
+    expect(px.has_value(), "get_pixels 256");
+    expect(px && !px->bytes.empty(), "pixel bytes");
+    expect(px && px->codec == "jxl", "codec jxl");
+    expect(px && px->max_edge <= 256, "edge <= 256");
+
+    bool called_px = false;
+    client->request_pixels(uri, 128, [&](std::string, int, std::optional<PixelLevel> p) {
+      called_px = true;
+      expect(p.has_value(), "request_pixels data");
+      expect(p && p->max_edge <= 128, "request edge");
+    });
+    client->drain();
+    expect(called_px, "request_pixels callback");
+
     bool any_blob = false;
     if (fs::exists(cache / "blobs")) {
       for (auto& e : fs::recursive_directory_iterator(cache / "blobs")) {

@@ -31,7 +31,7 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 Phase 1: Client + worker + prepare; **libvips + JPEG-XL** for probe/ladder
 (required deps from flake.nix). Content id → `sha256:…`; blobs as `.jxl`.
 
-**Next:** `get_pixels`/`request_pixels`, then archive path.
+**Next:** biltoo adapter note; archive path (Phase 2).
 
 Vendored: `third_party/sqlite/` only. No stb fallback.
 

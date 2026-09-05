@@ -81,6 +81,58 @@ std::optional<ContentMeta> Client::get_meta(std::string_view uri) const {
   return db_->meta_for_uri(uri);
 }
 
+
+std::optional<PixelLevel> Client::load_level_file(
+    const Database::LevelRow& row) const {
+  if (!row.path) return std::nullopt;
+  const auto abs = db_->cache_root() / *row.path;
+  std::ifstream in(abs, std::ios::binary);
+  if (!in) return std::nullopt;
+  in.seekg(0, std::ios::end);
+  const auto n = in.tellg();
+  if (n <= 0) return std::nullopt;
+  in.seekg(0, std::ios::beg);
+  PixelLevel out;
+  out.max_edge = row.max_edge;
+  out.frame_idx = row.frame_idx;
+  if (row.width) out.width = *row.width;
+  if (row.height) out.height = *row.height;
+  if (row.codec) out.codec = *row.codec;
+  out.bytes.resize(static_cast<std::size_t>(n));
+  in.read(reinterpret_cast<char*>(out.bytes.data()), n);
+  if (!in) return std::nullopt;
+  return out;
+}
+
+std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
+                                             int frame_idx) const {
+  auto meta = db_->meta_for_uri(uri);
+  if (!meta) return std::nullopt;
+  auto row = db_->find_best_level(meta->content_id, max_edge, frame_idx);
+  if (!row) return std::nullopt;
+  return load_level_file(*row);
+}
+
+void Client::request_pixels(std::string uri, int max_edge, PixelsCallback cb,
+                            int frame_idx) {
+  if (auto px = get_pixels(uri, max_edge, frame_idx)) {
+    if (cb) {
+      executor_.post([cb = std::move(cb), uri, max_edge, px = std::move(*px)]() mutable {
+        cb(std::move(uri), max_edge, std::move(px));
+      });
+    }
+    return;
+  }
+  Job job;
+  job.kind = JobKind::EnsurePixels;
+  job.uri = std::move(uri);
+  job.max_edge = max_edge;
+  job.frame_idx = frame_idx;
+  job.pixels_cb = std::move(cb);
+  enqueue(std::move(job));
+}
+
+
 void Client::enqueue(Job job) {
   std::lock_guard lock(mu_);
   queue_.push_back(std::move(job));
@@ -174,6 +226,7 @@ void Client::worker_main() {
     }
     if (job.uri.empty()) continue;
     if (job.kind == JobKind::ProbeSize) handle_probe_size(job);
+    else if (job.kind == JobKind::EnsurePixels) handle_ensure_pixels(job);
     {
       std::lock_guard lock(mu_);
       --inflight_;

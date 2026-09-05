@@ -27,8 +27,8 @@ namespace thumtoo {
 class Client {
  public:
   using SizeCallback = std::function<void(std::string uri, std::optional<Size>)>;
-  using MetaCallback =
-      std::function<void(std::string uri, std::optional<ContentMeta>)>;
+  using PixelsCallback =
+      std::function<void(std::string uri, int max_edge, std::optional<PixelLevel>)>;
 
   Client() = default;
   Client(const Client&) = delete;
@@ -37,7 +37,6 @@ class Client {
   Client& operator=(Client&&) = delete;
   ~Client();
 
-  /// Open cache and start the single writer/worker thread.
   static std::unique_ptr<Client> open(const std::filesystem::path& cache_root,
                                       Executor executor = {});
 
@@ -48,32 +47,42 @@ class Client {
   [[nodiscard]] std::optional<Size> get_size(std::string_view uri) const;
   [[nodiscard]] std::optional<ContentMeta> get_meta(std::string_view uri) const;
 
-  /// Ensure a locator row exists and schedule a size probe if missing/pending.
-  /// Callback runs through Executor when the worker finishes (or immediately
-  /// if already Ready with size).
+  /// Cache-only: load best ladder level with edge <= max_edge (frame 0 default).
+  [[nodiscard]] std::optional<PixelLevel> get_pixels(std::string_view uri,
+                                                     int max_edge,
+                                                     int frame_idx = 0) const;
+
   void request_size(std::string uri, SizeCallback cb);
 
-  /// Register filesystem paths as file:/// locators (pending) for later probe.
-  /// Used by thumtoo-prepare; does not decode yet.
+  /// Ensure ladder exists (probe if needed), then return pixels via callback.
+  void request_pixels(std::string uri, int max_edge, PixelsCallback cb,
+                      int frame_idx = 0);
+
   void prepare_paths(const std::vector<std::filesystem::path>& paths);
 
-  /// Block until the worker queue is empty (CLI / tests).
   void drain();
 
  private:
   explicit Client(std::unique_ptr<Database> db, Executor executor);
 
-  enum class JobKind { ProbeSize };
+  enum class JobKind { ProbeSize, EnsurePixels };
 
   struct Job {
     JobKind kind = JobKind::ProbeSize;
     std::string uri;
+    int max_edge = 0;
+    int frame_idx = 0;
     SizeCallback size_cb;
+    PixelsCallback pixels_cb;
   };
 
   void worker_main();
   void enqueue(Job job);
   void handle_probe_size(Job& job);
+  void handle_ensure_pixels(Job& job);
+
+  [[nodiscard]] std::optional<PixelLevel> load_level_file(
+      const Database::LevelRow& row) const;
 
   std::unique_ptr<Database> db_;
   Executor executor_;

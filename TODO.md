@@ -30,7 +30,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 - [x] URI helpers (file:/// , //archive detection)
 - [x] Image pipeline via libvips + JPEG-XL ladder (required; flake.nix)
 - [x] SHA-256 content id promotion
-- [ ] get_pixels / request_pixels reading levels
+- [x] get_pixels / request_pixels reading levels
 - [ ] Tag API sketch reconciled with dirtoo checksum tags
 
 ## Design open / discuss
