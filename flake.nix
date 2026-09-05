@@ -21,15 +21,19 @@
         vips
         libjxl
 
-        # glib Requires.private: sysprof-capture-4
+        # glib Requires.private
         glib
         libsysprof-capture
+        pcre2          # libpcre2-8.pc
+
+        # libarchive Requires.private
+        libarchive
+        openssl        # libcrypto.pc
 
         # vips Requires.private (and common transitive .pc names)
         fftw
         cfitsio
         libimagequant
-        libarchive
         cgif
         libexif
         libultrahdr
