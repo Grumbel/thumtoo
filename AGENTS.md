@@ -27,9 +27,10 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 
 ## Handoff
 
-- Latest: cache-first / XDG-only / hash identity / tags / deferred http(s)
-- Next: phase 0/1 spike (content + locator tables + API sketch), or biltoo
-  adapter note linking `imageSizeForPath` → thumtoo
+- Latest: cache-first / XDG-only / hash identity / tags / deferred http(s) /
+  Location URI form (`file:///…//archive:member`, nested via pipe)
+- Next: phase 0 freeze URI + content-id rules; phase 1 headers + SQLite spike;
+  video stills / storyboard design still open; biltoo adapter note
 
 ## Commits
 

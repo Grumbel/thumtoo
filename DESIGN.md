@@ -144,11 +144,15 @@ Apps: biltoo · dirtoo · thumtoo-prepare
 
 Two layers:
 
-1. **Locator URI** (how to find bytes today):
+1. **Locator URI** (how to find bytes today) — follow dirtoo / Galapix Location form:
 
-   - File: `file:/absolute/path/to/image.jpg`
-   - Archive member: `archive:/absolute/path/to/book.zip!member/path.jpg`
+   - File: `file:///absolute/path/to/image.jpg`
+   - Archive member: `file:///absolute/path/to/book.zip//archive:member/path.jpg`
+   - Nested archive: `file:///outer.zip//archive:inner.rar//archive:path/to/image.jpg`
+   - Archive root (TOC only): `file:///absolute/path/to/book.zip//archive`
    - Later: `https://example.com/…` (not phase 1)
+
+   The `//` acts as a pipe into the blob; `//archive:` (or historically `//rar:`, `//zip:`) selects the archive handler and optional member path. Prefer this over JAR-style `archive:…!…` (still accepted only for import compatibility).
 
 2. **Content id** (what the bytes are): `sha256:<hex>` when known.
 
@@ -173,7 +177,7 @@ content (
 )
 
 locators (
-  uri TEXT PRIMARY KEY,          -- file: / archive: / (later https:)
+  uri TEXT PRIMARY KEY,          -- file:///… or file:///…//archive:member (later https:)
   content_id TEXT,               -- nullable until hashed
   outer_path TEXT,
   member_path TEXT,
