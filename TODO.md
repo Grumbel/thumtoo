@@ -37,6 +37,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 - [x] `thumtoo-prepare` progress reporting (per-job lines + --quiet)
 - [x] flake: add util-linux for gio `mount.pc` (silence pkg-config noise)
 - [x] flake: add libselinux for gio `libselinux.pc` (silence pkg-config noise)
+- [x] flake: add libsepol for libselinux `libsepol.pc` (silence pkg-config noise)
 - [ ] Tag API sketch reconciled with dirtoo checksum tags
 
 ## Design open / discuss

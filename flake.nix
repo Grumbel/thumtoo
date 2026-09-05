@@ -29,6 +29,7 @@
         # gio-2.0 Requires.private (pulled in via glib/vips)
         util-linux     # mount.pc
         libselinux     # libselinux.pc
+        libsepol       # libsepol.pc (Requires.private of libselinux)
 
         # libarchive Requires.private
         libarchive
