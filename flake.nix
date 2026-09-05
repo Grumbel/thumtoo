@@ -17,6 +17,7 @@
       # "Package '…' was not found" spam). We do not necessarily link all of
       # these into thumtoo; they only need to be on PKG_CONFIG_PATH.
       vipsInputs = pkgs: with pkgs; [
+        sqlite
         vips
         libjxl
 

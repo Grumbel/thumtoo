@@ -23,7 +23,8 @@ thumtoo/
     thumtoo_status.cpp thumtoo_prepare.cpp
   tests/
     test_database.cpp test_client.cpp
-  third_party/sqlite/    # amalgamation (public domain)
+  external/   # optional vendored sources (not system libs)
+    # amalgamation (public domain)
 ```
 
 ## Build
@@ -44,7 +45,7 @@ dependency. WAL is enabled at open.
 | Component | Status |
 |-----------|--------|
 | C++20, CMake ≥ 3.16 | required |
-| SQLite amalgamation | vendored |
+| SQLite3 | **required** (pkg-config / flake) |
 | libvips + libjxl | **required** (flake.nix / pkg-config) |
 | libarchive | **required** (TOC; extract next) |
 | libarchive | Phase 2 |

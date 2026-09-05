@@ -34,7 +34,7 @@ Phase 1: Client + worker + prepare; **libvips + JPEG-XL** for probe/ladder
 
 **Next:** archive member extract + ladder; biltoo wiring against INTEGRATION.md.
 
-Vendored: `third_party/sqlite/` only. No stb fallback.
+System SQLite via pkg-config/Nix. Optional vendored code goes under `external/`.
 
 ## Commits
 
