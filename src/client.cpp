@@ -439,4 +439,24 @@ void Client::handle_probe_size(Job& job) {
 }
 
 
+
+void Client::handle_ensure_pixels(Job& job) {
+  // Populate size + ladder via the probe path, then load pixels from cache.
+  Job probe;
+  probe.kind = JobKind::ProbeSize;
+  probe.uri = job.uri;
+  handle_probe_size(probe);
+
+  auto px = get_pixels(job.uri, job.max_edge, job.frame_idx);
+  if (job.pixels_cb) {
+    auto cb = std::move(job.pixels_cb);
+    auto uri = job.uri;
+    const int edge = job.max_edge;
+    executor_.post([cb = std::move(cb), uri = std::move(uri), edge,
+                    px = std::move(px)]() mutable {
+      cb(std::move(uri), edge, std::move(px));
+    });
+  }
+}
+
 }  // namespace thumtoo
