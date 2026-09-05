@@ -28,7 +28,7 @@ image viewer and **not** a full file manager.
 |---------|------|------|
 | **biltoo** | Qt image viewer (Image / Gallery / Workspace); primary consumer of size + preview ladder | <https://github.com/Grumbel/biltoo> |
 | **dirtoo** | Modular file manager; checksum SQLite, MediaMetaCache, archive TOC, Thumbnailer1 client | <https://github.com/Grumbel/dirtoo> |
-| **galapix** | Zoomable collection viewer; multi-scale **tile** cache in SQLite (historical pyramid model) | <https://github.com/Galapix/galapix> · upstream often at [GitLab galapix](https://gitlab.com/galapix/galapix) |
+| **galapix** | Zoomable collection viewer; multi-scale **tile** cache in SQLite (historical pyramid model) | <https://github.com/Galapix/galapix> |
 | **dirtoo-py** | Python/PyQt prototype (behavioral reference for dirtoo) | <https://github.com/Grumbel/dirtoo-py> |
 
 Sister docs inside those trees (when present): biltoo `DOMAIN.md` / `IDENTITY.md` /
