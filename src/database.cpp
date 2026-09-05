@@ -496,4 +496,83 @@ std::optional<ContentMeta> Database::meta_for_uri(std::string_view uri) const {
   return m;
 }
 
+
+void Database::upsert_level(const LevelRow& row) {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "INSERT INTO levels(content_id, max_edge, frame_idx, pts_ms, width, height, "
+      "codec, quality, path) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9) "
+      "ON CONFLICT(content_id, max_edge, frame_idx) DO UPDATE SET "
+      "pts_ms=excluded.pts_ms, width=excluded.width, height=excluded.height, "
+      "codec=excluded.codec, quality=excluded.quality, path=excluded.path;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, row.content_id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 2, row.max_edge);
+  sqlite3_bind_int(stmt, 3, row.frame_idx);
+  if (row.pts_ms)
+    sqlite3_bind_int64(stmt, 4, *row.pts_ms);
+  else
+    sqlite3_bind_null(stmt, 4);
+  if (row.width)
+    sqlite3_bind_int(stmt, 5, *row.width);
+  else
+    sqlite3_bind_null(stmt, 5);
+  if (row.height)
+    sqlite3_bind_int(stmt, 6, *row.height);
+  else
+    sqlite3_bind_null(stmt, 6);
+  if (row.codec)
+    sqlite3_bind_text(stmt, 7, row.codec->c_str(), -1, SQLITE_TRANSIENT);
+  else
+    sqlite3_bind_null(stmt, 7);
+  if (row.quality)
+    sqlite3_bind_int(stmt, 8, *row.quality);
+  else
+    sqlite3_bind_null(stmt, 8);
+  if (row.path)
+    sqlite3_bind_text(stmt, 9, row.path->c_str(), -1, SQLITE_TRANSIENT);
+  else
+    sqlite3_bind_null(stmt, 9);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_finalize(stmt);
+}
+
+void Database::update_locator_content_id(std::string_view uri,
+                                         std::string_view content_id) {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "UPDATE locators SET content_id = ?1 WHERE uri = ?2;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(), static_cast<int>(content_id.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 2, uri.data(), static_cast<int>(uri.size()),
+                    SQLITE_STATIC);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_finalize(stmt);
+}
+
+void Database::delete_content(std::string_view content_id) {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "DELETE FROM content WHERE content_id = ?1;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(),
+                    static_cast<int>(content_id.size()), SQLITE_STATIC);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_finalize(stmt);
+}
+
 }  // namespace thumtoo

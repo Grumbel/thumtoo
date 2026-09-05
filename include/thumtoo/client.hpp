@@ -81,6 +81,7 @@ class Client {
   std::mutex mu_;
   std::vector<Job> queue_;
   bool stop_ = false;
+  int inflight_ = 0;
   std::thread worker_;
 };
 

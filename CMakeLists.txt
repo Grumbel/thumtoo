@@ -26,6 +26,7 @@ add_library(thumtoo
   src/database.cpp
   src/uri.cpp
   src/client.cpp
+  src/image.cpp
 )
 add_library(thumtoo::thumtoo ALIAS thumtoo)
 target_include_directories(thumtoo
@@ -34,8 +35,12 @@ target_include_directories(thumtoo
     $<INSTALL_INTERFACE:include>
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb
 )
 target_link_libraries(thumtoo PUBLIC sqlite3_amalgamation)
+if(UNIX)
+  target_link_libraries(thumtoo PUBLIC m)
+endif()
 target_compile_options(thumtoo PRIVATE -Wall -Wextra -Wpedantic)
 
 if(THUMTOO_BUILD_TOOLS)

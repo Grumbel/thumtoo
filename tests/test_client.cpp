@@ -3,6 +3,7 @@
 
 #include "thumtoo/client.hpp"
 #include "thumtoo/constants.hpp"
+#include "thumtoo/image.hpp"
 #include "thumtoo/uri.hpp"
 
 #include <chrono>
@@ -10,6 +11,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -21,6 +23,45 @@ void expect(bool c, const char* m) {
     ++g_failures;
   }
 }
+
+// Minimal 2x2 RGB24 BMP (no stb in the test translation unit).
+void write_tiny_bmp(const fs::path& path, int w, int h) {
+  const int row_raw = w * 3;
+  const int row_pad = (4 - (row_raw % 4)) % 4;
+  const int row_stride = row_raw + row_pad;
+  const int pixel_size = row_stride * h;
+  const int file_size = 14 + 40 + pixel_size;
+  std::vector<unsigned char> buf(static_cast<size_t>(file_size), 0);
+  auto put16 = [&](int off, int v) {
+    buf[static_cast<size_t>(off)] = static_cast<unsigned char>(v & 0xff);
+    buf[static_cast<size_t>(off + 1)] = static_cast<unsigned char>((v >> 8) & 0xff);
+  };
+  auto put32 = [&](int off, int v) {
+    put16(off, v & 0xffff);
+    put16(off + 2, (v >> 16) & 0xffff);
+  };
+  buf[0] = 'B';
+  buf[1] = 'M';
+  put32(2, file_size);
+  put32(10, 54);
+  put32(14, 40);
+  put32(18, w);
+  put32(22, h);
+  put16(26, 1);
+  put16(28, 24);
+  put32(34, pixel_size);
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      const int i = 54 + y * row_stride + x * 3;
+      buf[static_cast<size_t>(i) + 0] = static_cast<unsigned char>(x * 40);
+      buf[static_cast<size_t>(i) + 1] = static_cast<unsigned char>(y * 40);
+      buf[static_cast<size_t>(i) + 2] = 200;
+    }
+  }
+  std::ofstream out(path, std::ios::binary);
+  out.write(reinterpret_cast<const char*>(buf.data()),
+            static_cast<std::streamsize>(buf.size()));
+}
 }  // namespace
 
 int main() {
@@ -31,33 +72,42 @@ int main() {
           std::chrono::steady_clock::now().time_since_epoch().count());
   fs::create_directories(root);
 
-  const auto img = root / "pixel.jpg";
-  {
-    std::ofstream out(img, std::ios::binary);
-    out << "not-a-real-jpeg";
-  }
+  constexpr int W = 320;
+  constexpr int H = 200;
+  const auto img = root / "gradient.bmp";
+  write_tiny_bmp(img, W, H);
 
   const auto uri = file_uri_from_path(img);
-  expect(uri.starts_with("file://"), "file uri prefix");
-  expect(path_from_file_uri(uri).has_value(), "roundtrip path");
+  const auto cache = root / "cache";
 
   {
-    auto client = Client::open(root / "cache");
-    expect(!client->get_size(uri).has_value(), "no size before prepare");
+    auto client = Client::open(cache);
+    expect(!client->get_size(uri).has_value(), "no size before request");
 
     bool called = false;
-    client->request_size(uri, [&](std::string, std::optional<Size>) {
+    std::optional<Size> got;
+    client->request_size(uri, [&](std::string, std::optional<Size> s) {
       called = true;
+      got = s;
     });
     client->drain();
     expect(called, "callback invoked");
+    expect(got.has_value(), "size present");
+    expect(got && got->width == W && got->height == H, "native size");
 
     auto meta = client->get_meta(uri);
     expect(meta.has_value(), "meta present");
-    expect(meta && meta->status == ContentStatus::Incomplete, "incomplete");
-    expect(meta && meta->error_code &&
-               *meta->error_code == "probe_not_implemented",
-           "probe stub code");
+    expect(meta && meta->status == ContentStatus::Ready, "status ready");
+    expect(meta && meta->content_id.find("sha256:") == 0, "sha256 content id");
+    expect(client->db().count_levels() >= 1, "levels written");
+
+    bool any_blob = false;
+    if (fs::exists(cache / "blobs")) {
+      for (auto& e : fs::recursive_directory_iterator(cache / "blobs")) {
+        if (e.is_regular_file()) any_blob = true;
+      }
+    }
+    expect(any_blob, "blob files on disk");
   }
 
   std::error_code ec;

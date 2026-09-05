@@ -28,7 +28,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 - [x] `thumtoo-prepare` CLI skeleton (register paths + schedule probe)
 - [x] Client API: get_size / get_meta / request_size + single worker queue
 - [x] URI helpers (file:/// , //archive detection)
-- [ ] Image dimension probe + WebP ladder encode
+- [x] Image dimension probe (stb_image) + SHA-256 content id promotion
+- [x] Ladder encode to JPEG blobs under cache/blobs/ (WebP when linked later)
+- [ ] Optional libwebp codec path (record as webp in levels)
+- [ ] get_pixels / request_pixels reading levels
 - [ ] Tag API sketch reconciled with dirtoo checksum tags
 
 ## Design open / discuss

@@ -4,10 +4,14 @@
 #include "thumtoo/client.hpp"
 #include "thumtoo/constants.hpp"
 #include "thumtoo/uri.hpp"
+#include "thumtoo/image.hpp"
+#include "thumtoo/constants.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <random>
+#include <fstream>
 #include <sstream>
 
 namespace thumtoo {
@@ -146,7 +150,7 @@ void Client::drain() {
   for (;;) {
     {
       std::lock_guard lock(mu_);
-      if (queue_.empty()) return;
+      if (queue_.empty() && inflight_ == 0) return;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
@@ -166,16 +170,18 @@ void Client::worker_main() {
       job = std::move(queue_.front());
       queue_.erase(queue_.begin());
       if (stop_ && job.uri.empty()) return;
+      if (!job.uri.empty()) ++inflight_;
     }
     if (job.uri.empty()) continue;
     if (job.kind == JobKind::ProbeSize) handle_probe_size(job);
+    {
+      std::lock_guard lock(mu_);
+      --inflight_;
+    }
   }
 }
 
 void Client::handle_probe_size(Job& job) {
-  // Phase 1 spike: no image codec yet. Mark plain files Incomplete with
-  // error_code=probe_not_implemented so the pipeline is exercisable; real
-  // dimension probe lands with the encode ladder.
   auto loc = db_->find_locator(job.uri);
   if (!loc || !loc->content_id) {
     if (job.size_cb) {
@@ -188,9 +194,16 @@ void Client::handle_probe_size(Job& job) {
     return;
   }
 
+  std::string old_id = *loc->content_id;
   Database::ContentRow row;
-  row.content_id = *loc->content_id;
-  if (auto existing = db_->find_content(row.content_id)) row = *existing;
+  if (auto existing = db_->find_content(old_id))
+    row = *existing;
+  else {
+    row.content_id = old_id;
+    row.status = ContentStatus::Pending;
+  }
+
+  std::optional<Size> size_out;
 
   if (is_archive_uri(job.uri)) {
     row.status = ContentStatus::Unsupported;
@@ -200,26 +213,92 @@ void Client::handle_probe_size(Job& job) {
       row.status = ContentStatus::Failed;
       row.error_code = "not_a_file";
     } else {
-      row.status = ContentStatus::Incomplete;
-      row.error_code = "probe_not_implemented";
-      // Keep any prior width/height if present.
+      auto probe = probe_image_file(*path);
+      if (!probe) {
+        row.status = ContentStatus::Unsupported;
+        row.error_code = "unrecognized_image";
+      } else {
+        // Promote provisional id to sha256 when possible.
+        std::string new_id = old_id;
+        const auto hex = sha256_file_hex(*path);
+        if (!hex.empty()) {
+          new_id = std::string(kContentIdSha256Prefix) + hex;
+        }
+
+        if (new_id != old_id) {
+          if (auto existing = db_->find_content(new_id)) {
+            // Merge into existing content row; drop provisional.
+            row = *existing;
+            db_->update_locator_content_id(job.uri, new_id);
+            if (old_id.rfind(std::string(kContentIdProvisionalPrefix), 0) == 0) {
+              db_->delete_content(old_id);
+            }
+          } else {
+            row.content_id = new_id;
+            db_->upsert_content(row);  // insert under new id first
+            db_->update_locator_content_id(job.uri, new_id);
+            if (old_id.rfind(std::string(kContentIdProvisionalPrefix), 0) == 0) {
+              db_->delete_content(old_id);
+            }
+          }
+        }
+
+        row.width = probe->size.width;
+        row.height = probe->size.height;
+        row.format = probe->format;
+        row.error_code = std::nullopt;
+        size_out = probe->size;
+
+        // Decode + ladder encode (JPEG codec until WebP is linked).
+        auto decoded = load_image_file(*path);
+        if (decoded) {
+          // Map WebP quality 80 ≈ JPEG quality 85 for similar visual weight.
+          const int jpeg_q = std::clamp(kDefaultWebpQuality + 5, 1, 100);
+          auto levels = build_ladder(*decoded, row.content_id, jpeg_q);
+          for (const auto& lvl : levels) {
+            const auto abs_blob = db_->cache_root() / lvl.relative_path;
+            std::error_code ec;
+            std::filesystem::create_directories(abs_blob.parent_path(), ec);
+            std::ofstream out(abs_blob, std::ios::binary);
+            if (out) {
+              out.write(reinterpret_cast<const char*>(lvl.bytes.data()),
+                        static_cast<std::streamsize>(lvl.bytes.size()));
+            }
+            Database::LevelRow lr;
+            lr.content_id = row.content_id;
+            lr.max_edge = lvl.max_edge;
+            lr.frame_idx = lvl.frame_idx;
+            lr.width = lvl.width;
+            lr.height = lvl.height;
+            lr.codec = lvl.codec;
+            lr.quality = lvl.quality;
+            lr.path = lvl.relative_path;
+            db_->upsert_level(lr);
+          }
+          row.status = levels.empty() ? ContentStatus::Incomplete
+                                      : ContentStatus::Ready;
+          if (levels.empty()) row.error_code = "ladder_encode_failed";
+        } else {
+          row.status = ContentStatus::Incomplete;
+          row.error_code = "decode_failed";
+        }
+      }
     }
   } else {
     row.status = ContentStatus::Unsupported;
     row.error_code = "uri_scheme_unsupported";
   }
-  db_->upsert_content(row);
 
-  std::optional<Size> size;
-  if (row.width && row.height) size = Size{*row.width, *row.height};
+  db_->upsert_content(row);
 
   if (job.size_cb) {
     auto cb = std::move(job.size_cb);
     auto uri = job.uri;
-    executor_.post([cb = std::move(cb), uri = std::move(uri), size]() mutable {
-      cb(std::move(uri), size);
+    executor_.post([cb = std::move(cb), uri = std::move(uri), size_out]() mutable {
+      cb(std::move(uri), size_out);
     });
   }
 }
+
 
 }  // namespace thumtoo

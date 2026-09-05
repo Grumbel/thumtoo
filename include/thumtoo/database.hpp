@@ -80,6 +80,26 @@ class Database {
   /// Resolve uri -> content meta via locator join (cache only).
   [[nodiscard]] std::optional<ContentMeta> meta_for_uri(std::string_view uri) const;
 
+  struct LevelRow {
+    std::string content_id;
+    int max_edge = 0;
+    int frame_idx = 0;
+    std::optional<std::int64_t> pts_ms;
+    std::optional<int> width;
+    std::optional<int> height;
+    std::optional<std::string> codec;
+    std::optional<int> quality;
+    std::optional<std::string> path;
+  };
+
+  void upsert_level(const LevelRow& row);
+
+  /// Point locator at a new content_id (after hash promotion).
+  void update_locator_content_id(std::string_view uri, std::string_view content_id);
+
+  /// Delete a content row (after merge/promotion).
+  void delete_content(std::string_view content_id);
+
  private:
   explicit Database(sqlite3* db, std::filesystem::path cache_root,
                     std::filesystem::path db_path, int schema_version);

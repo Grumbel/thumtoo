@@ -18,7 +18,7 @@ thumtoo/
     constants.hpp status.hpp types.hpp uri.hpp executor.hpp
     database.hpp client.hpp
   src/
-    database.cpp uri.cpp client.cpp schema.sql
+    database.cpp uri.cpp client.cpp image.cpp schema.sql
   tools/
     thumtoo_status.cpp thumtoo_prepare.cpp
   tests/
@@ -45,7 +45,8 @@ dependency. WAL is enabled at open.
 |-----------|--------|
 | C++20, CMake ≥ 3.16 | required |
 | SQLite amalgamation | vendored |
-| Image decode / WebP encode | not yet |
+| stb_image / resize / write | vendored (JPEG ladder) |
+| libwebp | optional later |
 | libarchive | Phase 2 |
 | ffmpeg CLI (video stills) | Later |
 

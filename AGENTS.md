@@ -28,14 +28,13 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 
 ## Handoff
 
-Phase 1 continues: Client (`get_size`/`get_meta`/`request_size`), single
-worker thread + Executor callback marshaling, `thumtoo-prepare` registers
-paths. Probe is still a stub (`incomplete` / `probe_not_implemented`).
+Phase 1: Client + worker + prepare; image probe via stb_image; content id
+promoted to `sha256:…`; ladder JPEG blobs written under `blobs/` and indexed
+in `levels` (codec=jpeg until libwebp).
 
-**Next:** real image dimension probe + WebP ladder encode into `levels` /
-blobs. Then archive path. No video workers yet.
+**Next:** `get_pixels`/`request_pixels`, optional WebP, then archive path.
 
-SQLite amalgamation lives under `third_party/sqlite/`.
+Vendored: `third_party/sqlite/`, `third_party/stb/`.
 
 ## Commits
 
