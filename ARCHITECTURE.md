@@ -30,6 +30,7 @@ thumtoo/
 - Image decode/encode: prefer existing stack from consumers (Qt image I/O, VIPS,
   or a small dedicated path); exact choice deferred to phase 1 spike
 - libarchive for archive TOC/members (align with dirtoo-archive)
+- Video stills: ffmpeg CLI (subprocess) by default; optional in-process libav later
 - Optional: JPEG-XL libraries if codec enabled
 
 ## Consumers

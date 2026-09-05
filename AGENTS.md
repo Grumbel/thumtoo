@@ -25,12 +25,13 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 | [DESIGN.md](DESIGN.md) | Goals, schema sketch, phases, non-goals |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Planned tree and dependencies |
 
-## Handoff
+## Handoff (review-ready)
 
-- Latest: Location URI (`//archive:`); video stills via levels.frame_idx
-  (N=16 fixed, no storyboard in cache); subprocess preferred for video
-- Next: phase 0 freeze URI + content-id; phase 1 headers + SQLite spike;
-  archive batch rules; biltoo adapter note
+- **Identity**: content-id (sha256) + Location URIs (`file:///…//archive:member`)
+- **Ladder**: fixed long-edge levels; blobs under XDG only
+- **Video**: `content.still_count` + `levels.frame_idx` (N=16 fixed for now);
+  no storyboard in cache; subprocess preferred for decode
+- **Next implementation**: Phase 0 freeze constants → Phase 1 headers + SQLite spike
 
 ## Commits
 

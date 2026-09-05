@@ -24,6 +24,7 @@ renames; http(s) URLs are a later extension.
 | Native width × height | Yes (SQLite) | — |
 | Archive TOC + member identity | Yes | — |
 | Fixed long-edge previews (ladder) | Yes | — |
+| Video stills (frame ladder) | Yes (`still_count` + `frame_idx`) | Storyboard composition (apps) |
 | Session edit identity (crop, flips) | — | App session (`SessionImageId` in biltoo) |
 | Desktop file-manager icons | Optional consumer | Freedesktop Thumbnailer1 (dirtoo client) |
 | Zoomable workspace UI | — | biltoo / galapix |
@@ -43,8 +44,10 @@ Sister docs inside those trees (when present): biltoo `DOMAIN.md` / `IDENTITY.md
 
 ## Status
 
-**Design only.** No library implementation in this repository yet. See
-[DESIGN.md](DESIGN.md) for the architecture plan and phases.
+**Design only** — ready for review. No library implementation in this repository
+yet. Schema sketch covers images, archives (Location `//archive:` form), and
+video stills (`content.still_count` + `levels.frame_idx`). See [DESIGN.md](DESIGN.md)
+for the full plan and [TODO.md](TODO.md) for open items.
 
 ## Name
 

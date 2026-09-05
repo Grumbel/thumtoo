@@ -173,6 +173,7 @@ content (
   height INTEGER,
   format TEXT,
   duration_ms INTEGER,           -- NULL for pure images; set for video
+  still_count INTEGER,           -- planned video stills N (e.g. 16); NULL for images
   status INTEGER,
   updated_at INTEGER
 )
@@ -241,7 +242,8 @@ Default locations (**only** under XDG cache, never in source trees):
 
 ```text
 open(cache_root)
-get_size(uri) -> optional<Size>       // SQLite only
+get_size(uri) -> optional<Size>       // SQLite only (width/height)
+get_meta(uri) -> optional<Meta>       // size + duration_ms + still_count + …
 request_size(uri, callback)           // probe if missing
 get_pixels(uri, max_edge, frame_idx=0) -> Image  // 0 = image/poster
 request_pixels(uri, max_edge, cb, frame_idx=0)
@@ -260,7 +262,9 @@ Workers decode/encode; one writer queue for SQLite.
 ### Video (still frames + optional animated)
 
 Videos share the same content-id + locator model. The `content` row carries
-`duration_ms`. Display proxies:
+`duration_ms` and `still_count` (planned N, initially 16; NULL for pure images).
+Ready frames live only in `levels`; clients do not need a separate frame table.
+Display proxies:
 
 1. **Poster** — `frame_idx = 0` in `levels` (representative still, same as an
    image ladder entry).
@@ -275,11 +279,14 @@ Videos share the same content-id + locator model. The `content` row carries
 Start simple and fixed:
 
 ```text
-N = 16   // evenly spaced stills (plus poster as frame 0)
+N = 16   // evenly spaced stills (plus poster as frame_idx 0)
 ```
 
-Adaptive density (duration-based clamp 8–64) can be added later without schema
-changes; only the generation policy changes. Prefer keyframes when the
+`content.still_count` records the planned N so clients know how many frames
+exist (or will exist) without scanning `levels`. Actual readiness is still
+queried from `levels` / `list_frames`. Adaptive density (duration-based clamp
+8–64) can be added later without schema changes—only the generation policy
+and the value written to `still_count` change. Prefer keyframes when the
 container exposes them.
 
 #### Addressing frames — no special public URLs
