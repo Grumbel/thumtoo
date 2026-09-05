@@ -172,6 +172,7 @@ content (
   width INTEGER,
   height INTEGER,
   format TEXT,
+  duration_ms INTEGER,           -- NULL for pure images; set for video
   status INTEGER,
   updated_at INTEGER
 )
@@ -215,11 +216,13 @@ directory_entries (
 levels (
   content_id TEXT,
   max_edge INTEGER,
+  frame_idx INTEGER NOT NULL DEFAULT 0,  -- 0 = image / video poster; 1..N video stills
+  pts_ms INTEGER,                       -- optional timestamp for video frames
   width INTEGER,
   height INTEGER,
   codec TEXT,
   path TEXT,              -- relative under blob root (never next to sources)
-  PRIMARY KEY (content_id, max_edge)
+  PRIMARY KEY (content_id, max_edge, frame_idx)
 )
 
 tags (
@@ -240,8 +243,10 @@ Default locations (**only** under XDG cache, never in source trees):
 open(cache_root)
 get_size(uri) -> optional<Size>       // SQLite only
 request_size(uri, callback)           // probe if missing
-get_pixels(uri, max_edge) -> Image    // hit store or empty
-request_pixels(uri, max_edge, cb)     // generate level if needed
+get_pixels(uri, max_edge, frame_idx=0) -> Image  // 0 = image/poster
+request_pixels(uri, max_edge, cb, frame_idx=0)
+list_frames(uri, max_edge) -> [{frame_idx, pts_ms, ready}]
+request_frames(uri, max_edge, cb)                 // all stills for video
 list_archive(archive_path) -> TOC
 read_member(archive, member) -> bytes
 invalidate(uri | outer_path)
@@ -254,52 +259,50 @@ Workers decode/encode; one writer queue for SQLite.
 
 ### Video (still frames + optional animated)
 
-Videos share the same content-id + locator model. The `content` row gains
-`duration_ms` (and optionally codec / bitrate). Display proxies:
+Videos share the same content-id + locator model. The `content` row carries
+`duration_ms`. Display proxies:
 
-1. **Poster / representative still** — normal ladder entry (one frame, usually
-   after a short offset or a middle keyframe).
-2. **Temporal still set** — N frames sampled evenly across the timeline,
-   stored as individual levels or (preferred for gallery) one **storyboard /
-   contact-sheet** image that tiles them.
-3. **Animated preview** (must-have, deferred) — short muted low-res WebM/MP4
-   of a few snippets; neither biltoo nor dirtoo consume it yet, so keep at
-   the bottom of the TODO.
+1. **Poster** — `frame_idx = 0` in `levels` (representative still, same as an
+   image ladder entry).
+2. **Temporal stills** — `frame_idx = 1 .. N` at the same `max_edge` values.
+   Apps build contact sheets / scrubbers themselves; **thumtoo does not store
+   a pre-tiled storyboard**.
+3. **Animated preview** (must-have, deferred) — short muted low-res WebM/MP4;
+   neither biltoo nor dirtoo consume it yet.
 
-#### Adaptive temporal resolution
+#### Count policy (initial)
 
-Fixed counts waste resolution on long videos and over-sample short ones.
-Default policy (tunable):
+Start simple and fixed:
 
 ```text
-min_count = 8
-max_count = 64
-target_interval_s = 8.0   # aim for roughly one frame every 8 s
-
-count = clamp(round(duration_s / target_interval_s), min_count, max_count)
+N = 16   // evenly spaced stills (plus poster as frame 0)
 ```
 
-Examples:
-- 30 s clip  → 8 frames (floor)
-- 2 min     → 15 frames
-- 10 min    → 64 frames (ceiling)
-- 2 h movie → 64 frames (still useful overview; denser sampling is a
-  future “high-res temporal” request, not the default ladder)
+Adaptive density (duration-based clamp 8–64) can be added later without schema
+changes; only the generation policy changes. Prefer keyframes when the
+container exposes them.
 
-Storyboard layout can be derived from `count` (e.g. nearest rectangular grid).
-Prefer keyframes when the container exposes them (faster, more stable frames).
+#### Addressing frames — no special public URLs
 
-Generation still follows the archive rule: on-demand extracts only the needed
-timestamps; `prepare` / batch walks the file once and emits the whole set.
+Frames are **not** given their own locator URIs. The video’s content_id owns
+all stills. Clients address them via the levels primary key
+`(content_id, max_edge, frame_idx)` or the API:
+
+```text
+get_pixels(uri, max_edge, frame_idx=0) -> Image   // 0 = poster / plain image
+list_frames(uri, max_edge) -> vector of {frame_idx, pts_ms, Image?}
+request_frames(uri, max_edge, cb)                 // generate missing stills
+```
+
+A future optional Location form such as `file:///video.mp4//frame:3` is
+possible for convenience but is **not** required and must not become a second
+identity; it would only be a view onto the same content_id + frame_idx.
 
 #### Worker isolation
 
-libav/ffmpeg in-process is attractive (no process overhead, shared decoder
-state). Broken or adversarial video files, however, frequently hang or crash
-the decoder. For robustness the default worker path should be **subprocess**
-(ffmpeg CLI or a tiny helper) so a bad file can be killed without taking down
-the library or the host app. In-process libav remains an optional fast path
-once we have a proven sandbox / timeout story.
+Default path is **subprocess** (ffmpeg CLI or tiny helper) so broken files can
+be killed without taking down the library or host app. In-process libav remains
+an optional fast path once timeouts/sandboxing exist.
 
 ### D-Bus (phase 3)
 
