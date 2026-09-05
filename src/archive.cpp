@@ -9,6 +9,7 @@
 #include <archive_entry.h>
 
 #include <cstring>
+#include <cctype>
 
 namespace thumtoo {
 namespace {
@@ -183,6 +184,42 @@ std::optional<std::vector<std::uint8_t>> extract_archive_member(
 
   archive_read_free(a);
   return std::nullopt;
+}
+
+
+bool is_likely_archive_path(const std::filesystem::path& path) {
+  // Compare lowercased filename so .tar.gz / .TAR.GZ work.
+  std::string name = path.filename().string();
+  for (char& c : name)
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  static constexpr std::string_view kExts[] = {
+      ".zip",  ".cbz",  ".cbr",  ".rar",  ".7z",
+      ".tar",  ".tgz",  ".tbz2", ".txz",
+      ".tar.gz", ".tar.bz2", ".tar.xz",
+  };
+  for (auto ext : kExts) {
+    if (name.size() >= ext.size() &&
+        name.compare(name.size() - ext.size(), ext.size(), ext) == 0)
+      return true;
+  }
+  return false;
+}
+
+bool is_likely_image_member_path(std::string_view member_path) {
+  if (member_path.empty() || is_unsafe_archive_member_path(member_path))
+    return false;
+  const auto slash = member_path.find_last_of("/\\");
+  const auto name = slash == std::string_view::npos
+                        ? member_path
+                        : member_path.substr(slash + 1);
+  const auto dot = name.find_last_of('.');
+  if (dot == std::string_view::npos) return false;
+  std::string ext(name.substr(dot));
+  for (char& c : ext)
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" ||
+         ext == ".bmp" || ext == ".webp" || ext == ".jxl" || ext == ".tif" ||
+         ext == ".tiff";
 }
 
 }  // namespace thumtoo

@@ -42,4 +42,10 @@ struct ParsedArchiveUri {
 /// True if member path is unsafe (.., absolute, NUL).
 [[nodiscard]] bool is_unsafe_archive_member_path(std::string_view member_path);
 
+/// Extension heuristic for archive containers (zip/cbz/rar/7z/tar…).
+[[nodiscard]] bool is_likely_archive_path(const std::filesystem::path& path);
+
+/// Extension heuristic for image members we can probe/ladder (jpeg/png/…).
+[[nodiscard]] bool is_likely_image_member_path(std::string_view member_path);
+
 }  // namespace thumtoo

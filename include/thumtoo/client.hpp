@@ -62,6 +62,10 @@ class Client {
   /// Register paths, schedule size probes. Returns how many probe jobs were
   /// enqueued (already-ready locators are skipped). Optional callback is
   /// invoked once per completed probe (same path as request_size).
+  ///
+  /// Archive paths (zip/cbz/rar/…) are expanded: TOC is refreshed, image
+  /// members are registered as `file://…//archive:member` locators and probed
+  /// up to kArchiveMaxPrepareTotalUncompressedBytes per archive.
   size_t prepare_paths(const std::vector<std::filesystem::path>& paths,
                        SizeCallback on_each = {});
 

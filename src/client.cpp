@@ -208,20 +208,16 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
   std::vector<Pending> pending;
   pending.reserve(paths.size());
 
-  for (const auto& p : paths) {
-    std::error_code ec;
-    auto abs = std::filesystem::absolute(p, ec);
-    if (ec) continue;
+  auto enqueue_plain = [&](const std::filesystem::path& abs) {
     const auto uri = file_uri_from_path(abs);
     if (auto existing = db_->find_locator(uri)) {
-      // Re-queue probe if not yet ready (e.g. previous prepare exited early).
       if (auto meta = db_->meta_for_uri(uri)) {
-        if (meta->status == ContentStatus::Ready && meta->size) continue;
+        if (meta->status == ContentStatus::Ready && meta->size) return;
       }
       Pending item;
       item.uri = uri;
       pending.push_back(std::move(item));
-      continue;
+      return;
     }
     Pending item;
     item.uri = uri;
@@ -234,6 +230,56 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
     item.content.content_id = *item.loc.content_id;
     item.content.status = ContentStatus::Pending;
     pending.push_back(std::move(item));
+  };
+
+  auto enqueue_archive_member = [&](const std::filesystem::path& abs,
+                                    const Database::ArchiveEntryRow& entry) {
+    const auto uri = archive_uri(abs, entry.member_path);
+    if (auto existing = db_->find_locator(uri)) {
+      if (auto meta = db_->meta_for_uri(uri)) {
+        if (meta->status == ContentStatus::Ready && meta->size) return;
+      }
+      Pending item;
+      item.uri = uri;
+      pending.push_back(std::move(item));
+      return;
+    }
+    Pending item;
+    item.uri = uri;
+    item.need_register = true;
+    item.loc.uri = uri;
+    item.loc.content_id = make_provisional_id();
+    item.loc.outer_path = abs.string();
+    item.loc.member_path = entry.member_path;
+    item.loc.size = entry.uncompressed_size;
+    item.content.content_id = *item.loc.content_id;
+    item.content.status = ContentStatus::Pending;
+    pending.push_back(std::move(item));
+  };
+
+  for (const auto& p : paths) {
+    std::error_code ec;
+    auto abs = std::filesystem::absolute(p, ec);
+    if (ec) continue;
+    if (!std::filesystem::is_regular_file(abs, ec) || ec) continue;
+
+    if (is_likely_archive_path(abs)) {
+      auto entries = refresh_archive_toc(abs);
+      std::uint64_t budget = kArchiveMaxPrepareTotalUncompressedBytes;
+      for (const auto& entry : entries) {
+        if (!is_likely_image_member_path(entry.member_path)) continue;
+        if (entry.uncompressed_size) {
+          const auto sz =
+              static_cast<std::uint64_t>(*entry.uncompressed_size);
+          if (sz > budget) continue;  // skip oversized / over-budget member
+          budget -= sz;
+        }
+        enqueue_archive_member(abs, entry);
+      }
+      continue;
+    }
+
+    enqueue_plain(abs);
   }
 
   for (auto& item : pending) {

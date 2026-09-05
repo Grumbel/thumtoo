@@ -42,8 +42,11 @@ Caps: 512 MiB member uncompressed.
 
 **Note:** prepare re-queues non-ready locators; drain claims jobs before dequeue.
 
-**Next:** archive batch coalesce (one open, many members); prepare expands
-archive image members; tag API vs dirtoo; biltoo wiring.
+**Next:** archive batch coalesce (one open, many members); tag API vs dirtoo;
+biltoo wiring.
+
+**Done recently:** prepare expands archive image members (zip/cbz/… →
+`//archive:member` probes, 2 GiB total uncompressed budget per archive).
 
 Ladder blobs: `blobs.sqlite` (not a directory of files). System SQLite via pkg-config/Nix. Optional vendored code under `external/`.
 

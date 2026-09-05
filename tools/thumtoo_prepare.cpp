@@ -31,6 +31,7 @@ void usage(const char* argv0) {
       << "Usage: " << argv0 << " [--cache DIR] [--quiet] PATH [PATH...]\n"
       << "  Register paths in the thumtoo cache and schedule size probes.\n"
       << "  Probe dimensions (libvips), promote sha256 content id, write JXL ladder blobs.\n"
+      << "  Archive paths (zip/cbz/rar/…) expand image members as //archive: URIs.\n"
       << "  Progress lines go to stderr; final summary to stdout.\n"
       << "  --quiet  suppress per-job progress lines\n";
 }
