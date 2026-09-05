@@ -20,8 +20,9 @@ std::once_flag g_vips_once;
 
 void ensure_vips() {
   std::call_once(g_vips_once, [] {
-    if (VIPS_INIT("thumtoo")) {
-      // Still allow process to continue; subsequent calls will fail clearly.
+    // VIPS_INIT returns 0 on success.
+    if (VIPS_INIT("thumtoo") != 0) {
+      // Subsequent calls surface errors via NULL returns / vips_error.
     }
   });
 }
@@ -174,12 +175,10 @@ void image_library_init() { ensure_vips(); }
 
 std::optional<ProbeResult> probe_image_file(const std::filesystem::path& path) {
   ensure_vips();
-  VipsImage* img = nullptr;
-  // Header-only style open when possible.
-  if (vips_image_new_from_file(path.string().c_str(), &img, "access",
-                               VIPS_ACCESS_SEQUENTIAL, nullptr)) {
-    return std::nullopt;
-  }
+  // Returns VipsImage* (or NULL) — not an int error code.
+  VipsImage* img = vips_image_new_from_file(
+      path.string().c_str(), "access", VIPS_ACCESS_SEQUENTIAL, nullptr);
+  if (!img) return std::nullopt;
   const int w = vips_image_get_width(img);
   const int h = vips_image_get_height(img);
   g_object_unref(img);
@@ -193,10 +192,8 @@ std::vector<LevelBlob> build_ladder(const std::filesystem::path& path,
   ensure_vips();
   std::vector<LevelBlob> levels;
 
-  VipsImage* full = nullptr;
-  if (vips_image_new_from_file(path.string().c_str(), &full, nullptr)) {
-    return levels;
-  }
+  VipsImage* full = vips_image_new_from_file(path.string().c_str(), nullptr);
+  if (!full) return levels;
   const int src_w = vips_image_get_width(full);
   const int src_h = vips_image_get_height(full);
   const int long_edge = std::max(src_w, src_h);
@@ -205,21 +202,22 @@ std::vector<LevelBlob> build_ladder(const std::filesystem::path& path,
 
   const int q = std::clamp(jxl_quality, 1, 100);
   const std::string id_dir = content_id_to_blob_dir(content_id);
+  const std::string path_str = path.string();
 
   for (int edge : kLadderEdges) {
     if (edge > long_edge) continue;
 
     VipsImage* thumb = nullptr;
-    // size=VIPS_SIZE_DOWN: never upscale
-    if (vips_thumbnail(path.string().c_str(), &thumb, edge, "size",
-                       VIPS_SIZE_DOWN, nullptr)) {
+    // int vips_thumbnail(filename, VipsImage **out, int width, ...)
+    if (vips_thumbnail(path_str.c_str(), &thumb, edge, "size", VIPS_SIZE_DOWN,
+                       nullptr) != 0 ||
+        !thumb) {
       continue;
     }
 
     void* buf = nullptr;
     size_t len = 0;
-    // Q is libjxl distance-style quality in vips jxlsave (0-100).
-    if (vips_jxlsave_buffer(thumb, &buf, &len, "Q", q, nullptr)) {
+    if (vips_jxlsave_buffer(thumb, &buf, &len, "Q", q, nullptr) != 0 || !buf) {
       g_object_unref(thumb);
       continue;
     }
@@ -241,13 +239,12 @@ std::vector<LevelBlob> build_ladder(const std::filesystem::path& path,
     levels.push_back(std::move(b));
   }
 
-  // Native smaller than 128: one level keyed at smallest edge.
   if (levels.empty() && long_edge > 0) {
-    VipsImage* img = nullptr;
-    if (!vips_image_new_from_file(path.string().c_str(), &img, nullptr)) {
+    VipsImage* img = vips_image_new_from_file(path_str.c_str(), nullptr);
+    if (img) {
       void* buf = nullptr;
       size_t len = 0;
-      if (!vips_jxlsave_buffer(img, &buf, &len, "Q", q, nullptr)) {
+      if (vips_jxlsave_buffer(img, &buf, &len, "Q", q, nullptr) == 0 && buf) {
         LevelBlob b;
         b.max_edge = kLadderEdges.front();
         b.frame_idx = 0;

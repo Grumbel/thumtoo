@@ -18,11 +18,12 @@
           version = "0.1.0";
           src = self;
           nativeBuildInputs = [ pkgs.cmake pkgs.ninja pkgs.pkg-config ];
-          buildInputs = [
-            pkgs.vips
-            pkgs.libjxl
-            # vips is built with jxl support in nixpkgs; libjxl is explicit
-            # for headers/runtime clarity.
+          buildInputs = with pkgs; [
+            vips
+            libjxl
+            glib
+            # glib.pc may require sysprof-capture-4.pc at configure time.
+            libsysprof-capture
           ];
           cmakeFlags = [
             "-GNinja"
@@ -49,6 +50,8 @@
             pkg-config
             vips
             libjxl
+            glib
+            libsysprof-capture
             # Later: ffmpeg libarchive
           ];
           shellHook = ''
