@@ -27,7 +27,7 @@ void usage(const char* argv0) {
   std::cerr
       << "Usage: " << argv0 << " [--cache DIR] PATH [PATH...]\n"
       << "  Register paths in the thumtoo cache and schedule size probes.\n"
-      << "  Dimension/ladder encode is not implemented yet (marks incomplete).\n";
+      << "  Probe dimensions (libvips), promote sha256 content id, write JXL ladder blobs.\n";
 }
 
 }  // namespace
