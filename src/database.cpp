@@ -413,4 +413,87 @@ void Database::upsert_content(const ContentRow& row) {
   sqlite3_finalize(stmt);
 }
 
+
+std::optional<Database::LocatorRow> Database::find_locator(std::string_view uri) const {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT uri, content_id, outer_path, member_path, size, mtime_ns "
+      "FROM locators WHERE uri = ?1;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, uri.data(), static_cast<int>(uri.size()),
+                    SQLITE_STATIC);
+  std::optional<LocatorRow> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    LocatorRow r;
+    r.uri = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    if (sqlite3_column_type(stmt, 1) != SQLITE_NULL)
+      r.content_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    if (sqlite3_column_type(stmt, 2) != SQLITE_NULL)
+      r.outer_path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+    if (sqlite3_column_type(stmt, 3) != SQLITE_NULL)
+      r.member_path =
+          reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+      r.size = sqlite3_column_int64(stmt, 4);
+    if (sqlite3_column_type(stmt, 5) != SQLITE_NULL)
+      r.mtime_ns = sqlite3_column_int64(stmt, 5);
+    out = std::move(r);
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+std::optional<Database::ContentRow> Database::find_content(
+    std::string_view content_id) const {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT content_id, width, height, format, duration_ms, still_count, "
+      "status, error_code FROM content WHERE content_id = ?1;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(),
+                    static_cast<int>(content_id.size()), SQLITE_STATIC);
+  std::optional<ContentRow> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    ContentRow r;
+    r.content_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    if (sqlite3_column_type(stmt, 1) != SQLITE_NULL)
+      r.width = sqlite3_column_int(stmt, 1);
+    if (sqlite3_column_type(stmt, 2) != SQLITE_NULL)
+      r.height = sqlite3_column_int(stmt, 2);
+    if (sqlite3_column_type(stmt, 3) != SQLITE_NULL)
+      r.format = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+      r.duration_ms = sqlite3_column_int64(stmt, 4);
+    if (sqlite3_column_type(stmt, 5) != SQLITE_NULL)
+      r.still_count = sqlite3_column_int(stmt, 5);
+    r.status = static_cast<ContentStatus>(sqlite3_column_int(stmt, 6));
+    if (sqlite3_column_type(stmt, 7) != SQLITE_NULL)
+      r.error_code =
+          reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+    out = std::move(r);
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+std::optional<ContentMeta> Database::meta_for_uri(std::string_view uri) const {
+  auto loc = find_locator(uri);
+  if (!loc || !loc->content_id) return std::nullopt;
+  auto c = find_content(*loc->content_id);
+  if (!c) return std::nullopt;
+  ContentMeta m;
+  m.content_id = c->content_id;
+  if (c->width && c->height) m.size = Size{*c->width, *c->height};
+  m.duration_ms = c->duration_ms;
+  m.still_count = c->still_count;
+  m.status = c->status;
+  m.error_code = c->error_code;
+  m.format = c->format;
+  return m;
+}
+
 }  // namespace thumtoo

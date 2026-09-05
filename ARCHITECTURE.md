@@ -15,17 +15,14 @@ thumtoo/
   REUSE.toml LICENSES/
   flake.nix CMakeLists.txt
   include/thumtoo/
-    constants.hpp   # Phase 0 freezes
-    status.hpp      # ContentStatus enum
-    types.hpp
-    database.hpp    # SQLite index (spike)
+    constants.hpp status.hpp types.hpp uri.hpp executor.hpp
+    database.hpp client.hpp
   src/
-    database.cpp
-    schema.sql      # reference copy of DDL
+    database.cpp uri.cpp client.cpp schema.sql
   tools/
-    thumtoo_status.cpp   # inspect cache
+    thumtoo_status.cpp thumtoo_prepare.cpp
   tests/
-    test_database.cpp
+    test_database.cpp test_client.cpp
   third_party/sqlite/    # amalgamation (public domain)
 ```
 

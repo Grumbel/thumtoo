@@ -28,14 +28,14 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 
 ## Handoff
 
-Phase 1 spike landed: `Database::open`, schema_version 1 DDL, constants
-headers, `thumtoo-status`, CMake + flake, database tests. SQLite is vendored
-amalgamation under `third_party/sqlite/`.
+Phase 1 continues: Client (`get_size`/`get_meta`/`request_size`), single
+worker thread + Executor callback marshaling, `thumtoo-prepare` registers
+paths. Probe is still a stub (`incomplete` / `probe_not_implemented`).
 
-**Next:** `thumtoo-prepare` skeleton, Client API (`get_*` / `request_*`),
-single writer queue, then image probe/encode ladder.
+**Next:** real image dimension probe + WebP ladder encode into `levels` /
+blobs. Then archive path. No video workers yet.
 
-Do not start archive/video workers until the plain-file path is solid.
+SQLite amalgamation lives under `third_party/sqlite/`.
 
 ## Commits
 

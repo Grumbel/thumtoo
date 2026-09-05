@@ -74,6 +74,12 @@ class Database {
   /// Insert or replace a content row (spike helper).
   void upsert_content(const ContentRow& row);
 
+  [[nodiscard]] std::optional<LocatorRow> find_locator(std::string_view uri) const;
+  [[nodiscard]] std::optional<ContentRow> find_content(std::string_view content_id) const;
+
+  /// Resolve uri -> content meta via locator join (cache only).
+  [[nodiscard]] std::optional<ContentMeta> meta_for_uri(std::string_view uri) const;
+
  private:
   explicit Database(sqlite3* db, std::filesystem::path cache_root,
                     std::filesystem::path db_path, int schema_version);

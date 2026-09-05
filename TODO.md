@@ -25,9 +25,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
 - [x] CMake + flake.nix + `nix develop` shell
 - [x] `thumtoo-status` CLI (inspect cache summary/locators/content)
 - [x] Database open/migrate tests
-- [ ] `thumtoo-prepare` CLI skeleton
+- [x] `thumtoo-prepare` CLI skeleton (register paths + schedule probe)
+- [x] Client API: get_size / get_meta / request_size + single worker queue
+- [x] URI helpers (file:/// , //archive detection)
+- [ ] Image dimension probe + WebP ladder encode
 - [ ] Tag API sketch reconciled with dirtoo checksum tags
-- [ ] Client API (get_size / request_*) + worker queue
 
 ## Design open / discuss
 

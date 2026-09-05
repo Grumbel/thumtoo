@@ -24,6 +24,8 @@ endif()
 
 add_library(thumtoo
   src/database.cpp
+  src/uri.cpp
+  src/client.cpp
 )
 add_library(thumtoo::thumtoo ALIAS thumtoo)
 target_include_directories(thumtoo
@@ -39,6 +41,8 @@ target_compile_options(thumtoo PRIVATE -Wall -Wextra -Wpedantic)
 if(THUMTOO_BUILD_TOOLS)
   add_executable(thumtoo-status tools/thumtoo_status.cpp)
   target_link_libraries(thumtoo-status PRIVATE thumtoo)
+  add_executable(thumtoo-prepare tools/thumtoo_prepare.cpp)
+  target_link_libraries(thumtoo-prepare PRIVATE thumtoo)
 endif()
 
 if(THUMTOO_BUILD_TESTS)
@@ -46,6 +50,9 @@ if(THUMTOO_BUILD_TESTS)
   add_executable(thumtoo-test-database tests/test_database.cpp)
   target_link_libraries(thumtoo-test-database PRIVATE thumtoo)
   add_test(NAME database COMMAND thumtoo-test-database)
+  add_executable(thumtoo-test-client tests/test_client.cpp)
+  target_link_libraries(thumtoo-test-client PRIVATE thumtoo)
+  add_test(NAME client COMMAND thumtoo-test-client)
 endif()
 
 install(TARGETS thumtoo sqlite3_amalgamation
@@ -54,5 +61,5 @@ install(TARGETS thumtoo sqlite3_amalgamation
 )
 install(DIRECTORY include/thumtoo DESTINATION include)
 if(THUMTOO_BUILD_TOOLS)
-  install(TARGETS thumtoo-status RUNTIME DESTINATION bin)
+  install(TARGETS thumtoo-status thumtoo-prepare RUNTIME DESTINATION bin)
 endif()
