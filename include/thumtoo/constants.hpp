@@ -15,8 +15,9 @@ inline constexpr int kSchemaVersion = 1;
 /// Fixed long-edge ladder (pixels).
 inline constexpr std::array<int, 5> kLadderEdges = {128, 256, 512, 1024, 2048};
 
-inline constexpr int kDefaultWebpQuality = 80;
-inline constexpr char kDefaultCodec[] = "webp";
+/// Ladder codec is JPEG-XL via libvips (required dependency; see flake.nix).
+inline constexpr int kDefaultJxlQuality = 80;
+inline constexpr char kDefaultCodec[] = "jxl";
 
 /// Video temporal stills (plus poster as frame_idx 0).
 inline constexpr int kDefaultVideoStillCount = 16;
@@ -33,6 +34,8 @@ inline constexpr std::uint64_t kArchiveMaxPrepareTotalUncompressedBytes =
 
 inline constexpr char kSchemaMetaVersionKey[] = "schema_version";
 inline constexpr char kSchemaMetaLadderEdgesKey[] = "ladder_edges";
+inline constexpr char kSchemaMetaJxlQualityKey[] = "jxl_quality";
+// Legacy name still accepted when reading old caches.
 inline constexpr char kSchemaMetaWebpQualityKey[] = "webp_quality";
 
 }  // namespace thumtoo

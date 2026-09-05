@@ -121,15 +121,15 @@ Optional **tags attached to content hash** (not path), same idea as dirtoo:
 
 - Full image editor or session/project file format.
 - Replacing Freedesktop thumbnailers for every desktop icon.
-- Mandatory JPEG-XL.
+- Replacing every desktop thumbnailer.
 - Gigapixel region tiles (galapix-style) in phase 1.
 
 ## 5. JPEG-XL vs ladder vs tiles
 
 | Approach | Role in thumtoo |
 |----------|-----------------|
-| **Fixed long-edge ladder** (WebP default; JXL optional) | **Phase 1** product cache |
-| **Progressive JPEG-XL** single blob | Optional **codec** for a level, not a full index replacement |
+| **Fixed long-edge ladder** (JPEG-XL via libvips) | **Phase 1** product cache |
+| **Progressive JPEG-XL** single-file viewing | Optional consumer feature; ladder remains multi-edge |
 | **Grid tiles** `(level, x, y)` | **Phase 4** if deep zoom is required |
 
 ## 6. Architecture
@@ -456,8 +456,8 @@ or an explicit cache wipe.
 |----------|--------|
 | `schema_version` | `1` |
 | Ladder long edges | `128, 256, 512, 1024, 2048` |
-| Default level codec | WebP |
-| Default WebP quality | `80` |
+| Default level codec | JPEG-XL (libvips) |
+| Default JXL quality | `80` |
 | Video still count | `16` (+ poster as `frame_idx` 0) |
 | Content hash | SHA-256, id form `sha256:<hex>` |
 | Provisional id | `prov:<uuid-v4>` |
@@ -467,7 +467,7 @@ or an explicit cache wipe.
 | SQLite journal | WAL |
 
 `schema_meta` must record at least `schema_version`, `ladder_edges`, and
-`webp_quality` so a newer binary can detect an older policy and decide
+`jxl_quality` so a newer binary can detect an older policy and decide
 regenerate vs serve-as-is.
 
 ## 7. Phases
@@ -499,7 +499,7 @@ regenerate vs serve-as-is.
 - Touch source trees (xattrs, sidecars, AppleDouble, …).
 - Extract archive members without path sanitization or size/ratio caps.
 - Call GUI/app callbacks directly from worker threads.
-- Require JPEG-XL or http(s) for MVP.
+- Require http(s) for MVP.
 - Vendor galapix/dirtoo sources into biltoo; keep thumtoo as its own repo.
 
 ## 10. License

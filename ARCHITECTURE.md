@@ -45,8 +45,7 @@ dependency. WAL is enabled at open.
 |-----------|--------|
 | C++20, CMake ≥ 3.16 | required |
 | SQLite amalgamation | vendored |
-| stb_image / resize / write | vendored (JPEG ladder) |
-| libwebp | optional later |
+| libvips + libjxl | **required** (flake.nix / pkg-config) |
 | libarchive | Phase 2 |
 | ffmpeg CLI (video stills) | Later |
 

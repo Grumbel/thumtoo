@@ -169,7 +169,7 @@ void Database::migrate_or_init() {
   if (!ver) {
     meta_set(kSchemaMetaVersionKey, std::to_string(kSchemaVersion));
     meta_set(kSchemaMetaLadderEdgesKey, ladder_edges_csv());
-    meta_set(kSchemaMetaWebpQualityKey, std::to_string(kDefaultWebpQuality));
+    meta_set(kSchemaMetaJxlQualityKey, std::to_string(kDefaultJxlQuality));
     schema_version_ = kSchemaVersion;
     return;
   }

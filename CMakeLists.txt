@@ -12,6 +12,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(THUMTOO_BUILD_TESTS "Build unit tests" ON)
 option(THUMTOO_BUILD_TOOLS "Build CLI tools" ON)
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(VIPS REQUIRED IMPORTED_TARGET vips)
+
 add_library(sqlite3_amalgamation STATIC third_party/sqlite/sqlite3.c)
 target_include_directories(sqlite3_amalgamation PUBLIC third_party/sqlite)
 target_compile_definitions(sqlite3_amalgamation PUBLIC
@@ -35,12 +38,8 @@ target_include_directories(thumtoo
     $<INSTALL_INTERFACE:include>
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb
 )
-target_link_libraries(thumtoo PUBLIC sqlite3_amalgamation)
-if(UNIX)
-  target_link_libraries(thumtoo PUBLIC m)
-endif()
+target_link_libraries(thumtoo PUBLIC sqlite3_amalgamation PkgConfig::VIPS)
 target_compile_options(thumtoo PRIVATE -Wall -Wextra -Wpedantic)
 
 if(THUMTOO_BUILD_TOOLS)

@@ -12,7 +12,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 - [x] Normative rules: cache-first browse, XDG-only, no source pollution, hash identity
 - [x] Location URI form; video stills (`still_count` + `frame_idx`); review response
 - [x] README scope row: directory snapshots vs dirtoo live listing
-- [x] Phase 0 constants written down (ladder edges, WebP q=80, archive caps, WAL)
+- [x] Phase 0 constants written down (ladder edges, JXL q=80, archive caps, WAL)
 
 ## Phase 0 remaining (thin)
 
@@ -28,9 +28,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 - [x] `thumtoo-prepare` CLI skeleton (register paths + schedule probe)
 - [x] Client API: get_size / get_meta / request_size + single worker queue
 - [x] URI helpers (file:/// , //archive detection)
-- [x] Image dimension probe (stb_image) + SHA-256 content id promotion
-- [x] Ladder encode to JPEG blobs under cache/blobs/ (WebP when linked later)
-- [ ] Optional libwebp codec path (record as webp in levels)
+- [x] Image pipeline via libvips + JPEG-XL ladder (required; flake.nix)
+- [x] SHA-256 content id promotion
 - [ ] get_pixels / request_pixels reading levels
 - [ ] Tag API sketch reconciled with dirtoo checksum tags
 

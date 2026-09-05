@@ -4,32 +4,55 @@
 #include "thumtoo/image.hpp"
 #include "thumtoo/constants.hpp"
 
+#include <vips/vips.h>
+
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <cstdio>
 #include <fstream>
+#include <mutex>
 #include <sstream>
-
-#define STB_IMAGE_IMPLEMENTATION
-#define STBI_NO_HDR
-#define STBI_NO_LINEAR
-#include "stb_image.h"
-
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
-
-#define STB_IMAGE_RESIZE_IMPLEMENTATION
-#include "stb_image_resize2.h"
 
 namespace thumtoo {
 namespace {
 
-// Minimal SHA-256 (public-domain style compact implementation).
+std::once_flag g_vips_once;
+
+void ensure_vips() {
+  std::call_once(g_vips_once, [] {
+    if (VIPS_INIT("thumtoo")) {
+      // Still allow process to continue; subsequent calls will fail clearly.
+    }
+  });
+}
+
+std::string format_from_path(const std::filesystem::path& path) {
+  auto ext = path.extension().string();
+  for (char& c : ext)
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  if (ext == ".jpg" || ext == ".jpeg") return "jpeg";
+  if (ext == ".png") return "png";
+  if (ext == ".gif") return "gif";
+  if (ext == ".bmp") return "bmp";
+  if (ext == ".tif" || ext == ".tiff") return "tiff";
+  if (ext == ".webp") return "webp";
+  if (ext == ".jxl") return "jxl";
+  if (ext == ".heic" || ext == ".heif") return "heif";
+  return "unknown";
+}
+
+std::string content_id_to_blob_dir(const std::string& content_id) {
+  std::string id_path = content_id;
+  for (char& c : id_path) {
+    if (c == ':' || c == '/') c = '_';
+  }
+  return id_path;
+}
+
+// Minimal SHA-256
 class Sha256 {
  public:
   Sha256() { reset(); }
-
   void update(const std::uint8_t* data, std::size_t len) {
     for (std::size_t i = 0; i < len; ++i) {
       data_[datalen_++] = data[i];
@@ -40,7 +63,6 @@ class Sha256 {
       }
     }
   }
-
   std::array<std::uint8_t, 32> final() {
     std::uint32_t i = datalen_;
     if (datalen_ < 56) {
@@ -62,7 +84,6 @@ class Sha256 {
     data_[57] = static_cast<std::uint8_t>(bitlen_ >> 48);
     data_[56] = static_cast<std::uint8_t>(bitlen_ >> 56);
     transform();
-
     std::array<std::uint8_t, 32> hash{};
     for (i = 0; i < 4; ++i) {
       hash[i] = (state_[0] >> (24 - i * 8)) & 0xff;
@@ -84,11 +105,9 @@ class Sha256 {
     state_ = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
               0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
   }
-
   static std::uint32_t rotr(std::uint32_t x, std::uint32_t n) {
     return (x >> n) | (x << (32 - n));
   }
-
   void transform() {
     static constexpr std::uint32_t k[64] = {
         0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,
@@ -102,7 +121,6 @@ class Sha256 {
         0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
         0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
         0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
-
     std::uint32_t m[64];
     for (std::uint32_t i = 0, j = 0; i < 16; ++i, j += 4) {
       m[i] = (static_cast<std::uint32_t>(data_[j]) << 24) |
@@ -117,7 +135,6 @@ class Sha256 {
           rotr(m[i - 2], 17) ^ rotr(m[i - 2], 19) ^ (m[i - 2] >> 10);
       m[i] = m[i - 16] + s0 + m[i - 7] + s1;
     }
-
     std::uint32_t a = state_[0], b = state_[1], c = state_[2], d = state_[3];
     std::uint32_t e = state_[4], f = state_[5], g = state_[6], h = state_[7];
     for (std::uint32_t i = 0; i < 64; ++i) {
@@ -145,154 +162,108 @@ class Sha256 {
     state_[6] += g;
     state_[7] += h;
   }
-
   std::array<std::uint8_t, 64> data_{};
   std::uint32_t datalen_ = 0;
   std::uint64_t bitlen_ = 0;
   std::array<std::uint32_t, 8> state_{};
 };
 
-std::string format_from_path(const std::filesystem::path& path) {
-  auto ext = path.extension().string();
-  for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-  if (ext == ".jpg" || ext == ".jpeg") return "jpeg";
-  if (ext == ".png") return "png";
-  if (ext == ".gif") return "gif";
-  if (ext == ".bmp") return "bmp";
-  if (ext == ".tga") return "tga";
-  if (ext == ".webp") return "webp";
-  return "unknown";
-}
-
 }  // namespace
 
+void image_library_init() { ensure_vips(); }
+
 std::optional<ProbeResult> probe_image_file(const std::filesystem::path& path) {
-  int w = 0, h = 0, n = 0;
-  if (!stbi_info(path.string().c_str(), &w, &h, &n)) return std::nullopt;
+  ensure_vips();
+  VipsImage* img = nullptr;
+  // Header-only style open when possible.
+  if (vips_image_new_from_file(path.string().c_str(), &img, "access",
+                               VIPS_ACCESS_SEQUENTIAL, nullptr)) {
+    return std::nullopt;
+  }
+  const int w = vips_image_get_width(img);
+  const int h = vips_image_get_height(img);
+  g_object_unref(img);
   if (w <= 0 || h <= 0) return std::nullopt;
   return ProbeResult{Size{w, h}, format_from_path(path)};
 }
 
-std::optional<DecodedImage> load_image_file(const std::filesystem::path& path) {
-  int w = 0, h = 0, n = 0;
-  unsigned char* data = stbi_load(path.string().c_str(), &w, &h, &n, 4);
-  if (!data || w <= 0 || h <= 0) {
-    if (data) stbi_image_free(data);
-    return std::nullopt;
-  }
-  DecodedImage img;
-  img.width = w;
-  img.height = h;
-  img.channels = 4;
-  img.rgba.assign(data, data + static_cast<std::size_t>(w) * h * 4);
-  stbi_image_free(data);
-  return img;
-}
-
-DecodedImage resize_to_max_edge(const DecodedImage& src, int max_edge) {
-  const int long_edge = std::max(src.width, src.height);
-  if (long_edge <= max_edge || max_edge <= 0) return src;
-
-  const double scale = static_cast<double>(max_edge) / long_edge;
-  const int nw = std::max(1, static_cast<int>(src.width * scale + 0.5));
-  const int nh = std::max(1, static_cast<int>(src.height * scale + 0.5));
-
-  DecodedImage out;
-  out.width = nw;
-  out.height = nh;
-  out.channels = 4;
-  out.rgba.resize(static_cast<std::size_t>(nw) * nh * 4);
-
-  unsigned char* ok = stbir_resize_uint8_linear(
-      src.rgba.data(), src.width, src.height, 0, out.rgba.data(), nw, nh, 0,
-      STBIR_RGBA);
-  if (!ok) {
-    // Fallback: return original if resize fails.
-    return src;
-  }
-  return out;
-}
-
-namespace {
-struct JpegMem {
-  std::vector<std::uint8_t> bytes;
-};
-
-void jpeg_write_callback(void* context, void* data, int size) {
-  auto* mem = static_cast<JpegMem*>(context);
-  auto* p = static_cast<const std::uint8_t*>(data);
-  mem->bytes.insert(mem->bytes.end(), p, p + size);
-}
-}  // namespace
-
-std::optional<std::vector<std::uint8_t>> encode_jpeg(const DecodedImage& img,
-                                                     int quality) {
-  if (img.width <= 0 || img.height <= 0 || img.rgba.empty()) return std::nullopt;
-  JpegMem mem;
-  const int q = std::clamp(quality, 1, 100);
-  if (!stbi_write_jpg_to_func(jpeg_write_callback, &mem, img.width, img.height,
-                              4, img.rgba.data(), q)) {
-    return std::nullopt;
-  }
-  return mem.bytes;
-}
-
-std::vector<LevelBlob> build_ladder(const DecodedImage& src,
+std::vector<LevelBlob> build_ladder(const std::filesystem::path& path,
                                     const std::string& content_id,
-                                    int quality) {
+                                    int jxl_quality) {
+  ensure_vips();
   std::vector<LevelBlob> levels;
-  const int long_edge = std::max(src.width, src.height);
+
+  VipsImage* full = nullptr;
+  if (vips_image_new_from_file(path.string().c_str(), &full, nullptr)) {
+    return levels;
+  }
+  const int src_w = vips_image_get_width(full);
+  const int src_h = vips_image_get_height(full);
+  const int long_edge = std::max(src_w, src_h);
+  g_object_unref(full);
+  if (long_edge <= 0) return levels;
+
+  const int q = std::clamp(jxl_quality, 1, 100);
+  const std::string id_dir = content_id_to_blob_dir(content_id);
+
   for (int edge : kLadderEdges) {
-    if (edge > long_edge && edge != kLadderEdges.front()) {
-      // Still emit the native long edge once via the smallest edge that
-      // does not upscale — skip pure upscale tiers except we always want
-      // at least one level. Continue to next; native covered when edge>=long.
-    }
     if (edge > long_edge) continue;
 
-    auto scaled = resize_to_max_edge(src, edge);
-    auto jpeg = encode_jpeg(scaled, quality);
-    if (!jpeg) continue;
+    VipsImage* thumb = nullptr;
+    // size=VIPS_SIZE_DOWN: never upscale
+    if (vips_thumbnail(path.string().c_str(), &thumb, edge, "size",
+                       VIPS_SIZE_DOWN, nullptr)) {
+      continue;
+    }
+
+    void* buf = nullptr;
+    size_t len = 0;
+    // Q is libjxl distance-style quality in vips jxlsave (0-100).
+    if (vips_jxlsave_buffer(thumb, &buf, &len, "Q", q, nullptr)) {
+      g_object_unref(thumb);
+      continue;
+    }
 
     LevelBlob b;
     b.max_edge = edge;
     b.frame_idx = 0;
-    b.width = scaled.width;
-    b.height = scaled.height;
-    b.codec = "jpeg";
-    b.quality = quality;
-    std::string id_path = content_id;
-    for (char& c : id_path) {
-      if (c == ':' || c == '/') c = '_';
-    }
-    std::ostringstream path;
-    path << "blobs/" << id_path << "/" << edge << "_f0.jpg";
-    b.relative_path = path.str();
-    b.bytes = std::move(*jpeg);
+    b.width = vips_image_get_width(thumb);
+    b.height = vips_image_get_height(thumb);
+    b.codec = "jxl";
+    b.quality = q;
+    std::ostringstream rel;
+    rel << "blobs/" << id_dir << "/" << edge << "_f0.jxl";
+    b.relative_path = rel.str();
+    auto* bytes = static_cast<std::uint8_t*>(buf);
+    b.bytes.assign(bytes, bytes + len);
+    g_free(buf);
+    g_object_unref(thumb);
     levels.push_back(std::move(b));
   }
 
-  // If image is smaller than the smallest ladder edge, still store one level
-  // at the smallest edge value as key (actual pixels are native size).
+  // Native smaller than 128: one level keyed at smallest edge.
   if (levels.empty() && long_edge > 0) {
-    auto jpeg = encode_jpeg(src, quality);
-    if (jpeg) {
-      LevelBlob b;
-      b.max_edge = kLadderEdges.front();
-      b.frame_idx = 0;
-      b.width = src.width;
-      b.height = src.height;
-      b.codec = "jpeg";
-      b.quality = quality;
-      std::string id_path = content_id;
-      for (char& c : id_path) {
-        if (c == ':' || c == '/') c = '_';
+    VipsImage* img = nullptr;
+    if (!vips_image_new_from_file(path.string().c_str(), &img, nullptr)) {
+      void* buf = nullptr;
+      size_t len = 0;
+      if (!vips_jxlsave_buffer(img, &buf, &len, "Q", q, nullptr)) {
+        LevelBlob b;
+        b.max_edge = kLadderEdges.front();
+        b.frame_idx = 0;
+        b.width = vips_image_get_width(img);
+        b.height = vips_image_get_height(img);
+        b.codec = "jxl";
+        b.quality = q;
+        std::ostringstream rel;
+        rel << "blobs/" << id_dir << "/" << b.max_edge << "_f0.jxl";
+        b.relative_path = rel.str();
+        auto* bytes = static_cast<std::uint8_t*>(buf);
+        b.bytes.assign(bytes, bytes + len);
+        g_free(buf);
+        levels.push_back(std::move(b));
       }
-      std::ostringstream path;
-      path << "blobs/" << id_path << "/" << b.max_edge << "_f0.jpg";
-      b.relative_path = path.str();
-      b.bytes = std::move(*jpeg);
-      levels.push_back(std::move(b));
+      g_object_unref(img);
     }
   }
   return levels;

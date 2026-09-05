@@ -62,7 +62,7 @@ cmake -B build && cmake --build build && ctest --test-dir build
 ./build/thumtoo-status --cache ~/.cache/thumtoo summary
 ```
 
-Optional: `nix develop` for a matching toolchain (see `flake.nix`).
+Use `nix develop` for the toolchain: **libvips** and **libjxl** are required (no stb/codec fallbacks). See `flake.nix`.
 
 ## License
 

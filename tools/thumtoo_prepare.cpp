@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "thumtoo/client.hpp"
+#include "thumtoo/image.hpp"
 #include "thumtoo/uri.hpp"
 
 #include <cstdlib>
@@ -54,6 +55,7 @@ int main(int argc, char** argv) {
   }
 
   try {
+    thumtoo::image_library_init();
     auto client = thumtoo::Client::open(cache);
     client->prepare_paths(paths);
     client->drain();

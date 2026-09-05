@@ -28,13 +28,12 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 
 ## Handoff
 
-Phase 1: Client + worker + prepare; image probe via stb_image; content id
-promoted to `sha256:…`; ladder JPEG blobs written under `blobs/` and indexed
-in `levels` (codec=jpeg until libwebp).
+Phase 1: Client + worker + prepare; **libvips + JPEG-XL** for probe/ladder
+(required deps from flake.nix). Content id → `sha256:…`; blobs as `.jxl`.
 
-**Next:** `get_pixels`/`request_pixels`, optional WebP, then archive path.
+**Next:** `get_pixels`/`request_pixels`, then archive path.
 
-Vendored: `third_party/sqlite/`, `third_party/stb/`.
+Vendored: `third_party/sqlite/` only. No stb fallback.
 
 ## Commits
 

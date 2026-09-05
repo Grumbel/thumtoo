@@ -249,39 +249,31 @@ void Client::handle_probe_size(Job& job) {
         row.error_code = std::nullopt;
         size_out = probe->size;
 
-        // Decode + ladder encode (JPEG codec until WebP is linked).
-        auto decoded = load_image_file(*path);
-        if (decoded) {
-          // Map WebP quality 80 ≈ JPEG quality 85 for similar visual weight.
-          const int jpeg_q = std::clamp(kDefaultWebpQuality + 5, 1, 100);
-          auto levels = build_ladder(*decoded, row.content_id, jpeg_q);
-          for (const auto& lvl : levels) {
-            const auto abs_blob = db_->cache_root() / lvl.relative_path;
-            std::error_code ec;
-            std::filesystem::create_directories(abs_blob.parent_path(), ec);
-            std::ofstream out(abs_blob, std::ios::binary);
-            if (out) {
-              out.write(reinterpret_cast<const char*>(lvl.bytes.data()),
-                        static_cast<std::streamsize>(lvl.bytes.size()));
-            }
-            Database::LevelRow lr;
-            lr.content_id = row.content_id;
-            lr.max_edge = lvl.max_edge;
-            lr.frame_idx = lvl.frame_idx;
-            lr.width = lvl.width;
-            lr.height = lvl.height;
-            lr.codec = lvl.codec;
-            lr.quality = lvl.quality;
-            lr.path = lvl.relative_path;
-            db_->upsert_level(lr);
+        auto levels =
+            build_ladder(*path, row.content_id, kDefaultJxlQuality);
+        for (const auto& lvl : levels) {
+          const auto abs_blob = db_->cache_root() / lvl.relative_path;
+          std::error_code ec;
+          std::filesystem::create_directories(abs_blob.parent_path(), ec);
+          std::ofstream out(abs_blob, std::ios::binary);
+          if (out) {
+            out.write(reinterpret_cast<const char*>(lvl.bytes.data()),
+                      static_cast<std::streamsize>(lvl.bytes.size()));
           }
-          row.status = levels.empty() ? ContentStatus::Incomplete
-                                      : ContentStatus::Ready;
-          if (levels.empty()) row.error_code = "ladder_encode_failed";
-        } else {
-          row.status = ContentStatus::Incomplete;
-          row.error_code = "decode_failed";
+          Database::LevelRow lr;
+          lr.content_id = row.content_id;
+          lr.max_edge = lvl.max_edge;
+          lr.frame_idx = lvl.frame_idx;
+          lr.width = lvl.width;
+          lr.height = lvl.height;
+          lr.codec = lvl.codec;
+          lr.quality = lvl.quality;
+          lr.path = lvl.relative_path;
+          db_->upsert_level(lr);
         }
+        row.status =
+            levels.empty() ? ContentStatus::Incomplete : ContentStatus::Ready;
+        if (levels.empty()) row.error_code = "ladder_encode_failed";
       }
     }
   } else {

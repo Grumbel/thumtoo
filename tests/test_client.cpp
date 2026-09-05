@@ -24,7 +24,7 @@ void expect(bool c, const char* m) {
   }
 }
 
-// Minimal 2x2 RGB24 BMP (no stb in the test translation unit).
+// Minimal 2x2 RGB24 BMP (raw BMP written without image deps in the test TU).
 void write_tiny_bmp(const fs::path& path, int w, int h) {
   const int row_raw = w * 3;
   const int row_pad = (4 - (row_raw % 4)) % 4;
@@ -81,6 +81,7 @@ int main() {
   const auto cache = root / "cache";
 
   {
+    image_library_init();
     auto client = Client::open(cache);
     expect(!client->get_size(uri).has_value(), "no size before request");
 

@@ -17,9 +17,13 @@
           pname = "thumtoo";
           version = "0.1.0";
           src = self;
-          nativeBuildInputs = [ pkgs.cmake pkgs.ninja ];
-          buildInputs = [ ];
-          # SQLite is vendored (amalgamation).
+          nativeBuildInputs = [ pkgs.cmake pkgs.ninja pkgs.pkg-config ];
+          buildInputs = [
+            pkgs.vips
+            pkgs.libjxl
+            # vips is built with jxl support in nixpkgs; libjxl is explicit
+            # for headers/runtime clarity.
+          ];
           cmakeFlags = [
             "-GNinja"
             "-DTHUMTOO_BUILD_TESTS=ON"
@@ -43,10 +47,13 @@
             clang-tools
             gdb
             pkg-config
-            # Optional later: ffmpeg libarchive
+            vips
+            libjxl
+            # Later: ffmpeg libarchive
           ];
           shellHook = ''
-            echo "thumtoo dev shell — cmake -B build && cmake --build build && ctest --test-dir build"
+            echo "thumtoo dev shell (vips + libjxl)"
+            echo "  cmake -B build && cmake --build build && ctest --test-dir build"
           '';
         };
       });

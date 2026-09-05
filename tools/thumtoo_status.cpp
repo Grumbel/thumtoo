@@ -65,8 +65,10 @@ int main(int argc, char** argv) {
                 << " (build " << thumtoo::kSchemaVersion << ")\n";
       if (auto v = db.meta_get(thumtoo::kSchemaMetaLadderEdgesKey))
         std::cout << "ladder_edges:   " << *v << "\n";
-      if (auto v = db.meta_get(thumtoo::kSchemaMetaWebpQualityKey))
-        std::cout << "webp_quality:   " << *v << "\n";
+      if (auto v = db.meta_get(thumtoo::kSchemaMetaJxlQualityKey))
+        std::cout << "jxl_quality:    " << *v << "\n";
+      else if (auto v = db.meta_get(thumtoo::kSchemaMetaWebpQualityKey))
+        std::cout << "webp_quality:   " << *v << " (legacy)\n";
       std::cout << "content rows:   " << db.count_content() << "\n"
                 << "locators:       " << db.count_locators() << "\n"
                 << "levels:         " << db.count_levels() << "\n"

@@ -13,16 +13,9 @@
 
 namespace thumtoo {
 
-struct DecodedImage {
-  int width = 0;
-  int height = 0;
-  int channels = 0;  // 1..4 as loaded
-  std::vector<std::uint8_t> rgba;  // always RGBA8, size width*height*4
-};
-
 struct ProbeResult {
   Size size;
-  std::string format;  // e.g. "jpeg", "png", "gif", "bmp", "unknown"
+  std::string format;
 };
 
 struct LevelBlob {
@@ -30,31 +23,23 @@ struct LevelBlob {
   int frame_idx = 0;
   int width = 0;
   int height = 0;
-  std::string codec;   // "jpeg" until WebP linked
+  std::string codec;  // "jxl"
   int quality = 0;
-  std::string relative_path;  // under cache blobs/
+  std::string relative_path;
   std::vector<std::uint8_t> bytes;
 };
+
+/// Call once from main/tools before any image work (vips_init).
+void image_library_init();
 
 [[nodiscard]] std::optional<ProbeResult> probe_image_file(
     const std::filesystem::path& path);
 
-[[nodiscard]] std::optional<DecodedImage> load_image_file(
-    const std::filesystem::path& path);
-
-/// Scale so the longer edge is <= max_edge (no upscale).
-[[nodiscard]] DecodedImage resize_to_max_edge(const DecodedImage& src,
-                                              int max_edge);
-
-/// Encode RGB/RGBA as JPEG into memory.
-[[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_jpeg(
-    const DecodedImage& img, int quality);
-
-/// Build ladder blobs for all kLadderEdges (and smaller if image is small).
+/// Build long-edge ladder as JPEG-XL via libvips (no upscale).
 [[nodiscard]] std::vector<LevelBlob> build_ladder(
-    const DecodedImage& src, const std::string& content_id, int quality);
+    const std::filesystem::path& path, const std::string& content_id,
+    int jxl_quality);
 
-/// SHA-256 hex of file contents; empty on I/O error.
 [[nodiscard]] std::string sha256_file_hex(const std::filesystem::path& path);
 
 }  // namespace thumtoo
