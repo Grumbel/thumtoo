@@ -11,6 +11,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 - [x] Link biltoo, dirtoo, galapix, dirtoo-py
 - [x] Normative rules: cache-first browse, XDG-only, no source pollution, hash identity
 - [x] Adopt dirtoo/Galapix Location URI form for archives (`file:///…//archive:member`)
+- [x] Video stills policy: adaptive count (8–64, ~8 s target interval) + storyboard
 
 ## Next
 
@@ -25,16 +26,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Design open / discuss
 
-- [ ] Archive on-demand vs batch: coalesce requests that share an outer archive; prefer sequential walk for generate; nested via Location pipe
-- [ ] Video thumbnails:
-  - Preferred: fixed-count (e.g. 9–12) evenly spaced stills + optional contact-sheet/storyboard image
-  - Avoid pure “every N minutes” (unbounded)
-  - Optional later: short muted animated preview (WebM) as extra level kind
-  - Same content-id + ladder model; duration in content row
+- [ ] Archive on-demand vs batch: coalesce requests that share an outer archive;
+      prefer sequential walk for generate; nested via Location pipe
+- [ ] Video worker isolation: default to subprocess (ffmpeg CLI) for crash
+      safety; optional in-process libav later once timeouts/sandbox exist
+- [ ] Exact storyboard grid policy and storage (single tiled image vs N stills)
 
 ## Later
 
 - [ ] Archive TOC tables + libarchive path (Phase 2)
 - [ ] Optional D-Bus daemon
 - [ ] Optional grid tiles (galapix-style)
-- [ ] Animated video preview level
+- [ ] Animated video preview level (must-have; deferred until consumers exist)

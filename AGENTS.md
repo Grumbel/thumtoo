@@ -27,10 +27,10 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 
 ## Handoff
 
-- Latest: cache-first / XDG-only / hash identity / tags / deferred http(s) /
-  Location URI form (`file:///…//archive:member`, nested via pipe)
-- Next: phase 0 freeze URI + content-id rules; phase 1 headers + SQLite spike;
-  video stills / storyboard design still open; biltoo adapter note
+- Latest: Location URI (`//archive:`), adaptive video stills (8–64 by
+  duration), animated preview deferred, prefer subprocess for video decode
+- Next: phase 0 freeze URI + content-id; phase 1 headers + SQLite spike;
+  archive batch rules; biltoo adapter note
 
 ## Commits
 

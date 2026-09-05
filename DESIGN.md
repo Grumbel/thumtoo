@@ -251,6 +251,56 @@ prepare(paths, edges[])               // CLI / idle prewarm
 **GUI thread** may only call non-blocking get/try and schedule request_*.  
 Workers decode/encode; one writer queue for SQLite.
 
+
+### Video (still frames + optional animated)
+
+Videos share the same content-id + locator model. The `content` row gains
+`duration_ms` (and optionally codec / bitrate). Display proxies:
+
+1. **Poster / representative still** — normal ladder entry (one frame, usually
+   after a short offset or a middle keyframe).
+2. **Temporal still set** — N frames sampled evenly across the timeline,
+   stored as individual levels or (preferred for gallery) one **storyboard /
+   contact-sheet** image that tiles them.
+3. **Animated preview** (must-have, deferred) — short muted low-res WebM/MP4
+   of a few snippets; neither biltoo nor dirtoo consume it yet, so keep at
+   the bottom of the TODO.
+
+#### Adaptive temporal resolution
+
+Fixed counts waste resolution on long videos and over-sample short ones.
+Default policy (tunable):
+
+```text
+min_count = 8
+max_count = 64
+target_interval_s = 8.0   # aim for roughly one frame every 8 s
+
+count = clamp(round(duration_s / target_interval_s), min_count, max_count)
+```
+
+Examples:
+- 30 s clip  → 8 frames (floor)
+- 2 min     → 15 frames
+- 10 min    → 64 frames (ceiling)
+- 2 h movie → 64 frames (still useful overview; denser sampling is a
+  future “high-res temporal” request, not the default ladder)
+
+Storyboard layout can be derived from `count` (e.g. nearest rectangular grid).
+Prefer keyframes when the container exposes them (faster, more stable frames).
+
+Generation still follows the archive rule: on-demand extracts only the needed
+timestamps; `prepare` / batch walks the file once and emits the whole set.
+
+#### Worker isolation
+
+libav/ffmpeg in-process is attractive (no process overhead, shared decoder
+state). Broken or adversarial video files, however, frequently hang or crash
+the decoder. For robustness the default worker path should be **subprocess**
+(ffmpeg CLI or a tiny helper) so a bad file can be killed without taking down
+the library or the host app. In-process libav remains an optional fast path
+once we have a proven sandbox / timeout story.
+
 ### D-Bus (phase 3)
 
 Same operations on a session service (e.g. `local.Thumtoo1`). Client library
