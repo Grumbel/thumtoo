@@ -372,8 +372,10 @@ Until a content hash is known, a **provisional id** is allowed:
   directory when a snapshot exists.
 - Snapshots are keyed by dir locator + outer size/mtime fingerprint; marked
   `incomplete` when listing was truncated or unverified.
-- dirtoo remains free to keep its own live listing UX; thumtoo only supplies
-  the durable snapshot for cold-start / offline-ish browse.
+- dirtoo remains free to keep its own live listing UX and the decision of
+  *when* to write or refresh a snapshot; thumtoo only supplies the durable
+  snapshot storage for cold-start / offline-ish browse.
+- This split is visible in the README scope table.
 
 ### Archive security (normative)
 
@@ -381,10 +383,12 @@ Alongside “never write into source trees”:
 
 - **Member path sanitization**: reject or strip `..`, absolute paths, and
   nul bytes in archive member names before storing TOC or extracting.
-- **Decompression limits**: hard caps on uncompressed size and
-  compressed:uncompressed ratio per member (and per archive for batch
-  prepare). Zip-bomb class inputs must fail closed (`status=failed` /
-  `unsupported`), not fill the disk.
+- **Decompression limits** (schema_version 1 defaults; tunable):
+  - max uncompressed size per member: **512 MiB**
+  - max compression ratio (uncompressed/compressed): **100:1**
+  - max total uncompressed bytes per single `prepare` of one archive: **2 GiB**
+  Zip-bomb class inputs must fail closed (`status=failed` / `unsupported`),
+  not fill the disk.
 - Extraction is always into the cache blob area or a private temp dir under
   the cache root — never into the source tree.
 
@@ -429,6 +433,29 @@ MVP may omit automatic eviction, but the design acknowledges unbounded growth:
 - Until then: document that the cache is append-mostly; operators may delete
   `$XDG_CACHE_HOME/thumtoo/` safely (regenerable).
 
+
+## 6b. Phase 0 constants (schema_version = 1)
+
+These are the implementable defaults; change only with a schema_version bump
+or an explicit cache wipe.
+
+| Constant | Value |
+|----------|--------|
+| `schema_version` | `1` |
+| Ladder long edges | `128, 256, 512, 1024, 2048` |
+| Default level codec | WebP |
+| Default WebP quality | `80` |
+| Video still count | `16` (+ poster as `frame_idx` 0) |
+| Content hash | SHA-256, id form `sha256:<hex>` |
+| Provisional id | `prov:<uuid-v4>` |
+| Archive max member uncompressed | 512 MiB |
+| Archive max compression ratio | 100:1 |
+| Archive max total extract / prepare | 2 GiB |
+| SQLite journal | WAL |
+
+`schema_meta` must record at least `schema_version`, `ladder_edges`, and
+`webp_quality` so a newer binary can detect an older policy and decide
+regenerate vs serve-as-is.
 
 ## 7. Phases
 

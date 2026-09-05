@@ -21,23 +21,20 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 
 | File | Purpose |
 |------|---------|
-| [README.md](README.md) | What / links / status |
-| [DESIGN.md](DESIGN.md) | Goals, schema, normative rules, phases |
+| [README.md](README.md) | What / links / status / scope table |
+| [DESIGN.md](DESIGN.md) | Normative design + Phase 0 constants |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Planned tree and dependencies |
-| [TODO.md](TODO.md) | Done / Phase 0 freezes / Later |
+| [TODO.md](TODO.md) | Phase tracking |
 
 ## Handoff
 
-Design has absorbed an external review pass. Before Phase 1 code:
+Design is **implementable**. Second review pass closed; directory snapshot
+boundary is visible in the README scope table (thumtoo = durable snapshot
+storage; dirtoo = live listing / when to snapshot).
 
-1. Freeze URI + provisional-id + status enum + schema_version=1.
-2. Freeze callback/executor threading contract for biltoo.
-3. Keep directory snapshots (cache-first folder open on sleeping USB/NAS).
-4. Archive path sanitization + decompression caps are normative.
-
-Latest tip documents: status enum, schema_meta, still_count/frame_idx video
-model, Location `//archive:` form, WAL + priority queues, cache lifecycle as
-named Later gap.
+Phase 0 constants are in DESIGN §6b (edges 128…2048, WebP q=80, archive
+512 MiB / 100:1 / 2 GiB, WAL, still_count=16). Next work is Phase 1 headers +
+SQLite spike and a biltoo adapter note.
 
 ## Commits
 

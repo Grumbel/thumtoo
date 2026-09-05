@@ -10,18 +10,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 - [x] Bootstrap documentation repo (README, DESIGN, ARCHITECTURE, AGENTS)
 - [x] Link biltoo, dirtoo, galapix, dirtoo-py
 - [x] Normative rules: cache-first browse, XDG-only, no source pollution, hash identity
-- [x] Adopt dirtoo/Galapix Location URI form for archives (`file:///…//archive:member`)
-- [x] Video stills model (`still_count` + `levels.frame_idx`, N=16, no storyboard)
-- [x] Review response: status enum, schema_meta versioning, provisional-id promotion,
-      archive security, concurrency/WAL, API executor contract, cache lifecycle named,
-      directory snapshots kept (USB/NAS spin-up), tags schema note
+- [x] Location URI form; video stills (`still_count` + `frame_idx`); review response
+- [x] README scope row: directory snapshots vs dirtoo live listing
+- [x] Phase 0 constants written down (ladder edges, WebP q=80, archive caps, WAL)
 
-## Next (Phase 0 — freeze before code)
+## Phase 0 remaining (thin)
 
-- [ ] Freeze URI grammar + content-id / provisional-id constants
-- [ ] Freeze status enum values and error_code conventions
-- [ ] Freeze schema_version = 1 contents (ladder edges, default WebP quality)
-- [ ] Freeze API threading contract (callback + caller executor)
+- [ ] Encode constants as implementable C++/header names in the spike
 - [ ] biltoo integration note: map `imageSizeForPath` / soft preview to Client API
 
 ## Phase 1
@@ -34,7 +29,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 - [ ] Archive on-demand vs batch coalescing details
 - [ ] Optional convenience Location `//frame:N` (view only)
-- [ ] Exact decompression size/ratio caps for archive security
+- [ ] Whether archive caps need per-format overrides
 
 ## Later
 

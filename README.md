@@ -25,6 +25,7 @@ renames; http(s) URLs are a later extension.
 | Archive TOC + member identity | Yes | — |
 | Fixed long-edge previews (ladder) | Yes | — |
 | Video stills (frame ladder) | Yes (`still_count` + `frame_idx`) | Storyboard composition (apps) |
+| Directory listing **snapshots** | Durable cache for cold/USB-safe folder open | Live listing UX, refresh policy (dirtoo) |
 | Session edit identity (crop, flips) | — | App session (`SessionImageId` in biltoo) |
 | Desktop file-manager icons | Optional consumer | Freedesktop Thumbnailer1 (dirtoo client) |
 | Zoomable workspace UI | — | biltoo / galapix |
@@ -44,11 +45,11 @@ Sister docs inside those trees (when present): biltoo `DOMAIN.md` / `IDENTITY.md
 
 ## Status
 
-**Design only** — review feedback incorporated. No library implementation yet.
-Schema covers images, archives (Location `//archive:`), video stills
-(`still_count` + `frame_idx`), status enum, schema versioning, and normative
-archive-security / threading rules. Phase 0 = freeze constants; then Phase 1
-headers + SQLite spike. See [DESIGN.md](DESIGN.md) and [TODO.md](TODO.md).
+**Design only** — implementable. Review passes incorporated; Phase 0 constants
+are fixed in [DESIGN.md](DESIGN.md) §6b. No library code yet — next is Phase 1
+(`include/thumtoo/` + SQLite spike). Scope boundaries (including directory
+snapshots vs dirtoo live listing) are in the table above; details in
+[TODO.md](TODO.md).
 
 ## Name
 
