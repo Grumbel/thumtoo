@@ -45,16 +45,24 @@ Sister docs inside those trees (when present): biltoo `DOMAIN.md` / `IDENTITY.md
 
 ## Status
 
-**Design only** — implementable. Review passes incorporated; Phase 0 constants
-are fixed in [DESIGN.md](DESIGN.md) §6b. No library code yet — next is Phase 1
-(`include/thumtoo/` + SQLite spike). Scope boundaries (including directory
-snapshots vs dirtoo live listing) are in the table above; details in
-[TODO.md](TODO.md).
+**Phase 1 spike in progress.** Design is frozen (see [DESIGN.md](DESIGN.md));
+library opens a WAL SQLite index under a cache root, applies schema_version 1,
+and ships `thumtoo-status` for inspection. Build with CMake or `nix develop`.
+Workers, encode ladder, and `thumtoo-prepare` are next. Details in [TODO.md](TODO.md).
 
 ## Name
 
 **thumtoo** follows biltoo / dirtoo. “Thumb” means *display proxy* (size index,
 preview ladder, archive listing helpers)—not only 128² file-manager icons.
+
+## Build
+
+```bash
+cmake -B build && cmake --build build && ctest --test-dir build
+./build/thumtoo-status --cache ~/.cache/thumtoo summary
+```
+
+Optional: `nix develop` for a matching toolchain (see `flake.nix`).
 
 ## License
 

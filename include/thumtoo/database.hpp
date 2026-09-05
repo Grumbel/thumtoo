@@ -1,0 +1,90 @@
+// SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#pragma once
+
+#include "thumtoo/types.hpp"
+
+#include <filesystem>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
+
+struct sqlite3;
+
+namespace thumtoo {
+
+/// Owns a single SQLite connection (WAL). Not thread-safe; use one writer queue
+/// at a higher layer (DESIGN concurrency rules).
+class Database {
+ public:
+  Database() = default;
+  Database(const Database&) = delete;
+  Database& operator=(const Database&) = delete;
+  Database(Database&&) noexcept;
+  Database& operator=(Database&&) noexcept;
+  ~Database();
+
+  /// Open or create index at cache_root/index.sqlite and apply schema.
+  /// Creates cache_root if needed.
+  static Database open(const std::filesystem::path& cache_root);
+
+  [[nodiscard]] const std::filesystem::path& cache_root() const {
+    return cache_root_;
+  }
+  [[nodiscard]] const std::filesystem::path& db_path() const { return db_path_; }
+  [[nodiscard]] int schema_version() const { return schema_version_; }
+
+  [[nodiscard]] std::optional<std::string> meta_get(std::string_view key) const;
+  void meta_set(std::string_view key, std::string_view value);
+
+  [[nodiscard]] std::int64_t count_content() const;
+  [[nodiscard]] std::int64_t count_locators() const;
+  [[nodiscard]] std::int64_t count_levels() const;
+  [[nodiscard]] std::int64_t count_directory_snapshots() const;
+
+  struct LocatorRow {
+    std::string uri;
+    std::optional<std::string> content_id;
+    std::optional<std::string> outer_path;
+    std::optional<std::string> member_path;
+    std::optional<std::int64_t> size;
+    std::optional<std::int64_t> mtime_ns;
+  };
+
+  [[nodiscard]] std::vector<LocatorRow> list_locators(int limit = 100) const;
+
+  struct ContentRow {
+    std::string content_id;
+    std::optional<int> width;
+    std::optional<int> height;
+    std::optional<std::string> format;
+    std::optional<std::int64_t> duration_ms;
+    std::optional<int> still_count;
+    ContentStatus status = ContentStatus::Pending;
+    std::optional<std::string> error_code;
+  };
+
+  [[nodiscard]] std::vector<ContentRow> list_content(int limit = 100) const;
+
+  /// Insert or replace a locator (spike helper; full API later).
+  void upsert_locator(const LocatorRow& row);
+
+  /// Insert or replace a content row (spike helper).
+  void upsert_content(const ContentRow& row);
+
+ private:
+  explicit Database(sqlite3* db, std::filesystem::path cache_root,
+                    std::filesystem::path db_path, int schema_version);
+
+  void exec(const char* sql) const;
+  void migrate_or_init();
+
+  sqlite3* db_ = nullptr;
+  std::filesystem::path cache_root_;
+  std::filesystem::path db_path_;
+  int schema_version_ = 0;
+};
+
+}  // namespace thumtoo

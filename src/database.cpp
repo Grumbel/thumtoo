@@ -1,0 +1,416 @@
+// SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#include "thumtoo/database.hpp"
+#include "thumtoo/constants.hpp"
+
+#include "sqlite3.h"
+
+#include <chrono>
+#include <sstream>
+#include <stdexcept>
+#include <utility>
+
+namespace thumtoo {
+namespace {
+
+std::int64_t now_unix_s() {
+  using namespace std::chrono;
+  return duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
+}
+
+std::string ladder_edges_csv() {
+  std::ostringstream os;
+  for (std::size_t i = 0; i < kLadderEdges.size(); ++i) {
+    if (i) os << ',';
+    os << kLadderEdges[i];
+  }
+  return os.str();
+}
+
+// Embedded schema (src/schema.sql).
+constexpr char kSchemaSql[] = R"SQL(
+CREATE TABLE IF NOT EXISTS schema_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS content (
+  content_id TEXT PRIMARY KEY,
+  width INTEGER,
+  height INTEGER,
+  format TEXT,
+  duration_ms INTEGER,
+  still_count INTEGER,
+  status INTEGER NOT NULL DEFAULT 0,
+  error_code TEXT,
+  updated_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS locators (
+  uri TEXT PRIMARY KEY,
+  content_id TEXT,
+  outer_path TEXT,
+  member_path TEXT,
+  size INTEGER,
+  mtime_ns INTEGER,
+  updated_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS archive_entries (
+  archive_uri TEXT NOT NULL,
+  member_path TEXT NOT NULL,
+  uncompressed_size INTEGER,
+  PRIMARY KEY (archive_uri, member_path)
+);
+CREATE TABLE IF NOT EXISTS directory_snapshots (
+  dir_uri TEXT PRIMARY KEY,
+  size INTEGER,
+  mtime_ns INTEGER,
+  listed_at INTEGER,
+  incomplete INTEGER
+);
+CREATE TABLE IF NOT EXISTS directory_entries (
+  dir_uri TEXT NOT NULL,
+  name TEXT NOT NULL,
+  child_uri TEXT,
+  is_dir INTEGER,
+  size INTEGER,
+  mtime_ns INTEGER,
+  PRIMARY KEY (dir_uri, name)
+);
+CREATE TABLE IF NOT EXISTS levels (
+  content_id TEXT NOT NULL,
+  max_edge INTEGER NOT NULL,
+  frame_idx INTEGER NOT NULL DEFAULT 0,
+  pts_ms INTEGER,
+  width INTEGER,
+  height INTEGER,
+  codec TEXT,
+  quality INTEGER,
+  path TEXT,
+  PRIMARY KEY (content_id, max_edge, frame_idx)
+);
+CREATE TABLE IF NOT EXISTS tags (
+  content_id TEXT NOT NULL,
+  tag TEXT NOT NULL,
+  source TEXT,
+  created_at INTEGER,
+  PRIMARY KEY (content_id, tag)
+);
+CREATE INDEX IF NOT EXISTS idx_locators_content_id ON locators(content_id);
+CREATE INDEX IF NOT EXISTS idx_levels_content_id ON levels(content_id);
+)SQL";
+
+}  // namespace
+
+Database::Database(sqlite3* db, std::filesystem::path cache_root,
+                   std::filesystem::path db_path, int schema_version)
+    : db_(db),
+      cache_root_(std::move(cache_root)),
+      db_path_(std::move(db_path)),
+      schema_version_(schema_version) {}
+
+Database::Database(Database&& other) noexcept
+    : db_(std::exchange(other.db_, nullptr)),
+      cache_root_(std::move(other.cache_root_)),
+      db_path_(std::move(other.db_path_)),
+      schema_version_(other.schema_version_) {}
+
+Database& Database::operator=(Database&& other) noexcept {
+  if (this != &other) {
+    if (db_) sqlite3_close(db_);
+    db_ = std::exchange(other.db_, nullptr);
+    cache_root_ = std::move(other.cache_root_);
+    db_path_ = std::move(other.db_path_);
+    schema_version_ = other.schema_version_;
+  }
+  return *this;
+}
+
+Database::~Database() {
+  if (db_) {
+    sqlite3_close(db_);
+    db_ = nullptr;
+  }
+}
+
+void Database::exec(const char* sql) const {
+  char* err = nullptr;
+  const int rc = sqlite3_exec(db_, sql, nullptr, nullptr, &err);
+  if (rc != SQLITE_OK) {
+    std::string msg = err ? err : "sqlite3_exec failed";
+    sqlite3_free(err);
+    throw std::runtime_error(msg);
+  }
+}
+
+Database Database::open(const std::filesystem::path& cache_root) {
+  std::filesystem::create_directories(cache_root);
+  const auto db_path = cache_root / "index.sqlite";
+
+  sqlite3* db = nullptr;
+  if (sqlite3_open(db_path.string().c_str(), &db) != SQLITE_OK) {
+    const std::string msg = db ? sqlite3_errmsg(db) : "sqlite3_open failed";
+    if (db) sqlite3_close(db);
+    throw std::runtime_error(msg);
+  }
+
+  Database out(db, cache_root, db_path, 0);
+  // WAL + busy timeout for multi-process safety (DESIGN).
+  out.exec("PRAGMA journal_mode=WAL;");
+  out.exec("PRAGMA busy_timeout=5000;");
+  out.exec("PRAGMA foreign_keys=ON;");
+  out.migrate_or_init();
+  return out;
+}
+
+void Database::migrate_or_init() {
+  exec(kSchemaSql);
+
+  auto ver = meta_get(kSchemaMetaVersionKey);
+  if (!ver) {
+    meta_set(kSchemaMetaVersionKey, std::to_string(kSchemaVersion));
+    meta_set(kSchemaMetaLadderEdgesKey, ladder_edges_csv());
+    meta_set(kSchemaMetaWebpQualityKey, std::to_string(kDefaultWebpQuality));
+    schema_version_ = kSchemaVersion;
+    return;
+  }
+
+  schema_version_ = std::stoi(*ver);
+  if (schema_version_ > kSchemaVersion) {
+    throw std::runtime_error("database schema_version is newer than this build");
+  }
+  // Future: migrate schema_version_ -> kSchemaVersion
+  if (schema_version_ < kSchemaVersion) {
+    // v1 is the first version; nothing to migrate yet.
+    meta_set(kSchemaMetaVersionKey, std::to_string(kSchemaVersion));
+    schema_version_ = kSchemaVersion;
+  }
+}
+
+std::optional<std::string> Database::meta_get(std::string_view key) const {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "SELECT value FROM schema_meta WHERE key = ?1;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, key.data(), static_cast<int>(key.size()),
+                    SQLITE_STATIC);
+  std::optional<std::string> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    const unsigned char* t = sqlite3_column_text(stmt, 0);
+    if (t) out = reinterpret_cast<const char*>(t);
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+void Database::meta_set(std::string_view key, std::string_view value) {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "INSERT INTO schema_meta(key, value) VALUES(?1, ?2) "
+      "ON CONFLICT(key) DO UPDATE SET value = excluded.value;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, key.data(), static_cast<int>(key.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 2, value.data(), static_cast<int>(value.size()),
+                    SQLITE_STATIC);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_finalize(stmt);
+}
+
+std::int64_t Database::count_content() const {
+  sqlite3_stmt* stmt = nullptr;
+  sqlite3_prepare_v2(db_, "SELECT COUNT(*) FROM content;", -1, &stmt, nullptr);
+  std::int64_t n = 0;
+  if (sqlite3_step(stmt) == SQLITE_ROW) n = sqlite3_column_int64(stmt, 0);
+  sqlite3_finalize(stmt);
+  return n;
+}
+
+std::int64_t Database::count_locators() const {
+  sqlite3_stmt* stmt = nullptr;
+  sqlite3_prepare_v2(db_, "SELECT COUNT(*) FROM locators;", -1, &stmt, nullptr);
+  std::int64_t n = 0;
+  if (sqlite3_step(stmt) == SQLITE_ROW) n = sqlite3_column_int64(stmt, 0);
+  sqlite3_finalize(stmt);
+  return n;
+}
+
+std::int64_t Database::count_levels() const {
+  sqlite3_stmt* stmt = nullptr;
+  sqlite3_prepare_v2(db_, "SELECT COUNT(*) FROM levels;", -1, &stmt, nullptr);
+  std::int64_t n = 0;
+  if (sqlite3_step(stmt) == SQLITE_ROW) n = sqlite3_column_int64(stmt, 0);
+  sqlite3_finalize(stmt);
+  return n;
+}
+
+std::int64_t Database::count_directory_snapshots() const {
+  sqlite3_stmt* stmt = nullptr;
+  sqlite3_prepare_v2(db_, "SELECT COUNT(*) FROM directory_snapshots;", -1,
+                     &stmt, nullptr);
+  std::int64_t n = 0;
+  if (sqlite3_step(stmt) == SQLITE_ROW) n = sqlite3_column_int64(stmt, 0);
+  sqlite3_finalize(stmt);
+  return n;
+}
+
+std::vector<Database::LocatorRow> Database::list_locators(int limit) const {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT uri, content_id, outer_path, member_path, size, mtime_ns "
+      "FROM locators ORDER BY uri LIMIT ?1;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_int(stmt, 1, limit);
+  std::vector<LocatorRow> rows;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    LocatorRow r;
+    r.uri = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    if (sqlite3_column_type(stmt, 1) != SQLITE_NULL)
+      r.content_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    if (sqlite3_column_type(stmt, 2) != SQLITE_NULL)
+      r.outer_path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+    if (sqlite3_column_type(stmt, 3) != SQLITE_NULL)
+      r.member_path =
+          reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+      r.size = sqlite3_column_int64(stmt, 4);
+    if (sqlite3_column_type(stmt, 5) != SQLITE_NULL)
+      r.mtime_ns = sqlite3_column_int64(stmt, 5);
+    rows.push_back(std::move(r));
+  }
+  sqlite3_finalize(stmt);
+  return rows;
+}
+
+std::vector<Database::ContentRow> Database::list_content(int limit) const {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT content_id, width, height, format, duration_ms, still_count, "
+      "status, error_code FROM content ORDER BY content_id LIMIT ?1;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_int(stmt, 1, limit);
+  std::vector<ContentRow> rows;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    ContentRow r;
+    r.content_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    if (sqlite3_column_type(stmt, 1) != SQLITE_NULL)
+      r.width = sqlite3_column_int(stmt, 1);
+    if (sqlite3_column_type(stmt, 2) != SQLITE_NULL)
+      r.height = sqlite3_column_int(stmt, 2);
+    if (sqlite3_column_type(stmt, 3) != SQLITE_NULL)
+      r.format = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+      r.duration_ms = sqlite3_column_int64(stmt, 4);
+    if (sqlite3_column_type(stmt, 5) != SQLITE_NULL)
+      r.still_count = sqlite3_column_int(stmt, 5);
+    r.status = static_cast<ContentStatus>(sqlite3_column_int(stmt, 6));
+    if (sqlite3_column_type(stmt, 7) != SQLITE_NULL)
+      r.error_code =
+          reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+    rows.push_back(std::move(r));
+  }
+  sqlite3_finalize(stmt);
+  return rows;
+}
+
+void Database::upsert_locator(const LocatorRow& row) {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "INSERT INTO locators(uri, content_id, outer_path, member_path, size, "
+      "mtime_ns, updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7) "
+      "ON CONFLICT(uri) DO UPDATE SET "
+      "content_id=excluded.content_id, outer_path=excluded.outer_path, "
+      "member_path=excluded.member_path, size=excluded.size, "
+      "mtime_ns=excluded.mtime_ns, updated_at=excluded.updated_at;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  const auto ts = now_unix_s();
+  sqlite3_bind_text(stmt, 1, row.uri.c_str(), -1, SQLITE_TRANSIENT);
+  if (row.content_id)
+    sqlite3_bind_text(stmt, 2, row.content_id->c_str(), -1, SQLITE_TRANSIENT);
+  else
+    sqlite3_bind_null(stmt, 2);
+  if (row.outer_path)
+    sqlite3_bind_text(stmt, 3, row.outer_path->c_str(), -1, SQLITE_TRANSIENT);
+  else
+    sqlite3_bind_null(stmt, 3);
+  if (row.member_path)
+    sqlite3_bind_text(stmt, 4, row.member_path->c_str(), -1, SQLITE_TRANSIENT);
+  else
+    sqlite3_bind_null(stmt, 4);
+  if (row.size)
+    sqlite3_bind_int64(stmt, 5, *row.size);
+  else
+    sqlite3_bind_null(stmt, 5);
+  if (row.mtime_ns)
+    sqlite3_bind_int64(stmt, 6, *row.mtime_ns);
+  else
+    sqlite3_bind_null(stmt, 6);
+  sqlite3_bind_int64(stmt, 7, ts);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_finalize(stmt);
+}
+
+void Database::upsert_content(const ContentRow& row) {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "INSERT INTO content(content_id, width, height, format, duration_ms, "
+      "still_count, status, error_code, updated_at) "
+      "VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9) "
+      "ON CONFLICT(content_id) DO UPDATE SET "
+      "width=excluded.width, height=excluded.height, format=excluded.format, "
+      "duration_ms=excluded.duration_ms, still_count=excluded.still_count, "
+      "status=excluded.status, error_code=excluded.error_code, "
+      "updated_at=excluded.updated_at;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  const auto ts = now_unix_s();
+  sqlite3_bind_text(stmt, 1, row.content_id.c_str(), -1, SQLITE_TRANSIENT);
+  if (row.width)
+    sqlite3_bind_int(stmt, 2, *row.width);
+  else
+    sqlite3_bind_null(stmt, 2);
+  if (row.height)
+    sqlite3_bind_int(stmt, 3, *row.height);
+  else
+    sqlite3_bind_null(stmt, 3);
+  if (row.format)
+    sqlite3_bind_text(stmt, 4, row.format->c_str(), -1, SQLITE_TRANSIENT);
+  else
+    sqlite3_bind_null(stmt, 4);
+  if (row.duration_ms)
+    sqlite3_bind_int64(stmt, 5, *row.duration_ms);
+  else
+    sqlite3_bind_null(stmt, 5);
+  if (row.still_count)
+    sqlite3_bind_int(stmt, 6, *row.still_count);
+  else
+    sqlite3_bind_null(stmt, 6);
+  sqlite3_bind_int(stmt, 7, static_cast<int>(row.status));
+  if (row.error_code)
+    sqlite3_bind_text(stmt, 8, row.error_code->c_str(), -1, SQLITE_TRANSIENT);
+  else
+    sqlite3_bind_null(stmt, 8);
+  sqlite3_bind_int64(stmt, 9, ts);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_finalize(stmt);
+}
+
+}  // namespace thumtoo

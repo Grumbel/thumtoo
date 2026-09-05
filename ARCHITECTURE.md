@@ -3,38 +3,58 @@ SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
-# Architecture (planned)
+# Architecture
 
-Until code lands, treat [DESIGN.md](DESIGN.md) as normative.
+[DESIGN.md](DESIGN.md) is normative for product rules. This file tracks the tree.
 
-## Planned tree
+## Tree
 
 ```text
 thumtoo/
-  README.md
-  DESIGN.md
-  ARCHITECTURE.md
-  REUSE.toml
-  LICENSES/
-  include/thumtoo/     # public C++ headers (phase 1)
-  src/                 # sqlite, workers, archive, encode
-  tools/               # thumtoo-prepare, thumtoo-status
+  README.md DESIGN.md ARCHITECTURE.md TODO.md AGENTS.md
+  REUSE.toml LICENSES/
+  flake.nix CMakeLists.txt
+  include/thumtoo/
+    constants.hpp   # Phase 0 freezes
+    status.hpp      # ContentStatus enum
+    types.hpp
+    database.hpp    # SQLite index (spike)
+  src/
+    database.cpp
+    schema.sql      # reference copy of DDL
+  tools/
+    thumtoo_status.cpp   # inspect cache
   tests/
-  dbus/                # phase 3
+    test_database.cpp
+  third_party/sqlite/    # amalgamation (public domain)
 ```
 
-## Dependencies (expected)
+## Build
 
-- C++20 or C++23
-- SQLite3
-- Image decode/encode: prefer existing stack from consumers (Qt image I/O, VIPS,
-  or a small dedicated path); exact choice deferred to phase 1 spike
-- libarchive for archive TOC/members (align with dirtoo-archive)
-- Video stills: ffmpeg CLI (subprocess) by default; optional in-process libav later
-- Optional: JPEG-XL libraries if codec enabled
+```bash
+nix develop          # optional
+cmake -B build -GNinja
+cmake --build build
+ctest --test-dir build
+./build/thumtoo-status --cache /path/to/cache summary
+```
+
+SQLite is **vendored** (amalgamation) so the library has no system sqlite
+dependency. WAL is enabled at open.
+
+## Dependencies
+
+| Component | Status |
+|-----------|--------|
+| C++20, CMake ≥ 3.16 | required |
+| SQLite amalgamation | vendored |
+| Image decode / WebP encode | not yet |
+| libarchive | Phase 2 |
+| ffmpeg CLI (video stills) | Later |
 
 ## Consumers
 
-- [biltoo](https://github.com/Grumbel/biltoo) — first integration target
-- [dirtoo](https://github.com/Grumbel/dirtoo) — optional rich previews later
-- CLI tools in-tree for prewarm and cache inspection
+- biltoo — first integration target
+- dirtoo — optional later
+- `thumtoo-status` — cache inspection (in-tree)
+- `thumtoo-prepare` — prewarm (skeleton TBD)

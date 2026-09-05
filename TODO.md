@@ -21,9 +21,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Phase 1
 
-- [ ] `include/thumtoo/` public headers + SQLite content/locator spike
+- [x] `include/thumtoo/` public headers + SQLite content/locator spike
+- [x] CMake + flake.nix + `nix develop` shell
+- [x] `thumtoo-status` CLI (inspect cache summary/locators/content)
+- [x] Database open/migrate tests
 - [ ] `thumtoo-prepare` CLI skeleton
 - [ ] Tag API sketch reconciled with dirtoo checksum tags
+- [ ] Client API (get_size / request_*) + worker queue
 
 ## Design open / discuss
 

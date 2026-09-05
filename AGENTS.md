@@ -21,20 +21,21 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 
 | File | Purpose |
 |------|---------|
-| [README.md](README.md) | What / links / status / scope table |
+| [README.md](README.md) | What / build / scope table |
 | [DESIGN.md](DESIGN.md) | Normative design + Phase 0 constants |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Planned tree and dependencies |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Tree and dependencies |
 | [TODO.md](TODO.md) | Phase tracking |
 
 ## Handoff
 
-Design is **implementable**. Second review pass closed; directory snapshot
-boundary is visible in the README scope table (thumtoo = durable snapshot
-storage; dirtoo = live listing / when to snapshot).
+Phase 1 spike landed: `Database::open`, schema_version 1 DDL, constants
+headers, `thumtoo-status`, CMake + flake, database tests. SQLite is vendored
+amalgamation under `third_party/sqlite/`.
 
-Phase 0 constants are in DESIGN §6b. Directory snapshots justified by
-10–30s USB/NAS spin-up (harder than pixel latency). Next: Phase 1 headers +
-SQLite spike and biltoo adapter note.
+**Next:** `thumtoo-prepare` skeleton, Client API (`get_*` / `request_*`),
+single writer queue, then image probe/encode ladder.
+
+Do not start archive/video workers until the plain-file path is solid.
 
 ## Commits
 
