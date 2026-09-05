@@ -43,7 +43,7 @@ Caps: 512 MiB member uncompressed.
 **Next:** archive batch coalesce (one open, many members); prepare expands
 archive image members; tag API vs dirtoo; biltoo wiring.
 
-System SQLite via pkg-config/Nix. Optional vendored code under `external/`.
+Ladder blobs: `blobs.sqlite` (not a directory of files). System SQLite via pkg-config/Nix. Optional vendored code under `external/`.
 
 ## Commits
 

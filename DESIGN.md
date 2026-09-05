@@ -62,6 +62,15 @@ pixels, consumable by biltoo first and optionally dirtoo later.
 
 ## 3a. Hard product rules (normative)
 
+### Ladder blob storage
+
+Encoded display-ladder payloads live in **`blobs.sqlite`** under the cache
+root (WAL, same process writer queue as the index). Metadata (`levels`
+rows, sizes, locators) stays in **`index.sqlite`**. This avoids hundreds of
+thousands of tiny files on large media trees while keeping the index
+compact and queryable. Payload and index are separate files so vacuum and
+backup policy can differ.
+
 ### Cache-first browse
 
 The UI may browse **entirely from local cache** with **no I/O to source

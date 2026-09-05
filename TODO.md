@@ -22,6 +22,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 ## Phase 1
 
 - [x] Fix prepare/drain race leaving locators pending
+- [x] Ladder payloads in blobs.sqlite (not per-level files)
 
 - [x] `include/thumtoo/` public headers + SQLite content/locator spike
 - [x] CMake + flake.nix + `nix develop` shell

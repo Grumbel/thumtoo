@@ -4,6 +4,7 @@
 #pragma once
 
 #include "thumtoo/database.hpp"
+#include "thumtoo/blob_store.hpp"
 #include "thumtoo/executor.hpp"
 #include "thumtoo/types.hpp"
 
@@ -71,7 +72,8 @@ class Client {
   void drain();
 
  private:
-  explicit Client(std::unique_ptr<Database> db, Executor executor);
+  explicit Client(std::unique_ptr<Database> db,
+                  std::unique_ptr<BlobStore> blobs, Executor executor);
 
   enum class JobKind { ProbeSize, EnsurePixels };
 
@@ -89,10 +91,11 @@ class Client {
   void handle_probe_size(Job& job);
   void handle_ensure_pixels(Job& job);
 
-  [[nodiscard]] std::optional<PixelLevel> load_level_file(
+  [[nodiscard]] std::optional<PixelLevel> load_level(
       const Database::LevelRow& row) const;
 
   std::unique_ptr<Database> db_;
+  std::unique_ptr<BlobStore> blobs_;
   Executor executor_;
 
   std::mutex mu_;

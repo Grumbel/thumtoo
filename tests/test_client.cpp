@@ -117,13 +117,8 @@ int main() {
     client->drain();
     expect(called_px, "request_pixels callback");
 
-    bool any_blob = false;
-    if (fs::exists(cache / "blobs")) {
-      for (auto& e : fs::recursive_directory_iterator(cache / "blobs")) {
-        if (e.is_regular_file()) any_blob = true;
-      }
-    }
-    expect(any_blob, "blob files on disk");
+    expect(fs::exists(cache / "blobs.sqlite"), "blobs.sqlite present");
+    expect(client->db().count_levels() >= 1, "index levels rows");
   }
 
   std::error_code ec;

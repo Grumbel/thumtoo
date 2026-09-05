@@ -6,6 +6,7 @@
 #include "thumtoo/uri.hpp"
 #include "thumtoo/image.hpp"
 #include "thumtoo/archive.hpp"
+#include "thumtoo/blob_store.hpp"
 #include "thumtoo/constants.hpp"
 
 #include <algorithm>
@@ -68,8 +69,9 @@ std::optional<std::int64_t> file_mtime_ns(const std::filesystem::path& p) {
 
 }  // namespace
 
-Client::Client(std::unique_ptr<Database> db, Executor executor)
-    : db_(std::move(db)), executor_(std::move(executor)) {
+Client::Client(std::unique_ptr<Database> db, std::unique_ptr<BlobStore> blobs,
+               Executor executor)
+    : db_(std::move(db)), blobs_(std::move(blobs)), executor_(std::move(executor)) {
   worker_ = std::thread([this] { worker_main(); });
 }
 
@@ -87,7 +89,9 @@ Client::~Client() {
 std::unique_ptr<Client> Client::open(const std::filesystem::path& cache_root,
                                      Executor executor) {
   auto db = std::make_unique<Database>(Database::open(cache_root));
-  return std::unique_ptr<Client>(new Client(std::move(db), std::move(executor)));
+  auto blobs = std::make_unique<BlobStore>(BlobStore::open(cache_root));
+  return std::unique_ptr<Client>(
+      new Client(std::move(db), std::move(blobs), std::move(executor)));
 }
 
 std::optional<Size> Client::get_size(std::string_view uri) const {
@@ -105,25 +109,17 @@ std::optional<ContentMeta> Client::get_meta(std::string_view uri) const {
 }
 
 
-std::optional<PixelLevel> Client::load_level_file(
+std::optional<PixelLevel> Client::load_level(
     const Database::LevelRow& row) const {
-  if (!row.path) return std::nullopt;
-  const auto abs = db_->cache_root() / *row.path;
-  std::ifstream in(abs, std::ios::binary);
-  if (!in) return std::nullopt;
-  in.seekg(0, std::ios::end);
-  const auto n = in.tellg();
-  if (n <= 0) return std::nullopt;
-  in.seekg(0, std::ios::beg);
+  auto data = blobs_->get_level(row.content_id, row.max_edge, row.frame_idx);
+  if (!data || data->empty()) return std::nullopt;
   PixelLevel out;
   out.max_edge = row.max_edge;
   out.frame_idx = row.frame_idx;
   if (row.width) out.width = *row.width;
   if (row.height) out.height = *row.height;
   if (row.codec) out.codec = *row.codec;
-  out.bytes.resize(static_cast<std::size_t>(n));
-  in.read(reinterpret_cast<char*>(out.bytes.data()), n);
-  if (!in) return std::nullopt;
+  out.bytes = std::move(*data);
   return out;
 }
 
@@ -133,7 +129,7 @@ std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
   if (!meta) return std::nullopt;
   auto row = db_->find_best_level(meta->content_id, max_edge, frame_idx);
   if (!row) return std::nullopt;
-  return load_level_file(*row);
+  return load_level(*row);
 }
 
 void Client::request_pixels(std::string uri, int max_edge, PixelsCallback cb,
@@ -363,14 +359,9 @@ void Client::handle_probe_size(Job& job) {
           auto levels = build_ladder_buffer(bytes->data(), bytes->size(),
                                             row.content_id, kDefaultJxlQuality);
           for (const auto& lvl : levels) {
-            const auto abs_blob = db_->cache_root() / lvl.relative_path;
-            std::error_code ec;
-            std::filesystem::create_directories(abs_blob.parent_path(), ec);
-            std::ofstream out(abs_blob, std::ios::binary);
-            if (out) {
-              out.write(reinterpret_cast<const char*>(lvl.bytes.data()),
-                        static_cast<std::streamsize>(lvl.bytes.size()));
-            }
+            blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
+                             lvl.width, lvl.height, lvl.codec, lvl.quality,
+                             lvl.bytes.data(), lvl.bytes.size());
             Database::LevelRow lr;
             lr.content_id = row.content_id;
             lr.max_edge = lvl.max_edge;
@@ -379,7 +370,7 @@ void Client::handle_probe_size(Job& job) {
             lr.height = lvl.height;
             lr.codec = lvl.codec;
             lr.quality = lvl.quality;
-            lr.path = lvl.relative_path;
+            lr.path = "blobs.sqlite";
             db_->upsert_level(lr);
           }
           row.status =
@@ -432,14 +423,9 @@ void Client::handle_probe_size(Job& job) {
         auto levels =
             build_ladder(*path, row.content_id, kDefaultJxlQuality);
         for (const auto& lvl : levels) {
-          const auto abs_blob = db_->cache_root() / lvl.relative_path;
-          std::error_code ec;
-          std::filesystem::create_directories(abs_blob.parent_path(), ec);
-          std::ofstream out(abs_blob, std::ios::binary);
-          if (out) {
-            out.write(reinterpret_cast<const char*>(lvl.bytes.data()),
-                      static_cast<std::streamsize>(lvl.bytes.size()));
-          }
+          blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
+                             lvl.width, lvl.height, lvl.codec, lvl.quality,
+                             lvl.bytes.data(), lvl.bytes.size());
           Database::LevelRow lr;
           lr.content_id = row.content_id;
           lr.max_edge = lvl.max_edge;
@@ -448,7 +434,8 @@ void Client::handle_probe_size(Job& job) {
           lr.height = lvl.height;
           lr.codec = lvl.codec;
           lr.quality = lvl.quality;
-          lr.path = lvl.relative_path;
+          // Payload lives in blobs.sqlite; path kept only as a locator hint.
+          lr.path = "blobs.sqlite";
           db_->upsert_level(lr);
         }
         row.status =
