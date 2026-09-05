@@ -205,7 +205,14 @@ void Client::prepare_paths(const std::vector<std::filesystem::path>& paths) {
     auto abs = std::filesystem::absolute(p, ec);
     if (ec) continue;
     const auto uri = file_uri_from_path(abs);
-    if (db_->find_locator(uri)) continue;
+    if (auto existing = db_->find_locator(uri)) {
+      // Re-queue probe if not yet ready (e.g. previous prepare exited early).
+      if (auto meta = db_->meta_for_uri(uri)) {
+        if (meta->status == ContentStatus::Ready && meta->size) continue;
+      }
+      request_size(uri, {});
+      continue;
+    }
     Database::LocatorRow loc;
     loc.uri = uri;
     loc.content_id = make_provisional_id();
@@ -266,14 +273,20 @@ void Client::worker_main() {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
         continue;
       }
+      // Claim the job under the lock before removing it so drain() cannot
+      // observe (empty queue && inflight==0) while work is still about to run.
+      if (!queue_.front().uri.empty()) ++inflight_;
       job = std::move(queue_.front());
       queue_.erase(queue_.begin());
       if (stop_ && job.uri.empty()) return;
-      if (!job.uri.empty()) ++inflight_;
     }
     if (job.uri.empty()) continue;
-    if (job.kind == JobKind::ProbeSize) handle_probe_size(job);
-    else if (job.kind == JobKind::EnsurePixels) handle_ensure_pixels(job);
+    try {
+      if (job.kind == JobKind::ProbeSize) handle_probe_size(job);
+      else if (job.kind == JobKind::EnsurePixels) handle_ensure_pixels(job);
+    } catch (...) {
+      // Always release inflight_; status stays pending/failed for retry.
+    }
     {
       std::lock_guard lock(mu_);
       --inflight_;

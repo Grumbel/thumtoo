@@ -21,6 +21,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Phase 1
 
+- [x] Fix prepare/drain race leaving locators pending
+
 - [x] `include/thumtoo/` public headers + SQLite content/locator spike
 - [x] CMake + flake.nix + `nix develop` shell
 - [x] `thumtoo-status` CLI (inspect cache summary/locators/content)

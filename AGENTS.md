@@ -38,6 +38,8 @@ get/request size & pixels, biltoo INTEGRATION.md.
 `file:///…//archive:member` → sha256 identity + JXL ladder (same as plain files).
 Caps: 512 MiB member uncompressed.
 
+**Note:** prepare re-queues non-ready locators; drain claims jobs before dequeue.
+
 **Next:** archive batch coalesce (one open, many members); prepare expands
 archive image members; tag API vs dirtoo; biltoo wiring.
 
