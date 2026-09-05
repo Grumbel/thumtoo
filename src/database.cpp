@@ -651,4 +651,69 @@ std::vector<Database::LevelRow> Database::list_levels(
   return rows;
 }
 
+
+void Database::replace_archive_entries(
+    std::string_view archive_uri, const std::vector<ArchiveEntryRow>& entries) {
+  sqlite3_stmt* del = nullptr;
+  if (sqlite3_prepare_v2(db_,
+                         "DELETE FROM archive_entries WHERE archive_uri = ?1;",
+                         -1, &del, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(del, 1, archive_uri.data(),
+                    static_cast<int>(archive_uri.size()), SQLITE_STATIC);
+  if (sqlite3_step(del) != SQLITE_DONE) {
+    sqlite3_finalize(del);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_finalize(del);
+
+  sqlite3_stmt* ins = nullptr;
+  const char* sql =
+      "INSERT INTO archive_entries(archive_uri, member_path, uncompressed_size) "
+      "VALUES(?1,?2,?3);";
+  if (sqlite3_prepare_v2(db_, sql, -1, &ins, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  for (const auto& e : entries) {
+    sqlite3_bind_text(ins, 1, e.archive_uri.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(ins, 2, e.member_path.c_str(), -1, SQLITE_TRANSIENT);
+    if (e.uncompressed_size)
+      sqlite3_bind_int64(ins, 3, *e.uncompressed_size);
+    else
+      sqlite3_bind_null(ins, 3);
+    if (sqlite3_step(ins) != SQLITE_DONE) {
+      sqlite3_finalize(ins);
+      throw std::runtime_error(sqlite3_errmsg(db_));
+    }
+    sqlite3_reset(ins);
+  }
+  sqlite3_finalize(ins);
+}
+
+std::vector<Database::ArchiveEntryRow> Database::list_archive_entries(
+    std::string_view archive_uri, int limit) const {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT archive_uri, member_path, uncompressed_size FROM archive_entries "
+      "WHERE archive_uri = ?1 ORDER BY member_path LIMIT ?2;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, archive_uri.data(),
+                    static_cast<int>(archive_uri.size()), SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, limit);
+  std::vector<ArchiveEntryRow> rows;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    ArchiveEntryRow r;
+    r.archive_uri = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    r.member_path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    if (sqlite3_column_type(stmt, 2) != SQLITE_NULL)
+      r.uncompressed_size = sqlite3_column_int64(stmt, 2);
+    rows.push_back(std::move(r));
+  }
+  sqlite3_finalize(stmt);
+  return rows;
+}
+
 }  // namespace thumtoo

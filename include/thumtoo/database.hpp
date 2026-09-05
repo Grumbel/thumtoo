@@ -107,6 +107,17 @@ class Database {
   [[nodiscard]] std::vector<LevelRow> list_levels(std::string_view content_id,
                                                   int limit = 32) const;
 
+  struct ArchiveEntryRow {
+    std::string archive_uri;
+    std::string member_path;
+    std::optional<std::int64_t> uncompressed_size;
+  };
+
+  void replace_archive_entries(std::string_view archive_uri,
+                               const std::vector<ArchiveEntryRow>& entries);
+  [[nodiscard]] std::vector<ArchiveEntryRow> list_archive_entries(
+      std::string_view archive_uri, int limit = 10000) const;
+
  private:
   explicit Database(sqlite3* db, std::filesystem::path cache_root,
                     std::filesystem::path db_path, int schema_version);

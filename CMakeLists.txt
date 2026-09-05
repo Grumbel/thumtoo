@@ -14,6 +14,7 @@ option(THUMTOO_BUILD_TOOLS "Build CLI tools" ON)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(VIPS REQUIRED IMPORTED_TARGET vips)
+pkg_check_modules(LIBARCHIVE REQUIRED IMPORTED_TARGET libarchive)
 
 add_library(sqlite3_amalgamation STATIC third_party/sqlite/sqlite3.c)
 target_include_directories(sqlite3_amalgamation PUBLIC third_party/sqlite)
@@ -30,6 +31,7 @@ add_library(thumtoo
   src/uri.cpp
   src/client.cpp
   src/image.cpp
+  src/archive.cpp
 )
 add_library(thumtoo::thumtoo ALIAS thumtoo)
 target_include_directories(thumtoo
@@ -39,7 +41,7 @@ target_include_directories(thumtoo
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite
 )
-target_link_libraries(thumtoo PUBLIC sqlite3_amalgamation PkgConfig::VIPS)
+target_link_libraries(thumtoo PUBLIC sqlite3_amalgamation PkgConfig::VIPS PkgConfig::LIBARCHIVE)
 target_compile_options(thumtoo PRIVATE -Wall -Wextra -Wpedantic)
 
 if(THUMTOO_BUILD_TOOLS)

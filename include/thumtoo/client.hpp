@@ -60,6 +60,14 @@ class Client {
 
   void prepare_paths(const std::vector<std::filesystem::path>& paths);
 
+  /// Cache-only TOC if present.
+  [[nodiscard]] std::vector<Database::ArchiveEntryRow> get_archive_entries(
+      std::string_view archive_uri) const;
+
+  /// Read TOC from source (libarchive), store under archive_uri, return entries.
+  std::vector<Database::ArchiveEntryRow> refresh_archive_toc(
+      const std::filesystem::path& archive_path);
+
   void drain();
 
  private:

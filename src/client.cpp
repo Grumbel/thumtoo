@@ -5,6 +5,7 @@
 #include "thumtoo/constants.hpp"
 #include "thumtoo/uri.hpp"
 #include "thumtoo/image.hpp"
+#include "thumtoo/archive.hpp"
 #include "thumtoo/constants.hpp"
 
 #include <algorithm>
@@ -196,6 +197,30 @@ void Client::prepare_paths(const std::vector<std::filesystem::path>& paths) {
     db_->upsert_locator(loc);
     request_size(uri, {});
   }
+}
+
+
+std::vector<Database::ArchiveEntryRow> Client::get_archive_entries(
+    std::string_view archive_uri) const {
+  return db_->list_archive_entries(archive_uri);
+}
+
+std::vector<Database::ArchiveEntryRow> Client::refresh_archive_toc(
+    const std::filesystem::path& archive_path) {
+  auto toc = read_archive_toc(archive_path);
+  if (!toc) return {};
+  const auto uri = archive_uri(archive_path);
+  std::vector<Database::ArchiveEntryRow> rows;
+  rows.reserve(toc->size());
+  for (const auto& m : *toc) {
+    Database::ArchiveEntryRow r;
+    r.archive_uri = uri;
+    r.member_path = m.member_path;
+    r.uncompressed_size = m.uncompressed_size;
+    rows.push_back(std::move(r));
+  }
+  db_->replace_archive_entries(uri, rows);
+  return rows;
 }
 
 void Client::drain() {

@@ -46,6 +46,7 @@ dependency. WAL is enabled at open.
 | C++20, CMake ≥ 3.16 | required |
 | SQLite amalgamation | vendored |
 | libvips + libjxl | **required** (flake.nix / pkg-config) |
+| libarchive | **required** (TOC; extract next) |
 | libarchive | Phase 2 |
 | ffmpeg CLI (video stills) | Later |
 

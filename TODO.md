@@ -16,8 +16,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Phase 0 remaining (thin)
 
-- [ ] Encode constants as implementable C++/header names in the spike
-- [ ] biltoo integration note: map `imageSizeForPath` / soft preview to Client API
+- [x] Encode constants as implementable C++/header names (`constants.hpp`)
+- [x] biltoo integration note (`INTEGRATION.md`)
 
 ## Phase 1
 
@@ -39,9 +39,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
 - [ ] Optional convenience Location `//frame:N` (view only)
 - [ ] Whether archive caps need per-format overrides
 
+## Phase 2 (started)
+
+- [x] Archive TOC read (libarchive) + `archive_entries` cache
+- [ ] Extract member bytes / ladder for archive members
+- [ ] Batch vs on-demand coalesce for archives
+
 ## Later
 
-- [ ] Archive TOC tables + libarchive path (Phase 2)
 - [ ] Cache eviction / LRU / orphan sweep + `thumtoo-gc` / `thumtoo-status`
 - [ ] Optional D-Bus daemon
 - [ ] Optional grid tiles (galapix-style)

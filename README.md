@@ -48,7 +48,7 @@ Sister docs inside those trees (when present): biltoo `DOMAIN.md` / `IDENTITY.md
 **Phase 1 spike in progress.** Design is frozen (see [DESIGN.md](DESIGN.md));
 library opens a WAL SQLite index under a cache root, applies schema_version 1,
 and ships `thumtoo-status` for inspection. Build with CMake or `nix develop`.
-Workers, encode ladder, and `thumtoo-prepare` are next. Details in [TODO.md](TODO.md).
+Workers, encode ladder, and `thumtoo-prepare` are next. Details in [TODO.md](TODO.md). Biltoo mapping: [INTEGRATION.md](INTEGRATION.md).
 
 ## Name
 

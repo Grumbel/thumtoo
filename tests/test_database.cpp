@@ -4,6 +4,7 @@
 #include "thumtoo/constants.hpp"
 #include "thumtoo/database.hpp"
 #include "thumtoo/status.hpp"
+#include "thumtoo/archive.hpp"
 
 #include <chrono>
 #include <cstdlib>
@@ -81,6 +82,14 @@ int main() {
     expect(db.count_locators() == 1, "persisted locator");
   }
 
+  {
+    auto uri = archive_uri("/tmp/book.zip", "inner/a.jpg");
+    expect(uri.find("//archive:inner/a.jpg") != std::string::npos, "archive uri member");
+    auto root_uri = archive_uri("/tmp/book.zip");
+    expect(root_uri.ends_with("//archive"), "archive root uri");
+    expect(!read_archive_toc("/no/such/archive.zip").has_value(), "missing archive");
+  }
+
   std::error_code ec;
   fs::remove_all(root, ec);
 
@@ -91,3 +100,6 @@ int main() {
   std::cout << "ok\n";
   return 0;
 }
+
+// Archive TOC on missing path returns nullopt (libarchive).
+#include "thumtoo/archive.hpp"

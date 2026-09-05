@@ -25,13 +25,14 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 | [DESIGN.md](DESIGN.md) | Normative design + Phase 0 constants |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Tree and dependencies |
 | [TODO.md](TODO.md) | Phase tracking |
+| [INTEGRATION.md](INTEGRATION.md) | biltoo API mapping |
 
 ## Handoff
 
 Phase 1: Client + worker + prepare; **libvips + JPEG-XL** for probe/ladder
 (required deps from flake.nix). Content id → `sha256:…`; blobs as `.jxl`.
 
-**Next:** biltoo adapter note; archive path (Phase 2).
+**Next:** archive member extract + ladder; biltoo wiring against INTEGRATION.md.
 
 Vendored: `third_party/sqlite/` only. No stb fallback.
 
