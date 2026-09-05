@@ -59,7 +59,11 @@ class Client {
   void request_pixels(std::string uri, int max_edge, PixelsCallback cb,
                       int frame_idx = 0);
 
-  void prepare_paths(const std::vector<std::filesystem::path>& paths);
+  /// Register paths, schedule size probes. Returns how many probe jobs were
+  /// enqueued (already-ready locators are skipped). Optional callback is
+  /// invoked once per completed probe (same path as request_size).
+  size_t prepare_paths(const std::vector<std::filesystem::path>& paths,
+                       SizeCallback on_each = {});
 
   /// Cache-only TOC if present.
   [[nodiscard]] std::vector<Database::ArchiveEntryRow> get_archive_entries(

@@ -195,7 +195,19 @@ void Client::request_size(std::string uri, SizeCallback cb) {
   enqueue(std::move(job));
 }
 
-void Client::prepare_paths(const std::vector<std::filesystem::path>& paths) {
+size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
+                             SizeCallback on_each) {
+  // Collect URIs that need a probe first so callers know the job total before
+  // any completion callbacks fire (worker may run concurrently).
+  struct Pending {
+    std::string uri;
+    bool need_register = false;
+    Database::LocatorRow loc;
+    Database::ContentRow content;
+  };
+  std::vector<Pending> pending;
+  pending.reserve(paths.size());
+
   for (const auto& p : paths) {
     std::error_code ec;
     auto abs = std::filesystem::absolute(p, ec);
@@ -206,22 +218,32 @@ void Client::prepare_paths(const std::vector<std::filesystem::path>& paths) {
       if (auto meta = db_->meta_for_uri(uri)) {
         if (meta->status == ContentStatus::Ready && meta->size) continue;
       }
-      request_size(uri, {});
+      Pending item;
+      item.uri = uri;
+      pending.push_back(std::move(item));
       continue;
     }
-    Database::LocatorRow loc;
-    loc.uri = uri;
-    loc.content_id = make_provisional_id();
-    loc.outer_path = abs.string();
-    loc.size = file_size_bytes(abs);
-    loc.mtime_ns = file_mtime_ns(abs);
-    Database::ContentRow content;
-    content.content_id = *loc.content_id;
-    content.status = ContentStatus::Pending;
-    db_->upsert_content(content);
-    db_->upsert_locator(loc);
-    request_size(uri, {});
+    Pending item;
+    item.uri = uri;
+    item.need_register = true;
+    item.loc.uri = uri;
+    item.loc.content_id = make_provisional_id();
+    item.loc.outer_path = abs.string();
+    item.loc.size = file_size_bytes(abs);
+    item.loc.mtime_ns = file_mtime_ns(abs);
+    item.content.content_id = *item.loc.content_id;
+    item.content.status = ContentStatus::Pending;
+    pending.push_back(std::move(item));
   }
+
+  for (auto& item : pending) {
+    if (item.need_register) {
+      db_->upsert_content(item.content);
+      db_->upsert_locator(item.loc);
+    }
+    request_size(item.uri, on_each);
+  }
+  return pending.size();
 }
 
 

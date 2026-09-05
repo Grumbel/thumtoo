@@ -32,7 +32,8 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 ## Status (2026-09-06)
 
 **Phase 1 done:** Client, prepare/status CLIs, system SQLite, libvips+JXL ladder,
-get/request size & pixels, biltoo INTEGRATION.md.
+get/request size & pixels, biltoo INTEGRATION.md. `thumtoo-prepare` reports
+per-job progress on stderr (`--quiet` to suppress).
 
 **Phase 2 in progress:** archive TOC + **member extract** for
 `file:///…//archive:member` → sha256 identity + JXL ladder (same as plain files).

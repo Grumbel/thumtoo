@@ -34,6 +34,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 - [x] Image pipeline via libvips + JPEG-XL ladder (required; flake.nix)
 - [x] SHA-256 content id promotion
 - [x] get_pixels / request_pixels reading levels
+- [x] `thumtoo-prepare` progress reporting (per-job lines + --quiet)
 - [ ] Tag API sketch reconciled with dirtoo checksum tags
 
 ## Design open / discuss
