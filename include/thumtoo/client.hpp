@@ -78,6 +78,25 @@ class Client {
   std::vector<Database::ArchiveEntryRow> refresh_archive_toc(
       const std::filesystem::path& archive_path);
 
+  /// PDF page count (1-based pages). nullopt if Poppler missing or open fails.
+  [[nodiscard]] static std::optional<int> pdf_page_count(
+      const std::filesystem::path& path);
+
+  /// Rasterize one page (1-based) to RGB888; empty rgb on failure.
+  struct PdfPageRaster {
+    int width = 0;
+    int height = 0;
+    std::vector<std::uint8_t> rgb;
+  };
+  [[nodiscard]] static std::optional<PdfPageRaster> pdf_rasterize_page(
+      const std::filesystem::path& path, int page_1based, int max_edge);
+
+  /// file:///abs.pdf//page:N (1-based).
+  [[nodiscard]] static std::string pdf_page_uri(
+      const std::filesystem::path& path, int page_1based);
+
+  [[nodiscard]] static bool is_pdf_path(const std::filesystem::path& path);
+
   void drain();
 
   /// Tags attach to content_id (sha256:… preferred). URI resolves via locator.

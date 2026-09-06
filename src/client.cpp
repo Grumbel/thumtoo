@@ -362,6 +362,31 @@ std::vector<Database::ArchiveEntryRow> Client::refresh_archive_toc(
   return rows;
 }
 
+
+std::optional<int> Client::pdf_page_count(const std::filesystem::path& path) {
+  return thumtoo::pdf_page_count(path);
+}
+
+std::optional<Client::PdfPageRaster> Client::pdf_rasterize_page(
+    const std::filesystem::path& path, int page_1based, int max_edge) {
+  auto r = thumtoo::pdf_rasterize_page(path, page_1based, max_edge);
+  if (!r) return std::nullopt;
+  PdfPageRaster out;
+  out.width = r->width;
+  out.height = r->height;
+  out.rgb = std::move(r->rgb);
+  return out;
+}
+
+std::string Client::pdf_page_uri(const std::filesystem::path& path,
+                                 int page_1based) {
+  return thumtoo::pdf_page_uri(path, page_1based);
+}
+
+bool Client::is_pdf_path(const std::filesystem::path& path) {
+  return thumtoo::is_likely_pdf_path(path);
+}
+
 void Client::drain() {
   for (;;) {
     {
