@@ -28,12 +28,16 @@ std::filesystem::path default_cache_root() {
 
 void usage(const char* argv0) {
   std::cerr
-      << "Usage: " << argv0 << " [--cache DIR] [--quiet] PATH [PATH...]\n"
+      << "Usage: " << argv0
+      << " [--cache DIR] [--quiet] [--ladder EDGE] PATH [PATH...]\n"
       << "  Register paths in the thumtoo cache and schedule size probes.\n"
-      << "  Probe dimensions (libvips), promote sha256 content id, write JXL ladder blobs.\n"
+      << "  Size probes set native width×height (status Incomplete until a ladder\n"
+      << "  exists). Use --ladder EDGE to also encode display JXL levels up to EDGE.\n"
       << "  Archive paths (zip/cbz/rar/…) expand image members as //archive: URIs.\n"
+      << "  PDF paths expand pages as //page:N URIs (1-based; prepare caps at 512).\n"
       << "  Progress lines go to stderr; final summary to stdout.\n"
-      << "  --quiet  suppress per-job progress lines\n";
+      << "  --quiet         suppress per-job progress lines\n"
+      << "  --ladder EDGE   after size probes, request pixels (long-edge EDGE)\n";
 }
 
 }  // namespace
@@ -42,6 +46,7 @@ int main(int argc, char** argv) {
   std::filesystem::path cache = default_cache_root();
   std::vector<std::filesystem::path> paths;
   bool quiet = false;
+  int ladder_edge = 0;
 
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
@@ -55,6 +60,11 @@ int main(int argc, char** argv) {
     }
     if (a == "--cache" && i + 1 < argc) {
       cache = argv[++i];
+      continue;
+    }
+    if (a == "--ladder" && i + 1 < argc) {
+      ladder_edge = std::atoi(argv[++i]);
+      if (ladder_edge < 0) ladder_edge = 0;
       continue;
     }
     paths.emplace_back(a);
@@ -72,10 +82,16 @@ int main(int argc, char** argv) {
     std::mutex progress_mu;
     std::atomic<int> completed{0};
     std::atomic<size_t> total_atom{0};
+    std::vector<std::string> sized_uris;
+    sized_uris.reserve(256);
 
     const size_t total = client->prepare_paths(
         paths,
         [&](std::string uri, std::optional<thumtoo::Size> size) {
+          if (size && ladder_edge > 0) {
+            std::lock_guard lock(progress_mu);
+            sized_uris.push_back(uri);
+          }
           if (quiet) return;
           const int n = ++completed;
           const size_t tot = total_atom.load(std::memory_order_acquire);
@@ -105,6 +121,32 @@ int main(int argc, char** argv) {
     }
 
     client->drain();
+
+    if (ladder_edge > 0 && !sized_uris.empty()) {
+      if (!quiet) {
+        std::cerr << "encoding ladder (edge=" << ladder_edge << ") for "
+                  << sized_uris.size() << " uri(s)…\n";
+      }
+      std::atomic<int> px_done{0};
+      const int px_total = static_cast<int>(sized_uris.size());
+      for (const auto& uri : sized_uris) {
+        client->request_pixels(
+            uri, ladder_edge,
+            [&](std::string u, int /*edge*/,
+                std::optional<thumtoo::PixelLevel> px) {
+              if (quiet) return;
+              const int n = ++px_done;
+              std::lock_guard lock(progress_mu);
+              std::cerr << "[ladder " << n << "/" << px_total << "] "
+                        << (px ? "ready" : "miss") << "  " << u;
+              if (px) {
+                std::cerr << "  " << px->width << "x" << px->height;
+              }
+              std::cerr << "\n";
+            });
+      }
+      client->drain();
+    }
 
     // Status tallies from the content table (best-effort after drain).
     const auto ncontent = client->db().count_content();
