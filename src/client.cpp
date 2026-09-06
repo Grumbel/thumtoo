@@ -79,10 +79,11 @@ Client::~Client() {
   {
     std::lock_guard lock(mu_);
     stop_ = true;
+    // Drop queued work so shutdown does not re-encode a backlog of previews.
+    queue_.clear();
   }
-  // Wake by pushing nothing — worker polls stop_ with short wait via queue push
-  // of empty handling: join after setting stop and notifying via dummy job.
-  enqueue(Job{});  // kind default ProbeSize with empty uri — ignored when stop_
+  // Wake the worker (empty uri job is ignored under stop_).
+  enqueue(Job{});
   if (worker_.joinable()) worker_.join();
 }
 
@@ -406,6 +407,14 @@ void Client::worker_main() {
     }
 
     if (single.uri.empty()) continue;
+    {
+      std::lock_guard lock(mu_);
+      if (stop_) {
+        // Shutdown: do not start new encode work.
+        --inflight_;
+        continue;
+      }
+    }
     try {
       if (single.kind == JobKind::ProbeSize) handle_probe_size(single);
       else if (single.kind == JobKind::EnsurePixels) handle_ensure_pixels(single);
@@ -444,6 +453,19 @@ void Client::handle_probe_size(
   }
 
   std::optional<Size> size_out;
+
+  // Already probed and ladder present — do not re-hash / re-encode.
+  if (row.status == ContentStatus::Ready && row.width && row.height) {
+    size_out = Size{*row.width, *row.height};
+    if (job.size_cb) {
+      auto cb = std::move(job.size_cb);
+      auto uri = job.uri;
+      executor_.post([cb = std::move(cb), uri = std::move(uri), size_out]() mutable {
+        cb(std::move(uri), size_out);
+      });
+    }
+    return;
+  }
 
   if (auto arch = parse_archive_uri(job.uri)) {
     if (arch->member_path.empty()) {
@@ -596,7 +618,21 @@ void Client::handle_probe_size(
 
 
 void Client::handle_ensure_pixels(Job& job) {
-  // Populate size + ladder via the probe path, then load pixels from cache.
+  // Fast path: ladder already present (e.g. thumtoo-prepare or earlier probe).
+  if (auto px = get_pixels(job.uri, job.max_edge, job.frame_idx)) {
+    if (job.pixels_cb) {
+      auto cb = std::move(job.pixels_cb);
+      auto uri = job.uri;
+      const int edge = job.max_edge;
+      executor_.post([cb = std::move(cb), uri = std::move(uri), edge,
+                      px = std::move(px)]() mutable {
+        cb(std::move(uri), edge, std::move(px));
+      });
+    }
+    return;
+  }
+
+  // Miss: probe + encode ladder, then load from cache.
   Job probe;
   probe.kind = JobKind::ProbeSize;
   probe.uri = job.uri;

@@ -53,6 +53,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 - [x] Extract member bytes + probe/ladder for `//archive:member` URIs
 - [x] Size / ratio caps on extract (`kArchiveMaxMemberUncompressedBytes`)
 - [x] Batch vs on-demand coalesce for archives (open once, many members)
+- [x] Client shutdown clears job queue; skip re-probe when Ready
 - [x] `thumtoo-prepare` archive expand (register all image members)
 
 ## Later
