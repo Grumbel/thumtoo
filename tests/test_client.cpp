@@ -126,6 +126,29 @@ int main() {
     expect(px && px->max_edge <= 256, "edge <= 256");
 
     expect(fs::exists(cache / "blobs.sqlite"), "blobs.sqlite present");
+
+    // --- grid tiles (Phase 4) ---
+    expect(!client->get_tile(uri, 0, 0, 0).has_value(), "no tile before request");
+    bool called_tile = false;
+    client->request_tile(uri, 0, 0, 0,
+                         [&](std::string, int scale, int x, int y,
+                             std::optional<TileBlob> t) {
+                           called_tile = true;
+                           expect(scale == 0 && x == 0 && y == 0, "tile coords");
+                           expect(t.has_value(), "request_tile data");
+                           expect(t && !t->bytes.empty(), "tile bytes");
+                           expect(t && t->codec == "jpeg", "tile codec jpeg");
+                           expect(t && t->width > 0 && t->height > 0, "tile dims");
+                         });
+    client->drain();
+    expect(called_tile, "request_tile callback");
+    expect(client->db().count_tiles() >= 1, "tiles stored");
+    auto t0 = client->get_tile(uri, 0, 0, 0);
+    expect(t0.has_value(), "get_tile cache hit");
+    auto cov = client->get_tile_coverage(uri);
+    expect(cov.has_value(), "tile coverage");
+    expect(cov && cov->size.width == W && cov->size.height == H, "coverage size");
+    expect(cov && cov->max_scale >= cov->min_scale, "coverage scales");
   }
 
   std::error_code ec;

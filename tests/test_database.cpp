@@ -107,6 +107,39 @@ int main() {
     expect(db.tags_for_content(cid).size() == 1, "one tag left");
   }
 
+
+  {
+    auto db = Database::open(root);
+    expect(db.count_tiles() == 0, "no tiles initially");
+    const std::string cid = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    Database::ContentRow c;
+    c.content_id = cid;
+    c.width = 512;
+    c.height = 384;
+    c.status = ContentStatus::Ready;
+    db.upsert_content(c);
+    Database::TileRow t;
+    t.content_id = cid;
+    t.scale = 0;
+    t.x = 0;
+    t.y = 0;
+    t.width = 256;
+    t.height = 256;
+    t.codec = "jpeg";
+    t.quality = 80;
+    db.upsert_tile(t);
+    t.x = 1;
+    db.upsert_tile(t);
+    expect(db.count_tiles() == 2, "two tiles");
+    auto got = db.find_tile(cid, 0, 1, 0);
+    expect(got.has_value(), "find_tile");
+    expect(got && got->x == 1, "tile x");
+    int min_s = -1, max_s = -1;
+    expect(db.tile_min_max_scale(cid, min_s, max_s), "min max scale");
+    expect(min_s == 0 && max_s == 0, "scale range");
+    expect(db.list_tiles(cid).size() == 2, "list tiles");
+  }
+
   std::error_code ec;
   fs::remove_all(root, ec);
 
