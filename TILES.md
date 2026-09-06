@@ -17,6 +17,7 @@ Galapix collection viewer.
 | `x`, `y` | Tile indices from the top-left of that scale’s image |
 | Tile size | **256×256** (`kTileSize`); edge tiles may be smaller |
 | Codec | Default **JPEG** q=80 (`kDefaultTileCodec` / `kDefaultTileQuality`) |
+| Source cap | Encode refused when `width*height > kTileMaxSourcePixels` (100 MP) |
 
 Whole-image coverage at scale `s` is:
 
@@ -49,7 +50,8 @@ request_tile_pyramid(uri, min_scale, max_scale, callback)  // optional batch
 On miss, the worker loads the source once (file or archive member), builds the
 requested scale **and all coarser scales** in one pass, stores them, then
 invokes the callback. Finer scales than already stored are generated only when
-asked.
+asked. Sources larger than `kTileMaxSourcePixels` yield no tiles (probe/size
+still work).
 
 ## Prepare
 

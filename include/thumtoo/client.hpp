@@ -63,6 +63,8 @@ class Client {
                       int frame_idx = 0);
 
   /// Cache-only grid tile (Phase 4 / Galapix). See TILES.md.
+  [[nodiscard]] bool has_tile(std::string_view uri, int scale, int x,
+                              int y) const;
   [[nodiscard]] std::optional<TileBlob> get_tile(std::string_view uri, int scale,
                                                  int x, int y) const;
 

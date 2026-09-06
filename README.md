@@ -24,6 +24,7 @@ renames; http(s) URLs are a later extension.
 | Native width × height | Yes (SQLite) | — |
 | Archive TOC + member identity | Yes | — |
 | Fixed long-edge previews (ladder) | Yes | — |
+| Grid tiles (256², Galapix-style) | Yes (optional; `request_tile` / `--tiles`) | Workspace UI (galapix) |
 | Video stills (frame ladder) | Yes (`still_count` + `frame_idx`) | Storyboard composition (apps) |
 | Directory listing **snapshots** | Durable cache for cold/USB-safe folder open | Live listing UX, refresh policy (dirtoo) |
 | Session edit identity (crop, flips) | — | App session (`SessionImageId` in biltoo) |
@@ -45,10 +46,10 @@ Sister docs inside those trees (when present): biltoo `DOMAIN.md` / `IDENTITY.md
 
 ## Status
 
-**Phase 1 spike in progress.** Design is frozen (see [DESIGN.md](DESIGN.md));
-library opens a WAL SQLite index under a cache root, applies schema_version 1,
-and ships `thumtoo-status` for inspection. Build with CMake or `nix develop`.
-Workers, encode ladder, and `thumtoo-prepare` are next. Details in [TODO.md](TODO.md). Biltoo mapping: [INTEGRATION.md](INTEGRATION.md).
+**Phases 1–2 done; Phase 4 tiles available.** WAL SQLite index + `blobs.sqlite`
+ladder (JXL) and optional Galapix-style 256² JPEG tiles. Build with CMake or
+`nix develop`. Details: [TODO.md](TODO.md), [TILES.md](TILES.md).
+Biltoo: [INTEGRATION.md](INTEGRATION.md). Galapix: [INTEGRATION_GALAPIX.md](INTEGRATION_GALAPIX.md).
 
 ## Name
 

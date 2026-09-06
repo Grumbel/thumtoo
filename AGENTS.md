@@ -35,8 +35,9 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 **Phase 1–2 done:** Client, prepare/status CLIs, system SQLite, libvips+JXL ladder,
 archive TOC + member extract, tags, PDF `//page:N`, biltoo INTEGRATION.md.
 
-**Phase 4 started:** optional grid tiles (galapix-style). See [TILES.md](TILES.md)
-and [TODO.md](TODO.md) Phase 4 checklist. Plain ladder remains the biltoo path.
+**Phase 4 tiles done (library side):** 256² JPEG pyramid, Client get/request_tile,
+`prepare --tiles`, status. See [TILES.md](TILES.md). Ladder remains the biltoo path.
+Galapix develop still needs a TileDatabaseInterface adapter ([INTEGRATION_GALAPIX.md](INTEGRATION_GALAPIX.md)).
 
 **Later:** cache eviction / `thumtoo-gc`; optional D-Bus; video animated preview.
 

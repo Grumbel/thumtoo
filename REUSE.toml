@@ -10,6 +10,9 @@ path = [
   "CMakeLists.txt",
   "flake.nix",
   "INTEGRATION.md",
+  "INTEGRATION_GALAPIX.md",
+  "TILES.md",
+  "TAGS.md",
 ]
 SPDX-FileCopyrightText = "2026 Ingo Ruhnke <grumbel@gmail.com>"
 SPDX-License-Identifier = "GPL-3.0-or-later"

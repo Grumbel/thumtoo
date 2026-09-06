@@ -468,6 +468,11 @@ std::vector<TileBlob> cut_pyramid_from_vips(VipsImage* full, int min_scale,
   const int src_h = vips_image_get_height(full);
   if (src_w <= 0 || src_h <= 0) return tiles;
 
+  // Memory guard: do not build pyramids for extremely large rasters.
+  const std::int64_t pixels =
+      static_cast<std::int64_t>(src_w) * static_cast<std::int64_t>(src_h);
+  if (pixels > kTileMaxSourcePixels) return tiles;
+
   const int q = std::clamp(jpeg_quality, 1, 100);
 
   // max_scale: single-tile coverage if not specified
@@ -491,10 +496,8 @@ std::vector<TileBlob> cut_pyramid_from_vips(VipsImage* full, int min_scale,
   for (int scale = 0; scale <= max_scale; ++scale) {
     if (scale > 0) {
       VipsImage* halved = nullptr;
-      // Integer halve: resize by 0.5 with nearest/box for tile alignment
-      if (vips_resize(current, &halved, 0.5, "kernel", VIPS_KERNEL_LINEAR,
-                      nullptr) != 0 ||
-          !halved) {
+      // Integer factor-2 shrink (Galapix-style halve).
+      if (vips_shrink(current, &halved, 2.0, 2.0, nullptr) != 0 || !halved) {
         break;
       }
       g_object_unref(current);

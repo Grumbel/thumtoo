@@ -155,6 +155,12 @@ void Client::request_pixels(std::string uri, int max_edge, PixelsCallback cb,
 
 
 
+bool Client::has_tile(std::string_view uri, int scale, int x, int y) const {
+  auto meta = db_->meta_for_uri(uri);
+  if (!meta) return false;
+  return db_->find_tile(meta->content_id, scale, x, y).has_value();
+}
+
 std::optional<TileBlob> Client::get_tile(std::string_view uri, int scale, int x,
                                          int y) const {
   auto meta = db_->meta_for_uri(uri);

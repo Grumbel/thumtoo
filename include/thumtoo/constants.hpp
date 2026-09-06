@@ -42,5 +42,7 @@ inline constexpr char kSchemaMetaWebpQualityKey[] = "webp_quality";
 inline constexpr int kTileSize = 256;
 inline constexpr int kDefaultTileQuality = 80;
 inline constexpr char kDefaultTileCodec[] = "jpeg";
+/// Refuse tile encode when width*height exceeds this (memory guard).
+inline constexpr std::int64_t kTileMaxSourcePixels = 100000000LL;  // 100 MP
 
 }  // namespace thumtoo

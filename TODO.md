@@ -56,7 +56,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 - [x] Client shutdown clears job queue; skip re-probe when Ready
 - [x] `thumtoo-prepare` archive expand (register all image members)
 
-## Phase 4 — Grid tiles (galapix-style) — ACTIVE
+## Phase 4 — Grid tiles (galapix-style) — DONE (library)
 
 Goal: provide optional **256×256 power-of-two tile pyramids** so Galapix
 (develop) can consume thumtoo instead of its own SQLite `tiles` table.
@@ -106,13 +106,11 @@ each +1 halves linear size. Tile size fixed at 256.
 - [x] `thumtoo-prepare --tiles`
 - [x] Galapix develop integration sketch (`INTEGRATION_GALAPIX.md`)
 
-### Notes / open
+### Notes / resolved
 
-- Whether on-demand should generate **one scale** or **that scale + all coarser**
-  (Galapix often needs coarser first for overview). Prefer generate requested
-  scale and all coarser in one pass when loading the source.
-- Cap max source pixels before tiling (e.g. reject or downscale beyond ~100 MP)
-  — TBD with Galapix use.
+- On-demand generates **requested scale + all coarser** in one source load.
+- `kTileMaxSourcePixels` (100 MP): refuse encode above that; size probe still works.
+- Galapix develop adapter remains outside this repo (see INTEGRATION_GALAPIX.md).
 
 ## Later
 

@@ -128,6 +128,7 @@ int main() {
     expect(fs::exists(cache / "blobs.sqlite"), "blobs.sqlite present");
 
     // --- grid tiles (Phase 4) ---
+    expect(!client->has_tile(uri, 0, 0, 0), "has_tile false before request");
     expect(!client->get_tile(uri, 0, 0, 0).has_value(), "no tile before request");
     bool called_tile = false;
     client->request_tile(uri, 0, 0, 0,
@@ -143,6 +144,7 @@ int main() {
     client->drain();
     expect(called_tile, "request_tile callback");
     expect(client->db().count_tiles() >= 1, "tiles stored");
+    expect(client->has_tile(uri, 0, 0, 0), "has_tile after request");
     auto t0 = client->get_tile(uri, 0, 0, 0);
     expect(t0.has_value(), "get_tile cache hit");
     auto cov = client->get_tile_coverage(uri);
