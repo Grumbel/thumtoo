@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "thumtoo/constants.hpp"
 #include "thumtoo/types.hpp"
 
 #include <cstdint>
@@ -54,5 +55,16 @@ void image_library_init();
 [[nodiscard]] std::string sha256_file_hex(const std::filesystem::path& path);
 [[nodiscard]] std::string sha256_bytes_hex(const std::uint8_t* data,
                                            std::size_t size);
+
+/// Galapix-style 256² JPEG tile pyramid. scale 0 = full res; higher = coarser.
+/// Generates [min_scale .. max_scale] inclusive. If max_scale < 0, goes until
+/// the image fits in a single tile.
+[[nodiscard]] std::vector<TileBlob> build_tile_pyramid(
+    const std::filesystem::path& path, int min_scale = 0, int max_scale = -1,
+    int jpeg_quality = kDefaultTileQuality);
+
+[[nodiscard]] std::vector<TileBlob> build_tile_pyramid_buffer(
+    const std::uint8_t* data, std::size_t size, int min_scale = 0,
+    int max_scale = -1, int jpeg_quality = kDefaultTileQuality);
 
 }  // namespace thumtoo

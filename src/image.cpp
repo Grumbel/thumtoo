@@ -456,4 +456,125 @@ std::string sha256_bytes_hex(const std::uint8_t* data, std::size_t size) {
   return out;
 }
 
+
+namespace {
+
+std::vector<TileBlob> cut_pyramid_from_vips(VipsImage* full, int min_scale,
+                                            int max_scale, int jpeg_quality) {
+  std::vector<TileBlob> tiles;
+  if (!full) return tiles;
+
+  const int src_w = vips_image_get_width(full);
+  const int src_h = vips_image_get_height(full);
+  if (src_w <= 0 || src_h <= 0) return tiles;
+
+  const int q = std::clamp(jpeg_quality, 1, 100);
+
+  // max_scale: single-tile coverage if not specified
+  int computed_max = 0;
+  {
+    int w = src_w;
+    int h = src_h;
+    while (w > kTileSize || h > kTileSize) {
+      w = (w + 1) / 2;
+      h = (h + 1) / 2;
+      ++computed_max;
+    }
+  }
+  if (max_scale < 0) max_scale = computed_max;
+  if (min_scale < 0) min_scale = 0;
+  if (min_scale > max_scale) return tiles;
+
+  VipsImage* current = full;
+  g_object_ref(current);
+
+  for (int scale = 0; scale <= max_scale; ++scale) {
+    if (scale > 0) {
+      VipsImage* halved = nullptr;
+      // Integer halve: resize by 0.5 with nearest/box for tile alignment
+      if (vips_resize(current, &halved, 0.5, "kernel", VIPS_KERNEL_LINEAR,
+                      nullptr) != 0 ||
+          !halved) {
+        break;
+      }
+      g_object_unref(current);
+      current = halved;
+    }
+
+    if (scale < min_scale) continue;
+
+    const int sw = vips_image_get_width(current);
+    const int sh = vips_image_get_height(current);
+    const int tiles_x = (sw + kTileSize - 1) / kTileSize;
+    const int tiles_y = (sh + kTileSize - 1) / kTileSize;
+
+    for (int ty = 0; ty < tiles_y; ++ty) {
+      for (int tx = 0; tx < tiles_x; ++tx) {
+        const int left = tx * kTileSize;
+        const int top = ty * kTileSize;
+        const int tw = std::min(kTileSize, sw - left);
+        const int th = std::min(kTileSize, sh - top);
+        if (tw <= 0 || th <= 0) continue;
+
+        VipsImage* crop = nullptr;
+        if (vips_crop(current, &crop, left, top, tw, th, nullptr) != 0 ||
+            !crop) {
+          continue;
+        }
+        void* buf = nullptr;
+        size_t len = 0;
+        if (vips_jpegsave_buffer(crop, &buf, &len, "Q", q, nullptr) != 0 ||
+            !buf) {
+          g_object_unref(crop);
+          continue;
+        }
+        TileBlob t;
+        t.scale = scale;
+        t.x = tx;
+        t.y = ty;
+        t.width = tw;
+        t.height = th;
+        t.codec = kDefaultTileCodec;
+        t.bytes.assign(static_cast<std::uint8_t*>(buf),
+                       static_cast<std::uint8_t*>(buf) + len);
+        g_free(buf);
+        g_object_unref(crop);
+        tiles.push_back(std::move(t));
+      }
+    }
+  }
+
+  g_object_unref(current);
+  return tiles;
+}
+
+}  // namespace
+
+std::vector<TileBlob> build_tile_pyramid(const std::filesystem::path& path,
+                                         int min_scale, int max_scale,
+                                         int jpeg_quality) {
+  ensure_vips();
+  std::vector<TileBlob> tiles;
+  VipsImage* full = vips_image_new_from_file(path.string().c_str(), nullptr);
+  if (!full) return tiles;
+  tiles = cut_pyramid_from_vips(full, min_scale, max_scale, jpeg_quality);
+  g_object_unref(full);
+  return tiles;
+}
+
+std::vector<TileBlob> build_tile_pyramid_buffer(const std::uint8_t* data,
+                                                std::size_t size, int min_scale,
+                                                int max_scale,
+                                                int jpeg_quality) {
+  ensure_vips();
+  std::vector<TileBlob> tiles;
+  if (!data || size == 0) return tiles;
+  VipsImage* full =
+      vips_image_new_from_buffer(data, size, nullptr, nullptr);
+  if (!full) return tiles;
+  tiles = cut_pyramid_from_vips(full, min_scale, max_scale, jpeg_quality);
+  g_object_unref(full);
+  return tiles;
+}
+
 }  // namespace thumtoo
