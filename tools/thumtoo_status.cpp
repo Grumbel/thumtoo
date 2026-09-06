@@ -27,7 +27,7 @@ std::filesystem::path default_cache_root() {
 
 void usage(const char* argv0) {
   std::cerr
-      << "Usage: " << argv0 << " [--cache DIR] [summary|locators|content|levels|archives]\n"
+      << "Usage: " << argv0 << " [--cache DIR] [summary|locators|content|levels|tiles|archives]\n"
       << "  Inspect a thumtoo cache (index.sqlite under DIR).\n"
       << "  Default DIR: $XDG_CACHE_HOME/thumtoo or ~/.cache/thumtoo\n";
 }
@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
       cache = argv[++i];
       continue;
     }
-    if (a == "summary" || a == "locators" || a == "content" || a == "levels" || a == "archives") {
+    if (a == "summary" || a == "locators" || a == "content" || a == "levels" || a == "tiles" || a == "archives") {
       mode = a;
       continue;
     }
@@ -74,6 +74,7 @@ int main(int argc, char** argv) {
       std::cout << "content rows:   " << db.count_content() << "\n"
                 << "locators:       " << db.count_locators() << "\n"
                 << "levels:         " << db.count_levels() << "\n"
+                << "tiles:          " << db.count_tiles() << "\n"
                 << "dir snapshots:  " << db.count_directory_snapshots() << "\n";
       return 0;
     }
@@ -107,6 +108,23 @@ int main(int argc, char** argv) {
             std::cout << "  " << *lv.width << "x" << *lv.height;
           if (lv.codec) std::cout << "  " << *lv.codec;
           if (lv.path) std::cout << "  " << *lv.path;
+          std::cout << "\n";
+        }
+      }
+      return 0;
+    }
+    if (mode == "tiles") {
+      for (const auto& c : db.list_content(500)) {
+        int min_s = 0, max_s = 0;
+        if (!db.tile_min_max_scale(c.content_id, min_s, max_s)) continue;
+        auto tiles = db.list_tiles(c.content_id, 20);
+        std::cout << c.content_id << "  scales=[" << min_s << ".." << max_s
+                  << "]  sample=" << tiles.size() << "\n";
+        for (const auto& t : tiles) {
+          std::cout << "  s=" << t.scale << " x=" << t.x << " y=" << t.y;
+          if (t.width && t.height)
+            std::cout << "  " << *t.width << "x" << *t.height;
+          if (t.codec) std::cout << "  " << *t.codec;
           std::cout << "\n";
         }
       }

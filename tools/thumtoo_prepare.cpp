@@ -29,7 +29,7 @@ std::filesystem::path default_cache_root() {
 void usage(const char* argv0) {
   std::cerr
       << "Usage: " << argv0
-      << " [--cache DIR] [--quiet] [--ladder EDGE] PATH [PATH...]\n"
+      << " [--cache DIR] [--quiet] [--ladder EDGE] [--tiles] PATH [PATH...]\n"
       << "  Register paths in the thumtoo cache and schedule size probes.\n"
       << "  Size probes set native width×height (status Incomplete until a ladder\n"
       << "  exists). Use --ladder EDGE to also encode display JXL levels up to EDGE.\n"
@@ -37,7 +37,8 @@ void usage(const char* argv0) {
       << "  PDF paths expand pages as //page:N URIs (1-based; prepare caps at 512).\n"
       << "  Progress lines go to stderr; final summary to stdout.\n"
       << "  --quiet         suppress per-job progress lines\n"
-      << "  --ladder EDGE   after size probes, request pixels (long-edge EDGE)\n";
+      << "  --ladder EDGE   after size probes, request pixels (long-edge EDGE)\n"
+      << "  --tiles         after probes, build Galapix-style 256x256 JPEG tile pyramid\n";
 }
 
 }  // namespace
@@ -47,6 +48,7 @@ int main(int argc, char** argv) {
   std::vector<std::filesystem::path> paths;
   bool quiet = false;
   int ladder_edge = 0;
+  bool do_tiles = false;
 
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
@@ -65,6 +67,10 @@ int main(int argc, char** argv) {
     if (a == "--ladder" && i + 1 < argc) {
       ladder_edge = std::atoi(argv[++i]);
       if (ladder_edge < 0) ladder_edge = 0;
+      continue;
+    }
+    if (a == "--tiles") {
+      do_tiles = true;
       continue;
     }
     paths.emplace_back(a);
@@ -148,6 +154,28 @@ int main(int argc, char** argv) {
       client->drain();
     }
 
+    if (do_tiles && !sized_uris.empty()) {
+      if (!quiet) {
+        std::cerr << "encoding tile pyramids for " << sized_uris.size()
+                  << " uri(s)…\n";
+      }
+      std::atomic<int> tile_done{0};
+      const int tile_total = static_cast<int>(sized_uris.size());
+      for (const auto& uri : sized_uris) {
+        client->request_tile_pyramid(
+            uri, 0, -1,
+            [&](std::string u, int /*s*/, int /*x*/, int /*y*/,
+                std::optional<thumtoo::TileBlob> t) {
+              if (quiet) return;
+              const int n = ++tile_done;
+              std::lock_guard lock(progress_mu);
+              std::cerr << "[tiles " << n << "/" << tile_total << "] "
+                        << (t ? "ready" : "miss") << "  " << u << "\n";
+            });
+      }
+      client->drain();
+    }
+
     // Status tallies from the content table (best-effort after drain).
     const auto ncontent = client->db().count_content();
     const int list_limit =
@@ -177,6 +205,7 @@ int main(int argc, char** argv) {
               << " probe(s) under " << cache << "\n"
               << "content=" << ncontent
               << " locators=" << client->db().count_locators()
+              << " tiles=" << client->db().count_tiles()
               << " ready=" << ready << " failed=" << failed
               << " unsupported=" << unsupported;
     if (pending) std::cout << " pending=" << pending;
