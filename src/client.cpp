@@ -291,6 +291,40 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
       continue;
     }
 
+    if (is_likely_pdf_path(abs)) {
+      auto count = pdf_page_count(abs);
+      if (count && *count > 0) {
+        // Cap prepare volume so huge books do not flood the queue.
+        constexpr int kMaxPreparePages = 512;
+        const int n = std::min(*count, kMaxPreparePages);
+        for (int page = 1; page <= n; ++page) {
+          const auto uri = pdf_page_uri(abs, page);
+          if (auto existing = db_->find_locator(uri)) {
+            if (auto meta = db_->meta_for_uri(uri)) {
+              if (meta->status == ContentStatus::Ready && meta->size) continue;
+            }
+            Pending item;
+            item.uri = uri;
+            pending.push_back(std::move(item));
+            continue;
+          }
+          Pending item;
+          item.uri = uri;
+          item.need_register = true;
+          item.loc.uri = uri;
+          item.loc.content_id = make_provisional_id();
+          item.loc.outer_path = abs.string();
+          item.loc.member_path = std::to_string(page);
+          item.loc.size = file_size_bytes(abs);
+          item.loc.mtime_ns = file_mtime_ns(abs);
+          item.content.content_id = *item.loc.content_id;
+          item.content.status = ContentStatus::Pending;
+          pending.push_back(std::move(item));
+        }
+      }
+      continue;
+    }
+
     enqueue_plain(abs);
   }
 
