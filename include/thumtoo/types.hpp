@@ -27,8 +27,6 @@ struct ContentMeta {
   std::optional<std::string> format;
 };
 
-}  // namespace thumtoo
-
 /// Encoded ladder level from cache (JPEG-XL bytes by default).
 struct PixelLevel {
   int max_edge = 0;
@@ -38,3 +36,5 @@ struct PixelLevel {
   std::string codec;  // "jxl"
   std::vector<std::uint8_t> bytes;
 };
+
+}  // namespace thumtoo
