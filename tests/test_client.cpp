@@ -98,27 +98,34 @@ int main() {
 
     auto meta = client->get_meta(uri);
     expect(meta.has_value(), "meta present");
-    expect(meta && meta->status == ContentStatus::Ready, "status ready");
+    // Size probe does not encode the display ladder.
+    expect(meta && meta->status == ContentStatus::Incomplete, "status incomplete after size");
     expect(meta && meta->content_id.find("sha256:") == 0, "sha256 content id");
-    expect(client->db().count_levels() >= 1, "levels written");
-
-    auto px = client->get_pixels(uri, 256);
-    expect(px.has_value(), "get_pixels 256");
-    expect(px && !px->bytes.empty(), "pixel bytes");
-    expect(px && px->codec == "jxl", "codec jxl");
-    expect(px && px->max_edge <= 256, "edge <= 256");
+    expect(client->db().count_levels() == 0, "no levels after size-only probe");
+    expect(!client->get_pixels(uri, 256).has_value(), "no pixels until request_pixels");
 
     bool called_px = false;
     client->request_pixels(uri, 128, [&](std::string, int, std::optional<PixelLevel> p) {
       called_px = true;
       expect(p.has_value(), "request_pixels data");
+      expect(p && !p->bytes.empty(), "pixel bytes");
+      expect(p && p->codec == "jxl", "codec jxl");
       expect(p && p->max_edge <= 128, "request edge");
     });
     client->drain();
     expect(called_px, "request_pixels callback");
 
+    meta = client->get_meta(uri);
+    expect(meta && meta->status == ContentStatus::Ready, "status ready after pixels");
+    expect(client->db().count_levels() >= 1, "levels written after request_pixels");
+
+    auto px = client->get_pixels(uri, 256);
+    expect(px.has_value(), "get_pixels 256");
+    expect(px && !px->bytes.empty(), "cached pixel bytes");
+    expect(px && px->codec == "jxl", "cached codec jxl");
+    expect(px && px->max_edge <= 256, "edge <= 256");
+
     expect(fs::exists(cache / "blobs.sqlite"), "blobs.sqlite present");
-    expect(client->db().count_levels() >= 1, "index levels rows");
   }
 
   std::error_code ec;
