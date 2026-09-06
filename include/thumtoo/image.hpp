@@ -51,3 +51,8 @@ void image_library_init();
                                            std::size_t size);
 
 }  // namespace thumtoo
+
+/// Build JXL ladder from contiguous RGB888 pixels (no alpha).
+[[nodiscard]] std::vector<LevelBlob> build_ladder_rgb(
+    const std::uint8_t* rgb, int width, int height, const std::string& content_id,
+    int jxl_quality);

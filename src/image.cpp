@@ -366,6 +366,57 @@ std::vector<LevelBlob> build_ladder_buffer(const std::uint8_t* data,
   return levels;
 }
 
+
+std::vector<LevelBlob> build_ladder_rgb(const std::uint8_t* rgb, int width,
+                                        int height, const std::string& content_id,
+                                        int jxl_quality) {
+  ensure_vips();
+  std::vector<LevelBlob> levels;
+  if (!rgb || width <= 0 || height <= 0) return levels;
+
+  // Deep-copy into a VipsImage so we can thumbnail/save independently.
+  VipsImage* full = vips_image_new_from_memory_copy(
+      rgb, static_cast<size_t>(width) * static_cast<size_t>(height) * 3u, width,
+      height, 3, VIPS_FORMAT_UCHAR);
+  if (!full) return levels;
+
+  const int long_edge = std::max(width, height);
+  const std::string id_path = content_id_to_blob_dir(content_id);
+  const int q = jxl_quality > 0 ? jxl_quality : kDefaultJxlQuality;
+
+  for (int edge : kLadderEdges) {
+    if (edge > long_edge && edge != kLadderEdges.front()) continue;
+    VipsImage* thumb = nullptr;
+    if (vips_thumbnail_image(full, &thumb, edge, "size", VIPS_SIZE_DOWN, nullptr) != 0
+        || !thumb) {
+      continue;
+    }
+    void* buf = nullptr;
+    size_t len = 0;
+    if (vips_jxlsave_buffer(thumb, &buf, &len, "Q", q, nullptr) != 0 || !buf) {
+      g_object_unref(thumb);
+      continue;
+    }
+    LevelBlob b;
+    b.max_edge = edge;
+    b.frame_idx = 0;
+    b.width = vips_image_get_width(thumb);
+    b.height = vips_image_get_height(thumb);
+    b.codec = "jxl";
+    b.quality = q;
+    std::ostringstream rel;
+    rel << "blobs/" << id_path << "/" << edge << "_f0.jxl";
+    b.relative_path = rel.str();
+    auto* bytes = static_cast<std::uint8_t*>(buf);
+    b.bytes.assign(bytes, bytes + len);
+    g_free(buf);
+    g_object_unref(thumb);
+    levels.push_back(std::move(b));
+  }
+  g_object_unref(full);
+  return levels;
+}
+
 std::string sha256_file_hex(const std::filesystem::path& path) {
   std::ifstream in(path, std::ios::binary);
   if (!in) return {};

@@ -16,6 +16,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(SQLITE3 REQUIRED IMPORTED_TARGET sqlite3)
 pkg_check_modules(VIPS REQUIRED IMPORTED_TARGET vips)
 pkg_check_modules(LIBARCHIVE REQUIRED IMPORTED_TARGET libarchive)
+pkg_check_modules(POPPLERCPP IMPORTED_TARGET poppler-cpp)
 
 add_library(thumtoo
   src/database.cpp
@@ -23,6 +24,7 @@ add_library(thumtoo
   src/client.cpp
   src/image.cpp
   src/archive.cpp
+  src/pdf.cpp
   src/blob_store.cpp
 )
 add_library(thumtoo::thumtoo ALIAS thumtoo)
@@ -36,6 +38,13 @@ target_link_libraries(thumtoo PUBLIC
   PkgConfig::VIPS
   PkgConfig::LIBARCHIVE
 )
+if(POPPLERCPP_FOUND)
+  target_link_libraries(thumtoo PUBLIC PkgConfig::POPPLERCPP)
+  target_compile_definitions(thumtoo PUBLIC THUMTOO_HAVE_POPPLER=1)
+  message(STATUS "thumtoo: Poppler-cpp enabled (PDF pages)")
+else()
+  message(STATUS "thumtoo: Poppler-cpp not found — PDF page support disabled")
+endif()
 target_compile_options(thumtoo PRIVATE -Wall -Wextra -Wpedantic)
 
 if(THUMTOO_BUILD_TOOLS)

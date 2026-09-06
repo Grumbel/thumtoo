@@ -33,6 +33,7 @@
 
         # libarchive Requires.private
         libarchive
+        poppler
         openssl        # libcrypto.pc
 
         # vips Requires.private (and common transitive .pc names)

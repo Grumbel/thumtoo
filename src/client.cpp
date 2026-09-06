@@ -6,6 +6,7 @@
 #include "thumtoo/uri.hpp"
 #include "thumtoo/image.hpp"
 #include "thumtoo/archive.hpp"
+#include "thumtoo/pdf.hpp"
 #include "thumtoo/blob_store.hpp"
 #include "thumtoo/constants.hpp"
 
@@ -177,7 +178,17 @@ void Client::request_size(std::string uri, SizeCallback cb) {
     Database::LocatorRow loc;
     loc.uri = uri;
     loc.content_id = make_provisional_id();
-    if (auto path = path_from_file_uri(uri)) {
+    if (auto pdf = parse_pdf_uri(uri)) {
+      loc.outer_path = pdf->pdf_path.string();
+      loc.member_path = std::to_string(pdf->page);
+      loc.size = file_size_bytes(pdf->pdf_path);
+      loc.mtime_ns = file_mtime_ns(pdf->pdf_path);
+    } else if (auto arch = parse_archive_uri(uri)) {
+      loc.outer_path = arch->archive_path.string();
+      loc.member_path = arch->member_path;
+      loc.size = file_size_bytes(arch->archive_path);
+      loc.mtime_ns = file_mtime_ns(arch->archive_path);
+    } else if (auto path = path_from_file_uri(uri)) {
       loc.outer_path = path->string();
       loc.size = file_size_bytes(*path);
       loc.mtime_ns = file_mtime_ns(*path);
@@ -470,7 +481,48 @@ void Client::handle_probe_size(
     return;
   }
 
-  if (auto arch = parse_archive_uri(job.uri)) {
+  if (auto pdf = parse_pdf_uri(job.uri)) {
+    if (!std::filesystem::is_regular_file(pdf->pdf_path)) {
+      row.status = ContentStatus::Failed;
+      row.error_code = "not_a_file";
+    } else {
+      auto size72 = pdf_page_size_72dpi(pdf->pdf_path, pdf->page);
+      if (!size72) {
+        row.status = ContentStatus::Failed;
+        row.error_code = "pdf_page_failed";
+      } else {
+        // Content id: file bytes + page so each page is distinct under rename.
+        std::string new_id = old_id;
+        const auto hex = sha256_file_hex(pdf->pdf_path);
+        if (!hex.empty()) {
+          new_id = std::string(kContentIdSha256Prefix) + hex + ":page:"
+                   + std::to_string(pdf->page);
+        }
+        if (new_id != old_id) {
+          if (auto existing = db_->find_content(new_id)) {
+            row = *existing;
+            db_->update_locator_content_id(job.uri, new_id);
+            if (old_id.rfind(std::string(kContentIdProvisionalPrefix), 0) == 0) {
+              db_->delete_content(old_id);
+            }
+          } else {
+            row.content_id = new_id;
+            db_->upsert_content(row);
+            db_->update_locator_content_id(job.uri, new_id);
+            if (old_id.rfind(std::string(kContentIdProvisionalPrefix), 0) == 0) {
+              db_->delete_content(old_id);
+            }
+          }
+        }
+        row.width = size72->width;
+        row.height = size72->height;
+        row.format = "pdf";
+        row.error_code = std::nullopt;
+        size_out = *size72;
+        row.status = ContentStatus::Incomplete;
+      }
+    }
+  } else if (auto arch = parse_archive_uri(job.uri)) {
     if (arch->member_path.empty()) {
       row.status = ContentStatus::Unsupported;
       row.error_code = "archive_root_not_image";
@@ -640,7 +692,36 @@ void Client::handle_ensure_pixels(Job& job) {
     row.status = ContentStatus::Pending;
   }
 
-  if (auto arch = parse_archive_uri(job.uri)) {
+  if (auto pdf = parse_pdf_uri(job.uri)) {
+    // Rasterize at the largest ladder edge so all levels can be derived.
+    const int edge = kLadderEdges.back();
+    auto raster = pdf_rasterize_page(pdf->pdf_path, pdf->page, edge);
+    if (raster && !raster->rgb.empty()) {
+      auto levels = build_ladder_rgb(raster->rgb.data(), raster->width,
+                                     raster->height, row.content_id,
+                                     kDefaultJxlQuality);
+      for (const auto& lvl : levels) {
+        blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
+                          lvl.width, lvl.height, lvl.codec, lvl.quality,
+                          lvl.bytes.data(), lvl.bytes.size());
+        Database::LevelRow lr;
+        lr.content_id = row.content_id;
+        lr.max_edge = lvl.max_edge;
+        lr.frame_idx = lvl.frame_idx;
+        lr.width = lvl.width;
+        lr.height = lvl.height;
+        lr.codec = lvl.codec;
+        lr.quality = lvl.quality;
+        lr.path = "blobs.sqlite";
+        db_->upsert_level(lr);
+      }
+      row.status =
+          levels.empty() ? ContentStatus::Incomplete : ContentStatus::Ready;
+      if (levels.empty()) row.error_code = "ladder_encode_failed";
+      else row.error_code = std::nullopt;
+      db_->upsert_content(row);
+    }
+  } else if (auto arch = parse_archive_uri(job.uri)) {
     if (!arch->member_path.empty()) {
       auto bytes = extract_archive_member(arch->archive_path, arch->member_path);
       if (bytes && !bytes->empty()) {
