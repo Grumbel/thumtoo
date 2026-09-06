@@ -101,10 +101,10 @@ each +1 halves linear size. Tile size fixed at 256.
 - [x] Schema: `tiles` in index + `tile_blobs` in BlobStore; status counters
 - [x] `image.cpp`: `build_tile_pyramid(...)` → vector of tile blobs
 - [x] Database / BlobStore put/get/list/min_max for tiles
-- [ ] Client: get/request tile + worker job type
-- [ ] `thumtoo-status` tile summary; tests with small fixture image
-- [ ] `thumtoo-prepare --tiles`
-- [ ] Galapix develop integration sketch (`INTEGRATION_GALAPIX.md`)
+- [x] Client: get/request tile + worker job type
+- [x] `thumtoo-status` tile summary; tests with small fixture image
+- [x] `thumtoo-prepare --tiles`
+- [x] Galapix develop integration sketch (`INTEGRATION_GALAPIX.md`)
 
 ### Notes / open
 
