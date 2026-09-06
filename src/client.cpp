@@ -454,8 +454,11 @@ void Client::handle_probe_size(
 
   std::optional<Size> size_out;
 
-  // Already probed and ladder present — do not re-hash / re-encode.
-  if (row.status == ContentStatus::Ready && row.width && row.height) {
+  // Size already known (ladder may still be missing — Incomplete).
+  // Do not re-hash / re-probe on every request_size.
+  if (row.width && row.height
+      && (row.status == ContentStatus::Ready
+          || row.status == ContentStatus::Incomplete)) {
     size_out = Size{*row.width, *row.height};
     if (job.size_cb) {
       auto cb = std::move(job.size_cb);
@@ -512,26 +515,8 @@ void Client::handle_probe_size(
           row.format = probe->format;
           row.error_code = std::nullopt;
           size_out = probe->size;
-          auto levels = build_ladder_buffer(bytes->data(), bytes->size(),
-                                            row.content_id, kDefaultJxlQuality);
-          for (const auto& lvl : levels) {
-            blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
-                             lvl.width, lvl.height, lvl.codec, lvl.quality,
-                             lvl.bytes.data(), lvl.bytes.size());
-            Database::LevelRow lr;
-            lr.content_id = row.content_id;
-            lr.max_edge = lvl.max_edge;
-            lr.frame_idx = lvl.frame_idx;
-            lr.width = lvl.width;
-            lr.height = lvl.height;
-            lr.codec = lvl.codec;
-            lr.quality = lvl.quality;
-            lr.path = "blobs.sqlite";
-            db_->upsert_level(lr);
-          }
-          row.status =
-              levels.empty() ? ContentStatus::Incomplete : ContentStatus::Ready;
-          if (levels.empty()) row.error_code = "ladder_encode_failed";
+          // Size probe only — ladder encode runs on EnsurePixels / request_pixels.
+          row.status = ContentStatus::Incomplete;
         }
       }
     }
@@ -575,28 +560,8 @@ void Client::handle_probe_size(
         row.format = probe->format;
         row.error_code = std::nullopt;
         size_out = probe->size;
-
-        auto levels =
-            build_ladder(*path, row.content_id, kDefaultJxlQuality);
-        for (const auto& lvl : levels) {
-          blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
-                             lvl.width, lvl.height, lvl.codec, lvl.quality,
-                             lvl.bytes.data(), lvl.bytes.size());
-          Database::LevelRow lr;
-          lr.content_id = row.content_id;
-          lr.max_edge = lvl.max_edge;
-          lr.frame_idx = lvl.frame_idx;
-          lr.width = lvl.width;
-          lr.height = lvl.height;
-          lr.codec = lvl.codec;
-          lr.quality = lvl.quality;
-          // Payload lives in blobs.sqlite; path kept only as a locator hint.
-          lr.path = "blobs.sqlite";
-          db_->upsert_level(lr);
-        }
-        row.status =
-            levels.empty() ? ContentStatus::Incomplete : ContentStatus::Ready;
-        if (levels.empty()) row.error_code = "ladder_encode_failed";
+        // Size probe only — ladder encode runs on EnsurePixels / request_pixels.
+        row.status = ContentStatus::Incomplete;
       }
     }
   } else {
@@ -618,7 +583,7 @@ void Client::handle_probe_size(
 
 
 void Client::handle_ensure_pixels(Job& job) {
-  // Fast path: ladder already present (e.g. thumtoo-prepare or earlier probe).
+  // Fast path: ladder already present.
   if (auto px = get_pixels(job.uri, job.max_edge, job.frame_idx)) {
     if (job.pixels_cb) {
       auto cb = std::move(job.pixels_cb);
@@ -632,11 +597,102 @@ void Client::handle_ensure_pixels(Job& job) {
     return;
   }
 
-  // Miss: probe + encode ladder, then load from cache.
-  Job probe;
-  probe.kind = JobKind::ProbeSize;
-  probe.uri = job.uri;
-  handle_probe_size(probe);
+  // Ensure native size is known (size-only; does not encode ladder).
+  {
+    Job probe;
+    probe.kind = JobKind::ProbeSize;
+    probe.uri = job.uri;
+    handle_probe_size(probe);
+  }
+
+  if (auto px = get_pixels(job.uri, job.max_edge, job.frame_idx)) {
+    if (job.pixels_cb) {
+      auto cb = std::move(job.pixels_cb);
+      auto uri = job.uri;
+      const int edge = job.max_edge;
+      executor_.post([cb = std::move(cb), uri = std::move(uri), edge,
+                      px = std::move(px)]() mutable {
+        cb(std::move(uri), edge, std::move(px));
+      });
+    }
+    return;
+  }
+
+  // Encode display ladder now that size/content_id are settled.
+  auto loc = db_->find_locator(job.uri);
+  if (!loc || !loc->content_id) {
+    if (job.pixels_cb) {
+      auto cb = std::move(job.pixels_cb);
+      auto uri = job.uri;
+      const int edge = job.max_edge;
+      executor_.post([cb = std::move(cb), uri = std::move(uri), edge]() mutable {
+        cb(std::move(uri), edge, std::nullopt);
+      });
+    }
+    return;
+  }
+
+  Database::ContentRow row;
+  if (auto existing = db_->find_content(*loc->content_id)) {
+    row = *existing;
+  } else {
+    row.content_id = *loc->content_id;
+    row.status = ContentStatus::Pending;
+  }
+
+  if (auto arch = parse_archive_uri(job.uri)) {
+    if (!arch->member_path.empty()) {
+      auto bytes = extract_archive_member(arch->archive_path, arch->member_path);
+      if (bytes && !bytes->empty()) {
+        auto levels = build_ladder_buffer(bytes->data(), bytes->size(),
+                                          row.content_id, kDefaultJxlQuality);
+        for (const auto& lvl : levels) {
+          blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
+                             lvl.width, lvl.height, lvl.codec, lvl.quality,
+                             lvl.bytes.data(), lvl.bytes.size());
+          Database::LevelRow lr;
+          lr.content_id = row.content_id;
+          lr.max_edge = lvl.max_edge;
+          lr.frame_idx = lvl.frame_idx;
+          lr.width = lvl.width;
+          lr.height = lvl.height;
+          lr.codec = lvl.codec;
+          lr.quality = lvl.quality;
+          lr.path = "blobs.sqlite";
+          db_->upsert_level(lr);
+        }
+        row.status =
+            levels.empty() ? ContentStatus::Incomplete : ContentStatus::Ready;
+        if (levels.empty()) row.error_code = "ladder_encode_failed";
+        else row.error_code = std::nullopt;
+        db_->upsert_content(row);
+      }
+    }
+  } else if (auto path = path_from_file_uri(job.uri)) {
+    if (std::filesystem::is_regular_file(*path)) {
+      auto levels = build_ladder(*path, row.content_id, kDefaultJxlQuality);
+      for (const auto& lvl : levels) {
+        blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
+                           lvl.width, lvl.height, lvl.codec, lvl.quality,
+                           lvl.bytes.data(), lvl.bytes.size());
+        Database::LevelRow lr;
+        lr.content_id = row.content_id;
+        lr.max_edge = lvl.max_edge;
+        lr.frame_idx = lvl.frame_idx;
+        lr.width = lvl.width;
+        lr.height = lvl.height;
+        lr.codec = lvl.codec;
+        lr.quality = lvl.quality;
+        lr.path = "blobs.sqlite";
+        db_->upsert_level(lr);
+      }
+      row.status =
+          levels.empty() ? ContentStatus::Incomplete : ContentStatus::Ready;
+      if (levels.empty()) row.error_code = "ladder_encode_failed";
+      else row.error_code = std::nullopt;
+      db_->upsert_content(row);
+    }
+  }
 
   auto px = get_pixels(job.uri, job.max_edge, job.frame_idx);
   if (job.pixels_cb) {
