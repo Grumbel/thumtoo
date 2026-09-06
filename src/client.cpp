@@ -154,6 +154,93 @@ void Client::request_pixels(std::string uri, int max_edge, PixelsCallback cb,
 }
 
 
+
+std::optional<TileBlob> Client::get_tile(std::string_view uri, int scale, int x,
+                                         int y) const {
+  auto meta = db_->meta_for_uri(uri);
+  if (!meta) return std::nullopt;
+  auto row = db_->find_tile(meta->content_id, scale, x, y);
+  if (!row) return std::nullopt;
+  auto bytes = blobs_->get_tile(meta->content_id, scale, x, y);
+  if (!bytes) return std::nullopt;
+  TileBlob t;
+  t.scale = scale;
+  t.x = x;
+  t.y = y;
+  if (row->width) t.width = *row->width;
+  if (row->height) t.height = *row->height;
+  if (row->codec) t.codec = *row->codec;
+  else t.codec = kDefaultTileCodec;
+  t.bytes = std::move(*bytes);
+  return t;
+}
+
+std::optional<TileCoverage> Client::get_tile_coverage(
+    std::string_view uri) const {
+  auto meta = db_->meta_for_uri(uri);
+  if (!meta) return std::nullopt;
+  TileCoverage cov;
+  if (meta->size) cov.size = *meta->size;
+  int min_s = 0;
+  int max_s = 0;
+  if (db_->tile_min_max_scale(meta->content_id, min_s, max_s)) {
+    cov.min_scale = min_s;
+    cov.max_scale = max_s;
+    return cov;
+  }
+  // No tiles stored yet: theoretical coverage from native size alone.
+  if (!meta->size || meta->size->width <= 0 || meta->size->height <= 0) {
+    return std::nullopt;
+  }
+  cov.min_scale = 0;
+  int w = meta->size->width;
+  int h = meta->size->height;
+  int s = 0;
+  while (w > kTileSize || h > kTileSize) {
+    w = (w + 1) / 2;
+    h = (h + 1) / 2;
+    ++s;
+  }
+  cov.max_scale = s;
+  return cov;
+}
+
+void Client::request_tile(std::string uri, int scale, int x, int y,
+                          TileCallback cb) {
+  if (auto t = get_tile(uri, scale, x, y)) {
+    if (cb) {
+      executor_.post([cb = std::move(cb), uri, scale, x, y,
+                      t = std::move(*t)]() mutable {
+        cb(std::move(uri), scale, x, y, std::move(t));
+      });
+    }
+    return;
+  }
+  Job job;
+  job.kind = JobKind::EnsureTiles;
+  job.uri = std::move(uri);
+  job.tile_scale = scale;
+  job.tile_x = x;
+  job.tile_y = y;
+  job.tile_min_scale = scale;
+  job.tile_max_scale = -1;
+  job.tile_pyramid = false;
+  job.tile_cb = std::move(cb);
+  enqueue(std::move(job));
+}
+
+void Client::request_tile_pyramid(std::string uri, int min_scale, int max_scale,
+                                  TileCallback on_done) {
+  Job job;
+  job.kind = JobKind::EnsureTiles;
+  job.uri = std::move(uri);
+  job.tile_min_scale = min_scale;
+  job.tile_max_scale = max_scale;
+  job.tile_pyramid = true;
+  job.tile_cb = std::move(on_done);
+  enqueue(std::move(job));
+}
+
 void Client::enqueue(Job job) {
   std::lock_guard lock(mu_);
   queue_.push_back(std::move(job));
@@ -488,6 +575,7 @@ void Client::worker_main() {
     try {
       if (single.kind == JobKind::ProbeSize) handle_probe_size(single);
       else if (single.kind == JobKind::EnsurePixels) handle_ensure_pixels(single);
+      else if (single.kind == JobKind::EnsureTiles) handle_ensure_tiles(single);
     } catch (...) {
       // Always release inflight_; status stays pending/failed for retry.
     }
@@ -846,6 +934,119 @@ void Client::handle_ensure_pixels(Job& job) {
   }
 }
 
+
+
+void Client::store_tiles(const std::string& content_id,
+                         const std::vector<TileBlob>& tiles) {
+  for (const auto& t : tiles) {
+    blobs_->put_tile(content_id, t.scale, t.x, t.y, t.width, t.height, t.codec,
+                     kDefaultTileQuality, t.bytes.data(), t.bytes.size());
+    Database::TileRow tr;
+    tr.content_id = content_id;
+    tr.scale = t.scale;
+    tr.x = t.x;
+    tr.y = t.y;
+    tr.width = t.width;
+    tr.height = t.height;
+    tr.codec = t.codec;
+    tr.quality = kDefaultTileQuality;
+    db_->upsert_tile(tr);
+  }
+}
+
+void Client::handle_ensure_tiles(Job& job) {
+  auto reply_one = [&](std::optional<TileBlob> t) {
+    if (!job.tile_cb) return;
+    auto cb = std::move(job.tile_cb);
+    auto uri = job.uri;
+    const int scale = job.tile_scale;
+    const int x = job.tile_x;
+    const int y = job.tile_y;
+    executor_.post([cb = std::move(cb), uri = std::move(uri), scale, x, y,
+                    t = std::move(t)]() mutable {
+      cb(std::move(uri), scale, x, y, std::move(t));
+    });
+  };
+
+  // Pyramid prewarm: no specific tile coordinate.
+  auto reply_pyramid_done = [&](bool ok) {
+    if (!job.tile_cb) return;
+    auto cb = std::move(job.tile_cb);
+    auto uri = job.uri;
+    executor_.post([cb = std::move(cb), uri = std::move(uri), ok]() mutable {
+      if (ok)
+        cb(std::move(uri), 0, 0, 0, TileBlob{});
+      else
+        cb(std::move(uri), 0, 0, 0, std::nullopt);
+    });
+  };
+
+  if (!job.tile_pyramid) {
+    if (auto t = get_tile(job.uri, job.tile_scale, job.tile_x, job.tile_y)) {
+      reply_one(std::move(t));
+      return;
+    }
+  }
+
+  // Size probe first (sets content_id + dimensions).
+  {
+    Job probe;
+    probe.kind = JobKind::ProbeSize;
+    probe.uri = job.uri;
+    handle_probe_size(probe);
+  }
+
+  if (!job.tile_pyramid) {
+    if (auto t = get_tile(job.uri, job.tile_scale, job.tile_x, job.tile_y)) {
+      reply_one(std::move(t));
+      return;
+    }
+  }
+
+  auto loc = db_->find_locator(job.uri);
+  if (!loc || !loc->content_id) {
+    if (job.tile_pyramid) reply_pyramid_done(false);
+    else reply_one(std::nullopt);
+    return;
+  }
+
+  const std::string content_id = *loc->content_id;
+  const int min_scale = job.tile_pyramid ? job.tile_min_scale : job.tile_scale;
+  const int max_scale = job.tile_max_scale;
+
+  std::vector<TileBlob> tiles;
+
+  if (auto arch = parse_archive_uri(job.uri)) {
+    if (!arch->member_path.empty()) {
+      auto bytes = extract_archive_member(arch->archive_path, arch->member_path);
+      if (bytes && !bytes->empty()) {
+        tiles = build_tile_pyramid_buffer(bytes->data(), bytes->size(), min_scale,
+                                          max_scale, kDefaultTileQuality);
+      }
+    }
+  } else if (auto path = path_from_file_uri(job.uri)) {
+    // Skip pure PDF page URIs for tiles (Phase 4 non-goal).
+    if (parse_pdf_uri(job.uri)) {
+      if (job.tile_pyramid) reply_pyramid_done(false);
+      else reply_one(std::nullopt);
+      return;
+    }
+    if (std::filesystem::is_regular_file(*path)) {
+      tiles = build_tile_pyramid(*path, min_scale, max_scale, kDefaultTileQuality);
+    }
+  }
+
+  if (!tiles.empty()) {
+    store_tiles(content_id, tiles);
+  }
+
+  if (job.tile_pyramid) {
+    reply_pyramid_done(!tiles.empty());
+    return;
+  }
+
+  reply_one(get_tile(job.uri, job.tile_scale, job.tile_x, job.tile_y));
+}
 
 std::vector<std::string> Client::get_tags(std::string_view uri) const {
   auto loc = db_->find_locator(uri);

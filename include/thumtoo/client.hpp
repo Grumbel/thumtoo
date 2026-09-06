@@ -31,6 +31,8 @@ class Client {
   using SizeCallback = std::function<void(std::string uri, std::optional<Size>)>;
   using PixelsCallback =
       std::function<void(std::string uri, int max_edge, std::optional<PixelLevel>)>;
+  using TileCallback = std::function<void(std::string uri, int scale, int x, int y,
+                                          std::optional<TileBlob>)>;
 
   Client() = default;
   Client(const Client&) = delete;
@@ -59,6 +61,21 @@ class Client {
   /// Ensure ladder exists (probe if needed), then return pixels via callback.
   void request_pixels(std::string uri, int max_edge, PixelsCallback cb,
                       int frame_idx = 0);
+
+  /// Cache-only grid tile (Phase 4 / Galapix). See TILES.md.
+  [[nodiscard]] std::optional<TileBlob> get_tile(std::string_view uri, int scale,
+                                                 int x, int y) const;
+
+  /// Cache-only coverage: min/max scale present and native size when known.
+  [[nodiscard]] std::optional<TileCoverage> get_tile_coverage(
+      std::string_view uri) const;
+
+  /// Ensure tile at (scale,x,y) exists; builds [scale..max] in one pass if missing.
+  void request_tile(std::string uri, int scale, int x, int y, TileCallback cb);
+
+  /// Prewarm pyramid [min_scale..max_scale] (max_scale < 0 → until single tile).
+  void request_tile_pyramid(std::string uri, int min_scale = 0,
+                            int max_scale = -1, TileCallback on_done = {});
 
   /// Register paths, schedule size probes. Returns how many probe jobs were
   /// enqueued (already-ready locators are skipped). Optional callback is
@@ -110,15 +127,22 @@ class Client {
   explicit Client(std::unique_ptr<Database> db,
                   std::unique_ptr<BlobStore> blobs, Executor executor);
 
-  enum class JobKind { ProbeSize, EnsurePixels };
+  enum class JobKind { ProbeSize, EnsurePixels, EnsureTiles };
 
   struct Job {
     JobKind kind = JobKind::ProbeSize;
     std::string uri;
     int max_edge = 0;
     int frame_idx = 0;
+    int tile_scale = 0;
+    int tile_x = 0;
+    int tile_y = 0;
+    int tile_min_scale = 0;
+    int tile_max_scale = -1;  // <0 → until single-tile coverage
+    bool tile_pyramid = false;  // true: generate range, no single-tile reply
     SizeCallback size_cb;
     PixelsCallback pixels_cb;
+    TileCallback tile_cb;
   };
 
   void worker_main();
@@ -127,6 +151,9 @@ class Client {
       Job& job,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);
   void handle_ensure_pixels(Job& job);
+  void handle_ensure_tiles(Job& job);
+  void store_tiles(const std::string& content_id,
+                   const std::vector<TileBlob>& tiles);
 
   [[nodiscard]] std::optional<PixelLevel> load_level(
       const Database::LevelRow& row) const;
