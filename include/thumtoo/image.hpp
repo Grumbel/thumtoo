@@ -46,13 +46,13 @@ void image_library_init();
     const std::uint8_t* data, std::size_t size, const std::string& content_id,
     int jxl_quality);
 
+/// Build JXL ladder from contiguous RGB888 pixels (no alpha).
+[[nodiscard]] std::vector<LevelBlob> build_ladder_rgb(
+    const std::uint8_t* rgb, int width, int height, const std::string& content_id,
+    int jxl_quality);
+
 [[nodiscard]] std::string sha256_file_hex(const std::filesystem::path& path);
 [[nodiscard]] std::string sha256_bytes_hex(const std::uint8_t* data,
                                            std::size_t size);
 
 }  // namespace thumtoo
-
-/// Build JXL ladder from contiguous RGB888 pixels (no alpha).
-[[nodiscard]] std::vector<LevelBlob> build_ladder_rgb(
-    const std::uint8_t* rgb, int width, int height, const std::string& content_id,
-    int jxl_quality);
