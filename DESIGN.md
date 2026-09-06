@@ -139,7 +139,7 @@ Optional **tags attached to content hash** (not path), same idea as dirtoo:
 |----------|-----------------|
 | **Fixed long-edge ladder** (JPEG-XL via libvips) | **Phase 1** product cache |
 | **Progressive JPEG-XL** single-file viewing | Optional consumer feature; ladder remains multi-edge |
-| **Grid tiles** `(level, x, y)` | **Phase 4** if deep zoom is required |
+| **Grid tiles** `(scale, x, y)` 256² | **Phase 4** (see [TILES.md](TILES.md)); ladder stays primary |
 
 ## 6. Architecture
 
@@ -487,7 +487,7 @@ regenerate vs serve-as-is.
 | **1** | `libthumtoo`: sources + levels, async probe/decode, `thumtoo-prepare` CLI |
 | **2** | Archive TOC + member pipeline; biltoo archive open uses cache |
 | **3** | Optional `thumtood` + D-Bus |
-| **4** | Optional grid tiles / deep zoom |
+| **4** | Optional grid tiles / deep zoom ([TILES.md](TILES.md)) |
 
 ## 8. biltoo integration (target)
 

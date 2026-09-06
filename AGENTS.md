@@ -32,27 +32,15 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 
 ## Status (2026-09-06)
 
-**Phase 1 done:** Client, prepare/status CLIs, system SQLite, libvips+JXL ladder,
-get/request size & pixels, biltoo INTEGRATION.md. `thumtoo-prepare` reports
-per-job progress on stderr (`--quiet` to suppress).
-flake ships util-linux so gio `mount.pc` is on PKG_CONFIG_PATH.
+**Phase 1–2 done:** Client, prepare/status CLIs, system SQLite, libvips+JXL ladder,
+archive TOC + member extract, tags, PDF `//page:N`, biltoo INTEGRATION.md.
 
-**Phase 2 in progress:** archive TOC + **member extract** for
-`file:///…//archive:member` → sha256 identity + JXL ladder (same as plain files).
-Caps: 512 MiB member uncompressed.
+**Phase 4 started:** optional grid tiles (galapix-style). See [TILES.md](TILES.md)
+and [TODO.md](TODO.md) Phase 4 checklist. Plain ladder remains the biltoo path.
 
-**Note:** prepare re-queues non-ready locators; drain claims jobs before dequeue.
+**Later:** cache eviction / `thumtoo-gc`; optional D-Bus; video animated preview.
 
-**Next:** cache eviction / `thumtoo-gc`; optional `//frame:N`.
-
-**Done recently:** biltoo flake input + soft preview ladder; Client fast shutdown.
-
-**Done recently:** tag API sketch (content_id keyed) + TAGS.md vs dirtoo.
-
-**Done recently:** prepare expands archive image members; worker coalesces
-same-archive probe jobs into one libarchive open (`extract_archive_members`).
-
-Ladder blobs: `blobs.sqlite` (not a directory of files). System SQLite via pkg-config/Nix. Optional vendored code under `external/`.
+Ladder blobs: `blobs.sqlite`. Tile blobs will share that file under `tile_blobs`.
 
 ## Commits
 

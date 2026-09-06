@@ -56,10 +56,67 @@ SPDX-License-Identifier: GPL-3.0-or-later
 - [x] Client shutdown clears job queue; skip re-probe when Ready
 - [x] `thumtoo-prepare` archive expand (register all image members)
 
+## Phase 4 — Grid tiles (galapix-style) — ACTIVE
+
+Goal: provide optional **256×256 power-of-two tile pyramids** so Galapix
+(develop) can consume thumtoo instead of its own SQLite `tiles` table.
+
+Reference: galapix master `TileGenerator` + `tiles` schema
+`(fileid, scale, x, y) → JPEG/PNG blob`. Scale 0 = full resolution;
+each +1 halves linear size. Tile size fixed at 256.
+
+### Design decisions (proposed)
+
+1. **Tile size** `kTileSize = 256` (Galapix-compatible; not configurable for now).
+2. **Scale convention** matches Galapix: `scale=0` full-res tiles, `scale=1`
+   half linear, … up to the scale where the whole image fits in one tile.
+3. **Codec** default **JPEG** (quality 80) for Galapix decode path simplicity;
+   ladder stays JXL. (Revisit JXL tiles once Galapix has a JXL decoder path.)
+4. **Storage**
+   - Metadata rows in `index.sqlite` table `tiles`
+     `(content_id, scale, x, y, width, height, codec, quality)` PRIMARY KEY
+     `(content_id, scale, x, y)`.
+   - Payload BLOBs in `blobs.sqlite` table `tile_blobs` with the same key.
+   - Same pattern as ladder `levels` / `level_blobs` (no loose files).
+5. **Schema** keep `kSchemaVersion = 1`; additive tables only (no bump) until
+   a breaking change is required.
+6. **API surface** (Client)
+   - `get_tile(uri, scale, x, y) → optional<TileBlob>`
+   - `request_tile(uri, scale, x, y, cb)` async; generates missing tiles for
+     that scale (or full pyramid on prepare).
+   - `get_tile_coverage(uri) → optional{min_scale, max_scale, image_size}`
+   - `request_tiles(uri, min_scale, max_scale, cb)` / prepare flag.
+7. **Generation** libvips: load once, successive `resize(0.5)` + crop 256²;
+   partial edge tiles allowed (width/height < 256 stored).
+8. **Prepare CLI** optional `--tiles` / `--tile-max-edge N` to prewarm pyramids
+   (default off so biltoo path stays light).
+9. **Non-goals this phase**
+   - Replacing Galapix UI or OpenGL tile cache.
+   - Video/PDF page tiles (images + archive image members first).
+   - Eviction of tiles (shares future `thumtoo-gc`).
+
+### Implementation order
+
+- [x] `TILES.md` normative note + constants in `constants.hpp`
+- [x] Schema: `tiles` in index + `tile_blobs` in BlobStore; status counters
+- [x] `image.cpp`: `build_tile_pyramid(...)` → vector of tile blobs
+- [x] Database / BlobStore put/get/list/min_max for tiles
+- [ ] Client: get/request tile + worker job type
+- [ ] `thumtoo-status` tile summary; tests with small fixture image
+- [ ] `thumtoo-prepare --tiles`
+- [ ] Galapix develop integration sketch (`INTEGRATION_GALAPIX.md`)
+
+### Notes / open
+
+- Whether on-demand should generate **one scale** or **that scale + all coarser**
+  (Galapix often needs coarser first for overview). Prefer generate requested
+  scale and all coarser in one pass when loading the source.
+- Cap max source pixels before tiling (e.g. reject or downscale beyond ~100 MP)
+  — TBD with Galapix use.
+
 ## Later
 
 - [ ] Cache eviction / LRU / orphan sweep + `thumtoo-gc` / `thumtoo-status`
 - [ ] Optional D-Bus daemon
-- [ ] Optional grid tiles (galapix-style)
 - [ ] Adaptive video frame count (8–64 → still_count)
 - [ ] Animated video preview level (must-have; deferred until consumers exist)

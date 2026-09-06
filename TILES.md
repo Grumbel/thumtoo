@@ -1,0 +1,70 @@
+<!--
+SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+# Grid tiles (Phase 4)
+
+Optional **galapix-compatible** tile pyramid on top of the fixed long-edge
+ladder. Ladder remains the primary biltoo path; tiles serve deep zoom and the
+Galapix collection viewer.
+
+## Model (Galapix-aligned)
+
+| Field | Meaning |
+|-------|---------|
+| `scale` | 0 = full resolution; each +1 halves width and height |
+| `x`, `y` | Tile indices from the top-left of that scale’s image |
+| Tile size | **256×256** (`kTileSize`); edge tiles may be smaller |
+| Codec | Default **JPEG** q=80 (`kDefaultTileCodec` / `kDefaultTileQuality`) |
+
+Whole-image coverage at scale `s` is:
+
+```text
+tw = ceil(width  / 2^s / 256)
+th = ceil(height / 2^s / 256)
+```
+
+`max_scale` is the smallest `s` where `tw == 1 && th == 1` (or a configured cap).
+
+## Storage
+
+- **index.sqlite** `tiles(content_id, scale, x, y, width, height, codec, quality)`
+- **blobs.sqlite** `tile_blobs(... same key ..., data BLOB)`
+- Content identity is still `sha256:…` / provisional; locators unchanged.
+
+Additive schema only; `schema_version` stays 1 until a breaking migration.
+
+## API (Client)
+
+```text
+get_tile(uri, scale, x, y) -> optional<TileBlob>
+request_tile(uri, scale, x, y, callback)
+get_tile_coverage(uri) -> optional{min_scale, max_scale, Size}
+request_tile_pyramid(uri, min_scale, max_scale, callback)  // optional batch
+```
+
+`TileBlob`: scale, x, y, width, height, codec, bytes.
+
+On miss, the worker loads the source once (file or archive member), builds the
+requested scale **and all coarser scales** in one pass, stores them, then
+invokes the callback. Finer scales than already stored are generated only when
+asked.
+
+## Prepare
+
+`thumtoo-prepare --tiles [paths…]` prewarms full pyramids (subject to source
+size policy). Default prepare path does **not** build tiles.
+
+## Non-goals
+
+- GUI / OpenGL cache (stays in Galapix)
+- Video or PDF page tiles in the first cut
+- Replacing the JXL ladder
+
+## Integration
+
+See [INTEGRATION.md](INTEGRATION.md) for biltoo. Galapix mapping will live in
+`INTEGRATION_GALAPIX.md` once the Client tile API is stable: replace
+`SQLiteTileDatabase` / `TileGenerator` with thumtoo `get_tile` / `request_tile`
+keyed by URL → content_id.
