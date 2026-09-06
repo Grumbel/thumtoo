@@ -75,5 +75,18 @@ CREATE TABLE IF NOT EXISTS tags (
   PRIMARY KEY (content_id, tag)
 );
 
+CREATE TABLE IF NOT EXISTS tiles (
+  content_id TEXT NOT NULL,
+  scale INTEGER NOT NULL,
+  x INTEGER NOT NULL,
+  y INTEGER NOT NULL,
+  width INTEGER,
+  height INTEGER,
+  codec TEXT,
+  quality INTEGER,
+  PRIMARY KEY (content_id, scale, x, y)
+);
+
 CREATE INDEX IF NOT EXISTS idx_locators_content_id ON locators(content_id);
 CREATE INDEX IF NOT EXISTS idx_levels_content_id ON levels(content_id);
+CREATE INDEX IF NOT EXISTS idx_tiles_content_id ON tiles(content_id);

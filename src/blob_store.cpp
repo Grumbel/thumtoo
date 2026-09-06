@@ -74,6 +74,19 @@ void BlobStore::migrate_or_init() {
       "  data BLOB NOT NULL,"
       "  PRIMARY KEY (content_id, max_edge, frame_idx)"
       ");");
+  exec(
+      "CREATE TABLE IF NOT EXISTS tile_blobs ("
+      "  content_id TEXT NOT NULL,"
+      "  scale INTEGER NOT NULL,"
+      "  x INTEGER NOT NULL,"
+      "  y INTEGER NOT NULL,"
+      "  width INTEGER,"
+      "  height INTEGER,"
+      "  codec TEXT,"
+      "  quality INTEGER,"
+      "  data BLOB NOT NULL,"
+      "  PRIMARY KEY (content_id, scale, x, y)"
+      ");");
 }
 
 void BlobStore::put_level(std::string_view content_id, int max_edge,
@@ -133,6 +146,74 @@ std::optional<std::vector<std::uint8_t>> BlobStore::get_level(
 std::int64_t BlobStore::count_levels() const {
   sqlite3_stmt* stmt = nullptr;
   sqlite3_prepare_v2(db_, "SELECT COUNT(*) FROM level_blobs;", -1, &stmt,
+                     nullptr);
+  std::int64_t n = 0;
+  if (sqlite3_step(stmt) == SQLITE_ROW) n = sqlite3_column_int64(stmt, 0);
+  sqlite3_finalize(stmt);
+  return n;
+}
+
+
+void BlobStore::put_tile(std::string_view content_id, int scale, int x, int y,
+                         int width, int height, std::string_view codec,
+                         int quality, const std::uint8_t* data,
+                         std::size_t size) {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "INSERT INTO tile_blobs(content_id, scale, x, y, width, height, "
+      "codec, quality, data) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9) "
+      "ON CONFLICT(content_id, scale, x, y) DO UPDATE SET "
+      "width=excluded.width, height=excluded.height, codec=excluded.codec, "
+      "quality=excluded.quality, data=excluded.data;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(),
+                    static_cast<int>(content_id.size()), SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, scale);
+  sqlite3_bind_int(stmt, 3, x);
+  sqlite3_bind_int(stmt, 4, y);
+  sqlite3_bind_int(stmt, 5, width);
+  sqlite3_bind_int(stmt, 6, height);
+  sqlite3_bind_text(stmt, 7, codec.data(), static_cast<int>(codec.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 8, quality);
+  sqlite3_bind_blob(stmt, 9, data, static_cast<int>(size), SQLITE_STATIC);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_finalize(stmt);
+}
+
+std::optional<std::vector<std::uint8_t>> BlobStore::get_tile(
+    std::string_view content_id, int scale, int x, int y) const {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT data FROM tile_blobs WHERE content_id = ?1 AND scale = ?2 "
+      "AND x = ?3 AND y = ?4;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(),
+                    static_cast<int>(content_id.size()), SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, scale);
+  sqlite3_bind_int(stmt, 3, x);
+  sqlite3_bind_int(stmt, 4, y);
+  std::optional<std::vector<std::uint8_t>> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    const auto* p =
+        static_cast<const std::uint8_t*>(sqlite3_column_blob(stmt, 0));
+    const int n = sqlite3_column_bytes(stmt, 0);
+    if (p && n > 0) out = std::vector<std::uint8_t>(p, p + n);
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+std::int64_t BlobStore::count_tiles() const {
+  sqlite3_stmt* stmt = nullptr;
+  sqlite3_prepare_v2(db_, "SELECT COUNT(*) FROM tile_blobs;", -1, &stmt,
                      nullptr);
   std::int64_t n = 0;
   if (sqlite3_step(stmt) == SQLITE_ROW) n = sqlite3_column_int64(stmt, 0);

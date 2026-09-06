@@ -40,6 +40,15 @@ class BlobStore {
 
   [[nodiscard]] std::int64_t count_levels() const;
 
+  void put_tile(std::string_view content_id, int scale, int x, int y,
+                int width, int height, std::string_view codec, int quality,
+                const std::uint8_t* data, std::size_t size);
+
+  [[nodiscard]] std::optional<std::vector<std::uint8_t>> get_tile(
+      std::string_view content_id, int scale, int x, int y) const;
+
+  [[nodiscard]] std::int64_t count_tiles() const;
+
  private:
   explicit BlobStore(sqlite3* db, std::filesystem::path db_path);
   void exec(const char* sql) const;

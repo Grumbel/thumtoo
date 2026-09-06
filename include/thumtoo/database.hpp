@@ -42,6 +42,7 @@ class Database {
   [[nodiscard]] std::int64_t count_content() const;
   [[nodiscard]] std::int64_t count_locators() const;
   [[nodiscard]] std::int64_t count_levels() const;
+  [[nodiscard]] std::int64_t count_tiles() const;
   [[nodiscard]] std::int64_t count_directory_snapshots() const;
 
   struct LocatorRow {
@@ -134,6 +135,29 @@ class Database {
       std::string_view content_id) const;
   [[nodiscard]] std::vector<std::string> content_ids_for_tag(
       std::string_view tag, int limit = 1000) const;
+
+  // --- grid tiles (Phase 4) ---
+  struct TileRow {
+    std::string content_id;
+    int scale = 0;
+    int x = 0;
+    int y = 0;
+    std::optional<int> width;
+    std::optional<int> height;
+    std::optional<std::string> codec;
+    std::optional<int> quality;
+  };
+
+  void upsert_tile(const TileRow& row);
+  [[nodiscard]] std::optional<TileRow> find_tile(std::string_view content_id,
+                                                 int scale, int x,
+                                                 int y) const;
+  /// Returns false if no tiles exist for content_id.
+  [[nodiscard]] bool tile_min_max_scale(std::string_view content_id,
+                                        int& min_scale_out,
+                                        int& max_scale_out) const;
+  [[nodiscard]] std::vector<TileRow> list_tiles(std::string_view content_id,
+                                                int limit = 10000) const;
 
  private:
   explicit Database(sqlite3* db, std::filesystem::path cache_root,

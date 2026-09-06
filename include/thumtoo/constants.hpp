@@ -38,4 +38,9 @@ inline constexpr char kSchemaMetaJxlQualityKey[] = "jxl_quality";
 // Legacy name still accepted when reading old caches.
 inline constexpr char kSchemaMetaWebpQualityKey[] = "webp_quality";
 
+/// Grid tiles (Phase 4 / Galapix-compatible). See TILES.md.
+inline constexpr int kTileSize = 256;
+inline constexpr int kDefaultTileQuality = 80;
+inline constexpr char kDefaultTileCodec[] = "jpeg";
+
 }  // namespace thumtoo

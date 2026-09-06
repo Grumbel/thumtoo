@@ -37,4 +37,21 @@ struct PixelLevel {
   std::vector<std::uint8_t> bytes;
 };
 
+/// Encoded grid tile (Phase 4 / Galapix-compatible). See TILES.md.
+struct TileBlob {
+  int scale = 0;
+  int x = 0;
+  int y = 0;
+  int width = 0;
+  int height = 0;
+  std::string codec;  // "jpeg" by default
+  std::vector<std::uint8_t> bytes;
+};
+
+struct TileCoverage {
+  int min_scale = 0;
+  int max_scale = 0;
+  Size size;
+};
+
 }  // namespace thumtoo

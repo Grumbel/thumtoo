@@ -95,8 +95,20 @@ CREATE TABLE IF NOT EXISTS tags (
   created_at INTEGER,
   PRIMARY KEY (content_id, tag)
 );
+CREATE TABLE IF NOT EXISTS tiles (
+  content_id TEXT NOT NULL,
+  scale INTEGER NOT NULL,
+  x INTEGER NOT NULL,
+  y INTEGER NOT NULL,
+  width INTEGER,
+  height INTEGER,
+  codec TEXT,
+  quality INTEGER,
+  PRIMARY KEY (content_id, scale, x, y)
+);
 CREATE INDEX IF NOT EXISTS idx_locators_content_id ON locators(content_id);
 CREATE INDEX IF NOT EXISTS idx_levels_content_id ON levels(content_id);
+CREATE INDEX IF NOT EXISTS idx_tiles_content_id ON tiles(content_id);
 )SQL";
 
 }  // namespace
@@ -243,6 +255,15 @@ std::int64_t Database::count_locators() const {
 std::int64_t Database::count_levels() const {
   sqlite3_stmt* stmt = nullptr;
   sqlite3_prepare_v2(db_, "SELECT COUNT(*) FROM levels;", -1, &stmt, nullptr);
+  std::int64_t n = 0;
+  if (sqlite3_step(stmt) == SQLITE_ROW) n = sqlite3_column_int64(stmt, 0);
+  sqlite3_finalize(stmt);
+  return n;
+}
+
+std::int64_t Database::count_tiles() const {
+  sqlite3_stmt* stmt = nullptr;
+  sqlite3_prepare_v2(db_, "SELECT COUNT(*) FROM tiles;", -1, &stmt, nullptr);
   std::int64_t n = 0;
   if (sqlite3_step(stmt) == SQLITE_ROW) n = sqlite3_column_int64(stmt, 0);
   sqlite3_finalize(stmt);
@@ -801,6 +822,129 @@ std::vector<std::string> Database::content_ids_for_tag(std::string_view tag,
   }
   sqlite3_finalize(stmt);
   return out;
+}
+
+
+void Database::upsert_tile(const TileRow& row) {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "INSERT INTO tiles(content_id, scale, x, y, width, height, codec, quality) "
+      "VALUES(?1,?2,?3,?4,?5,?6,?7,?8) "
+      "ON CONFLICT(content_id, scale, x, y) DO UPDATE SET "
+      "width=excluded.width, height=excluded.height, codec=excluded.codec, "
+      "quality=excluded.quality;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, row.content_id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 2, row.scale);
+  sqlite3_bind_int(stmt, 3, row.x);
+  sqlite3_bind_int(stmt, 4, row.y);
+  if (row.width) sqlite3_bind_int(stmt, 5, *row.width);
+  else sqlite3_bind_null(stmt, 5);
+  if (row.height) sqlite3_bind_int(stmt, 6, *row.height);
+  else sqlite3_bind_null(stmt, 6);
+  if (row.codec)
+    sqlite3_bind_text(stmt, 7, row.codec->c_str(), -1, SQLITE_TRANSIENT);
+  else
+    sqlite3_bind_null(stmt, 7);
+  if (row.quality) sqlite3_bind_int(stmt, 8, *row.quality);
+  else sqlite3_bind_null(stmt, 8);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_finalize(stmt);
+}
+
+std::optional<Database::TileRow> Database::find_tile(std::string_view content_id,
+                                                     int scale, int x,
+                                                     int y) const {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT content_id, scale, x, y, width, height, codec, quality FROM tiles "
+      "WHERE content_id = ?1 AND scale = ?2 AND x = ?3 AND y = ?4;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(),
+                    static_cast<int>(content_id.size()), SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, scale);
+  sqlite3_bind_int(stmt, 3, x);
+  sqlite3_bind_int(stmt, 4, y);
+  std::optional<TileRow> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    TileRow r;
+    r.content_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    r.scale = sqlite3_column_int(stmt, 1);
+    r.x = sqlite3_column_int(stmt, 2);
+    r.y = sqlite3_column_int(stmt, 3);
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+      r.width = sqlite3_column_int(stmt, 4);
+    if (sqlite3_column_type(stmt, 5) != SQLITE_NULL)
+      r.height = sqlite3_column_int(stmt, 5);
+    if (sqlite3_column_type(stmt, 6) != SQLITE_NULL)
+      r.codec = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
+    if (sqlite3_column_type(stmt, 7) != SQLITE_NULL)
+      r.quality = sqlite3_column_int(stmt, 7);
+    out = std::move(r);
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+bool Database::tile_min_max_scale(std::string_view content_id, int& min_scale_out,
+                                  int& max_scale_out) const {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT MIN(scale), MAX(scale) FROM tiles WHERE content_id = ?1;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(),
+                    static_cast<int>(content_id.size()), SQLITE_STATIC);
+  bool ok = false;
+  if (sqlite3_step(stmt) == SQLITE_ROW &&
+      sqlite3_column_type(stmt, 0) != SQLITE_NULL) {
+    min_scale_out = sqlite3_column_int(stmt, 0);
+    max_scale_out = sqlite3_column_int(stmt, 1);
+    ok = true;
+  }
+  sqlite3_finalize(stmt);
+  return ok;
+}
+
+std::vector<Database::TileRow> Database::list_tiles(std::string_view content_id,
+                                                    int limit) const {
+  std::vector<TileRow> rows;
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT content_id, scale, x, y, width, height, codec, quality FROM tiles "
+      "WHERE content_id = ?1 ORDER BY scale, y, x LIMIT ?2;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(),
+                    static_cast<int>(content_id.size()), SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, limit);
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    TileRow r;
+    r.content_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    r.scale = sqlite3_column_int(stmt, 1);
+    r.x = sqlite3_column_int(stmt, 2);
+    r.y = sqlite3_column_int(stmt, 3);
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+      r.width = sqlite3_column_int(stmt, 4);
+    if (sqlite3_column_type(stmt, 5) != SQLITE_NULL)
+      r.height = sqlite3_column_int(stmt, 5);
+    if (sqlite3_column_type(stmt, 6) != SQLITE_NULL)
+      r.codec = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
+    if (sqlite3_column_type(stmt, 7) != SQLITE_NULL)
+      r.quality = sqlite3_column_int(stmt, 7);
+    rows.push_back(std::move(r));
+  }
+  sqlite3_finalize(stmt);
+  return rows;
 }
 
 }  // namespace thumtoo
