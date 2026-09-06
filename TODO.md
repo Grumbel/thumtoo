@@ -43,7 +43,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Design open / discuss
 
-- [ ] Archive on-demand vs batch coalescing details
+- [x] Archive on-demand vs batch coalescing details (worker peeks same-archive jobs)
 - [ ] Optional convenience Location `//frame:N` (view only)
 - [ ] Whether archive caps need per-format overrides
 

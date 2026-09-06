@@ -43,7 +43,9 @@ Caps: 512 MiB member uncompressed.
 
 **Note:** prepare re-queues non-ready locators; drain claims jobs before dequeue.
 
-**Next:** biltoo wiring.
+**Next:** cache eviction / `thumtoo-gc`; optional `//frame:N`.
+
+**Done recently:** biltoo flake input + soft preview ladder; Client fast shutdown.
 
 **Done recently:** tag API sketch (content_id keyed) + TAGS.md vs dirtoo.
 
