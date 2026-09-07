@@ -106,3 +106,10 @@ Galapix scale **0 = full resolution**; higher = coarser.
   (`--min-scale` / `--max-scale` imply `--tiles`)  
 * Interactive `request_tile` still encodes only the requested cell; the app
   chooses which scales to ask for.
+
+
+## PDF layout DPI (2026-09-07)
+
+Page `get_size` and live `request_tile` use **kPdfLayoutDpi (144)** so
+interactive tiles are sharper than 72 dpi media-box. Rasterize on demand from
+Poppler; durable tile cache still fills on first request.

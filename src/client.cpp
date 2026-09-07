@@ -775,8 +775,8 @@ void Client::handle_probe_size(
       row.status = ContentStatus::Failed;
       row.error_code = "not_a_file";
     } else {
-      auto size72 = pdf_page_size_72dpi(pdf->pdf_path, pdf->page);
-      if (!size72) {
+      auto layout = pdf_page_layout_size(pdf->pdf_path, pdf->page);
+      if (!layout) {
         row.status = ContentStatus::Failed;
         row.error_code = "pdf_page_failed";
       } else {
@@ -803,11 +803,11 @@ void Client::handle_probe_size(
             }
           }
         }
-        row.width = size72->width;
-        row.height = size72->height;
+        row.width = layout->width;
+        row.height = layout->height;
         row.format = "pdf";
         row.error_code = std::nullopt;
-        size_out = *size72;
+        size_out = *layout;
         row.status = ContentStatus::Incomplete;
       }
     }
@@ -1216,10 +1216,10 @@ void Client::handle_ensure_tiles(
         }
       }
     } else if (auto pdf = parse_pdf_uri(job.uri)) {
-      // Rasterize at reported (72 dpi) size so tiles match get_size / layout.
-      auto size72 = pdf_page_size_72dpi(pdf->pdf_path, pdf->page);
-      if (size72 && size72->width > 0 && size72->height > 0) {
-        const int edge = std::max(size72->width, size72->height);
+      // Live rasterize at layout DPI (kPdfLayoutDpi) so tiles match get_size.
+      auto layout = pdf_page_layout_size(pdf->pdf_path, pdf->page);
+      if (layout && layout->width > 0 && layout->height > 0) {
+        const int edge = std::max(layout->width, layout->height);
         auto raster = pdf_rasterize_page(pdf->pdf_path, pdf->page, edge);
         if (raster && !raster->rgb.empty()) {
           cell = build_tile_cell_rgb(raster->rgb.data(), raster->width,
@@ -1252,9 +1252,9 @@ void Client::handle_ensure_tiles(
       }
     }
   } else if (auto pdf = parse_pdf_uri(job.uri)) {
-    auto size72 = pdf_page_size_72dpi(pdf->pdf_path, pdf->page);
-    if (size72 && size72->width > 0 && size72->height > 0) {
-      const int edge = std::max(size72->width, size72->height);
+    auto layout = pdf_page_layout_size(pdf->pdf_path, pdf->page);
+    if (layout && layout->width > 0 && layout->height > 0) {
+      const int edge = std::max(layout->width, layout->height);
       auto raster = pdf_rasterize_page(pdf->pdf_path, pdf->page, edge);
       if (raster && !raster->rgb.empty()) {
         tiles = build_tile_pyramid_rgb(raster->rgb.data(), raster->width,

@@ -547,3 +547,10 @@ Apps (Galapix, biltoo, `.desktop` files) should prefer:
 * `media_mime_types()` or `desktop_mime_types_line()` for file dialogs / MimeType=
 
 Do not maintain a parallel extension list in each app.
+
+
+## PDF layout DPI (2026-09-07)
+
+Page `get_size` and live `request_tile` use **kPdfLayoutDpi (144)** so
+interactive tiles are sharper than 72 dpi media-box. Rasterize on demand from
+Poppler; durable tile cache still fills on first request.

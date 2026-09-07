@@ -38,6 +38,10 @@ inline constexpr char kSchemaMetaJxlQualityKey[] = "jxl_quality";
 // Legacy name still accepted when reading old caches.
 inline constexpr char kSchemaMetaWebpQualityKey[] = "webp_quality";
 
+/// PDF page layout / live tile rasterization (1 pt = 1 px at 72 dpi).
+/// Higher than 72 so interactive tiles are sharper than screen-media-box.
+inline constexpr int kPdfLayoutDpi = 144;
+
 /// Grid tiles (Phase 4 / Galapix-compatible). See TILES.md.
 inline constexpr int kTileSize = 256;
 inline constexpr int kDefaultTileQuality = 80;

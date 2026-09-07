@@ -49,4 +49,8 @@ struct PdfRaster {
 [[nodiscard]] std::optional<Size> pdf_page_size_72dpi(
     const std::filesystem::path& path, int page_1based);
 
+/// Layout size for Galapix-style tiles: media box scaled to kPdfLayoutDpi.
+[[nodiscard]] std::optional<Size> pdf_page_layout_size(
+    const std::filesystem::path& path, int page_1based);
+
 }  // namespace thumtoo

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "thumtoo/pdf.hpp"
+#include "thumtoo/constants.hpp"
 #include "thumtoo/format.hpp"
 #include "thumtoo/uri.hpp"
 
@@ -91,6 +92,17 @@ std::optional<Size> pdf_page_size_72dpi(const std::filesystem::path& path,
   const int h = std::max(1, static_cast<int>(std::lround(box.height())));
   return Size{w, h};
 #endif
+}
+
+std::optional<Size> pdf_page_layout_size(const std::filesystem::path& path,
+                                         int page_1based) {
+  auto s72 = pdf_page_size_72dpi(path, page_1based);
+  if (!s72) return std::nullopt;
+  // Scale media-box points to layout DPI (default 144 = 2× 72).
+  const double scale = static_cast<double>(kPdfLayoutDpi) / 72.0;
+  const int w = std::max(1, static_cast<int>(std::lround(s72->width * scale)));
+  const int h = std::max(1, static_cast<int>(std::lround(s72->height * scale)));
+  return Size{w, h};
 }
 
 std::optional<PdfRaster> pdf_rasterize_page(const std::filesystem::path& path,
