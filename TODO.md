@@ -1,3 +1,78 @@
+## Live PDF tiles + negative scale investigation (2026-09-07) — tip **thumtoo-031**
+
+### Symptom
+Cached PDF tiles (JPEG from durable store) render in Galapix. Live /
+interactive `request_tile` (especially negative scale, or any PDF cell that
+bypasses cache and returns **uncompressed** pixels) does not.
+
+### thumtoo-side findings (verified with `thumtoo-test-pdf-tiles` + `thumtoo-tile`)
+
+| Path | Behaviour |
+|------|-----------|
+| Interactive `request_tile` for `//page:N` | Always builds via `pdf_render_tile_cell` → replies **`codec=rgb888`** raw RGB888 in the callback `TileBlob`. |
+| Durable store | Only if `scale >= kPdfMinDurableTileScale` (−2). Stored blob is **JPEG** (`kPdfTileQuality`). |
+| `get_tile` after store | Returns the **JPEG** row (not rgb888). |
+| Scale &lt; −2 | Live-only; never written to `tiles` / `tile_blobs`. |
+| Negative scale geometry | `full = layout * 2^{-scale}`, `dpi = 144 * 2^{-scale}`, crop `(x*T, y*T, tw, th)` on that grid. Matches TILES.md; Poppler region + soft-crop fallback both produce correct 256² (or edge) cells. |
+| `get_tile_coverage` | Reflects **stored** min/max only. Theoretical fallback starts at min_scale=0. Apps must request negative scales explicitly; coverage does not advertise them. |
+
+Library path is consistent. Manual checks with Ghostscript test PDF:
+
+* scale 0 / −1 / −2 / −3 → non-empty rgb888 256×256 (or edge size)
+* scale −3 → `has_tile` stays false
+* `pdftoppm` full-page vs region crop align on the same pixel grid
+
+### Root cause (most likely Galapix)
+
+`INTEGRATION_GALAPIX.md` documents the adapter as:
+
+> misses use `request_tile` (JPEG → `surf::jpeg::load_from_mem`)
+
+The callback payload for **every** interactive PDF tile is now **rgb888**, not
+JPEG. JPEG-decoding raw RGB bytes fails (or yields garbage). Cache hits still
+go through `get_tile` → JPEG → works. That matches “cached works, live does
+not”.
+
+Negative scale is a special case of the same path: those cells are often
+live-only (or first miss), so they always hit the rgb888 reply.
+
+### What Galapix must do
+
+In `ThumtooTileProvider` (or equivalent):
+
+1. Inspect `TileBlob::codec`.
+2. If `codec == "rgb888"` (or `kTileCodecRgb888`): treat `bytes` as tightly
+   packed RGB888, width×height from the blob meta; upload to GL / software
+   surface **without** JPEG decode.
+3. If `codec == "jpeg"` (or empty/default): keep existing `surf::jpeg::load_from_mem`.
+4. To zoom past 1:1 on PDF pages, request `scale < 0` (layout is 144 dpi;
+   scale −1 = 288 dpi, −2 = 576 dpi). Do not rely on `get_tile_coverage` for
+   negative min_scale.
+
+### Tests added this tip
+
+* `tests/test_pdf_tiles.cpp` (`thumtoo-test-pdf-tiles`): end-to-end Client path
+  for scales 0, −1, −2, −3; edge tiles; out-of-range; durable vs live-only;
+  codec contract; geometry helpers.
+* Existing `test_pdf_scale` remains the pure math check.
+
+### Still open (not a thumtoo bug)
+
+* Galapix adapter rgb888 branch (required for live PDF).
+* Galapix requesting negative scales when zoomed past layout 1:1.
+* Optional: expose theoretical min_scale for PDF in coverage (e.g. always allow
+  down to `kPdfMinDurableTileScale` or a configurable live floor). Discuss
+  before changing API semantics.
+
+### Key files
+
+* `src/client.cpp` — PDF branch of `handle_ensure_tiles` (live rgb888 reply)
+* `src/pdf.cpp` — `pdf_render_tile_cell` / region raster
+* `include/thumtoo/constants.hpp` — `kTileCodecRgb888`, `kPdfMinDurableTileScale`
+* `tests/test_pdf_tiles.cpp`, `tools/thumtoo_tile.cpp` (`--raw-pdf`, codec-aware PNG out)
+
+---
+
 ## PDF region tiles + negative scale (2026-09-07) — tip **thumtoo-030**
 
 Interactive PDF tiles: `pdf_build_tile_cell` region-rasterizes a single cell at
@@ -10,7 +85,8 @@ peak memory stays O(tile), not O(full page × dpi).
 
 Pyramid prewarm still full-page at layout for scales ≥ 0 (unchanged).
 
-Galapix follow-up: request tilescale &lt; 0 when zoomed past 1:1 on PDF pages.
+Galapix follow-up: request tilescale &lt; 0 when zoomed past 1:1 on PDF pages;
+**and** handle `codec=rgb888` on the live callback (see tip 031).
 
 ## Session handoff (2026-09-07) — tip **thumtoo-027**
 

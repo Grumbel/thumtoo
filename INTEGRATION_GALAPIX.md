@@ -47,9 +47,24 @@ auto provider = galapix::ThumtooTileProvider::create(
 image.set_tile_provider(provider);
 ```
 
-Cache hits use `get_tile`; misses use `request_tile` (JPEG → `surf::jpeg::load_from_mem`).
+Cache hits use `get_tile` (JPEG for durable cells). Misses use `request_tile`.
+
+**PDF interactive reply is `codec=rgb888` (raw RGB888), not JPEG.** Raster
+images remain JPEG. Galapix must branch on `TileBlob::codec`:
+
+* `"jpeg"` / default → `surf::jpeg::load_from_mem` (unchanged)
+* `"rgb888"` → bind `bytes` as tightly packed RGB, size `width×height` from the
+  blob (no decode). Required for live PDF cells and all scales finer than
+  `kPdfMinDurableTileScale` (−2).
 
 With `HAVE_THUMTOO`, Galapix defaults to thumtoo tiles (`--no-thumtoo` forces SQLite).
+
+### PDF negative scale
+
+Layout size is `kPdfLayoutDpi` (144). Scale 0 = that size. Scale −1 = 2×
+pixels / 288 dpi, etc. Request `scale < 0` when the user zooms past 1:1 on a
+PDF page. `get_tile_coverage` only reports **stored** scales; it does not
+advertise live-only negative scales — the viewer chooses them from zoom level.
 
 ## Viewer flow
 
