@@ -78,6 +78,10 @@ if(THUMTOO_BUILD_TESTS)
   add_executable(thumtoo-test-uri tests/test_uri.cpp)
   target_link_libraries(thumtoo-test-uri PRIVATE thumtoo)
   add_test(NAME uri COMMAND thumtoo-test-uri)
+
+  add_executable(thumtoo-test-pdf-scale tests/test_pdf_scale.cpp)
+  target_link_libraries(thumtoo-test-pdf-scale PRIVATE thumtoo)
+  add_test(NAME pdf_scale COMMAND thumtoo-test-pdf-scale)
 endif()
 
 install(TARGETS thumtoo ARCHIVE DESTINATION lib LIBRARY DESTINATION lib)

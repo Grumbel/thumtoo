@@ -38,9 +38,10 @@ inline constexpr char kSchemaMetaJxlQualityKey[] = "jxl_quality";
 // Legacy name still accepted when reading old caches.
 inline constexpr char kSchemaMetaWebpQualityKey[] = "webp_quality";
 
-/// PDF page layout size for get_size / scale 0 (1 pt = 1 px at 72 dpi).
-/// Finer detail uses negative tile scales (dpi = kPdfLayoutDpi * 2^{-scale}).
-inline constexpr int kPdfLayoutDpi = 72;
+/// PDF page layout / live tile rasterization: media box scaled to this DPI
+/// (144 = 2× 72). Scale 0 matches get_size; negative scales are denser
+/// (dpi = kPdfLayoutDpi * 2^{-scale}). Do not change without a cache migration.
+inline constexpr int kPdfLayoutDpi = 144;
 
 /// Grid tiles (Phase 4 / Galapix-compatible). See TILES.md.
 inline constexpr int kTileSize = 256;

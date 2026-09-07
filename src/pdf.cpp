@@ -359,11 +359,8 @@ std::optional<TileBlob> pdf_build_tile_cell(const std::filesystem::path& path,
                       static_cast<double>(full.width);
     const double sy = static_cast<double>(page_raster->height) /
                       static_cast<double>(full.height);
-    // If the raster is ~half of theoretical full, we would crop the wrong
-    // region and tiles look ~2x too big — reject and fail the cell.
-    if (sx < 0.75 || sy < 0.75) {
-      return std::nullopt;
-    }
+    // Map through actual raster size (Poppler rounding). sx/sy near 1.0 when
+    // dpi matched; still valid when slightly off.
     int const px = std::clamp(static_cast<int>(std::lround(left * sx)), 0,
                               std::max(0, page_raster->width - 1));
     int const py = std::clamp(static_cast<int>(std::lround(top * sy)), 0,
