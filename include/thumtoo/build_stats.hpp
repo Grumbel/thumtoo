@@ -10,7 +10,14 @@
 
 namespace thumtoo {
 
-/** Cumulative CPU-path timings for prepare / tile generation (thread-safe). */
+/**
+ * Timings for prepare / tile generation.
+ *
+ * Per-category counters accumulate *thread wall time* (steady_clock scopes).
+ * With a multi-worker pool those scopes overlap, so category sums can exceed
+ * real elapsed time — treat them as CPU-ish cost, not wall duration.
+ * summary_line() also reports true wall time since reset().
+ */
 struct BuildStats {
   std::atomic<std::uint64_t> archive_extract_ns{0};
   std::atomic<std::uint64_t> image_load_ns{0};
@@ -19,21 +26,17 @@ struct BuildStats {
   std::atomic<std::uint64_t> tiles_encoded{0};
   std::atomic<std::uint64_t> archive_bytes{0};
 
-  void reset() {
-    archive_extract_ns.store(0, std::memory_order_relaxed);
-    image_load_ns.store(0, std::memory_order_relaxed);
-    shrink_ns.store(0, std::memory_order_relaxed);
-    jpeg_encode_ns.store(0, std::memory_order_relaxed);
-    tiles_encoded.store(0, std::memory_order_relaxed);
-    archive_bytes.store(0, std::memory_order_relaxed);
-  }
+  void reset();
 
   [[nodiscard]] std::string summary_line() const;
+
+  /// Wall time of the last reset() (for elapsed calculation).
+  std::chrono::steady_clock::time_point wall_start{};
 };
 
 BuildStats& global_build_stats();
 
-/** Adds elapsed wall time to \a counter on destruction. */
+/** Adds elapsed steady_clock time to \a counter (sums across threads). */
 class ScopedNsAccumulator {
  public:
   explicit ScopedNsAccumulator(std::atomic<std::uint64_t>& counter)

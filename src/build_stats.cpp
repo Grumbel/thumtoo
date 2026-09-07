@@ -3,7 +3,6 @@
 
 #include "thumtoo/build_stats.hpp"
 
-#include <cstdio>
 #include <sstream>
 
 namespace thumtoo {
@@ -11,6 +10,16 @@ namespace thumtoo {
 BuildStats& global_build_stats() {
   static BuildStats s;
   return s;
+}
+
+void BuildStats::reset() {
+  archive_extract_ns.store(0, std::memory_order_relaxed);
+  image_load_ns.store(0, std::memory_order_relaxed);
+  shrink_ns.store(0, std::memory_order_relaxed);
+  jpeg_encode_ns.store(0, std::memory_order_relaxed);
+  tiles_encoded.store(0, std::memory_order_relaxed);
+  archive_bytes.store(0, std::memory_order_relaxed);
+  wall_start = std::chrono::steady_clock::now();
 }
 
 namespace {
@@ -28,27 +37,38 @@ std::string BuildStats::summary_line() const {
   const auto jpeg = jpeg_encode_ns.load(std::memory_order_relaxed);
   const auto tiles = tiles_encoded.load(std::memory_order_relaxed);
   const auto bytes = archive_bytes.load(std::memory_order_relaxed);
-  const auto total = extract + load + shrink + jpeg;
+  const auto cpu_sum = extract + load + shrink + jpeg;
+
+  const auto wall_ns = static_cast<std::uint64_t>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::steady_clock::now() - wall_start)
+          .count());
 
   std::ostringstream out;
   out.setf(std::ios::fixed);
   out.precision(3);
-  out << "timings: extract=" << ns_to_s(extract) << "s"
+  // wall = real elapsed; cpu-* = summed thread scopes (can exceed wall).
+  out << "timings: wall=" << ns_to_s(wall_ns) << "s"
+      << " | cpu: extract=" << ns_to_s(extract) << "s"
       << " load=" << ns_to_s(load) << "s"
       << " shrink=" << ns_to_s(shrink) << "s"
       << " jpeg=" << ns_to_s(jpeg) << "s"
-      << " (sum=" << ns_to_s(total) << "s)"
+      << " (cpu-sum=" << ns_to_s(cpu_sum) << "s)"
       << " tiles=" << tiles;
   if (bytes > 0) {
     out.precision(1);
     out << " archive_MiB=" << (static_cast<double>(bytes) / (1024.0 * 1024.0));
   }
-  if (total > 0) {
+  if (cpu_sum > 0) {
     out.precision(0);
-    out << " | share: extract=" << (100.0 * extract / total) << "%"
-        << " load=" << (100.0 * load / total) << "%"
-        << " shrink=" << (100.0 * shrink / total) << "%"
-        << " jpeg=" << (100.0 * jpeg / total) << "%";
+    out << " | cpu-share: extract=" << (100.0 * extract / cpu_sum) << "%"
+        << " load=" << (100.0 * load / cpu_sum) << "%"
+        << " shrink=" << (100.0 * shrink / cpu_sum) << "%"
+        << " jpeg=" << (100.0 * jpeg / cpu_sum) << "%";
+  }
+  if (wall_ns > 0 && cpu_sum > 0) {
+    out.precision(2);
+    out << " | parallel~=" << (ns_to_s(cpu_sum) / ns_to_s(wall_ns)) << "x";
   }
   return out.str();
 }
