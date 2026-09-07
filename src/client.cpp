@@ -924,14 +924,16 @@ void Client::handle_ensure_pixels(
     row.status = ContentStatus::Pending;
   }
 
+  // Single durable preview ≤ job.max_edge (not a full multi-edge ladder).
+  // Larger / other sizes: another request_pixels, downscale in the app, or tiles.
+  const int edge_limit = job.max_edge > 0 ? job.max_edge : kLadderEdges.back();
+
   if (auto pdf = parse_pdf_uri(job.uri)) {
-    // Rasterize at the largest ladder edge so all levels can be derived.
-    const int edge = kLadderEdges.back();
-    auto raster = pdf_rasterize_page(pdf->pdf_path, pdf->page, edge);
+    auto raster = pdf_rasterize_page(pdf->pdf_path, pdf->page, edge_limit);
     if (raster && !raster->rgb.empty()) {
       auto levels = build_ladder_rgb(raster->rgb.data(), raster->width,
                                      raster->height, row.content_id,
-                                     kDefaultJxlQuality);
+                                     kDefaultJxlQuality, edge_limit);
       for (const auto& lvl : levels) {
         blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
                           lvl.width, lvl.height, lvl.codec, lvl.quality,
@@ -957,8 +959,9 @@ void Client::handle_ensure_pixels(
     if (!arch->member_path.empty()) {
       auto bytes = member_bytes(arch->archive_path, arch->member_path, preextracted);
       if (bytes && !bytes->empty()) {
-        auto levels = build_ladder_buffer(bytes->data(), bytes->size(),
-                                          row.content_id, kDefaultJxlQuality);
+        auto levels =
+            build_ladder_buffer(bytes->data(), bytes->size(), row.content_id,
+                                kDefaultJxlQuality, edge_limit);
         for (const auto& lvl : levels) {
           blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
                              lvl.width, lvl.height, lvl.codec, lvl.quality,
@@ -983,7 +986,8 @@ void Client::handle_ensure_pixels(
     }
   } else if (auto path = path_from_file_uri(job.uri)) {
     if (std::filesystem::is_regular_file(*path)) {
-      auto levels = build_ladder(*path, row.content_id, kDefaultJxlQuality);
+      auto levels = build_ladder(*path, row.content_id, kDefaultJxlQuality,
+                                 edge_limit);
       for (const auto& lvl : levels) {
         blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
                            lvl.width, lvl.height, lvl.codec, lvl.quality,

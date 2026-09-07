@@ -58,7 +58,7 @@ class Client {
   [[nodiscard]] std::optional<Size> get_size(std::string_view uri) const;
   [[nodiscard]] std::optional<ContentMeta> get_meta(std::string_view uri) const;
 
-  /// Cache-only: load best ladder level with edge <= max_edge (frame 0 default).
+  /// Cache-only: load best stored preview with edge <= max_edge (frame 0 default).
   [[nodiscard]] std::optional<PixelLevel> get_pixels(std::string_view uri,
                                                      int max_edge,
                                                      int frame_idx = 0) const;

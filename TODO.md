@@ -9,7 +9,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 ## Session handoff (2026-09-07)
 
 ### Bundles
-Apply in order or take tip **`thumtoo-006.bundle`** (`d7a9ca1`):
+Apply in order or take tip **`thumtoo-007.bundle`**:
 | Bundle | Change |
 |--------|--------|
 | thumtoo-001 | `request_tile` single-scale only |
@@ -18,11 +18,21 @@ Apply in order or take tip **`thumtoo-006.bundle`** (`d7a9ca1`):
 | thumtoo-004 | **Multi-worker Client pool** (default HW concurrency); `--jobs N` |
 | thumtoo-005 | **Extract cache** (512 MiB) + coalesce EnsureTiles/Pixels same archive |
 | thumtoo-006 | Stats: **wall=** vs **cpu:** summed scopes + parallel~= |
+| thumtoo-007 | **Single-edge preview** (not full ladder); thumb/jxl stats; Galapix-shaped cache |
+
+### Pixel cache policy (Galapix-first, biltoo API stable)
+* **Durable:** size index + **one** JXL preview per `request_pixels(max_edge)` (largest
+  `kLadderEdges` entry ≤ max_edge) + optional **tile** pyramid.
+* **Not durable by default:** multi-edge ladder (128+256+512+…). Apps can
+  downscale the stored preview or call `request_pixels` with another edge.
+* **Original full-res:** not cached; viewers decode past max tile scale.
+* Public API unchanged: `get_pixels` / `request_pixels(uri, max_edge, …)`.
 
 ### Measured (one ~26 MiB archive, 68 members, 4324 tiles)
 * After cache/coalesce: **real ~3.6 s** with 12 workers; jpeg dominates **cpu-share**
 * extract cpu-share dropped sharply vs double full-zip read
 * Stats **cpu-sum ≫ wall** when parallel — expected
+* Pre-007: `--ladder 256` still encoded full ladder (invisible to stats) → slow
 
 ### Done (parallelism / prepare)
 * [x] `vips_concurrency_set(hardware_concurrency)`
@@ -32,14 +42,15 @@ Apply in order or take tip **`thumtoo-006.bundle`** (`d7a9ca1`):
 * [x] Coalesce ProbeSize **and** EnsureTiles / EnsurePixels per archive
 * [x] `thumtoo-prepare --stats --jobs --tiles` with clear wall vs cpu labels
 * [x] Single-scale interactive `request_tile`
+* [x] Single-edge `request_pixels` / `--ladder EDGE` (one `vips_thumbnail` + JXL)
+* [x] Stats: `thumb=` / `jxl=` / `levels=`
 
 ### Next session — priority
-1. Optional: tune extract cache size / eviction (clear-all is crude)
-2. Optional: SQLite contention under high `--jobs` (WAL + busy_timeout already)
+1. Optional: EXIF embedded thumb for even faster first preview
+2. Optional: tune extract cache size / eviction (clear-all is crude)
 3. **Single-cell** tile cut (encode only requested (scale,x,y), not full scale grid)
-4. Ladder JXL encode parallelization (same pattern as tile JPEG)
-5. Not worth yet: GPU JPEG (nvJPEG) — CPU jpeg still parallelizable; extract fixed
-6. Not realistic: “cut tiles from JPEG without decode” (see below)
+4. Not worth yet: GPU JPEG (nvJPEG) — CPU jpeg still parallelizable; extract fixed
+5. Not realistic: “cut tiles from JPEG without decode” (see below)
 
 ### JPEG region decode (design note)
 Baseline JPEG is not randomly tiled. libjpeg can **DCT-scale** and limited

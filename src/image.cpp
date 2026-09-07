@@ -211,217 +211,156 @@ std::optional<ProbeResult> probe_image_buffer(const std::uint8_t* data,
   return ProbeResult{Size{w, h}, fmt};
 }
 
+namespace {
+
+/// Largest policy edge ≤ both the request limit and the source long edge.
+/// max_edge_limit ≤ 0 → no request cap (still capped by source / kLadderEdges).
+int pick_preview_edge(int long_edge, int max_edge_limit) {
+  if (long_edge <= 0) return 0;
+  int best = 0;
+  for (int edge : kLadderEdges) {
+    if (edge > long_edge) continue;
+    if (max_edge_limit > 0 && edge > max_edge_limit) continue;
+    if (edge > best) best = edge;
+  }
+  // Source smaller than every ladder step: still emit one level keyed as the
+  // smallest policy edge so get_pixels(max_edge) can find it.
+  if (best == 0) best = kLadderEdges.front();
+  return best;
+}
+
+LevelBlob encode_jxl_level(VipsImage* thumb, int edge,
+                           const std::string& id_dir, int q) {
+  LevelBlob b;
+  void* buf = nullptr;
+  size_t len = 0;
+  {
+    ScopedNsAccumulator timer(global_build_stats().jxl_encode_ns);
+    if (vips_jxlsave_buffer(thumb, &buf, &len, "Q", q, nullptr) != 0 || !buf) {
+      return b;
+    }
+  }
+  b.max_edge = edge;
+  b.frame_idx = 0;
+  b.width = vips_image_get_width(thumb);
+  b.height = vips_image_get_height(thumb);
+  b.codec = "jxl";
+  b.quality = q;
+  std::ostringstream rel;
+  rel << "blobs/" << id_dir << "/" << edge << "_f0.jxl";
+  b.relative_path = rel.str();
+  auto* bytes = static_cast<std::uint8_t*>(buf);
+  b.bytes.assign(bytes, bytes + len);
+  g_free(buf);
+  global_build_stats().levels_encoded.fetch_add(1, std::memory_order_relaxed);
+  return b;
+}
+
+}  // namespace
+
 std::vector<LevelBlob> build_ladder(const std::filesystem::path& path,
                                     const std::string& content_id,
-                                    int jxl_quality) {
+                                    int jxl_quality, int max_edge_limit) {
   ensure_vips();
   std::vector<LevelBlob> levels;
 
-  VipsImage* full = vips_image_new_from_file(path.string().c_str(), nullptr);
-  if (!full) return levels;
-  const int src_w = vips_image_get_width(full);
-  const int src_h = vips_image_get_height(full);
-  const int long_edge = std::max(src_w, src_h);
-  g_object_unref(full);
+  VipsImage* header = vips_image_new_from_file(
+      path.string().c_str(), "access", VIPS_ACCESS_SEQUENTIAL, nullptr);
+  if (!header) return levels;
+  const int long_edge =
+      std::max(vips_image_get_width(header), vips_image_get_height(header));
+  g_object_unref(header);
   if (long_edge <= 0) return levels;
 
+  const int edge = pick_preview_edge(long_edge, max_edge_limit);
   const int q = std::clamp(jxl_quality, 1, 100);
   const std::string id_dir = content_id_to_blob_dir(content_id);
   const std::string path_str = path.string();
 
-  for (int edge : kLadderEdges) {
-    if (edge > long_edge) continue;
-
-    VipsImage* thumb = nullptr;
-    // int vips_thumbnail(filename, VipsImage **out, int width, ...)
+  VipsImage* thumb = nullptr;
+  {
+    ScopedNsAccumulator timer(global_build_stats().thumb_ns);
     if (vips_thumbnail(path_str.c_str(), &thumb, edge, "size", VIPS_SIZE_DOWN,
                        nullptr) != 0 ||
         !thumb) {
-      continue;
-    }
-
-    void* buf = nullptr;
-    size_t len = 0;
-    if (vips_jxlsave_buffer(thumb, &buf, &len, "Q", q, nullptr) != 0 || !buf) {
-      g_object_unref(thumb);
-      continue;
-    }
-
-    LevelBlob b;
-    b.max_edge = edge;
-    b.frame_idx = 0;
-    b.width = vips_image_get_width(thumb);
-    b.height = vips_image_get_height(thumb);
-    b.codec = "jxl";
-    b.quality = q;
-    std::ostringstream rel;
-    rel << "blobs/" << id_dir << "/" << edge << "_f0.jxl";
-    b.relative_path = rel.str();
-    auto* bytes = static_cast<std::uint8_t*>(buf);
-    b.bytes.assign(bytes, bytes + len);
-    g_free(buf);
-    g_object_unref(thumb);
-    levels.push_back(std::move(b));
-  }
-
-  if (levels.empty() && long_edge > 0) {
-    VipsImage* img = vips_image_new_from_file(path_str.c_str(), nullptr);
-    if (img) {
-      void* buf = nullptr;
-      size_t len = 0;
-      if (vips_jxlsave_buffer(img, &buf, &len, "Q", q, nullptr) == 0 && buf) {
-        LevelBlob b;
-        b.max_edge = kLadderEdges.front();
-        b.frame_idx = 0;
-        b.width = vips_image_get_width(img);
-        b.height = vips_image_get_height(img);
-        b.codec = "jxl";
-        b.quality = q;
-        std::ostringstream rel;
-        rel << "blobs/" << id_dir << "/" << b.max_edge << "_f0.jxl";
-        b.relative_path = rel.str();
-        auto* bytes = static_cast<std::uint8_t*>(buf);
-        b.bytes.assign(bytes, bytes + len);
-        g_free(buf);
-        levels.push_back(std::move(b));
-      }
-      g_object_unref(img);
+      return levels;
     }
   }
+
+  LevelBlob b = encode_jxl_level(thumb, edge, id_dir, q);
+  g_object_unref(thumb);
+  if (!b.bytes.empty()) levels.push_back(std::move(b));
   return levels;
 }
-
 
 std::vector<LevelBlob> build_ladder_buffer(const std::uint8_t* data,
                                            std::size_t size,
                                            const std::string& content_id,
-                                           int jxl_quality) {
+                                           int jxl_quality, int max_edge_limit) {
   ensure_vips();
   std::vector<LevelBlob> levels;
   if (!data || size == 0) return levels;
 
-  VipsImage* full = vips_image_new_from_buffer(data, size, nullptr, nullptr);
-  if (!full) return levels;
-  const int src_w = vips_image_get_width(full);
-  const int src_h = vips_image_get_height(full);
-  const int long_edge = std::max(src_w, src_h);
-  g_object_unref(full);
+  VipsImage* header = vips_image_new_from_buffer(
+      data, size, nullptr, "access", VIPS_ACCESS_SEQUENTIAL, nullptr);
+  if (!header) return levels;
+  const int long_edge =
+      std::max(vips_image_get_width(header), vips_image_get_height(header));
+  g_object_unref(header);
   if (long_edge <= 0) return levels;
 
+  const int edge = pick_preview_edge(long_edge, max_edge_limit);
   const int q = std::clamp(jxl_quality, 1, 100);
-  std::string id_path = content_id;
-  for (char& c : id_path) {
-    if (c == ':' || c == '/') c = '_';
-  }
+  const std::string id_dir = content_id_to_blob_dir(content_id);
 
-  for (int edge : kLadderEdges) {
-    if (edge > long_edge) continue;
-    VipsImage* thumb = nullptr;
-    // Thumbnail from buffer via new_from_buffer + resize equivalent:
-    // vips_thumbnail_buffer
+  VipsImage* thumb = nullptr;
+  {
+    ScopedNsAccumulator timer(global_build_stats().thumb_ns);
     if (vips_thumbnail_buffer(const_cast<std::uint8_t*>(data), size, &thumb, edge,
                               "size", VIPS_SIZE_DOWN, nullptr) != 0 ||
         !thumb) {
-      continue;
+      return levels;
     }
-    void* buf = nullptr;
-    size_t len = 0;
-    if (vips_jxlsave_buffer(thumb, &buf, &len, "Q", q, nullptr) != 0 || !buf) {
-      g_object_unref(thumb);
-      continue;
-    }
-    LevelBlob b;
-    b.max_edge = edge;
-    b.frame_idx = 0;
-    b.width = vips_image_get_width(thumb);
-    b.height = vips_image_get_height(thumb);
-    b.codec = "jxl";
-    b.quality = q;
-    std::ostringstream rel;
-    rel << "blobs/" << id_path << "/" << edge << "_f0.jxl";
-    b.relative_path = rel.str();
-    auto* bytes = static_cast<std::uint8_t*>(buf);
-    b.bytes.assign(bytes, bytes + len);
-    g_free(buf);
-    g_object_unref(thumb);
-    levels.push_back(std::move(b));
   }
 
-  if (levels.empty() && long_edge > 0) {
-    VipsImage* img = vips_image_new_from_buffer(data, size, nullptr, nullptr);
-    if (img) {
-      void* buf = nullptr;
-      size_t len = 0;
-      if (vips_jxlsave_buffer(img, &buf, &len, "Q", q, nullptr) == 0 && buf) {
-        LevelBlob b;
-        b.max_edge = kLadderEdges.front();
-        b.frame_idx = 0;
-        b.width = vips_image_get_width(img);
-        b.height = vips_image_get_height(img);
-        b.codec = "jxl";
-        b.quality = q;
-        std::ostringstream rel;
-        rel << "blobs/" << id_path << "/" << b.max_edge << "_f0.jxl";
-        b.relative_path = rel.str();
-        auto* bytes = static_cast<std::uint8_t*>(buf);
-        b.bytes.assign(bytes, bytes + len);
-        g_free(buf);
-        levels.push_back(std::move(b));
-      }
-      g_object_unref(img);
-    }
-  }
+  LevelBlob b = encode_jxl_level(thumb, edge, id_dir, q);
+  g_object_unref(thumb);
+  if (!b.bytes.empty()) levels.push_back(std::move(b));
   return levels;
 }
 
-
 std::vector<LevelBlob> build_ladder_rgb(const std::uint8_t* rgb, int width,
                                         int height, const std::string& content_id,
-                                        int jxl_quality) {
+                                        int jxl_quality, int max_edge_limit) {
   ensure_vips();
   std::vector<LevelBlob> levels;
   if (!rgb || width <= 0 || height <= 0) return levels;
 
-  // Deep-copy into a VipsImage so we can thumbnail/save independently.
   VipsImage* full = vips_image_new_from_memory_copy(
       rgb, static_cast<size_t>(width) * static_cast<size_t>(height) * 3u, width,
       height, 3, VIPS_FORMAT_UCHAR);
   if (!full) return levels;
 
   const int long_edge = std::max(width, height);
-  const std::string id_path = content_id_to_blob_dir(content_id);
+  const int edge = pick_preview_edge(long_edge, max_edge_limit);
+  const std::string id_dir = content_id_to_blob_dir(content_id);
   const int q = jxl_quality > 0 ? jxl_quality : kDefaultJxlQuality;
 
-  for (int edge : kLadderEdges) {
-    if (edge > long_edge && edge != kLadderEdges.front()) continue;
-    VipsImage* thumb = nullptr;
-    if (vips_thumbnail_image(full, &thumb, edge, "size", VIPS_SIZE_DOWN, nullptr) != 0
-        || !thumb) {
-      continue;
+  VipsImage* thumb = nullptr;
+  {
+    ScopedNsAccumulator timer(global_build_stats().thumb_ns);
+    if (vips_thumbnail_image(full, &thumb, edge, "size", VIPS_SIZE_DOWN,
+                             nullptr) != 0 ||
+        !thumb) {
+      g_object_unref(full);
+      return levels;
     }
-    void* buf = nullptr;
-    size_t len = 0;
-    if (vips_jxlsave_buffer(thumb, &buf, &len, "Q", q, nullptr) != 0 || !buf) {
-      g_object_unref(thumb);
-      continue;
-    }
-    LevelBlob b;
-    b.max_edge = edge;
-    b.frame_idx = 0;
-    b.width = vips_image_get_width(thumb);
-    b.height = vips_image_get_height(thumb);
-    b.codec = "jxl";
-    b.quality = q;
-    std::ostringstream rel;
-    rel << "blobs/" << id_path << "/" << edge << "_f0.jxl";
-    b.relative_path = rel.str();
-    auto* bytes = static_cast<std::uint8_t*>(buf);
-    b.bytes.assign(bytes, bytes + len);
-    g_free(buf);
-    g_object_unref(thumb);
-    levels.push_back(std::move(b));
   }
   g_object_unref(full);
+
+  LevelBlob b = encode_jxl_level(thumb, edge, id_dir, q);
+  g_object_unref(thumb);
+  if (!b.bytes.empty()) levels.push_back(std::move(b));
   return levels;
 }
 

@@ -23,6 +23,10 @@ struct BuildStats {
   std::atomic<std::uint64_t> image_load_ns{0};
   std::atomic<std::uint64_t> shrink_ns{0};
   std::atomic<std::uint64_t> jpeg_encode_ns{0};
+  /// Single-edge preview (vips_thumbnail + JXL) — not the tile pyramid.
+  std::atomic<std::uint64_t> thumb_ns{0};
+  std::atomic<std::uint64_t> jxl_encode_ns{0};
+  std::atomic<std::uint64_t> levels_encoded{0};
   std::atomic<std::uint64_t> tiles_encoded{0};
   std::atomic<std::uint64_t> archive_bytes{0};
 
