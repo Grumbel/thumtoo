@@ -193,6 +193,21 @@ void BlobStore::put_tile(std::string_view content_id, int scale, int x, int y,
   sqlite3_finalize(stmt);
 }
 
+void BlobStore::delete_tile(std::string_view content_id, int scale, int x, int y) {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "DELETE FROM tile_blobs WHERE content_id = ?1 AND scale = ?2 AND x = ?3 "
+      "AND y = ?4;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return;
+  sqlite3_bind_text(stmt, 1, content_id.data(), static_cast<int>(content_id.size()),
+                    SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 2, scale);
+  sqlite3_bind_int(stmt, 3, x);
+  sqlite3_bind_int(stmt, 4, y);
+  sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+}
+
 std::optional<std::vector<std::uint8_t>> BlobStore::get_tile(
     std::string_view content_id, int scale, int x, int y) const {
   sqlite3_stmt* stmt = nullptr;

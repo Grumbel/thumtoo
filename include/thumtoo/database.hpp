@@ -172,6 +172,7 @@ class Database {
   };
 
   void upsert_tile(const TileRow& row);
+  void delete_tile(std::string_view content_id, int scale, int x, int y);
   [[nodiscard]] std::optional<TileRow> find_tile(std::string_view content_id,
                                                  int scale, int x,
                                                  int y) const;

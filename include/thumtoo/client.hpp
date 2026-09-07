@@ -115,6 +115,7 @@ class Client {
 
   /// Ensure tile at (scale,x,y) exists; builds [scale..max] in one pass if missing.
   void request_tile(std::string uri, int scale, int x, int y, TileCallback cb);
+  void invalidate_tile(std::string_view uri, int scale, int x, int y);
 
   /// Prewarm pyramid [min_scale..max_scale] (max_scale < 0 → until single tile).
   void request_tile_pyramid(std::string uri, int min_scale = 0,

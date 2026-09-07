@@ -1051,6 +1051,20 @@ std::optional<Database::TileRow> Database::find_tile(std::string_view content_id
   return out;
 }
 
+void Database::delete_tile(std::string_view content_id, int scale, int x, int y) {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "DELETE FROM tiles WHERE content_id = ?1 AND scale = ?2 AND x = ?3 AND y = ?4;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return;
+  sqlite3_bind_text(stmt, 1, content_id.data(), static_cast<int>(content_id.size()),
+                    SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 2, scale);
+  sqlite3_bind_int(stmt, 3, x);
+  sqlite3_bind_int(stmt, 4, y);
+  sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+}
+
 bool Database::tile_min_max_scale(std::string_view content_id, int& min_scale_out,
                                   int& max_scale_out) const {
   sqlite3_stmt* stmt = nullptr;

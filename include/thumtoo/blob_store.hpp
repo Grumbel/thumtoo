@@ -44,6 +44,7 @@ class BlobStore {
                 int width, int height, std::string_view codec, int quality,
                 const std::uint8_t* data, std::size_t size);
 
+  void delete_tile(std::string_view content_id, int scale, int x, int y);
   [[nodiscard]] std::optional<std::vector<std::uint8_t>> get_tile(
       std::string_view content_id, int scale, int x, int y) const;
 

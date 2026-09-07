@@ -293,6 +293,13 @@ std::optional<TileCoverage> Client::get_tile_coverage(
   return cov;
 }
 
+void Client::invalidate_tile(std::string_view uri, int scale, int x, int y) {
+  auto meta = db_->meta_for_uri(uri);
+  if (!meta) return;
+  db_->delete_tile(meta->content_id, scale, x, y);
+  blobs_->delete_tile(meta->content_id, scale, x, y);
+}
+
 void Client::request_tile(std::string uri, int scale, int x, int y,
                           TileCallback cb) {
   if (auto t = get_tile(uri, scale, x, y)) {
