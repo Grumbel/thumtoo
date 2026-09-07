@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <cctype>
 #include <cmath>
 #include <string>
 
@@ -21,14 +20,6 @@ namespace thumtoo {
 namespace {
 
 constexpr std::string_view kPagePipe = "//page:";
-
-std::string to_lower_ext(const std::filesystem::path& path) {
-  auto ext = path.extension().string();
-  for (char& c : ext) {
-    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-  }
-  return ext;
-}
 
 }  // namespace
 
