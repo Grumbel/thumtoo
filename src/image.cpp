@@ -16,6 +16,7 @@
 #include <thread>
 #include <vector>
 #include <sstream>
+#include <cstring>
 
 namespace thumtoo {
 namespace {
@@ -213,6 +214,123 @@ std::optional<ProbeResult> probe_image_buffer(const std::uint8_t* data,
 
 namespace {
 
+
+/// Map Galapix scale to libjpeg/libvips jpegload shrink factor (1,2,4,8).
+int jpeg_shrink_factor_for_scale(int scale) {
+  if (scale >= 3) return 8;
+  if (scale >= 2) return 4;
+  if (scale >= 1) return 2;
+  return 1;
+}
+
+int scale_steps_after_jpeg_shrink(int scale, int jpeg_shrink) {
+  int applied = 0;
+  if (jpeg_shrink >= 8) applied = 3;
+  else if (jpeg_shrink >= 4) applied = 2;
+  else if (jpeg_shrink >= 2) applied = 1;
+  return std::max(0, scale - applied);
+}
+
+bool path_looks_jpeg(const std::filesystem::path& path) {
+  auto ext = path.extension().string();
+  for (char& c : ext)
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return ext == ".jpg" || ext == ".jpeg" || ext == ".jpe";
+}
+
+/// Extract embedded JPEG thumbnail from EXIF APP1 (IFD1), if present.
+std::optional<std::vector<std::uint8_t>> extract_exif_jpeg_thumbnail(
+    const std::uint8_t* data, std::size_t size) {
+  if (!data || size < 4 || data[0] != 0xff || data[1] != 0xd8) return std::nullopt;
+
+  std::size_t i = 2;
+  while (i + 4 <= size) {
+    if (data[i] != 0xff) {
+      ++i;
+      continue;
+    }
+    while (i < size && data[i] == 0xff) ++i;
+    if (i >= size) break;
+    const std::uint8_t marker = data[i++];
+    if (marker == 0xd9 || marker == 0xda) break;  // EOI / SOS
+    if (i + 2 > size) break;
+    const std::uint16_t seglen =
+        (static_cast<std::uint16_t>(data[i]) << 8) | data[i + 1];
+    if (seglen < 2 || i + seglen > size) break;
+    if (marker == 0xe1 && seglen >= 8) {
+      const std::uint8_t* seg = data + i + 2;
+      const std::size_t segpayload = static_cast<std::size_t>(seglen - 2);
+      if (segpayload >= 6 && std::memcmp(seg, "Exif\0\0", 6) == 0) {
+        const std::uint8_t* tiff = seg + 6;
+        const std::size_t tiff_len = segpayload - 6;
+        if (tiff_len < 8) break;
+        const bool le = (tiff[0] == 'I' && tiff[1] == 'I');
+        const bool be = (tiff[0] == 'M' && tiff[1] == 'M');
+        if (!le && !be) break;
+        auto ru16 = [&](std::size_t off) -> std::uint16_t {
+          if (off + 2 > tiff_len) return 0;
+          return le ? static_cast<std::uint16_t>(tiff[off] |
+                                                 (tiff[off + 1] << 8))
+                    : static_cast<std::uint16_t>((tiff[off] << 8) |
+                                                 tiff[off + 1]);
+        };
+        auto ru32 = [&](std::size_t off) -> std::uint32_t {
+          if (off + 4 > tiff_len) return 0;
+          return le ? static_cast<std::uint32_t>(tiff[off]) |
+                          (static_cast<std::uint32_t>(tiff[off + 1]) << 8) |
+                          (static_cast<std::uint32_t>(tiff[off + 2]) << 16) |
+                          (static_cast<std::uint32_t>(tiff[off + 3]) << 24)
+                    : (static_cast<std::uint32_t>(tiff[off]) << 24) |
+                          (static_cast<std::uint32_t>(tiff[off + 1]) << 16) |
+                          (static_cast<std::uint32_t>(tiff[off + 2]) << 8) |
+                          static_cast<std::uint32_t>(tiff[off + 3]);
+        };
+        const std::uint32_t ifd0 = ru32(4);
+        if (ifd0 + 2 > tiff_len) break;
+        const std::uint16_t n0 = ru16(ifd0);
+        const std::size_t ifd1_ptr =
+            ifd0 + 2 + static_cast<std::size_t>(n0) * 12;
+        if (ifd1_ptr + 4 > tiff_len) break;
+        const std::uint32_t ifd1 = ru32(ifd1_ptr);
+        if (ifd1 == 0 || ifd1 + 2 > tiff_len) break;
+        const std::uint16_t n1 = ru16(ifd1);
+        std::uint32_t jpeg_off = 0;
+        std::uint32_t jpeg_len = 0;
+        for (std::uint16_t e = 0; e < n1; ++e) {
+          const std::size_t eo = ifd1 + 2 + static_cast<std::size_t>(e) * 12;
+          const std::uint16_t tag = ru16(eo);
+          const std::uint32_t val = ru32(eo + 8);
+          if (tag == 0x0201) jpeg_off = val;
+          if (tag == 0x0202) jpeg_len = val;
+        }
+        if (jpeg_off && jpeg_len &&
+            static_cast<std::size_t>(jpeg_off) + jpeg_len <= tiff_len &&
+            jpeg_len >= 4) {
+          const std::uint8_t* jp = tiff + jpeg_off;
+          if (jp[0] == 0xff && jp[1] == 0xd8) {
+            return std::vector<std::uint8_t>(jp, jp + jpeg_len);
+          }
+        }
+      }
+    }
+    i += seglen;
+  }
+  return std::nullopt;
+}
+
+std::optional<std::vector<std::uint8_t>> extract_exif_jpeg_thumbnail_file(
+    const std::filesystem::path& path) {
+  std::ifstream in(path, std::ios::binary);
+  if (!in) return std::nullopt;
+  std::vector<std::uint8_t> buf(256 * 1024);
+  in.read(reinterpret_cast<char*>(buf.data()),
+          static_cast<std::streamsize>(buf.size()));
+  const auto n = static_cast<std::size_t>(in.gcount());
+  if (n < 4) return std::nullopt;
+  buf.resize(n);
+  return extract_exif_jpeg_thumbnail(buf.data(), buf.size());
+}
+
 /// Largest policy edge ≤ both the request limit and the source long edge.
 /// max_edge_limit ≤ 0 → no request cap (still capped by source / kLadderEdges).
 int pick_preview_edge(int long_edge, int max_edge_limit) {
@@ -277,6 +395,43 @@ std::vector<LevelBlob> build_ladder(const std::filesystem::path& path,
   const std::string id_dir = content_id_to_blob_dir(content_id);
   const std::string path_str = path.string();
 
+  // Prefer EXIF embedded JPEG thumbnail when large enough for the edge.
+  if (path_looks_jpeg(path)) {
+    if (auto exif_jpeg = extract_exif_jpeg_thumbnail_file(path)) {
+      VipsImage* emb = nullptr;
+      ScopedNsAccumulator timer(global_build_stats().thumb_ns);
+      if (vips_jpegload_buffer(exif_jpeg->data(), exif_jpeg->size(), &emb,
+                               nullptr) == 0 &&
+          emb) {
+        const int emb_edge =
+            std::max(vips_image_get_width(emb), vips_image_get_height(emb));
+        if (emb_edge >= edge || emb_edge >= kLadderEdges.front()) {
+          VipsImage* thumb = nullptr;
+          if (emb_edge > edge) {
+            if (vips_thumbnail_image(emb, &thumb, edge, "size", VIPS_SIZE_DOWN,
+                                     nullptr) != 0) {
+              thumb = nullptr;
+            }
+          } else {
+            thumb = emb;
+            g_object_ref(thumb);
+          }
+          g_object_unref(emb);
+          if (thumb) {
+            LevelBlob b = encode_jxl_level(thumb, edge, id_dir, q);
+            g_object_unref(thumb);
+            if (!b.bytes.empty()) {
+              levels.push_back(std::move(b));
+              return levels;
+            }
+          }
+        } else {
+          g_object_unref(emb);
+        }
+      }
+    }
+  }
+
   VipsImage* thumb = nullptr;
   {
     ScopedNsAccumulator timer(global_build_stats().thumb_ns);
@@ -312,6 +467,40 @@ std::vector<LevelBlob> build_ladder_buffer(const std::uint8_t* data,
   const int edge = pick_preview_edge(long_edge, max_edge_limit);
   const int q = std::clamp(jxl_quality, 1, 100);
   const std::string id_dir = content_id_to_blob_dir(content_id);
+
+  if (auto exif_jpeg = extract_exif_jpeg_thumbnail(data, size)) {
+    VipsImage* emb = nullptr;
+    ScopedNsAccumulator timer(global_build_stats().thumb_ns);
+    if (vips_jpegload_buffer(exif_jpeg->data(), exif_jpeg->size(), &emb,
+                             nullptr) == 0 &&
+        emb) {
+      const int emb_edge =
+          std::max(vips_image_get_width(emb), vips_image_get_height(emb));
+      if (emb_edge >= edge || emb_edge >= kLadderEdges.front()) {
+        VipsImage* thumb = nullptr;
+        if (emb_edge > edge) {
+          if (vips_thumbnail_image(emb, &thumb, edge, "size", VIPS_SIZE_DOWN,
+                                   nullptr) != 0) {
+            thumb = nullptr;
+          }
+        } else {
+          thumb = emb;
+          g_object_ref(thumb);
+        }
+        g_object_unref(emb);
+        if (thumb) {
+          LevelBlob b = encode_jxl_level(thumb, edge, id_dir, q);
+          g_object_unref(thumb);
+          if (!b.bytes.empty()) {
+            levels.push_back(std::move(b));
+            return levels;
+          }
+        }
+      } else {
+        g_object_unref(emb);
+      }
+    }
+  }
 
   VipsImage* thumb = nullptr;
   {
@@ -707,13 +896,26 @@ std::optional<TileBlob> build_tile_cell(const std::filesystem::path& path,
                                         int jpeg_quality) {
   ensure_vips();
   VipsImage* full = nullptr;
+  int remain = scale;
   {
     ScopedNsAccumulator timer(global_build_stats().image_load_ns);
-    full = vips_image_new_from_file(path.string().c_str(), nullptr);
+    if (path_looks_jpeg(path) && scale > 0) {
+      const int js = jpeg_shrink_factor_for_scale(scale);
+      if (vips_jpegload(path.string().c_str(), &full, "shrink", js, nullptr) ==
+              0 &&
+          full) {
+        remain = scale_steps_after_jpeg_shrink(scale, js);
+      }
+    }
+    if (!full) {
+      full = vips_image_new_from_file(path.string().c_str(), nullptr);
+      remain = scale;
+    }
   }
   if (!full) return std::nullopt;
-  auto tile = cut_cell_from_vips(full, scale, x, y, jpeg_quality);
+  auto tile = cut_cell_from_vips(full, remain, x, y, jpeg_quality);
   g_object_unref(full);
+  if (tile) tile->scale = scale;
   return tile;
 }
 
@@ -723,14 +925,31 @@ std::optional<TileBlob> build_tile_cell_buffer(const std::uint8_t* data,
   ensure_vips();
   if (!data || size == 0) return std::nullopt;
   VipsImage* full = nullptr;
+  int remain = scale;
   {
     ScopedNsAccumulator timer(global_build_stats().image_load_ns);
-    full = vips_image_new_from_buffer(data, size, nullptr, nullptr);
+    const bool maybe_jpeg =
+        size >= 3 && data[0] == 0xff && data[1] == 0xd8 && data[2] == 0xff;
+    if (maybe_jpeg && scale > 0) {
+      const int js = jpeg_shrink_factor_for_scale(scale);
+      if (vips_jpegload_buffer(const_cast<std::uint8_t*>(data), size, &full,
+                               "shrink", js, nullptr) == 0 &&
+          full) {
+        remain = scale_steps_after_jpeg_shrink(scale, js);
+      }
+    }
+    if (!full) {
+      full = vips_image_new_from_buffer(data, size, nullptr, nullptr);
+      remain = scale;
+    }
   }
   if (!full) return std::nullopt;
-  auto tile = cut_cell_from_vips(full, scale, x, y, jpeg_quality);
+  auto tile = cut_cell_from_vips(full, remain, x, y, jpeg_quality);
   g_object_unref(full);
+  if (tile) tile->scale = scale;
   return tile;
 }
+
+
 
 }  // namespace thumtoo

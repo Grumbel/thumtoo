@@ -88,3 +88,9 @@ keyed by URL → content_id.
   scale → crop → JPEG). Does not fill the rest of the scale grid.
 * `request_tile_pyramid` / `thumtoo-prepare --tiles` still build full scale
   ranges for offline prewarm.
+
+### JPEG load for interactive cells
+
+For `.jpg` sources, `build_tile_cell` uses `vips_jpegload(..., shrink=2|4|8)` so
+coarse scales avoid a full-resolution decode, then applies any remaining
+factor-of-two shrinks to match Galapix scale. Non-JPEG formats still full-load.
