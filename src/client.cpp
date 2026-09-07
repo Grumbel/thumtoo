@@ -267,6 +267,56 @@ void Client::enqueue(Job job) {
   cv_.notify_one();
 }
 
+std::string Client::extract_cache_key(const std::filesystem::path& archive,
+                                      std::string_view member) {
+  return archive.string() + "\n" + std::string(member);
+}
+
+void Client::extract_cache_put(const std::filesystem::path& archive,
+                               std::string_view member,
+                               std::vector<std::uint8_t> bytes) {
+  if (bytes.empty()) return;
+  std::lock_guard lock(extract_cache_mu_);
+  const std::string key = extract_cache_key(archive, member);
+  if (auto it = extract_cache_.find(key); it != extract_cache_.end()) {
+    extract_cache_bytes_ -= it->second.size();
+    extract_cache_bytes_ += bytes.size();
+    it->second = std::move(bytes);
+    return;
+  }
+  if (extract_cache_bytes_ + bytes.size() > kExtractCacheMaxBytes) {
+    extract_cache_.clear();
+    extract_cache_bytes_ = 0;
+  }
+  extract_cache_bytes_ += bytes.size();
+  extract_cache_.emplace(key, std::move(bytes));
+}
+
+std::optional<std::vector<std::uint8_t>> Client::extract_cache_get(
+    const std::filesystem::path& archive, std::string_view member) const {
+  std::lock_guard lock(extract_cache_mu_);
+  auto it = extract_cache_.find(extract_cache_key(archive, member));
+  if (it == extract_cache_.end()) return std::nullopt;
+  return it->second;
+}
+
+std::optional<std::vector<std::uint8_t>> Client::member_bytes(
+    const std::filesystem::path& archive, std::string_view member,
+    const std::optional<std::vector<std::uint8_t>>& preextracted) {
+  if (preextracted && !preextracted->empty()) {
+    extract_cache_put(archive, member, *preextracted);
+    return *preextracted;
+  }
+  if (auto cached = extract_cache_get(archive, member)) {
+    return cached;
+  }
+  auto bytes = extract_archive_member(archive, member);
+  if (bytes && !bytes->empty()) {
+    extract_cache_put(archive, member, *bytes);
+  }
+  return bytes;
+}
+
 void Client::request_size(std::string uri, SizeCallback cb) {
   if (auto m = get_meta(uri)) {
     if (m->size && (m->status == ContentStatus::Ready ||
@@ -526,13 +576,17 @@ void Client::worker_main() {
       queue_.erase(queue_.begin());
       if (stop_ && single.uri.empty()) return;
 
-      // Coalesce further ProbeSize jobs for the same archive into one open.
-      if (single.kind == JobKind::ProbeSize && !single.uri.empty()) {
+      // Coalesce same-archive jobs of the same kind into one libarchive pass.
+      if (!single.uri.empty() &&
+          (single.kind == JobKind::ProbeSize ||
+           single.kind == JobKind::EnsureTiles ||
+           single.kind == JobKind::EnsurePixels)) {
         if (auto arch = parse_archive_uri(single.uri);
             arch && !arch->member_path.empty()) {
+          const JobKind batch_kind = single.kind;
           batch.push_back(std::move(single));
           for (auto it = queue_.begin(); it != queue_.end();) {
-            if (it->kind != JobKind::ProbeSize || it->uri.empty()) {
+            if (it->kind != batch_kind || it->uri.empty()) {
               ++it;
               continue;
             }
@@ -555,7 +609,9 @@ void Client::worker_main() {
       std::vector<std::string> members;
       members.reserve(batch.size());
       std::filesystem::path archive_path;
+      JobKind batch_kind = JobKind::ProbeSize;
       for (const auto& j : batch) {
+        batch_kind = j.kind;
         auto arch = parse_archive_uri(j.uri);
         if (!arch) {
           members.emplace_back();
@@ -566,6 +622,9 @@ void Client::worker_main() {
       }
       auto extracted =
           extract_archive_members(archive_path, members);
+      for (const auto& kv : extracted) {
+        extract_cache_put(archive_path, kv.first, kv.second);
+      }
       for (size_t i = 0; i < batch.size(); ++i) {
         try {
           std::optional<std::vector<std::uint8_t>> pre;
@@ -574,7 +633,12 @@ void Client::worker_main() {
               pre = std::move(it->second);
             }
           }
-          handle_probe_size(batch[i], pre);
+          if (batch_kind == JobKind::ProbeSize)
+            handle_probe_size(batch[i], pre);
+          else if (batch_kind == JobKind::EnsureTiles)
+            handle_ensure_tiles(batch[i], pre);
+          else if (batch_kind == JobKind::EnsurePixels)
+            handle_ensure_pixels(batch[i], pre);
         } catch (...) {
         }
         {
@@ -696,10 +760,8 @@ void Client::handle_probe_size(
       row.status = ContentStatus::Unsupported;
       row.error_code = "archive_root_not_image";
     } else {
-      std::optional<std::vector<std::uint8_t>> bytes = preextracted;
-      if (!bytes) {
-        bytes = extract_archive_member(arch->archive_path, arch->member_path);
-      }
+      std::optional<std::vector<std::uint8_t>> bytes =
+          member_bytes(arch->archive_path, arch->member_path, preextracted);
       if (!bytes) {
         row.status = ContentStatus::Failed;
         row.error_code = "archive_extract_failed";
@@ -803,7 +865,8 @@ void Client::handle_probe_size(
 
 
 
-void Client::handle_ensure_pixels(Job& job) {
+void Client::handle_ensure_pixels(
+    Job& job, const std::optional<std::vector<std::uint8_t>>& preextracted) {
   // Fast path: ladder already present.
   if (auto px = get_pixels(job.uri, job.max_edge, job.frame_idx)) {
     if (job.pixels_cb) {
@@ -892,7 +955,7 @@ void Client::handle_ensure_pixels(Job& job) {
     }
   } else if (auto arch = parse_archive_uri(job.uri)) {
     if (!arch->member_path.empty()) {
-      auto bytes = extract_archive_member(arch->archive_path, arch->member_path);
+      auto bytes = member_bytes(arch->archive_path, arch->member_path, preextracted);
       if (bytes && !bytes->empty()) {
         auto levels = build_ladder_buffer(bytes->data(), bytes->size(),
                                           row.content_id, kDefaultJxlQuality);
@@ -976,7 +1039,8 @@ void Client::store_tiles(const std::string& content_id,
   }
 }
 
-void Client::handle_ensure_tiles(Job& job) {
+void Client::handle_ensure_tiles(
+    Job& job, const std::optional<std::vector<std::uint8_t>>& preextracted) {
   auto reply_one = [&](std::optional<TileBlob> t) {
     if (!job.tile_cb) return;
     auto cb = std::move(job.tile_cb);
@@ -1040,7 +1104,7 @@ void Client::handle_ensure_tiles(Job& job) {
 
   if (auto arch = parse_archive_uri(job.uri)) {
     if (!arch->member_path.empty()) {
-      auto bytes = extract_archive_member(arch->archive_path, arch->member_path);
+      auto bytes = member_bytes(arch->archive_path, arch->member_path, preextracted);
       if (bytes && !bytes->empty()) {
         tiles = build_tile_pyramid_buffer(bytes->data(), bytes->size(), min_scale,
                                           max_scale, kDefaultTileQuality);

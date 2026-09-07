@@ -13,10 +13,12 @@
 #include <functional>
 #include <memory>
 #include <condition_variable>
+#include <cstddef>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace thumtoo {
@@ -158,10 +160,26 @@ class Client {
   void handle_probe_size(
       Job& job,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);
-  void handle_ensure_pixels(Job& job);
-  void handle_ensure_tiles(Job& job);
+  void handle_ensure_pixels(
+      Job& job,
+      const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);
+  void handle_ensure_tiles(
+      Job& job,
+      const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);
   void store_tiles(const std::string& content_id,
                    const std::vector<TileBlob>& tiles);
+
+  static constexpr std::size_t kExtractCacheMaxBytes = 512ull * 1024ull * 1024ull;
+  [[nodiscard]] static std::string extract_cache_key(
+      const std::filesystem::path& archive, std::string_view member);
+  void extract_cache_put(const std::filesystem::path& archive,
+                         std::string_view member,
+                         std::vector<std::uint8_t> bytes);
+  [[nodiscard]] std::optional<std::vector<std::uint8_t>> extract_cache_get(
+      const std::filesystem::path& archive, std::string_view member) const;
+  [[nodiscard]] std::optional<std::vector<std::uint8_t>> member_bytes(
+      const std::filesystem::path& archive, std::string_view member,
+      const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);
 
   [[nodiscard]] std::optional<PixelLevel> load_level(
       const Database::LevelRow& row) const;
@@ -176,6 +194,10 @@ class Client {
   bool stop_ = false;
   int inflight_ = 0;
   std::vector<std::thread> workers_;
+
+  mutable std::mutex extract_cache_mu_;
+  std::unordered_map<std::string, std::vector<std::uint8_t>> extract_cache_;
+  std::size_t extract_cache_bytes_ = 0;
 };
 
 }  // namespace thumtoo
