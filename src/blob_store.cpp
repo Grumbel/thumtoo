@@ -224,7 +224,10 @@ std::int64_t BlobStore::count_tiles() const {
                      nullptr);
   std::int64_t n = 0;
   if (sqlite3_step(stmt) == SQLITE_ROW) n = sqlite3_column_int64(stmt, 0);
-  sqlite3_finalize(stmt
+  sqlite3_finalize(stmt);
+  return n;
+}
+
 void BlobStore::put_http_body(std::string_view url, const std::uint8_t* data,
                               std::size_t size, std::int64_t fetched_at_unix_s) {
   if (url.empty() || !data || size == 0) return;
