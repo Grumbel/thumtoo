@@ -1356,18 +1356,10 @@ void Client::handle_ensure_tiles(
         }
       }
     } else if (auto pdf = parse_pdf_uri(job.uri)) {
-      // Live rasterize at layout DPI (kPdfLayoutDpi) so tiles match get_size.
-      auto layout = pdf_page_layout_size(pdf->pdf_path, pdf->page);
-      if (layout && layout->width > 0 && layout->height > 0) {
-        const int edge = std::max(layout->width, layout->height);
-        auto raster = pdf_rasterize_page(pdf->pdf_path, pdf->page, edge);
-        if (raster && !raster->rgb.empty()) {
-          cell = build_tile_cell_rgb(raster->rgb.data(), raster->width,
-                                     raster->height, job.tile_scale,
-                                     job.tile_x, job.tile_y,
-                                     kDefaultTileQuality);
-        }
-      }
+      // Region-rasterize only this cell. Supports negative scale (sharper than
+      // layout DPI) without allocating a full-page high-DPI buffer.
+      cell = pdf_build_tile_cell(pdf->pdf_path, pdf->page, job.tile_scale,
+                                 job.tile_x, job.tile_y, kDefaultTileQuality);
     } else if (is_http_uri(job.uri)) {
       auto bytes = fetch_http_cached(job.uri);
       if (bytes && !bytes->empty()) {
