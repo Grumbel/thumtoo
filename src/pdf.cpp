@@ -5,6 +5,7 @@
 #include "thumtoo/constants.hpp"
 #include "thumtoo/format.hpp"
 #include "thumtoo/uri.hpp"
+#include "thumtoo/image.hpp"
 
 #include <algorithm>
 #include <memory>
@@ -199,6 +200,140 @@ std::optional<PdfRaster> pdf_rasterize_page(const std::filesystem::path& path,
   }
   return out;
 #endif
+}
+
+
+Size pdf_page_size_at_scale(Size layout, int scale) {
+  if (layout.width <= 0 || layout.height <= 0) return Size{0, 0};
+  if (scale == 0) return layout;
+  // factor = 2^{-scale}: positive scale shrinks, negative grows.
+  const double factor = std::ldexp(1.0, -scale);
+  const int w = std::max(1, static_cast<int>(std::lround(layout.width * factor)));
+  const int h = std::max(1, static_cast<int>(std::lround(layout.height * factor)));
+  return Size{w, h};
+}
+
+double pdf_dpi_for_scale(int scale) {
+  return static_cast<double>(kPdfLayoutDpi) * std::ldexp(1.0, -scale);
+}
+
+namespace {
+
+#if defined(THUMTOO_HAVE_POPPLER)
+std::optional<PdfRaster> image_to_rgb(const poppler::image& img) {
+  if (!img.is_valid()) return std::nullopt;
+  const int w = img.width();
+  const int h = img.height();
+  if (w <= 0 || h <= 0) return std::nullopt;
+
+  PdfRaster out;
+  out.width = w;
+  out.height = h;
+  out.rgb.resize(static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 3u);
+
+  const auto fmt = img.format();
+  const char* src = img.const_data();
+  const int bpl = img.bytes_per_row();
+  for (int y = 0; y < h; ++y) {
+    const auto* row = reinterpret_cast<const unsigned char*>(src + y * bpl);
+    auto* dst = out.rgb.data() + static_cast<std::size_t>(y) *
+                                    static_cast<std::size_t>(w) * 3u;
+    if (fmt == poppler::image::format_rgb24) {
+      for (int x = 0; x < w; ++x) {
+        dst[x * 3 + 0] = row[x * 3 + 0];
+        dst[x * 3 + 1] = row[x * 3 + 1];
+        dst[x * 3 + 2] = row[x * 3 + 2];
+      }
+    } else if (fmt == poppler::image::format_argb32) {
+      for (int x = 0; x < w; ++x) {
+        const unsigned char* p = row + x * 4;
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        dst[x * 3 + 0] = p[1];
+        dst[x * 3 + 1] = p[2];
+        dst[x * 3 + 2] = p[3];
+#else
+        dst[x * 3 + 0] = p[2];
+        dst[x * 3 + 1] = p[1];
+        dst[x * 3 + 2] = p[0];
+#endif
+      }
+    } else if (fmt == poppler::image::format_mono) {
+      for (int x = 0; x < w; ++x) {
+        const unsigned char bit = (row[x / 8] >> (7 - (x % 8))) & 1;
+        const unsigned char v = bit ? 0 : 255;
+        dst[x * 3 + 0] = v;
+        dst[x * 3 + 1] = v;
+        dst[x * 3 + 2] = v;
+      }
+    } else {
+      const int spp = std::max(1, bpl / std::max(1, w));
+      for (int x = 0; x < w; ++x) {
+        const unsigned char* p = row + x * spp;
+        dst[x * 3 + 0] = p[0];
+        dst[x * 3 + 1] = spp > 1 ? p[1] : p[0];
+        dst[x * 3 + 2] = spp > 2 ? p[2] : p[0];
+      }
+    }
+  }
+  return out;
+}
+#endif
+
+}  // namespace
+
+std::optional<PdfRaster> pdf_rasterize_page_region(
+    const std::filesystem::path& path, int page_1based, double dpi, int px,
+    int py, int pw, int ph) {
+#if !defined(THUMTOO_HAVE_POPPLER)
+  (void)path;
+  (void)page_1based;
+  (void)dpi;
+  (void)px;
+  (void)py;
+  (void)pw;
+  (void)ph;
+  return std::nullopt;
+#else
+  if (page_1based < 1 || pw <= 0 || ph <= 0 || dpi <= 0.0) return std::nullopt;
+  std::unique_ptr<poppler::document> doc(
+      poppler::document::load_from_file(path.string()));
+  if (!doc || doc->is_locked()) return std::nullopt;
+  if (page_1based > doc->pages()) return std::nullopt;
+  std::unique_ptr<poppler::page> page(doc->create_page(page_1based - 1));
+  if (!page) return std::nullopt;
+
+  poppler::page_renderer renderer;
+  renderer.set_render_hint(poppler::page_renderer::antialiasing, true);
+  renderer.set_render_hint(poppler::page_renderer::text_antialiasing, true);
+  // x,y,w,h are pixel crop on the full page at the given DPI.
+  poppler::image img =
+      renderer.render_page(page.get(), dpi, dpi, px, py, pw, ph);
+  return image_to_rgb(img);
+#endif
+}
+
+std::optional<TileBlob> pdf_build_tile_cell(const std::filesystem::path& path,
+                                            int page_1based, int scale, int x,
+                                            int y, int jpeg_quality) {
+  if (x < 0 || y < 0) return std::nullopt;
+  auto layout = pdf_page_layout_size(path, page_1based);
+  if (!layout || layout->width <= 0 || layout->height <= 0) return std::nullopt;
+
+  const Size full = pdf_page_size_at_scale(*layout, scale);
+  const int left = x * kTileSize;
+  const int top = y * kTileSize;
+  if (left >= full.width || top >= full.height) return std::nullopt;
+  const int tw = std::min(kTileSize, full.width - left);
+  const int th = std::min(kTileSize, full.height - top);
+  if (tw <= 0 || th <= 0) return std::nullopt;
+
+  const double dpi = pdf_dpi_for_scale(scale);
+  auto raster =
+      pdf_rasterize_page_region(path, page_1based, dpi, left, top, tw, th);
+  if (!raster || raster->rgb.empty()) return std::nullopt;
+
+  return encode_tile_cell_rgb(raster->rgb.data(), raster->width, raster->height,
+                              scale, x, y, jpeg_quality);
 }
 
 }  // namespace thumtoo

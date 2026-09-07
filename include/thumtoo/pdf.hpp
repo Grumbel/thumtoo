@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "thumtoo/constants.hpp"
 #include "thumtoo/types.hpp"
 
 #include <cstdint>
@@ -54,3 +55,34 @@ struct PdfRaster {
     const std::filesystem::path& path, int page_1based);
 
 }  // namespace thumtoo
+
+/**
+ * Effective page pixel size at tile scale s relative to layout (kPdfLayoutDpi).
+ * s=0 → layout size; s>0 → coarser (÷2 each step); s<0 → denser (×2 each step).
+ */
+[[nodiscard]] Size pdf_page_size_at_scale(Size layout, int scale);
+
+/**
+ * DPI for tile scale s: kPdfLayoutDpi * 2^{-s}.
+ * Unclamped — region render only ever materializes ≤kTileSize² pixels.
+ */
+[[nodiscard]] double pdf_dpi_for_scale(int scale);
+
+/**
+ * Rasterize a pixel rectangle of the page at the given DPI.
+ * (px,py,pw,ph) are in the full-page pixel grid at that DPI (Poppler crop).
+ * Page is 1-based. Does not allocate a full-page buffer beyond the crop.
+ */
+[[nodiscard]] std::optional<PdfRaster> pdf_rasterize_page_region(
+    const std::filesystem::path& path, int page_1based, double dpi, int px,
+    int py, int pw, int ph);
+
+/**
+ * Build one Galapix-compatible tile cell for a PDF page at (scale,x,y).
+ * Supports negative scale (sharper than layout). Region-rasterizes only the
+ * cell; encodes JPEG via encode_tile_cell_rgb.
+ */
+[[nodiscard]] std::optional<TileBlob> pdf_build_tile_cell(
+    const std::filesystem::path& path, int page_1based, int scale, int x,
+    int y, int jpeg_quality = kDefaultTileQuality);
+
