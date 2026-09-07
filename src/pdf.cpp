@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <memory>
 #include <cmath>
+#include <cstring>
 #include <string>
 
 #if defined(THUMTOO_HAVE_POPPLER)
@@ -328,12 +329,64 @@ std::optional<TileBlob> pdf_build_tile_cell(const std::filesystem::path& path,
   if (tw <= 0 || th <= 0) return std::nullopt;
 
   const double dpi = pdf_dpi_for_scale(scale);
-  auto raster =
-      pdf_rasterize_page_region(path, page_1based, dpi, left, top, tw, th);
-  if (!raster || raster->rgb.empty()) return std::nullopt;
 
-  return encode_tile_cell_rgb(raster->rgb.data(), raster->width, raster->height,
-                              scale, x, y, jpeg_quality);
+  // Prefer Poppler crop when the theoretical full page is large; for moderate
+  // sizes render the whole page and crop in software (more reliable across
+  // poppler backends than the pixel-slice API).
+  constexpr int kFullPageSoftCropMaxEdge = 4096;
+  const int full_edge = std::max(full.width, full.height);
+
+  std::optional<PdfRaster> cell_raster;
+
+  if (full_edge > kFullPageSoftCropMaxEdge) {
+    cell_raster =
+        pdf_rasterize_page_region(path, page_1based, dpi, left, top, tw, th);
+  }
+
+  if (!cell_raster || cell_raster->rgb.empty() ||
+      cell_raster->width <= 0 || cell_raster->height <= 0) {
+    // Full-page raster at target long edge, then software crop into the cell.
+    auto page_raster =
+        pdf_rasterize_page(path, page_1based, full_edge);
+    if (!page_raster || page_raster->rgb.empty() ||
+        page_raster->width <= 0 || page_raster->height <= 0) {
+      return std::nullopt;
+    }
+    // Map theoretical tile rect into actual raster pixel space (rounding).
+    const double sx =
+        static_cast<double>(page_raster->width) / static_cast<double>(full.width);
+    const double sy =
+        static_cast<double>(page_raster->height) / static_cast<double>(full.height);
+    int const px = std::clamp(static_cast<int>(std::lround(left * sx)), 0,
+                              std::max(0, page_raster->width - 1));
+    int const py = std::clamp(static_cast<int>(std::lround(top * sy)), 0,
+                              std::max(0, page_raster->height - 1));
+    int const pw = std::clamp(static_cast<int>(std::lround(tw * sx)), 1,
+                              page_raster->width - px);
+    int const ph = std::clamp(static_cast<int>(std::lround(th * sy)), 1,
+                              page_raster->height - py);
+
+    PdfRaster cropped;
+    cropped.width = pw;
+    cropped.height = ph;
+    cropped.rgb.resize(static_cast<std::size_t>(pw) * static_cast<std::size_t>(ph) * 3u);
+    for (int row = 0; row < ph; ++row) {
+      const auto* src = page_raster->rgb.data() +
+                        (static_cast<std::size_t>(py + row) *
+                             static_cast<std::size_t>(page_raster->width) +
+                         static_cast<std::size_t>(px)) *
+                            3u;
+      auto* dst = cropped.rgb.data() +
+                  static_cast<std::size_t>(row) * static_cast<std::size_t>(pw) * 3u;
+      std::memcpy(dst, src, static_cast<std::size_t>(pw) * 3u);
+    }
+    cell_raster = std::move(cropped);
+  }
+
+  if (!cell_raster || cell_raster->rgb.empty()) return std::nullopt;
+
+  return encode_tile_cell_rgb(cell_raster->rgb.data(), cell_raster->width,
+                              cell_raster->height, scale, x, y, jpeg_quality);
 }
 
 }  // namespace thumtoo
