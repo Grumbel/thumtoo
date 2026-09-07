@@ -1,6 +1,6 @@
 ## Session handoff (2026-09-07) — tip **thumtoo-027**
 
-Apply tip **`thumtoo-028.bundle`** (or stack 016…023). Author: Ingo Ruhnke
+Apply tip **`thumtoo-029.bundle`** (or stack 016…023). Author: Ingo Ruhnke
 `<grumbel@gmail.com>` + `Co-authored-by: Grok <grok@x.ai>`.
 
 ### What landed this session (API / retrieval)
@@ -56,7 +56,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 ## Session handoff (2026-09-07)
 
 ### Bundles
-Apply in order or take tip **`thumtoo-028.bundle`**:
+Apply in order or take tip **`thumtoo-029.bundle`**:
 | Bundle | Change |
 |--------|--------|
 | thumtoo-001 | `request_tile` single-scale only |

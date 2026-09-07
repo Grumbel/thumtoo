@@ -32,7 +32,7 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 
 ## Status (2026-09-07)
 
-**Tip: thumtoo-028.** Full session notes: top of [TODO.md](TODO.md).
+**Tip: thumtoo-029.** Full session notes: top of [TODO.md](TODO.md).
 Retrieval stack: Location URIs → content-id → read_source_bytes → PDF@144dpi → HTTP(S)+session cache.
 
 

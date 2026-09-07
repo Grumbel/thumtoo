@@ -197,8 +197,9 @@ Database Database::open(const std::filesystem::path& cache_root) {
   out.exec("PRAGMA journal_mode=WAL;");
   out.exec("PRAGMA busy_timeout=5000;");
   out.exec("PRAGMA foreign_keys=ON;");
-  out.exec("CREATE INDEX IF NOT EXISTS idx_locators_outer_path ON locators(outer_path);");
   out.migrate_or_init();
+  // After schema: optional indexes not yet in older cache dirs.
+  out.exec("CREATE INDEX IF NOT EXISTS idx_locators_outer_path ON locators(outer_path);");
   return out;
 }
 
