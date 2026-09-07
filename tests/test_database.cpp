@@ -3,6 +3,7 @@
 
 #include "thumtoo/constants.hpp"
 #include "thumtoo/database.hpp"
+#include "thumtoo/blob_store.hpp"
 #include "thumtoo/uri.hpp"
 #include "thumtoo/status.hpp"
 #include "thumtoo/archive.hpp"
@@ -170,8 +171,23 @@ int main() {
     expect(locs.size() == 2, "two locators same content");
   }
 
+  // Durable HTTP body cache
+  {
+    auto blobs = BlobStore::open(root / "http-blobs");
+    const std::string url = "https://example.com/a.jpg";
+    const std::vector<std::uint8_t> body = {1, 2, 3, 4, 5};
+    blobs.put_http_body(url, body.data(), body.size(), 1'700'000'000);
+    expect(blobs.count_http_bodies() == 1, "one http body");
+    auto got = blobs.get_http_body(url, 0);
+    expect(got.has_value() && *got == body, "get_http_body");
+    // max_age 1 second vs fetched long ago → miss
+    auto stale = blobs.get_http_body(url, 1);
+    expect(!stale.has_value(), "ttl miss");
+  }
+
   std::error_code ec;
   fs::remove_all(root, ec);
+
 
   if (g_failures) {
     std::cerr << g_failures << " failure(s)\n";

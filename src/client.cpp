@@ -384,8 +384,31 @@ std::optional<std::vector<std::uint8_t>> Client::fetch_http_cached(
       return it->second;
     }
   }
+  // Durable cache (survives process restart).
+  if (blobs_) {
+    if (auto disk = blobs_->get_http_body(key, kHttpCacheTtlSeconds)) {
+      std::lock_guard lock(http_cache_mu_);
+      if (http_cache_bytes_ + disk->size() > kHttpCacheMaxBytes) {
+        http_cache_.clear();
+        http_cache_bytes_ = 0;
+      }
+      http_cache_bytes_ += disk->size();
+      http_cache_.emplace(key, *disk);
+      return disk;
+    }
+  }
   auto bytes = http_get_bytes(url, kArchiveMaxMemberUncompressedBytes);
   if (!bytes || bytes->empty()) return std::nullopt;
+  using namespace std::chrono;
+  const auto now =
+      duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
+  if (blobs_) {
+    try {
+      blobs_->put_http_body(key, bytes->data(), bytes->size(), now);
+    } catch (...) {
+      // Disk full / SQLite error: still return in-memory body.
+    }
+  }
   {
     std::lock_guard lock(http_cache_mu_);
     if (auto it = http_cache_.find(key); it != http_cache_.end()) {

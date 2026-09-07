@@ -46,6 +46,9 @@ inline constexpr int kPdfLayoutDpi = 144;
 inline constexpr int kTileSize = 256;
 inline constexpr int kDefaultTileQuality = 80;
 inline constexpr char kDefaultTileCodec[] = "jpeg";
+
+/// Durable HTTP body cache TTL (0 = never expire by age).
+inline constexpr std::int64_t kHttpCacheTtlSeconds = 7LL * 24 * 3600;
 /// Refuse tile encode when width*height exceeds this (memory guard).
 inline constexpr std::int64_t kTileMaxSourcePixels = 100000000LL;  // 100 MP
 

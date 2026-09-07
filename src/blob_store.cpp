@@ -5,6 +5,7 @@
 
 #include <sqlite3.h>
 
+#include <chrono>
 #include <stdexcept>
 #include <utility>
 
@@ -86,6 +87,12 @@ void BlobStore::migrate_or_init() {
       "  quality INTEGER,"
       "  data BLOB NOT NULL,"
       "  PRIMARY KEY (content_id, scale, x, y)"
+      ");");
+  exec(
+      "CREATE TABLE IF NOT EXISTS http_bodies ("
+      "  url TEXT PRIMARY KEY,"
+      "  fetched_at INTEGER NOT NULL,"
+      "  data BLOB NOT NULL"
       ");");
 }
 
@@ -217,7 +224,75 @@ std::int64_t BlobStore::count_tiles() const {
                      nullptr);
   std::int64_t n = 0;
   if (sqlite3_step(stmt) == SQLITE_ROW) n = sqlite3_column_int64(stmt, 0);
+  sqlite3_finalize(stmt
+void BlobStore::put_http_body(std::string_view url, const std::uint8_t* data,
+                              std::size_t size, std::int64_t fetched_at_unix_s) {
+  if (url.empty() || !data || size == 0) return;
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "INSERT INTO http_bodies(url, fetched_at, data) VALUES(?1,?2,?3) "
+      "ON CONFLICT(url) DO UPDATE SET fetched_at=excluded.fetched_at, "
+      "data=excluded.data;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, url.data(), static_cast<int>(url.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_int64(stmt, 2, fetched_at_unix_s);
+  sqlite3_bind_blob(stmt, 3, data, static_cast<int>(size), SQLITE_STATIC);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
   sqlite3_finalize(stmt);
+}
+
+std::optional<std::vector<std::uint8_t>> BlobStore::get_http_body(
+    std::string_view url, std::int64_t max_age_s) const {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT fetched_at, data FROM http_bodies WHERE url = ?1;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, url.data(), static_cast<int>(url.size()),
+                    SQLITE_STATIC);
+  std::optional<std::vector<std::uint8_t>> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    const std::int64_t fetched = sqlite3_column_int64(stmt, 0);
+    if (max_age_s > 0) {
+      using namespace std::chrono;
+      const auto now =
+          duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
+      if (now - fetched > max_age_s) {
+        sqlite3_finalize(stmt);
+        return std::nullopt;
+      }
+    }
+    const void* blob = sqlite3_column_blob(stmt, 1);
+    const int n = sqlite3_column_bytes(stmt, 1);
+    if (blob && n > 0) {
+      const auto* p = static_cast<const std::uint8_t*>(blob);
+      out = std::vector<std::uint8_t>(p, p + n);
+    }
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+std::int64_t BlobStore::count_http_bodies() const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db_, "SELECT COUNT(*) FROM http_bodies;", -1, &stmt,
+                         nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  std::int64_t n = 0;
+  if (sqlite3_step(stmt) == SQLITE_ROW) n = sqlite3_column_int64(stmt, 0);
+  sqlite3_finalize(stmt);
+  return n;
+}
+
+);
   return n;
 }
 

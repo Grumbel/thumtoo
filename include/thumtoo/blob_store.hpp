@@ -49,6 +49,14 @@ class BlobStore {
 
   [[nodiscard]] std::int64_t count_tiles() const;
 
+  /// Durable HTTP(S) response body keyed by URL (DESIGN retrieval).
+  void put_http_body(std::string_view url, const std::uint8_t* data,
+                    std::size_t size, std::int64_t fetched_at_unix_s);
+  /// Returns body if present and not older than max_age_s (0 = any age).
+  [[nodiscard]] std::optional<std::vector<std::uint8_t>> get_http_body(
+      std::string_view url, std::int64_t max_age_s = 0) const;
+  [[nodiscard]] std::int64_t count_http_bodies() const;
+
  private:
   explicit BlobStore(sqlite3* db, std::filesystem::path db_path);
   void exec(const char* sql) const;

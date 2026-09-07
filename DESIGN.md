@@ -125,8 +125,9 @@ Optional **tags attached to content hash** (not path), same idea as dirtoo:
 
 **http(s)** source URIs: optional **libcurl** (`THUMTOO_HAVE_CURL`) — GET into
 memory with size cap, used by `read_source_bytes` / size probe / tiles / pixels.
-In-process **HTTP body cache** (session, 512 MiB, same idea as archive extract
-cache) avoids repeated GETs within one Client. Durable disk cache / TTL later.
+In-process **HTTP body cache** (session, 512 MiB) plus durable **`http_bodies`**
+in `blobs.sqlite` (TTL `kHttpCacheTtlSeconds`, default 7 days). Lookup order:
+RAM → disk → network.
 **Plain local files first**, then archives, then remote URLs.
 
 Library helpers (`thumtoo/uri.hpp`): `parse_location` / `format_location` understand

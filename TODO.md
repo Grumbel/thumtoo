@@ -1,6 +1,6 @@
-## Session handoff (2026-09-07) — tip **thumtoo-024**
+## Session handoff (2026-09-07) — tip **thumtoo-025**
 
-Apply tip **`thumtoo-024.bundle`** (or stack 016…023). Author: Ingo Ruhnke
+Apply tip **`thumtoo-025.bundle`** (or stack 016…023). Author: Ingo Ruhnke
 `<grumbel@gmail.com>` + `Co-authored-by: Grok <grok@x.ai>`.
 
 ### What landed this session (API / retrieval)
@@ -33,7 +33,7 @@ Earlier tips (001–015) remain in the history; tip is **024** (handoff docs; co
 
 ### Next (priority)
 
-1. Durable HTTP/download cache + TTL (not only session map)
+1. ~~Durable HTTP/download cache + TTL~~ (025: blobs.sqlite `http_bodies`, 7d TTL)
 2. Higher-DPI / per-tile PDF crop render (true “mandelbrot-style” region)
 3. Query API beyond `list_locators` (path prefix, tags, collections)
 4. Galapix flake: pin/update input to a tip that includes 021+ curl
@@ -56,7 +56,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 ## Session handoff (2026-09-07)
 
 ### Bundles
-Apply in order or take tip **`thumtoo-024.bundle`**:
+Apply in order or take tip **`thumtoo-025.bundle`**:
 | Bundle | Change |
 |--------|--------|
 | thumtoo-001 | `request_tile` single-scale only |
