@@ -1,3 +1,67 @@
+## Galapix ResourceDatabase → thumtoo gaps (2026-09-07) — tip **thumtoo-034**
+
+Galapix removed its `ResourceDatabase` / `cache4.sqlite3` resource index
+(galapix-068). View path already used thumtoo only. The following features
+existed in Galapix schema or pipeline stubs but were **unfinished or unused
+in the viewer**; implement in thumtoo when needed rather than resurrecting
+cache4.
+
+### Coverage already in thumtoo
+
+| Need | thumtoo |
+|------|---------|
+| Path + mtime + size | `locators` |
+| Content identity | `content_id` (sha256 preferred) |
+| Image WxH | `content.width/height`, `get_size` |
+| Archive member list | `archive_entries`, `//archive:` URIs |
+| HTTP(S) sources | locators + optional curl fetch |
+| Tags | `tags` table |
+| Grid tiles + ladder | `tiles` / `levels` + blob store |
+| PDF pages | `//page:N`, live rgb888 + durable JPEG |
+
+### Still to implement in thumtoo (from Galapix ResourceDatabase)
+
+1. **Archive passwords**  
+   Galapix `archive.password` column — never wired through the view path, but
+   needed for encrypted ZIP/RAR/7z. Design: store password material only in a
+   host-controlled secret store or session; optional `locator` / archive meta
+   flag that a password is required, not the password itself in the shared
+   cache if multi-user.
+
+2. **Video / still metadata beyond duration**  
+   Galapix `video` table: width, height, duration, **aspect_ratio**. thumtoo
+   has `duration_ms`, `still_count`; add aspect (or derive from WxH) and
+   multi-frame still policy if video browsing becomes a product goal.
+
+3. **Remote URL content-type / HTTP validators**  
+   Galapix `url.content_type`, `url.mtime`. thumtoo HTTP path should persist
+   Content-Type and validators (ETag / Last-Modified) on the locator or a
+   small `http_meta` table for revalidation.
+
+4. **Explicit resource “handler” / pipeline status**  
+   Galapix `resource.type`, `handler`, `arguments`, `status` modeled a
+   multi-stage job graph. Prefer thumtoo `content.status` + `error_code` +
+   format; avoid a parallel handler table unless job orchestration returns.
+
+5. **Directory / collection UX index** (optional product)  
+   thumtoo already has `directory_snapshots` / `directory_entries`. Galapix
+   never finished a full library UI on cache4; grow thumtoo listing APIs
+   instead of a Galapix SQL index.
+
+### Explicit non-goals
+
+* Galapix tile SQLite (`cache4_tiles`) — already replaced by thumtoo tiles.
+* Galapix SHA-1 blob ids as primary keys — keep sha256 content_id.
+* Resurrecting `DatabaseThread` / `FileEntryGenerationJob` in Galapix.
+
+### References
+
+* Galapix `docs/CACHE4_VS_THUMTOO.md` (removal history + matrix)
+* Removed Galapix tables: `file`, `blob`, `image`, `archive`, `archive_file`,
+  `url`, `video`, `resource`
+
+---
+
 ## Live PDF tiles + negative scale investigation (2026-09-07) — tip **thumtoo-031**
 
 ### Symptom
