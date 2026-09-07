@@ -69,3 +69,23 @@ Use `nix develop` for the toolchain: **libvips** and **libjxl** are required (no
 
 GPL-3.0-or-later. See [LICENSES/GPL-3.0-or-later.txt](LICENSES/GPL-3.0-or-later.txt)
 and [REUSE.toml](REUSE.toml).
+
+
+## Development (nix)
+
+```bash
+nix develop
+thumtoo-configure          # out-of-tree build in $THUMTOO_BUILD_DIR (/tmp/thumtoo-build)
+thumtoo-build
+thumtoo-test
+thumtoo-run-prepare -- --help
+thumtoo-run-bench --ladder 256 /path/to/images
+```
+
+Flake apps (built package, not the dev build dir):
+
+```bash
+nix run .#prepare -- --help
+nix run .#bench -- --ladder 256 .
+nix run .#status -- /path/to/cache
+```
