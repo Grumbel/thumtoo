@@ -295,8 +295,4 @@ std::int64_t BlobStore::count_http_bodies() const {
   return n;
 }
 
-);
-  return n;
-}
-
 }  // namespace thumtoo
