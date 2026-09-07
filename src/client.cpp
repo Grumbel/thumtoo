@@ -302,15 +302,10 @@ void Client::invalidate_tile(std::string_view uri, int scale, int x, int y) {
 
 void Client::request_tile(std::string uri, int scale, int x, int y,
                           TileCallback cb) {
-  if (auto t = get_tile(uri, scale, x, y)) {
-    if (cb) {
-      executor_.post([cb = std::move(cb), uri, scale, x, y,
-                      t = std::move(*t)]() mutable {
-        cb(std::move(uri), scale, x, y, std::move(t));
-      });
-    }
-    return;
-  }
+  // Always enqueue. A synchronous get_tile() here ran on the *caller* thread
+  // (often the GUI during draw): SQLite + blob I/O, and with the default
+  // inline Executor the completion callback (JPEG/rgb decode) also ran there.
+  // handle_ensure_tiles still does a worker-side cache hit via get_tile.
   Job job;
   job.kind = JobKind::EnsureTiles;
   job.uri = std::move(uri);

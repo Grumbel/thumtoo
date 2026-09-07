@@ -1,3 +1,22 @@
+## request_tile: no sync cache hit on caller thread (2026-09-07) — tip **thumtoo-035**
+
+### Symptom (Galapix)
+Frame drops when zooming: `Image::draw` → `request_tile` → Client did
+`get_tile` (SQLite + blob read) on the GUI thread; default Executor then ran
+the completion (JPEG/rgb888 decode) **inline** on that same thread.
+
+### Fix
+`Client::request_tile` always enqueues `EnsureTiles`. Cache hits are resolved
+inside `handle_ensure_tiles` on a worker, then `executor_.post` delivers the
+callback (inline on worker with default Executor; GUI-marshaled if the host
+installs a queue).
+
+### Note
+`get_tile` remains available for tools/CLI that intentionally want a sync read.
+`request_size` still fast-paths meta in memory on the caller (no blob I/O).
+
+---
+
 ## Galapix ResourceDatabase → thumtoo gaps (2026-09-07) — tip **thumtoo-034**
 
 Galapix removed its `ResourceDatabase` / `cache4.sqlite3` resource index

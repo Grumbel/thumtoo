@@ -114,6 +114,8 @@ class Client {
       std::string_view uri) const;
 
   /// Ensure tile at (scale,x,y) exists; builds [scale..max] in one pass if missing.
+  /// Async: always enqueued (never does blob I/O on the caller thread).
+  /// Cache hits are resolved on a worker; callback via Executor.
   void request_tile(std::string uri, int scale, int x, int y, TileCallback cb);
   void invalidate_tile(std::string_view uri, int scale, int x, int y);
 
