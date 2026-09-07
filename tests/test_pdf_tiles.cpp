@@ -52,22 +52,39 @@ void expect_eq_str(const std::string& a, const std::string& b, const char* msg) 
   }
 }
 
-/// Minimal one-page PDF via Ghostscript (A4-ish with text). Returns path or empty.
+/// Self-contained letter-page PDF (no Ghostscript / external tools).
+/// Poppler opens it; MediaBox 612×792 pt → layout 1224×1584 @ 144 dpi.
 std::optional<fs::path> make_test_pdf(const fs::path& dir) {
-  const fs::path ps = dir / "mk.pdf.ps";
+  // Minimal PDF-1.4 with Helvetica text. Xref offsets are absolute.
+  static constexpr char kPdf[] =
+      "%PDF-1.4\n"
+      "1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj\n"
+      "2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj\n"
+      "3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+      "/Contents 4 0 R /Resources<< /Font<< /F1 5 0 R >> >> >>endobj\n"
+      "4 0 obj<< /Length 51 >>stream\n"
+      "BT /F1 24 Tf 72 700 Td (Hello PDF Tile Test) Tj ET\n"
+      "endstream\n"
+      "endobj\n"
+      "5 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj\n"
+      "xref\n"
+      "0 6\n"
+      "0000000000 65535 f \n"
+      "0000000009 00000 n \n"
+      "0000000056 00000 n \n"
+      "0000000111 00000 n \n"
+      "0000000233 00000 n \n"
+      "0000000331 00000 n \n"
+      "trailer<< /Size 6 /Root 1 0 R >>\n"
+      "startxref\n"
+      "399\n"
+      "%%EOF\n";
+
   const fs::path pdf = dir / "tile-test.pdf";
-  {
-    std::ofstream out(ps);
-    if (!out) return std::nullopt;
-    out << "/Helvetica findfont 48 scalefont setfont\n"
-        << "72 700 moveto (Hello PDF Tile Test) show\n"
-        << "72 650 moveto (Scale and region test) show\n"
-        << "showpage\n";
-  }
-  const std::string cmd =
-      "gs -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -sOutputFile=" + pdf.string() +
-      " " + ps.string() + " 2>/dev/null";
-  if (std::system(cmd.c_str()) != 0) return std::nullopt;
+  std::ofstream out(pdf, std::ios::binary);
+  if (!out) return std::nullopt;
+  out.write(kPdf, static_cast<std::streamsize>(sizeof(kPdf) - 1));
+  out.close();
   if (!fs::is_regular_file(pdf) || fs::file_size(pdf) < 100) return std::nullopt;
   return pdf;
 }
