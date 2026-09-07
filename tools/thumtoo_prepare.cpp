@@ -29,18 +29,28 @@ std::filesystem::path default_cache_root() {
 
 void usage(const char* argv0) {
   std::cerr
-      << "Usage: " << argv0
-      << " [--cache DIR] [--quiet] [--ladder EDGE] [--tiles] PATH [PATH...]\n"
-      << "  Register paths in the thumtoo cache and schedule size probes.\n"
-      << "  Size probes set native width×height (status Incomplete until a ladder\n"
-      << "  exists). Use --ladder EDGE to also encode display JXL levels up to EDGE.\n"
-      << "  Archive paths (zip/cbz/rar/…) expand image members as //archive: URIs.\n"
-      << "  PDF paths expand pages as //page:N URIs (1-based; prepare caps at 512).\n"
-      << "  Progress lines go to stderr; final summary to stdout.\n"
-      << "  --quiet         suppress per-job progress lines\n"
-      << "  --ladder EDGE   after size probes, request pixels (long-edge EDGE)\n"
-      << "  --tiles         after probes, build Galapix-style 256x256 JPEG tile pyramid\n"
-      << "  --stats         print extract/load/shrink/jpeg timing summary (stderr)\n";
+      << "Usage: " << argv0 << " [OPTION]... PATH [PATH...]\n"
+      << "\n"
+      << "Register PATH(s) in the thumtoo cache and run size probes.\n"
+      << "Archives (zip/cbz/rar/…) expand to image member URIs; PDFs expand to\n"
+      << "page URIs (//page:N, 1-based, capped at 512 pages).\n"
+      << "\n"
+      << "Options:\n"
+      << "  -h, --help         show this help and exit\n"
+      << "  -q, --quiet        suppress per-job progress on stderr\n"
+      << "      --cache DIR    cache root (default: $XDG_CACHE_HOME/thumtoo\n"
+      << "                      or ~/.cache/thumtoo)\n"
+      << "      --ladder EDGE  after probes, encode display JXL ladder up to\n"
+      << "                      long-edge EDGE pixels\n"
+      << "      --tiles        after probes, build Galapix-style 256×256 JPEG\n"
+      << "                      tile pyramid for each ready URI\n"
+      << "      --stats        print extract/load/shrink/jpeg timing summary\n"
+      << "                      on stderr (also implied when --tiles is used)\n"
+      << "\n"
+      << "Output:\n"
+      << "  Progress and timings go to stderr; a one-line cache summary to stdout.\n"
+      << "  Size probes store native width×height (content stays Incomplete until\n"
+      << "  a ladder exists unless only probes are requested).\n";
 }
 
 }  // namespace
