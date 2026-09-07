@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "thumtoo/client.hpp"
+#include "thumtoo/build_stats.hpp"
 #include "thumtoo/constants.hpp"
 #include "thumtoo/uri.hpp"
 #include "thumtoo/image.hpp"
@@ -675,6 +676,7 @@ void Client::worker_main() {
 void Client::handle_probe_size(
     Job& job,
     const std::optional<std::vector<std::uint8_t>>& preextracted) {
+  global_build_stats().probes_done.fetch_add(1, std::memory_order_relaxed);
   auto loc = db_->find_locator(job.uri);
   if (!loc || !loc->content_id) {
     if (job.size_cb) {
@@ -867,6 +869,7 @@ void Client::handle_probe_size(
 
 void Client::handle_ensure_pixels(
     Job& job, const std::optional<std::vector<std::uint8_t>>& preextracted) {
+  global_build_stats().pixel_jobs.fetch_add(1, std::memory_order_relaxed);
   // Fast path: ladder already present.
   if (auto px = get_pixels(job.uri, job.max_edge, job.frame_idx)) {
     if (job.pixels_cb) {
@@ -1085,6 +1088,7 @@ void Client::store_tiles(const std::string& content_id,
 
 void Client::handle_ensure_tiles(
     Job& job, const std::optional<std::vector<std::uint8_t>>& preextracted) {
+  global_build_stats().tile_jobs.fetch_add(1, std::memory_order_relaxed);
   auto reply_one = [&](std::optional<TileBlob> t) {
     if (!job.tile_cb) return;
     auto cb = std::move(job.tile_cb);

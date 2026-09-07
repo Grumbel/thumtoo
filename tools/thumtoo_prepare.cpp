@@ -45,9 +45,9 @@ void usage(const char* argv0) {
       << "                      (largest policy edge ≤ EDGE; not a full ladder)\n"
       << "      --tiles        after probes, build Galapix-style 256×256 JPEG\n"
       << "                      tile pyramid for each ready URI\n"
-      << "      --stats        print wall + CPU-share timings on stderr\n"
-      << "                      (also implied when --tiles is used; CPU times\n"
-      << "                      sum across worker threads and can exceed wall)\n"
+      << "      --stats        print detailed timings on stderr (pretty multi-line)\n"
+      << "                      (also implied when --tiles / --ladder is used)\n"
+      << "      --stats-line   one-line timings (script-friendly)\n"
       << "      --jobs N       worker threads for the job queue (default: CPUs,\n"
       << "                      max 32; 1 restores the old single-worker behaviour)\n"
       << "\n"
@@ -64,6 +64,7 @@ int main(int argc, char** argv) {
   std::vector<std::filesystem::path> paths;
   bool quiet = false;
   bool show_stats = false;
+  bool stats_line = false;
   int ladder_edge = 0;
   bool do_tiles = false;
   unsigned jobs = 0;  // 0 → hardware_concurrency
@@ -93,6 +94,11 @@ int main(int argc, char** argv) {
     }
     if (a == "--stats") {
       show_stats = true;
+      continue;
+    }
+    if (a == "--stats-line") {
+      show_stats = true;
+      stats_line = true;
       continue;
     }
     if (a == "--jobs" && i + 1 < argc) {
@@ -240,8 +246,11 @@ int main(int argc, char** argv) {
     if (pending) std::cout << " pending=" << pending;
     if (incomplete) std::cout << " incomplete=" << incomplete;
     std::cout << "\n";
-    if (show_stats || do_tiles) {
-      std::cerr << thumtoo::global_build_stats().summary_line() << "\n";
+    if (show_stats || do_tiles || ladder_edge > 0) {
+      if (stats_line)
+        std::cerr << thumtoo::global_build_stats().summary_line() << "\n";
+      else
+        std::cerr << thumtoo::global_build_stats().summary_pretty();
       if (jobs == 0) {
         unsigned hw = std::thread::hardware_concurrency();
         if (hw == 0) hw = 1;

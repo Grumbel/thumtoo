@@ -11,28 +11,37 @@
 namespace thumtoo {
 
 /**
- * Timings for prepare / tile generation.
+ * Timings for prepare / tile / preview generation.
  *
  * Per-category counters accumulate *thread wall time* (steady_clock scopes).
  * With a multi-worker pool those scopes overlap, so category sums can exceed
  * real elapsed time — treat them as CPU-ish cost, not wall duration.
- * summary_line() also reports true wall time since reset().
+ * summary_line() / summary_pretty() also report true wall time since reset().
  */
 struct BuildStats {
   std::atomic<std::uint64_t> archive_extract_ns{0};
   std::atomic<std::uint64_t> image_load_ns{0};
   std::atomic<std::uint64_t> shrink_ns{0};
   std::atomic<std::uint64_t> jpeg_encode_ns{0};
-  /// Single-edge preview (vips_thumbnail + JXL) — not the tile pyramid.
+  /// Single-edge preview (vips_thumbnail / EXIF + JXL) — not the tile pyramid.
   std::atomic<std::uint64_t> thumb_ns{0};
   std::atomic<std::uint64_t> jxl_encode_ns{0};
   std::atomic<std::uint64_t> levels_encoded{0};
   std::atomic<std::uint64_t> tiles_encoded{0};
   std::atomic<std::uint64_t> archive_bytes{0};
+  /// EXIF embedded JPEG thumb used for preview (skip full decode).
+  std::atomic<std::uint64_t> exif_thumb_hits{0};
+  std::atomic<std::uint64_t> probes_done{0};
+  std::atomic<std::uint64_t> pixel_jobs{0};
+  std::atomic<std::uint64_t> tile_jobs{0};
 
   void reset();
 
+  /// One-line summary (backward compatible, for scripts).
   [[nodiscard]] std::string summary_line() const;
+
+  /// Multi-line human-readable report (tables + rates).
+  [[nodiscard]] std::string summary_pretty() const;
 
   /// Wall time of the last reset() (for elapsed calculation).
   std::chrono::steady_clock::time_point wall_start{};
