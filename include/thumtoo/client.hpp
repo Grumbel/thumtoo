@@ -76,6 +76,14 @@ class Client {
   [[nodiscard]] std::optional<ContentMeta> get_meta_for_content_id(
       std::string_view content_id) const;
 
+  /// Load original media bytes for a location or content-id URI.
+  /// **Source I/O** (not cache-only): regular files and archive members.
+  /// Content-id tries each known locator. PDF pages and http(s) return nullopt
+  /// (rasterize via request_pixels / future network fetch).
+  /// Rejects payloads larger than kArchiveMaxMemberUncompressedBytes.
+  [[nodiscard]] std::optional<std::vector<std::uint8_t>> read_source_bytes(
+      std::string_view uri_or_content_id);
+
   /// Cache-only: load best stored preview with edge <= max_edge (frame 0 default).
   [[nodiscard]] std::optional<PixelLevel> get_pixels(std::string_view uri,
                                                      int max_edge,

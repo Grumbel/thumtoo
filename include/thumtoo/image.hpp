@@ -33,6 +33,10 @@ struct LevelBlob {
 
 void image_library_init();
 
+/// Read a regular file up to max_bytes (rejects larger). Empty on error.
+[[nodiscard]] std::optional<std::vector<std::uint8_t>> read_file_bytes(
+    const std::filesystem::path& path, std::uint64_t max_bytes);
+
 [[nodiscard]] std::optional<ProbeResult> probe_image_file(
     const std::filesystem::path& path);
 

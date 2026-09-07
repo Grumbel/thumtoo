@@ -131,7 +131,9 @@ nested `//archive:` and `//page:` pipes, `is_http_uri` / `is_content_id_uri`, an
 composers `with_archive_member` / `with_pdf_page`. Fetch of http(s) is not implemented yet. **Content-id resolve** (cache):
 `meta_for_uri("sha256:…")`, `Client::resolve_content_id`, and
 `list_uris_for_content_id` map between location URIs and durable identity.
-Raw source-byte fetch by content-id remains future work.
+`Client::read_source_bytes` loads original file or archive-member bytes
+(source I/O, size-capped). Content-id tries each known locator. PDF pages
+and http(s) are not covered yet.
 
 ## 4. Non-goals (initial)
 

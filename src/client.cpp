@@ -9,7 +9,6 @@
 #include "thumtoo/archive.hpp"
 #include "thumtoo/pdf.hpp"
 #include "thumtoo/blob_store.hpp"
-#include "thumtoo/constants.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -147,6 +146,35 @@ std::vector<Database::LocatorRow> Client::list_uris_for_content_id(
 std::optional<ContentMeta> Client::get_meta_for_content_id(
     std::string_view content_id) const {
   return db_->meta_for_content_id(content_id);
+}
+
+
+std::optional<std::vector<std::uint8_t>> Client::read_source_bytes(
+    std::string_view uri_or_content_id) {
+  if (is_http_uri(uri_or_content_id)) {
+    return std::nullopt;  // network fetch not implemented
+  }
+  if (is_content_id_uri(uri_or_content_id)) {
+    const auto locs = list_uris_for_content_id(uri_or_content_id);
+    for (const auto& loc : locs) {
+      if (auto bytes = read_source_bytes(loc.uri)) {
+        return bytes;
+      }
+    }
+    return std::nullopt;
+  }
+  if (parse_pdf_uri(uri_or_content_id)) {
+    // Pages are display rasters, not a single source blob here.
+    return std::nullopt;
+  }
+  if (auto arch = parse_archive_uri(uri_or_content_id)) {
+    if (arch->member_path.empty()) return std::nullopt;
+    return member_bytes(arch->archive_path, arch->member_path, std::nullopt);
+  }
+  if (auto path = path_from_file_uri(uri_or_content_id)) {
+    return read_file_bytes(*path, kArchiveMaxMemberUncompressedBytes);
+  }
+  return std::nullopt;
 }
 
 std::optional<PixelLevel> Client::load_level(

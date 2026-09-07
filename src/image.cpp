@@ -182,6 +182,22 @@ class Sha256 {
 
 void image_library_init() { ensure_vips(); }
 
+std::optional<std::vector<std::uint8_t>> read_file_bytes(
+    const std::filesystem::path& path, std::uint64_t max_bytes) {
+  std::error_code ec;
+  const auto sz = std::filesystem::file_size(path, ec);
+  if (ec || !std::filesystem::is_regular_file(path, ec)) return std::nullopt;
+  if (sz > max_bytes) return std::nullopt;
+  std::ifstream in(path, std::ios::binary);
+  if (!in) return std::nullopt;
+  std::vector<std::uint8_t> buf(static_cast<std::size_t>(sz));
+  if (sz > 0) {
+    in.read(reinterpret_cast<char*>(buf.data()), static_cast<std::streamsize>(sz));
+    if (static_cast<std::uint64_t>(in.gcount()) != sz) return std::nullopt;
+  }
+  return buf;
+}
+
 std::optional<ProbeResult> probe_image_file(const std::filesystem::path& path) {
   ensure_vips();
   // Returns VipsImage* (or NULL) — not an int error code.
