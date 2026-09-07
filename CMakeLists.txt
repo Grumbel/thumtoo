@@ -84,6 +84,10 @@ if(THUMTOO_BUILD_TESTS)
   add_executable(thumtoo-test-pdf-scale tests/test_pdf_scale.cpp)
   target_link_libraries(thumtoo-test-pdf-scale PRIVATE thumtoo)
   add_test(NAME pdf_scale COMMAND thumtoo-test-pdf-scale)
+
+  add_executable(thumtoo-test-pdf-tiles tests/test_pdf_tiles.cpp)
+  target_link_libraries(thumtoo-test-pdf-tiles PRIVATE thumtoo)
+  add_test(NAME pdf_tiles COMMAND thumtoo-test-pdf-tiles)
 endif()
 
 install(TARGETS thumtoo ARCHIVE DESTINATION lib LIBRARY DESTINATION lib)
