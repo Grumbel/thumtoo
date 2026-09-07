@@ -54,8 +54,6 @@ struct PdfRaster {
 [[nodiscard]] std::optional<Size> pdf_page_layout_size(
     const std::filesystem::path& path, int page_1based);
 
-}  // namespace thumtoo
-
 /**
  * Effective page pixel size at tile scale s relative to layout (kPdfLayoutDpi).
  * s=0 → layout size; s>0 → coarser (÷2 each step); s<0 → denser (×2 each step).
@@ -86,3 +84,4 @@ struct PdfRaster {
     const std::filesystem::path& path, int page_1based, int scale, int x,
     int y, int jpeg_quality = kDefaultTileQuality);
 
+}  // namespace thumtoo
