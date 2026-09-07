@@ -126,6 +126,11 @@ Optional **tags attached to content hash** (not path), same idea as dirtoo:
 **http(s)** source URIs are a future extension (download/cache policy, TTL).
 **Plain local files first**, then archives, then remote URLs.
 
+Library helpers (`thumtoo/uri.hpp`): `parse_location` / `format_location` understand
+nested `//archive:` and `//page:` pipes, `is_http_uri` / `is_content_id_uri`, and
+composers `with_archive_member` / `with_pdf_page`. Fetch of http(s) and resolve of
+`sha256:` → bytes are not implemented yet — structure only.
+
 ## 4. Non-goals (initial)
 
 - Full image editor or session/project file format.

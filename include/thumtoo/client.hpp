@@ -58,6 +58,11 @@ class Client {
   [[nodiscard]] std::optional<Size> get_size(std::string_view uri) const;
   [[nodiscard]] std::optional<ContentMeta> get_meta(std::string_view uri) const;
 
+  /// Cache-only: locator rows known to this cache (browse without source I/O).
+  [[nodiscard]] std::vector<Database::LocatorRow> list_locators(int limit = 100) const;
+  [[nodiscard]] std::optional<Database::LocatorRow> find_locator(
+      std::string_view uri) const;
+
   /// Cache-only: load best stored preview with edge <= max_edge (frame 0 default).
   [[nodiscard]] std::optional<PixelLevel> get_pixels(std::string_view uri,
                                                      int max_edge,

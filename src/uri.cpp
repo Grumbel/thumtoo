@@ -3,31 +3,16 @@
 
 #include "thumtoo/uri.hpp"
 
+#include <cctype>
 #include <sstream>
 
 namespace thumtoo {
+namespace {
 
-std::string file_uri_from_path(const std::filesystem::path& absolute_path) {
-  const auto p = absolute_path.lexically_normal().generic_string();
-  // Minimal encoding: spaces only (full percent-encoding can come later).
-  std::string out = "file://";
-  for (char c : p) {
-    if (c == ' ')
-      out += "%20";
-    else
-      out += c;
-  }
-  return out;
-}
+constexpr std::string_view kArchivePipe = "//archive";
+constexpr std::string_view kPagePipe = "//page:";
 
-std::optional<std::filesystem::path> path_from_file_uri(std::string_view uri) {
-  constexpr std::string_view kPrefix = "file://";
-  if (!uri.starts_with(kPrefix)) return std::nullopt;
-  std::string_view rest = uri.substr(kPrefix.size());
-  // Strip //archive: ... if present (path is before the pipe).
-  const auto pipe = rest.find("//archive");
-  if (pipe != std::string_view::npos) rest = rest.substr(0, pipe);
-
+std::string percent_decode_path(std::string_view rest) {
   std::string path;
   path.reserve(rest.size());
   for (std::size_t i = 0; i < rest.size(); ++i) {
@@ -48,12 +33,242 @@ std::optional<std::filesystem::path> path_from_file_uri(std::string_view uri) {
     }
     path.push_back(rest[i]);
   }
+  return path;
+}
+
+std::string_view strip_pipes(std::string_view rest) {
+  const auto arch = rest.find(kArchivePipe);
+  const auto page = rest.find(kPagePipe);
+  std::size_t cut = rest.size();
+  if (arch != std::string_view::npos) cut = std::min(cut, arch);
+  if (page != std::string_view::npos) cut = std::min(cut, page);
+  return rest.substr(0, cut);
+}
+
+bool parse_pipes(std::string_view rest, std::vector<LocationPipe>& out) {
+  // rest is the full uri after scheme handling, including base path and pipes.
+  // Find first pipe on the entire string after base was taken from strip.
+  // Caller passes the full post-scheme remainder; we scan for //archive and //page.
+  std::size_t i = 0;
+  while (i < rest.size()) {
+    const auto arch = rest.find(kArchivePipe, i);
+    const auto page = rest.find(kPagePipe, i);
+    std::size_t next = std::string_view::npos;
+    bool is_page = false;
+    if (arch != std::string_view::npos && page != std::string_view::npos) {
+      if (arch < page) {
+        next = arch;
+      } else {
+        next = page;
+        is_page = true;
+      }
+    } else if (arch != std::string_view::npos) {
+      next = arch;
+    } else if (page != std::string_view::npos) {
+      next = page;
+      is_page = true;
+    } else {
+      break;
+    }
+
+    if (is_page) {
+      std::string_view after = rest.substr(next + kPagePipe.size());
+      std::size_t n = 0;
+      while (n < after.size() && after[n] >= '0' && after[n] <= '9') ++n;
+      if (n == 0) return false;
+      LocationPipe pipe;
+      pipe.kind = LocationPipeKind::PdfPage;
+      pipe.value = std::string(after.substr(0, n));
+      out.push_back(std::move(pipe));
+      i = next + kPagePipe.size() + n;
+    } else {
+      std::string_view after = rest.substr(next + kArchivePipe.size());
+      LocationPipe pipe;
+      if (after.empty()) {
+        pipe.kind = LocationPipeKind::ArchiveRoot;
+        pipe.value.clear();
+        out.push_back(std::move(pipe));
+        i = rest.size();
+        break;
+      }
+      if (after.front() != ':') {
+        // //archive without colon only valid if end
+        return false;
+      }
+      after.remove_prefix(1);
+      // Member runs until next pipe or end
+      std::size_t mem_end = after.size();
+      const auto na = after.find(kArchivePipe);
+      const auto np = after.find(kPagePipe);
+      if (na != std::string_view::npos) mem_end = std::min(mem_end, na);
+      if (np != std::string_view::npos) mem_end = std::min(mem_end, np);
+      pipe.kind = LocationPipeKind::ArchiveMember;
+      pipe.value = std::string(after.substr(0, mem_end));
+      out.push_back(std::move(pipe));
+      i = next + kArchivePipe.size() + 1 + mem_end;
+    }
+  }
+  return true;
+}
+
+}  // namespace
+
+std::string file_uri_from_path(const std::filesystem::path& absolute_path) {
+  const auto p = absolute_path.lexically_normal().generic_string();
+  std::string out = "file://";
+  for (char c : p) {
+    if (c == ' ')
+      out += "%20";
+    else
+      out += c;
+  }
+  return out;
+}
+
+std::optional<std::filesystem::path> path_from_file_uri(std::string_view uri) {
+  constexpr std::string_view kPrefix = "file://";
+  if (!uri.starts_with(kPrefix)) return std::nullopt;
+  std::string_view rest = uri.substr(kPrefix.size());
+  rest = strip_pipes(rest);
+  std::string path = percent_decode_path(rest);
   if (path.empty()) return std::nullopt;
   return std::filesystem::path(path);
 }
 
 bool is_archive_uri(std::string_view uri) {
-  return uri.find("//archive") != std::string_view::npos;
+  return uri.find(kArchivePipe) != std::string_view::npos;
+}
+
+bool is_pdf_page_uri(std::string_view uri) {
+  return uri.find(kPagePipe) != std::string_view::npos;
+}
+
+bool is_http_uri(std::string_view uri) {
+  return uri.starts_with("http://") || uri.starts_with("https://");
+}
+
+bool is_content_id_uri(std::string_view uri) {
+  return uri.starts_with(kContentIdSha256Prefix) || uri.starts_with(kContentIdSha1Prefix);
+}
+
+std::string content_id_uri_from_sha256_hex(std::string_view hex) {
+  if (hex.starts_with(kContentIdSha256Prefix)) return std::string(hex);
+  std::string out(kContentIdSha256Prefix);
+  out.append(hex);
+  return out;
+}
+
+std::optional<std::string> content_id_hex(std::string_view uri) {
+  if (uri.starts_with(kContentIdSha256Prefix))
+    return std::string(uri.substr(kContentIdSha256Prefix.size()));
+  if (uri.starts_with(kContentIdSha1Prefix))
+    return std::string(uri.substr(kContentIdSha1Prefix.size()));
+  return std::nullopt;
+}
+
+std::optional<Location> parse_location(std::string_view uri) {
+  Location loc;
+  if (uri.starts_with("file://")) {
+    loc.scheme = UriScheme::File;
+    std::string_view rest = uri.substr(7);
+    auto base = strip_pipes(rest);
+    loc.base = percent_decode_path(base);
+    if (loc.base.empty()) return std::nullopt;
+    if (!parse_pipes(rest, loc.pipes)) return std::nullopt;
+    return loc;
+  }
+  if (uri.starts_with("https://")) {
+    loc.scheme = UriScheme::Https;
+    loc.base = std::string(uri.substr(8));
+    // Pipes on remote URLs are reserved for later; reject nested for now.
+    if (loc.base.find("//archive") != std::string::npos ||
+        loc.base.find("//page:") != std::string::npos) {
+      // Allow pipes on the path portion for future networked archives
+      std::string_view rest = uri.substr(8);
+      auto base = strip_pipes(rest);
+      loc.base = std::string(base);
+      if (!parse_pipes(rest, loc.pipes)) return std::nullopt;
+    }
+    if (loc.base.empty()) return std::nullopt;
+    return loc;
+  }
+  if (uri.starts_with("http://")) {
+    loc.scheme = UriScheme::Http;
+    std::string_view rest = uri.substr(7);
+    auto base = strip_pipes(rest);
+    loc.base = std::string(base);
+    if (loc.base.empty()) return std::nullopt;
+    if (!parse_pipes(rest, loc.pipes)) return std::nullopt;
+    return loc;
+  }
+  if (uri.starts_with(kContentIdSha256Prefix)) {
+    loc.scheme = UriScheme::ContentSha256;
+    loc.base = std::string(uri);
+    return loc;
+  }
+  if (uri.starts_with(kContentIdSha1Prefix)) {
+    loc.scheme = UriScheme::ContentSha1;
+    loc.base = std::string(uri);
+    return loc;
+  }
+  return std::nullopt;
+}
+
+std::string format_location(const Location& loc) {
+  std::string out;
+  switch (loc.scheme) {
+    case UriScheme::File:
+      out = file_uri_from_path(loc.base);
+      break;
+    case UriScheme::Http:
+      out = "http://";
+      out += loc.base;
+      break;
+    case UriScheme::Https:
+      out = "https://";
+      out += loc.base;
+      break;
+    case UriScheme::ContentSha256:
+    case UriScheme::ContentSha1:
+      return loc.base;
+    case UriScheme::Unknown:
+      return {};
+  }
+  for (const auto& pipe : loc.pipes) {
+    switch (pipe.kind) {
+      case LocationPipeKind::ArchiveRoot:
+        out += "//archive";
+        break;
+      case LocationPipeKind::ArchiveMember:
+        out += "//archive:";
+        out += pipe.value;
+        break;
+      case LocationPipeKind::PdfPage:
+        out += "//page:";
+        out += pipe.value;
+        break;
+    }
+  }
+  return out;
+}
+
+std::string with_archive_member(std::string_view base_uri, std::string_view member_path) {
+  std::string out(base_uri);
+  if (member_path.empty()) {
+    out += "//archive";
+  } else {
+    out += "//archive:";
+    out.append(member_path);
+  }
+  return out;
+}
+
+std::string with_pdf_page(std::string_view base_uri, int page_1based) {
+  if (page_1based < 1) page_1based = 1;
+  std::string out(base_uri);
+  out += "//page:";
+  out += std::to_string(page_1based);
+  return out;
 }
 
 }  // namespace thumtoo

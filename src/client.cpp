@@ -122,6 +122,15 @@ std::optional<ContentMeta> Client::get_meta(std::string_view uri) const {
   return db_->meta_for_uri(uri);
 }
 
+std::vector<Database::LocatorRow> Client::list_locators(int limit) const {
+  return db_->list_locators(limit);
+}
+
+std::optional<Database::LocatorRow> Client::find_locator(std::string_view uri) const {
+  return db_->find_locator(uri);
+}
+
+
 
 std::optional<PixelLevel> Client::load_level(
     const Database::LevelRow& row) const {

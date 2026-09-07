@@ -9,7 +9,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 ## Session handoff (2026-09-07)
 
 ### Bundles
-Apply in order or take tip **`thumtoo-015.bundle`**:
+Apply in order or take tip **`thumtoo-016.bundle`**:
 | Bundle | Change |
 |--------|--------|
 | thumtoo-001 | `request_tile` single-scale only |
@@ -27,6 +27,7 @@ Apply in order or take tip **`thumtoo-015.bundle`**:
 | thumtoo-013 | `--min-scale` / `--max-scale` for tile prepare + bench |
 | thumtoo-014 | `format.hpp`: central ext/MIME/classify for apps |
 | thumtoo-015 | pdf.cpp: remove unused to_lower_ext warning |
+| thumtoo-016 | **Location URI API** (parse/format nested archive+page, http/content-id); Client list_locators |
 
 ### Pixel cache policy (Galapix-first, biltoo API stable)
 * **Durable:** size index + **one** JXL preview per `request_pixels(max_edge)` (largest
