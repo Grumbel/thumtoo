@@ -132,7 +132,7 @@ std::optional<PdfRaster> pdf_rasterize_page(const std::filesystem::path& path,
   double dpi = 72.0;
   if (max_edge > 0 && long_pt > 0.0) {
     dpi = 72.0 * (static_cast<double>(max_edge) / long_pt);
-    dpi = std::clamp(dpi, 36.0, 600.0);
+    dpi = std::clamp(dpi, 36.0, 2400.0);
   }
 
   poppler::page_renderer renderer;
@@ -320,6 +320,7 @@ std::optional<TileBlob> pdf_build_tile_cell(const std::filesystem::path& path,
   auto layout = pdf_page_layout_size(path, page_1based);
   if (!layout || layout->width <= 0 || layout->height <= 0) return std::nullopt;
 
+  // Pixel grid at this scale: scale 0 = layout; each -1 doubles linear resolution.
   const Size full = pdf_page_size_at_scale(*layout, scale);
   const int left = x * kTileSize;
   const int top = y * kTileSize;
@@ -329,34 +330,40 @@ std::optional<TileBlob> pdf_build_tile_cell(const std::filesystem::path& path,
   if (tw <= 0 || th <= 0) return std::nullopt;
 
   const double dpi = pdf_dpi_for_scale(scale);
-
-  // Prefer Poppler crop when the theoretical full page is large; for moderate
-  // sizes render the whole page and crop in software (more reliable across
-  // poppler backends than the pixel-slice API).
-  constexpr int kFullPageSoftCropMaxEdge = 4096;
   const int full_edge = std::max(full.width, full.height);
 
   std::optional<PdfRaster> cell_raster;
 
-  if (full_edge > kFullPageSoftCropMaxEdge) {
-    cell_raster =
-        pdf_rasterize_page_region(path, page_1based, dpi, left, top, tw, th);
+  // Region path first (true per-cell rasterize).
+  cell_raster =
+      pdf_rasterize_page_region(path, page_1based, dpi, left, top, tw, th);
+
+  // Accept only if Poppler returned roughly the requested cell size (not a
+  // full-page image or empty). Wrong sizes cause 2x "zoomed" tiles on screen.
+  if (cell_raster && cell_raster->width > 0 && cell_raster->height > 0) {
+    const int tol = 2;
+    if (std::abs(cell_raster->width - tw) > tol ||
+        std::abs(cell_raster->height - th) > tol) {
+      cell_raster.reset();
+    }
   }
 
-  if (!cell_raster || cell_raster->rgb.empty() ||
-      cell_raster->width <= 0 || cell_raster->height <= 0) {
-    // Full-page raster at target long edge, then software crop into the cell.
-    auto page_raster =
-        pdf_rasterize_page(path, page_1based, full_edge);
+  if (!cell_raster || cell_raster->rgb.empty()) {
+    // Full-page at exact target long edge, then software crop.
+    auto page_raster = pdf_rasterize_page(path, page_1based, full_edge);
     if (!page_raster || page_raster->rgb.empty() ||
         page_raster->width <= 0 || page_raster->height <= 0) {
       return std::nullopt;
     }
-    // Map theoretical tile rect into actual raster pixel space (rounding).
-    const double sx =
-        static_cast<double>(page_raster->width) / static_cast<double>(full.width);
-    const double sy =
-        static_cast<double>(page_raster->height) / static_cast<double>(full.height);
+    const double sx = static_cast<double>(page_raster->width) /
+                      static_cast<double>(full.width);
+    const double sy = static_cast<double>(page_raster->height) /
+                      static_cast<double>(full.height);
+    // If the raster is ~half of theoretical full, we would crop the wrong
+    // region and tiles look ~2x too big — reject and fail the cell.
+    if (sx < 0.75 || sy < 0.75) {
+      return std::nullopt;
+    }
     int const px = std::clamp(static_cast<int>(std::lround(left * sx)), 0,
                               std::max(0, page_raster->width - 1));
     int const py = std::clamp(static_cast<int>(std::lround(top * sy)), 0,
@@ -369,15 +376,18 @@ std::optional<TileBlob> pdf_build_tile_cell(const std::filesystem::path& path,
     PdfRaster cropped;
     cropped.width = pw;
     cropped.height = ph;
-    cropped.rgb.resize(static_cast<std::size_t>(pw) * static_cast<std::size_t>(ph) * 3u);
+    cropped.rgb.resize(static_cast<std::size_t>(pw) *
+                       static_cast<std::size_t>(ph) * 3u);
     for (int row = 0; row < ph; ++row) {
-      const auto* src = page_raster->rgb.data() +
-                        (static_cast<std::size_t>(py + row) *
-                             static_cast<std::size_t>(page_raster->width) +
-                         static_cast<std::size_t>(px)) *
-                            3u;
+      const auto* src =
+          page_raster->rgb.data() +
+          (static_cast<std::size_t>(py + row) *
+               static_cast<std::size_t>(page_raster->width) +
+           static_cast<std::size_t>(px)) *
+              3u;
       auto* dst = cropped.rgb.data() +
-                  static_cast<std::size_t>(row) * static_cast<std::size_t>(pw) * 3u;
+                  static_cast<std::size_t>(row) *
+                      static_cast<std::size_t>(pw) * 3u;
       std::memcpy(dst, src, static_cast<std::size_t>(pw) * 3u);
     }
     cell_raster = std::move(cropped);

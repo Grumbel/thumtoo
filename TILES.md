@@ -110,14 +110,14 @@ Galapix scale **0 = full resolution**; higher = coarser.
 
 ## PDF layout DPI + region tiles (2026-09-07)
 
-Page `get_size` uses **kPdfLayoutDpi (144)** (media box × 144/72) as the
-**nominal** full-resolution size for layout.
+Page `get_size` uses **kPdfLayoutDpi (72)** = media box in pixels (1 pt → 1 px).
 
 Interactive `request_tile` for `//page:N`:
 
-* **Region-rasterizes** only the requested 256² cell (Poppler crop at target DPI)
-* **scale 0** → 144 dpi; **scale > 0** → coarser (`÷2` per step); **scale < 0**
-  → sharper than layout (`×2` per step, e.g. −1 → 288 dpi)
+* **Region-rasterizes** the requested cell (Poppler crop at target DPI), with
+  full-page + software crop fallback when the slice size is wrong
+* **scale 0** → 72 dpi; **scale > 0** → coarser; **scale < 0** → sharper
+  (e.g. −1 → 144 dpi, −2 → 288 dpi)
 * No full-page high-DPI buffer; each cell is ≤ kTileSize² pixels
 * Durable JPEG cache still stores `(content_id, scale, x, y)` including negative scale
 
