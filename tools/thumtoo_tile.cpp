@@ -230,6 +230,12 @@ int main(int argc, char** argv) {
     std::cout << "request: scale=" << scale << " x=" << tile_x
               << " y=" << tile_y << "\n";
     if (thumtoo::is_pdf_page_uri(uri)) {
+      if (scale < thumtoo::kPdfMinDurableTileScale) {
+        std::cout << "note: scale " << scale
+                  << " is finer than durable floor "
+                  << thumtoo::kPdfMinDurableTileScale
+                  << " — live-only (not written to cache)\n";
+      }
       std::cout << "pdf dpi for scale: " << thumtoo::pdf_dpi_for_scale(scale)
                 << " (layout_dpi=" << thumtoo::kPdfLayoutDpi << ")\n";
       if (sz) {

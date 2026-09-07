@@ -43,6 +43,11 @@ inline constexpr char kSchemaMetaWebpQualityKey[] = "webp_quality";
 /// (dpi = kPdfLayoutDpi * 2^{-scale}). Do not change without a cache migration.
 inline constexpr int kPdfLayoutDpi = 144;
 
+/// Finest scale written to the durable tile DB for PDF pages. Finer scales
+/// (e.g. -3, -4) may still be generated live and returned to the client, but
+/// are not stored — avoids filling the cache with 1k–9k dpi cells.
+inline constexpr int kPdfMinDurableTileScale = -2;  // 144 * 4 = 576 dpi
+
 /// Grid tiles (Phase 4 / Galapix-compatible). See TILES.md.
 inline constexpr int kTileSize = 256;
 inline constexpr int kDefaultTileQuality = 80;

@@ -1367,6 +1367,18 @@ void Client::handle_ensure_tiles(
       // layout DPI) without allocating a full-page high-DPI buffer.
       cell = pdf_build_tile_cell(pdf->pdf_path, pdf->page, job.tile_scale,
                                  job.tile_x, job.tile_y, kDefaultTileQuality);
+      if (cell && !cell->bytes.empty()) {
+        // Only persist down to kPdfMinDurableTileScale; finer cells are live-only.
+        if (job.tile_scale >= kPdfMinDurableTileScale) {
+          store_tiles(content_id, std::vector<TileBlob>{*cell});
+          reply_one(get_tile(job.uri, job.tile_scale, job.tile_x, job.tile_y));
+        } else {
+          reply_one(std::move(cell));
+        }
+        return;
+      }
+      reply_one(std::nullopt);
+      return;
     } else if (is_http_uri(job.uri)) {
       auto bytes = fetch_http_cached(job.uri);
       if (bytes && !bytes->empty()) {
