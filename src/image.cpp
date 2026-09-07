@@ -2,15 +2,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "thumtoo/image.hpp"
+#include "thumtoo/build_stats.hpp"
 #include "thumtoo/constants.hpp"
 
 #include <vips/vips.h>
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <cctype>
 #include <fstream>
 #include <mutex>
+#include <thread>
+#include <vector>
 #include <sstream>
 
 namespace thumtoo {
@@ -24,6 +28,10 @@ void ensure_vips() {
     if (VIPS_INIT("thumtoo") != 0) {
       // Subsequent calls surface errors via NULL returns / vips_error.
     }
+    // Let libvips use multiple cores for its own ops (shrink, etc.).
+    unsigned hw = std::thread::hardware_concurrency();
+    if (hw == 0) hw = 1;
+    vips_concurrency_set(static_cast<int>(hw));
   });
 }
 
@@ -490,15 +498,21 @@ std::vector<TileBlob> cut_pyramid_from_vips(VipsImage* full, int min_scale,
   if (min_scale < 0) min_scale = 0;
   if (min_scale > max_scale) return tiles;
 
+  unsigned hw = std::thread::hardware_concurrency();
+  if (hw == 0) hw = 1;
+
   VipsImage* current = full;
   g_object_ref(current);
 
   for (int scale = 0; scale <= max_scale; ++scale) {
     if (scale > 0) {
       VipsImage* halved = nullptr;
-      // Integer factor-2 shrink (Galapix-style halve).
-      if (vips_shrink(current, &halved, 2.0, 2.0, nullptr) != 0 || !halved) {
-        break;
+      {
+        ScopedNsAccumulator timer(global_build_stats().shrink_ns);
+        // Integer factor-2 shrink (Galapix-style halve).
+        if (vips_shrink(current, &halved, 2.0, 2.0, nullptr) != 0 || !halved) {
+          break;
+        }
       }
       g_object_unref(current);
       current = halved;
@@ -511,6 +525,14 @@ std::vector<TileBlob> cut_pyramid_from_vips(VipsImage* full, int min_scale,
     const int tiles_x = (sw + kTileSize - 1) / kTileSize;
     const int tiles_y = (sh + kTileSize - 1) / kTileSize;
 
+    struct Cell {
+      int tx = 0;
+      int ty = 0;
+      int tw = 0;
+      int th = 0;
+    };
+    std::vector<Cell> cells;
+    cells.reserve(static_cast<std::size_t>(tiles_x * tiles_y));
     for (int ty = 0; ty < tiles_y; ++ty) {
       for (int tx = 0; tx < tiles_x; ++tx) {
         const int left = tx * kTileSize;
@@ -518,32 +540,65 @@ std::vector<TileBlob> cut_pyramid_from_vips(VipsImage* full, int min_scale,
         const int tw = std::min(kTileSize, sw - left);
         const int th = std::min(kTileSize, sh - top);
         if (tw <= 0 || th <= 0) continue;
+        cells.push_back(Cell{tx, ty, tw, th});
+      }
+    }
 
+    std::vector<TileBlob> scale_tiles(cells.size());
+    std::atomic<std::size_t> next{0};
+    auto encode_worker = [&]() {
+      for (;;) {
+        const std::size_t i = next.fetch_add(1, std::memory_order_relaxed);
+        if (i >= cells.size()) break;
+        const Cell& c = cells[i];
+        const int left = c.tx * kTileSize;
+        const int top = c.ty * kTileSize;
         VipsImage* crop = nullptr;
-        if (vips_crop(current, &crop, left, top, tw, th, nullptr) != 0 ||
+        if (vips_crop(current, &crop, left, top, c.tw, c.th, nullptr) != 0 ||
             !crop) {
           continue;
         }
         void* buf = nullptr;
         size_t len = 0;
-        if (vips_jpegsave_buffer(crop, &buf, &len, "Q", q, nullptr) != 0 ||
-            !buf) {
-          g_object_unref(crop);
-          continue;
+        {
+          ScopedNsAccumulator timer(global_build_stats().jpeg_encode_ns);
+          if (vips_jpegsave_buffer(crop, &buf, &len, "Q", q, nullptr) != 0 ||
+              !buf) {
+            g_object_unref(crop);
+            continue;
+          }
         }
-        TileBlob t;
-        t.scale = scale;
-        t.x = tx;
-        t.y = ty;
-        t.width = tw;
-        t.height = th;
-        t.codec = kDefaultTileCodec;
-        t.bytes.assign(static_cast<std::uint8_t*>(buf),
-                       static_cast<std::uint8_t*>(buf) + len);
-        g_free(buf);
         g_object_unref(crop);
-        tiles.push_back(std::move(t));
+        TileBlob tb;
+        tb.scale = scale;
+        tb.x = c.tx;
+        tb.y = c.ty;
+        tb.width = c.tw;
+        tb.height = c.th;
+        tb.codec = kDefaultTileCodec;
+        tb.bytes.assign(static_cast<std::uint8_t*>(buf),
+                        static_cast<std::uint8_t*>(buf) + len);
+        g_free(buf);
+        scale_tiles[i] = std::move(tb);
+        global_build_stats().tiles_encoded.fetch_add(1, std::memory_order_relaxed);
       }
+    };
+
+    const unsigned n_workers =
+        std::min(hw, std::max<unsigned>(1, static_cast<unsigned>(cells.size())));
+    if (n_workers <= 1) {
+      encode_worker();
+    } else {
+      std::vector<std::thread> pool;
+      pool.reserve(n_workers);
+      for (unsigned w = 0; w < n_workers; ++w) {
+        pool.emplace_back(encode_worker);
+      }
+      for (auto& th : pool) th.join();
+    }
+
+    for (auto& tb : scale_tiles) {
+      if (!tb.bytes.empty()) tiles.push_back(std::move(tb));
     }
   }
 
@@ -558,7 +613,11 @@ std::vector<TileBlob> build_tile_pyramid(const std::filesystem::path& path,
                                          int jpeg_quality) {
   ensure_vips();
   std::vector<TileBlob> tiles;
-  VipsImage* full = vips_image_new_from_file(path.string().c_str(), nullptr);
+  VipsImage* full = nullptr;
+  {
+    ScopedNsAccumulator timer(global_build_stats().image_load_ns);
+    full = vips_image_new_from_file(path.string().c_str(), nullptr);
+  }
   if (!full) return tiles;
   tiles = cut_pyramid_from_vips(full, min_scale, max_scale, jpeg_quality);
   g_object_unref(full);
@@ -572,8 +631,11 @@ std::vector<TileBlob> build_tile_pyramid_buffer(const std::uint8_t* data,
   ensure_vips();
   std::vector<TileBlob> tiles;
   if (!data || size == 0) return tiles;
-  VipsImage* full =
-      vips_image_new_from_buffer(data, size, nullptr, nullptr);
+  VipsImage* full = nullptr;
+  {
+    ScopedNsAccumulator timer(global_build_stats().image_load_ns);
+    full = vips_image_new_from_buffer(data, size, nullptr, nullptr);
+  }
   if (!full) return tiles;
   tiles = cut_pyramid_from_vips(full, min_scale, max_scale, jpeg_quality);
   g_object_unref(full);

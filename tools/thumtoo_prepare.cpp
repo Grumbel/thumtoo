@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "thumtoo/build_stats.hpp"
 #include "thumtoo/client.hpp"
 #include "thumtoo/image.hpp"
 #include "thumtoo/status.hpp"
@@ -38,7 +39,8 @@ void usage(const char* argv0) {
       << "  Progress lines go to stderr; final summary to stdout.\n"
       << "  --quiet         suppress per-job progress lines\n"
       << "  --ladder EDGE   after size probes, request pixels (long-edge EDGE)\n"
-      << "  --tiles         after probes, build Galapix-style 256x256 JPEG tile pyramid\n";
+      << "  --tiles         after probes, build Galapix-style 256x256 JPEG tile pyramid\n"
+      << "  --stats         print extract/load/shrink/jpeg timing summary (stderr)\n";
 }
 
 }  // namespace
@@ -47,6 +49,7 @@ int main(int argc, char** argv) {
   std::filesystem::path cache = default_cache_root();
   std::vector<std::filesystem::path> paths;
   bool quiet = false;
+  bool show_stats = false;
   int ladder_edge = 0;
   bool do_tiles = false;
 
@@ -73,6 +76,10 @@ int main(int argc, char** argv) {
       do_tiles = true;
       continue;
     }
+    if (a == "--stats") {
+      show_stats = true;
+      continue;
+    }
     paths.emplace_back(a);
   }
 
@@ -83,6 +90,7 @@ int main(int argc, char** argv) {
 
   try {
     thumtoo::image_library_init();
+    thumtoo::global_build_stats().reset();
     auto client = thumtoo::Client::open(cache);
 
     std::mutex progress_mu;
@@ -211,6 +219,9 @@ int main(int argc, char** argv) {
     if (pending) std::cout << " pending=" << pending;
     if (incomplete) std::cout << " incomplete=" << incomplete;
     std::cout << "\n";
+    if (show_stats || do_tiles) {
+      std::cerr << thumtoo::global_build_stats().summary_line() << "\n";
+    }
   } catch (const std::exception& e) {
     std::cerr << "error: " << e.what() << "\n";
     return 1;

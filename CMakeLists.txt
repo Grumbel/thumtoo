@@ -26,6 +26,7 @@ add_library(thumtoo
   src/archive.cpp
   src/pdf.cpp
   src/blob_store.cpp
+  src/build_stats.cpp
 )
 add_library(thumtoo::thumtoo ALIAS thumtoo)
 target_include_directories(thumtoo

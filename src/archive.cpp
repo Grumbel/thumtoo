@@ -11,6 +11,7 @@
 #include <cstring>
 #include <cctype>
 #include <unordered_map>
+#include "thumtoo/build_stats.hpp"
 
 namespace thumtoo {
 namespace {
@@ -161,6 +162,7 @@ std::optional<std::vector<std::uint8_t>> read_entry_bytes(
 std::unordered_map<std::string, std::vector<std::uint8_t>>
 extract_archive_members(const std::filesystem::path& archive_path,
                         const std::vector<std::string>& member_paths) {
+  ScopedNsAccumulator timer(global_build_stats().archive_extract_ns);
   std::unordered_map<std::string, std::vector<std::uint8_t>> out;
   if (member_paths.empty()) return out;
 
@@ -209,7 +211,11 @@ extract_archive_members(const std::filesystem::path& archive_path,
     }
 
     auto buf = read_entry_bytes(a, entry);
-    if (buf) out.emplace(*key, std::move(*buf));
+    if (buf) {
+      global_build_stats().archive_bytes.fetch_add(
+          buf->size(), std::memory_order_relaxed);
+      out.emplace(*key, std::move(*buf));
+    }
   }
 
   archive_read_free(a);
