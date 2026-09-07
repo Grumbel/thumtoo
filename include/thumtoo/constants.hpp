@@ -51,6 +51,8 @@ inline constexpr int kPdfMinDurableTileScale = -2;  // 144 * 4 = 576 dpi
 /// Grid tiles (Phase 4 / Galapix-compatible). See TILES.md.
 inline constexpr int kTileSize = 256;
 inline constexpr int kDefaultTileQuality = 80;
+/// PDF live/durable cells: text rings badly at Q=80 when zoomed; use higher.
+inline constexpr int kPdfTileQuality = 95;
 inline constexpr char kDefaultTileCodec[] = "jpeg";
 
 /// Durable HTTP body cache TTL (0 = never expire by age).

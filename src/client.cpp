@@ -1366,7 +1366,7 @@ void Client::handle_ensure_tiles(
       // Region-rasterize only this cell. Supports negative scale (sharper than
       // layout DPI) without allocating a full-page high-DPI buffer.
       cell = pdf_build_tile_cell(pdf->pdf_path, pdf->page, job.tile_scale,
-                                 job.tile_x, job.tile_y, kDefaultTileQuality);
+                                 job.tile_x, job.tile_y, kPdfTileQuality);
       if (cell && !cell->bytes.empty()) {
         // Only persist down to kPdfMinDurableTileScale; finer cells are live-only.
         if (job.tile_scale >= kPdfMinDurableTileScale) {

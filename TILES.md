@@ -131,5 +131,6 @@ Interactive `request_tile` for `//page:N` region-rasterizes one cell (Poppler
 crop) or full-page + software crop fallback. Each cell is ≤ `T²` pixels.
 Durable cache keys `(content_id, scale, x, y)`. PDF cells finer than
 `kPdfMinDurableTileScale` (−2, 576 dpi) are generated live and **not** stored.
+PDF cells encode at `kPdfTileQuality` (95), not `kDefaultTileQuality` (80).
 
 Raster images never use negative scale.
