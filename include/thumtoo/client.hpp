@@ -78,8 +78,8 @@ class Client {
 
   /// Load original media bytes for a location or content-id URI.
   /// **Source I/O** (not cache-only): regular files and archive members.
-  /// Content-id tries each known locator. PDF pages and http(s) return nullopt
-  /// (rasterize via request_pixels / future network fetch).
+  /// Content-id tries each known locator. PDF pages return nullopt.
+  /// http(s) uses libcurl when THUMTOO_HAVE_CURL is enabled.
   /// Rejects payloads larger than kArchiveMaxMemberUncompressedBytes.
   [[nodiscard]] std::optional<std::vector<std::uint8_t>> read_source_bytes(
       std::string_view uri_or_content_id);

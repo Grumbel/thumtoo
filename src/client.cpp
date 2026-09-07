@@ -5,6 +5,7 @@
 #include "thumtoo/build_stats.hpp"
 #include "thumtoo/constants.hpp"
 #include "thumtoo/uri.hpp"
+#include "thumtoo/network.hpp"
 #include "thumtoo/image.hpp"
 #include "thumtoo/archive.hpp"
 #include "thumtoo/pdf.hpp"
@@ -152,7 +153,7 @@ std::optional<ContentMeta> Client::get_meta_for_content_id(
 std::optional<std::vector<std::uint8_t>> Client::read_source_bytes(
     std::string_view uri_or_content_id) {
   if (is_http_uri(uri_or_content_id)) {
-    return std::nullopt;  // network fetch not implemented
+    return http_get_bytes(uri_or_content_id, kArchiveMaxMemberUncompressedBytes);
   }
   if (is_content_id_uri(uri_or_content_id)) {
     const auto locs = list_uris_for_content_id(uri_or_content_id);
@@ -405,6 +406,9 @@ void Client::request_size(std::string uri, SizeCallback cb) {
       loc.outer_path = path->string();
       loc.size = file_size_bytes(*path);
       loc.mtime_ns = file_mtime_ns(*path);
+    } else if (is_http_uri(uri)) {
+      // Network location — size/mtime filled after download.
+      loc.outer_path = std::string(uri);
     }
     Database::ContentRow content;
     content.content_id = *loc.content_id;
@@ -903,6 +907,49 @@ void Client::handle_probe_size(
         row.status = ContentStatus::Incomplete;
       }
     }
+  } else if (is_http_uri(job.uri)) {
+    if (!http_fetch_available()) {
+      row.status = ContentStatus::Unsupported;
+      row.error_code = "http_fetch_unavailable";
+    } else {
+      auto bytes = http_get_bytes(job.uri, kArchiveMaxMemberUncompressedBytes);
+      if (!bytes) {
+        row.status = ContentStatus::Failed;
+        row.error_code = "http_fetch_failed";
+      } else {
+        const auto hex = sha256_bytes_hex(bytes->data(), bytes->size());
+        std::string new_id = old_id;
+        if (!hex.empty()) new_id = std::string(kContentIdSha256Prefix) + hex;
+        if (new_id != old_id) {
+          if (auto existing = db_->find_content(new_id)) {
+            row = *existing;
+            db_->update_locator_content_id(job.uri, new_id);
+            if (old_id.rfind(std::string(kContentIdProvisionalPrefix), 0) == 0) {
+              db_->delete_content(old_id);
+            }
+          } else {
+            row.content_id = new_id;
+            db_->upsert_content(row);
+            db_->update_locator_content_id(job.uri, new_id);
+            if (old_id.rfind(std::string(kContentIdProvisionalPrefix), 0) == 0) {
+              db_->delete_content(old_id);
+            }
+          }
+        }
+        auto probe = probe_image_buffer(bytes->data(), bytes->size(), "unknown");
+        if (!probe) {
+          row.status = ContentStatus::Unsupported;
+          row.error_code = "unrecognized_image";
+        } else {
+          row.width = probe->size.width;
+          row.height = probe->size.height;
+          row.format = probe->format;
+          row.error_code = std::nullopt;
+          size_out = probe->size;
+          row.status = ContentStatus::Incomplete;
+        }
+      }
+    }
   } else {
     row.status = ContentStatus::Unsupported;
     row.error_code = "uri_scheme_unsupported";
@@ -1081,6 +1128,33 @@ void Client::handle_ensure_pixels(
         db_->upsert_content(row);
       }
     }
+  } else if (is_http_uri(job.uri)) {
+    auto bytes = http_get_bytes(job.uri, kArchiveMaxMemberUncompressedBytes);
+    if (bytes && !bytes->empty()) {
+      auto levels =
+          build_ladder_buffer(bytes->data(), bytes->size(), row.content_id,
+                              kDefaultJxlQuality, edge_limit);
+      for (const auto& lvl : levels) {
+        blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
+                           lvl.width, lvl.height, lvl.codec, lvl.quality,
+                           lvl.bytes.data(), lvl.bytes.size());
+        Database::LevelRow lr;
+        lr.content_id = row.content_id;
+        lr.max_edge = lvl.max_edge;
+        lr.frame_idx = lvl.frame_idx;
+        lr.width = lvl.width;
+        lr.height = lvl.height;
+        lr.codec = lvl.codec;
+        lr.quality = lvl.quality;
+        lr.path = "blobs.sqlite";
+        db_->upsert_level(lr);
+      }
+      row.status =
+          levels.empty() ? ContentStatus::Incomplete : ContentStatus::Ready;
+      if (levels.empty()) row.error_code = "ladder_encode_failed";
+      else row.error_code = std::nullopt;
+      db_->upsert_content(row);
+    }
   } else if (auto path = path_from_file_uri(job.uri)) {
     if (std::filesystem::is_regular_file(*path)) {
       auto levels = build_ladder(*path, row.content_id, kDefaultJxlQuality,
@@ -1228,6 +1302,13 @@ void Client::handle_ensure_tiles(
                                      kDefaultTileQuality);
         }
       }
+    } else if (is_http_uri(job.uri)) {
+      auto bytes = http_get_bytes(job.uri, kArchiveMaxMemberUncompressedBytes);
+      if (bytes && !bytes->empty()) {
+        cell = build_tile_cell_buffer(bytes->data(), bytes->size(),
+                                      job.tile_scale, job.tile_x, job.tile_y,
+                                      kDefaultTileQuality);
+      }
     } else if (auto path = path_from_file_uri(job.uri)) {
       if (std::filesystem::is_regular_file(*path)) {
         cell = build_tile_cell(*path, job.tile_scale, job.tile_x, job.tile_y,
@@ -1261,6 +1342,12 @@ void Client::handle_ensure_tiles(
                                        raster->height, min_scale, max_scale,
                                        kDefaultTileQuality);
       }
+    }
+  } else if (is_http_uri(job.uri)) {
+    auto bytes = http_get_bytes(job.uri, kArchiveMaxMemberUncompressedBytes);
+    if (bytes && !bytes->empty()) {
+      tiles = build_tile_pyramid_buffer(bytes->data(), bytes->size(), min_scale,
+                                        max_scale, kDefaultTileQuality);
     }
   } else if (auto path = path_from_file_uri(job.uri)) {
     if (std::filesystem::is_regular_file(*path)) {

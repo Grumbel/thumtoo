@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "thumtoo/uri.hpp"
+#include "thumtoo/network.hpp"
 
 #include <cstdlib>
 #include <iostream>
@@ -64,6 +65,8 @@ int main() {
 
   auto http_loc = parse_location("https://cdn.example/x.jpg");
   expect(http_loc && http_loc->scheme == UriScheme::Https, "parse https");
+  // Availability depends on build; just exercise the symbol.
+  (void)http_fetch_available();
 
   if (g_fails) {
     std::cerr << g_fails << " failure(s)\n";

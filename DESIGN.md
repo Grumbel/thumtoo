@@ -123,7 +123,9 @@ Optional **tags attached to content hash** (not path), same idea as dirtoo:
 
 ### Network URLs (later)
 
-**http(s)** source URIs are a future extension (download/cache policy, TTL).
+**http(s)** source URIs: optional **libcurl** (`THUMTOO_HAVE_CURL`) — GET into
+memory with size cap, used by `read_source_bytes` / size probe / tiles / pixels.
+No durable download cache yet (re-fetches on miss). TTL/policy later.
 **Plain local files first**, then archives, then remote URLs.
 
 Library helpers (`thumtoo/uri.hpp`): `parse_location` / `format_location` understand
