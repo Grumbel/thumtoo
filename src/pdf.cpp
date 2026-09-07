@@ -313,14 +313,13 @@ std::optional<PdfRaster> pdf_rasterize_page_region(
 #endif
 }
 
-std::optional<TileBlob> pdf_build_tile_cell(const std::filesystem::path& path,
-                                            int page_1based, int scale, int x,
-                                            int y, int jpeg_quality) {
+std::optional<PdfRaster> pdf_render_tile_cell(const std::filesystem::path& path,
+                                               int page_1based, int scale, int x,
+                                               int y) {
   if (x < 0 || y < 0) return std::nullopt;
   auto layout = pdf_page_layout_size(path, page_1based);
   if (!layout || layout->width <= 0 || layout->height <= 0) return std::nullopt;
 
-  // Pixel grid at this scale: scale 0 = layout; each -1 doubles linear resolution.
   const Size full = pdf_page_size_at_scale(*layout, scale);
   const int left = x * kTileSize;
   const int top = y * kTileSize;
@@ -332,14 +331,9 @@ std::optional<TileBlob> pdf_build_tile_cell(const std::filesystem::path& path,
   const double dpi = pdf_dpi_for_scale(scale);
   const int full_edge = std::max(full.width, full.height);
 
-  std::optional<PdfRaster> cell_raster;
-
-  // Region path first (true per-cell rasterize).
-  cell_raster =
+  std::optional<PdfRaster> cell_raster =
       pdf_rasterize_page_region(path, page_1based, dpi, left, top, tw, th);
 
-  // Accept only if Poppler returned roughly the requested cell size (not a
-  // full-page image or empty). Wrong sizes cause 2x "zoomed" tiles on screen.
   if (cell_raster && cell_raster->width > 0 && cell_raster->height > 0) {
     const int tol = 2;
     if (std::abs(cell_raster->width - tw) > tol ||
@@ -349,7 +343,6 @@ std::optional<TileBlob> pdf_build_tile_cell(const std::filesystem::path& path,
   }
 
   if (!cell_raster || cell_raster->rgb.empty()) {
-    // Full-page at exact target long edge, then software crop.
     auto page_raster = pdf_rasterize_page(path, page_1based, full_edge);
     if (!page_raster || page_raster->rgb.empty() ||
         page_raster->width <= 0 || page_raster->height <= 0) {
@@ -359,8 +352,6 @@ std::optional<TileBlob> pdf_build_tile_cell(const std::filesystem::path& path,
                       static_cast<double>(full.width);
     const double sy = static_cast<double>(page_raster->height) /
                       static_cast<double>(full.height);
-    // Map through actual raster size (Poppler rounding). sx/sy near 1.0 when
-    // dpi matched; still valid when slightly off.
     int const px = std::clamp(static_cast<int>(std::lround(left * sx)), 0,
                               std::max(0, page_raster->width - 1));
     int const py = std::clamp(static_cast<int>(std::lround(top * sy)), 0,
@@ -391,9 +382,17 @@ std::optional<TileBlob> pdf_build_tile_cell(const std::filesystem::path& path,
   }
 
   if (!cell_raster || cell_raster->rgb.empty()) return std::nullopt;
-
-  return encode_tile_cell_rgb(cell_raster->rgb.data(), cell_raster->width,
-                              cell_raster->height, scale, x, y, jpeg_quality);
+  return cell_raster;
 }
+
+std::optional<TileBlob> pdf_build_tile_cell(const std::filesystem::path& path,
+                                            int page_1based, int scale, int x,
+                                            int y, int jpeg_quality) {
+  auto raster = pdf_render_tile_cell(path, page_1based, scale, x, y);
+  if (!raster || raster->rgb.empty()) return std::nullopt;
+  return encode_tile_cell_rgb(raster->rgb.data(), raster->width, raster->height,
+                              scale, x, y, jpeg_quality);
+}
+
 
 }  // namespace thumtoo

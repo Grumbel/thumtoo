@@ -76,9 +76,15 @@ struct PdfRaster {
     int py, int pw, int ph);
 
 /**
- * Build one Galapix-compatible tile cell for a PDF page at (scale,x,y).
- * Supports negative scale (sharper than layout). Region-rasterizes only the
- * cell; encodes JPEG via encode_tile_cell_rgb.
+ * Rasterize one tile cell to RGB888 (no encode). Live path for Galapix.
+ */
+[[nodiscard]] std::optional<PdfRaster> pdf_render_tile_cell(
+    const std::filesystem::path& path, int page_1based, int scale, int x,
+    int y);
+
+/**
+ * Rasterize cell then JPEG-encode (durable cache only). Prefer
+ * pdf_render_tile_cell + reply rgb888 for interactive live tiles.
  */
 [[nodiscard]] std::optional<TileBlob> pdf_build_tile_cell(
     const std::filesystem::path& path, int page_1based, int scale, int x,

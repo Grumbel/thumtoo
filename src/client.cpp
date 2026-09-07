@@ -1363,21 +1363,30 @@ void Client::handle_ensure_tiles(
         }
       }
     } else if (auto pdf = parse_pdf_uri(job.uri)) {
-      // Region-rasterize only this cell. Supports negative scale (sharper than
-      // layout DPI) without allocating a full-page high-DPI buffer.
-      cell = pdf_build_tile_cell(pdf->pdf_path, pdf->page, job.tile_scale,
-                                 job.tile_x, job.tile_y, kPdfTileQuality);
-      if (cell && !cell->bytes.empty()) {
-        // Only persist down to kPdfMinDurableTileScale; finer cells are live-only.
-        if (job.tile_scale >= kPdfMinDurableTileScale) {
-          store_tiles(content_id, std::vector<TileBlob>{*cell});
-          reply_one(get_tile(job.uri, job.tile_scale, job.tile_x, job.tile_y));
-        } else {
-          reply_one(std::move(cell));
-        }
+      // Live path: rasterize to RGB888 and hand raw pixels to the client.
+      // JPEG is only for durable cache (scale >= kPdfMinDurableTileScale).
+      auto raster = pdf_render_tile_cell(pdf->pdf_path, pdf->page, job.tile_scale,
+                                         job.tile_x, job.tile_y);
+      if (!raster || raster->rgb.empty()) {
+        reply_one(std::nullopt);
         return;
       }
-      reply_one(std::nullopt);
+      if (job.tile_scale >= kPdfMinDurableTileScale) {
+        if (auto jpeg = encode_tile_cell_rgb(
+                raster->rgb.data(), raster->width, raster->height,
+                job.tile_scale, job.tile_x, job.tile_y, kPdfTileQuality)) {
+          store_tiles(content_id, std::vector<TileBlob>{*jpeg});
+        }
+      }
+      TileBlob live;
+      live.scale = job.tile_scale;
+      live.x = job.tile_x;
+      live.y = job.tile_y;
+      live.width = raster->width;
+      live.height = raster->height;
+      live.codec = kTileCodecRgb888;
+      live.bytes = std::move(raster->rgb);
+      reply_one(std::move(live));
       return;
     } else if (is_http_uri(job.uri)) {
       auto bytes = fetch_http_cached(job.uri);

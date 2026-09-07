@@ -359,13 +359,24 @@ int main(int argc, char** argv) {
             << " meta=" << blob->width << "x" << blob->height << "\n";
 
   int w = 0, h = 0;
-  if (!jpeg_bytes_to_png(blob->bytes, out, &w, &h)) {
-    std::cerr << "failed to decode tile JPEG → PNG (codec=" << blob->codec
-              << ")\n";
-    return 1;
+  if (blob->codec == thumtoo::kTileCodecRgb888 || blob->codec == "rgb888") {
+    w = blob->width;
+    h = blob->height;
+    if (!write_rgb_png(out, blob->bytes.data(), w, h)) {
+      std::cerr << "failed to write rgb888 → PNG\n";
+      return 1;
+    }
+    std::cout << "wrote " << out << " (" << w << "x" << h
+              << ") PNG from raw rgb888 (no JPEG)\n";
+  } else {
+    if (!jpeg_bytes_to_png(blob->bytes, out, &w, &h)) {
+      std::cerr << "failed to decode tile JPEG → PNG (codec=" << blob->codec
+                << ")\n";
+      return 1;
+    }
+    std::cout << "wrote " << out << " (" << w << "x" << h
+              << ") PNG from tile JPEG decode\n";
   }
-  std::cout << "wrote " << out << " (" << w << "x" << h
-            << ") PNG from tile JPEG decode\n";
   if (w < 200 && h < 200 && scale <= 0) {
     std::cout << "note: small decoded size at fine scale may mean the stored "
                  "cell is low-res content labeled as scale "

@@ -54,6 +54,8 @@ inline constexpr int kDefaultTileQuality = 80;
 /// PDF live/durable cells: text rings badly at Q=80 when zoomed; use higher.
 inline constexpr int kPdfTileQuality = 95;
 inline constexpr char kDefaultTileCodec[] = "jpeg";
+/// Uncompressed RGB888 payload in TileBlob::bytes (live PDF cells).
+inline constexpr char kTileCodecRgb888[] = "rgb888";
 
 /// Durable HTTP body cache TTL (0 = never expire by age).
 inline constexpr std::int64_t kHttpCacheTtlSeconds = 7LL * 24 * 3600;
