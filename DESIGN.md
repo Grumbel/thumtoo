@@ -525,3 +525,16 @@ regenerate vs serve-as-is.
 ## 10. License
 
 GPL-3.0-or-later, REUSE.
+
+
+## Format classification (single source)
+
+Extension and MIME tables live in [`include/thumtoo/format.hpp`](include/thumtoo/format.hpp)
+(`src/format.cpp`). Archive/PDF helpers and `prepare_paths` use that module.
+
+Apps (Galapix, biltoo, `.desktop` files) should prefer:
+
+* `classify_path` / `is_image_path` / `is_archive_path` / `is_pdf_path`
+* `media_mime_types()` or `desktop_mime_types_line()` for file dialogs / MimeType=
+
+Do not maintain a parallel extension list in each app.

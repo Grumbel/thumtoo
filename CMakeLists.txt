@@ -25,6 +25,7 @@ add_library(thumtoo
   src/image.cpp
   src/archive.cpp
   src/pdf.cpp
+  src/format.cpp
   src/blob_store.cpp
   src/build_stats.cpp
 )

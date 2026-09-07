@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "thumtoo/pdf.hpp"
+#include "thumtoo/format.hpp"
 #include "thumtoo/uri.hpp"
 
 #include <algorithm>
@@ -32,7 +33,7 @@ std::string to_lower_ext(const std::filesystem::path& path) {
 }  // namespace
 
 bool is_likely_pdf_path(const std::filesystem::path& path) {
-  return to_lower_ext(path) == ".pdf";
+  return is_pdf_path(path);
 }
 
 std::string pdf_page_uri(const std::filesystem::path& pdf_path, int page_1based) {
