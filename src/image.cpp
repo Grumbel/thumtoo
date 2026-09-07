@@ -965,8 +965,9 @@ VipsImage* vips_from_rgb888(const std::uint8_t* rgb, int width, int height) {
       static_cast<size_t>(width) * static_cast<size_t>(height) * 3u, width,
       height, 3, VIPS_FORMAT_UCHAR);
   if (!img) return nullptr;
-  // Interpret as sRGB for JPEG encode path.
-  vips_image_set_string(img, VIPS_META_INTERPRETATION, "srgb");
+  // 3-band uchar from memory is guessed as sRGB; set Type explicitly so
+  // JPEG encode does not treat pixels as multiband.
+  img->Type = VIPS_INTERPRETATION_sRGB;
   return img;
 }
 
