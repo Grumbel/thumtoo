@@ -53,7 +53,8 @@ In `ThumtooTileProvider` (or equivalent):
 
 * `tests/test_pdf_tiles.cpp` (`thumtoo-test-pdf-tiles`): end-to-end Client path
   for scales 0, −1, −2, −3; edge tiles; out-of-range; durable vs live-only;
-  codec contract; geometry helpers.
+  codec contract; geometry helpers. Embeds a minimal PDF-1.4 blob (no
+  Ghostscript) so CI/nix only need Poppler.
 * Existing `test_pdf_scale` remains the pure math check.
 
 ### Still open (not a thumtoo bug)
