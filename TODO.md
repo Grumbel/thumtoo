@@ -1,3 +1,17 @@
+## PDF region tiles + negative scale (2026-09-07) — tip **thumtoo-030**
+
+Interactive PDF tiles: `pdf_build_tile_cell` region-rasterizes a single cell at
+`dpi = kPdfLayoutDpi * 2^{-scale}`. Negative scale is sharper than layout;
+peak memory stays O(tile), not O(full page × dpi).
+
+* `pdf_page_size_at_scale`, `pdf_dpi_for_scale`, `pdf_rasterize_page_region`
+* `encode_tile_cell_rgb` for any scale
+* `Client` single-cell PDF path uses region builder (not full-page + crop)
+
+Pyramid prewarm still full-page at layout for scales ≥ 0 (unchanged).
+
+Galapix follow-up: request tilescale &lt; 0 when zoomed past 1:1 on PDF pages.
+
 ## Session handoff (2026-09-07) — tip **thumtoo-027**
 
 Apply tip **`thumtoo-029.bundle`** (or stack 016…023). Author: Ingo Ruhnke
@@ -34,7 +48,7 @@ Earlier tips (001–015) remain in the history; tip is **024** (handoff docs; co
 ### Next (priority)
 
 1. ~~Durable HTTP/download cache + TTL~~ (025: blobs.sqlite `http_bodies`, 7d TTL)
-2. Higher-DPI / per-tile PDF crop render (true “mandelbrot-style” region)
+2. ~~Higher-DPI / per-tile PDF crop render (true “mandelbrot-style” region)~~ (030)
 3. ~~Query prefix/LIKE on locators~~ (026); tags/collections still open
 4. Galapix flake: pin/update input to a tip that includes 021+ curl
 
