@@ -196,6 +196,8 @@ class Client {
                    const std::vector<TileBlob>& tiles);
 
   static constexpr std::size_t kExtractCacheMaxBytes = 512ull * 1024ull * 1024ull;
+  /// Same budget shared conceptually; HTTP bodies use a separate map.
+  static constexpr std::size_t kHttpCacheMaxBytes = 512ull * 1024ull * 1024ull;
   [[nodiscard]] static std::string extract_cache_key(
       const std::filesystem::path& archive, std::string_view member);
   void extract_cache_put(const std::filesystem::path& archive,
@@ -224,6 +226,10 @@ class Client {
   mutable std::mutex extract_cache_mu_;
   std::unordered_map<std::string, std::vector<std::uint8_t>> extract_cache_;
   std::size_t extract_cache_bytes_ = 0;
+
+  mutable std::mutex http_cache_mu_;
+  std::unordered_map<std::string, std::vector<std::uint8_t>> http_cache_;
+  std::size_t http_cache_bytes_ = 0;
 };
 
 }  // namespace thumtoo

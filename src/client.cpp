@@ -153,7 +153,7 @@ std::optional<ContentMeta> Client::get_meta_for_content_id(
 std::optional<std::vector<std::uint8_t>> Client::read_source_bytes(
     std::string_view uri_or_content_id) {
   if (is_http_uri(uri_or_content_id)) {
-    return http_get_bytes(uri_or_content_id, kArchiveMaxMemberUncompressedBytes);
+    return fetch_http_cached(uri_or_content_id);
   }
   if (is_content_id_uri(uri_or_content_id)) {
     const auto locs = list_uris_for_content_id(uri_or_content_id);
@@ -369,6 +369,34 @@ std::optional<std::vector<std::uint8_t>> Client::member_bytes(
   auto bytes = extract_archive_member(archive, member);
   if (bytes && !bytes->empty()) {
     extract_cache_put(archive, member, *bytes);
+  }
+  return bytes;
+}
+
+
+std::optional<std::vector<std::uint8_t>> Client::fetch_http_cached(
+    std::string_view url) {
+  if (!is_http_uri(url)) return std::nullopt;
+  const std::string key(url);
+  {
+    std::lock_guard lock(http_cache_mu_);
+    if (auto it = http_cache_.find(key); it != http_cache_.end()) {
+      return it->second;
+    }
+  }
+  auto bytes = http_get_bytes(url, kArchiveMaxMemberUncompressedBytes);
+  if (!bytes || bytes->empty()) return std::nullopt;
+  {
+    std::lock_guard lock(http_cache_mu_);
+    if (auto it = http_cache_.find(key); it != http_cache_.end()) {
+      return it->second;
+    }
+    if (http_cache_bytes_ + bytes->size() > kHttpCacheMaxBytes) {
+      http_cache_.clear();
+      http_cache_bytes_ = 0;
+    }
+    http_cache_bytes_ += bytes->size();
+    http_cache_.emplace(key, *bytes);
   }
   return bytes;
 }
@@ -912,7 +940,7 @@ void Client::handle_probe_size(
       row.status = ContentStatus::Unsupported;
       row.error_code = "http_fetch_unavailable";
     } else {
-      auto bytes = http_get_bytes(job.uri, kArchiveMaxMemberUncompressedBytes);
+      auto bytes = fetch_http_cached(job.uri);
       if (!bytes) {
         row.status = ContentStatus::Failed;
         row.error_code = "http_fetch_failed";
@@ -1129,7 +1157,7 @@ void Client::handle_ensure_pixels(
       }
     }
   } else if (is_http_uri(job.uri)) {
-    auto bytes = http_get_bytes(job.uri, kArchiveMaxMemberUncompressedBytes);
+    auto bytes = fetch_http_cached(job.uri);
     if (bytes && !bytes->empty()) {
       auto levels =
           build_ladder_buffer(bytes->data(), bytes->size(), row.content_id,
@@ -1303,7 +1331,7 @@ void Client::handle_ensure_tiles(
         }
       }
     } else if (is_http_uri(job.uri)) {
-      auto bytes = http_get_bytes(job.uri, kArchiveMaxMemberUncompressedBytes);
+      auto bytes = fetch_http_cached(job.uri);
       if (bytes && !bytes->empty()) {
         cell = build_tile_cell_buffer(bytes->data(), bytes->size(),
                                       job.tile_scale, job.tile_x, job.tile_y,
@@ -1344,7 +1372,7 @@ void Client::handle_ensure_tiles(
       }
     }
   } else if (is_http_uri(job.uri)) {
-    auto bytes = http_get_bytes(job.uri, kArchiveMaxMemberUncompressedBytes);
+    auto bytes = fetch_http_cached(job.uri);
     if (bytes && !bytes->empty()) {
       tiles = build_tile_pyramid_buffer(bytes->data(), bytes->size(), min_scale,
                                         max_scale, kDefaultTileQuality);
