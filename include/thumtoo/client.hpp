@@ -209,6 +209,10 @@ class Client {
       const std::filesystem::path& archive, std::string_view member,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);
 
+  /// GET with in-process cache (session only; not durable across runs).
+  [[nodiscard]] std::optional<std::vector<std::uint8_t>> fetch_http_cached(
+      std::string_view url);
+
   [[nodiscard]] std::optional<PixelLevel> load_level(
       const Database::LevelRow& row) const;
 
