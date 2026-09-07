@@ -71,9 +71,18 @@ std::optional<std::int64_t> file_mtime_ns(const std::filesystem::path& p) {
 }  // namespace
 
 Client::Client(std::unique_ptr<Database> db, std::unique_ptr<BlobStore> blobs,
-               Executor executor)
+               Executor executor, unsigned worker_threads)
     : db_(std::move(db)), blobs_(std::move(blobs)), executor_(std::move(executor)) {
-  worker_ = std::thread([this] { worker_main(); });
+  unsigned n = worker_threads;
+  if (n == 0) {
+    n = std::thread::hardware_concurrency();
+  }
+  if (n == 0) n = 1;
+  if (n > 32) n = 32;
+  workers_.reserve(n);
+  for (unsigned i = 0; i < n; ++i) {
+    workers_.emplace_back([this] { worker_main(); });
+  }
 }
 
 Client::~Client() {
@@ -83,17 +92,19 @@ Client::~Client() {
     // Drop queued work so shutdown does not re-encode a backlog of previews.
     queue_.clear();
   }
-  // Wake the worker (empty uri job is ignored under stop_).
-  enqueue(Job{});
-  if (worker_.joinable()) worker_.join();
+  cv_.notify_all();
+  for (auto& w : workers_) {
+    if (w.joinable()) w.join();
+  }
 }
 
 std::unique_ptr<Client> Client::open(const std::filesystem::path& cache_root,
-                                     Executor executor) {
+                                     Executor executor, unsigned worker_threads) {
   auto db = std::make_unique<Database>(Database::open(cache_root));
   auto blobs = std::make_unique<BlobStore>(BlobStore::open(cache_root));
   return std::unique_ptr<Client>(
-      new Client(std::move(db), std::move(blobs), std::move(executor)));
+      new Client(std::move(db), std::move(blobs), std::move(executor),
+                 worker_threads));
 }
 
 std::optional<Size> Client::get_size(std::string_view uri) const {
@@ -249,8 +260,11 @@ void Client::request_tile_pyramid(std::string uri, int min_scale, int max_scale,
 }
 
 void Client::enqueue(Job job) {
-  std::lock_guard lock(mu_);
-  queue_.push_back(std::move(job));
+  {
+    std::lock_guard lock(mu_);
+    queue_.push_back(std::move(job));
+  }
+  cv_.notify_one();
 }
 
 void Client::request_size(std::string uri, SizeCallback cb) {
@@ -498,10 +512,11 @@ void Client::worker_main() {
     bool use_batch = false;
     {
       std::unique_lock lock(mu_);
+      cv_.wait_for(lock, std::chrono::milliseconds(50), [this] {
+        return stop_ || !queue_.empty();
+      });
       if (stop_ && queue_.empty()) return;
       if (queue_.empty()) {
-        lock.unlock();
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
         continue;
       }
       // Claim the job under the lock before removing it so drain() cannot

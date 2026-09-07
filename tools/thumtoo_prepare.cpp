@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <iostream>
 #include <mutex>
+#include <thread>
 #include <string>
 #include <vector>
 
@@ -46,6 +47,8 @@ void usage(const char* argv0) {
       << "                      tile pyramid for each ready URI\n"
       << "      --stats        print extract/load/shrink/jpeg timing summary\n"
       << "                      on stderr (also implied when --tiles is used)\n"
+      << "      --jobs N       worker threads for the job queue (default: CPUs,\n"
+      << "                      max 32; 1 restores the old single-worker behaviour)\n"
       << "\n"
       << "Output:\n"
       << "  Progress and timings go to stderr; a one-line cache summary to stdout.\n"
@@ -62,6 +65,7 @@ int main(int argc, char** argv) {
   bool show_stats = false;
   int ladder_edge = 0;
   bool do_tiles = false;
+  unsigned jobs = 0;  // 0 → hardware_concurrency
 
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
@@ -90,6 +94,12 @@ int main(int argc, char** argv) {
       show_stats = true;
       continue;
     }
+    if (a == "--jobs" && i + 1 < argc) {
+      int v = std::atoi(argv[++i]);
+      if (v < 0) v = 0;
+      jobs = static_cast<unsigned>(v);
+      continue;
+    }
     paths.emplace_back(a);
   }
 
@@ -101,7 +111,7 @@ int main(int argc, char** argv) {
   try {
     thumtoo::image_library_init();
     thumtoo::global_build_stats().reset();
-    auto client = thumtoo::Client::open(cache);
+    auto client = thumtoo::Client::open(cache, {}, jobs);
 
     std::mutex progress_mu;
     std::atomic<int> completed{0};
@@ -231,6 +241,13 @@ int main(int argc, char** argv) {
     std::cout << "\n";
     if (show_stats || do_tiles) {
       std::cerr << thumtoo::global_build_stats().summary_line() << "\n";
+      if (jobs == 0) {
+        unsigned hw = std::thread::hardware_concurrency();
+        if (hw == 0) hw = 1;
+        std::cerr << "workers: " << hw << " (auto)\n";
+      } else {
+        std::cerr << "workers: " << jobs << "\n";
+      }
     }
   } catch (const std::exception& e) {
     std::cerr << "error: " << e.what() << "\n";
