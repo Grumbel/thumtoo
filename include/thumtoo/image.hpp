@@ -78,4 +78,14 @@ void image_library_init();
     const std::uint8_t* data, std::size_t size, int min_scale = 0,
     int max_scale = -1, int jpeg_quality = kDefaultTileQuality);
 
+/// Interactive path: encode a single (scale, x, y) cell only (not the whole
+/// scale grid). Same shrink/crop conventions as the pyramid builder.
+[[nodiscard]] std::optional<TileBlob> build_tile_cell(
+    const std::filesystem::path& path, int scale, int x, int y,
+    int jpeg_quality = kDefaultTileQuality);
+
+[[nodiscard]] std::optional<TileBlob> build_tile_cell_buffer(
+    const std::uint8_t* data, std::size_t size, int scale, int x, int y,
+    int jpeg_quality = kDefaultTileQuality);
+
 }  // namespace thumtoo

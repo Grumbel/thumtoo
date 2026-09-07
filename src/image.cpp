@@ -588,6 +588,83 @@ std::vector<TileBlob> cut_pyramid_from_vips(VipsImage* full, int min_scale,
   return tiles;
 }
 
+
+std::optional<TileBlob> cut_cell_from_vips(VipsImage* full, int scale, int x,
+                                           int y, int jpeg_quality) {
+  if (!full || scale < 0 || x < 0 || y < 0) return std::nullopt;
+
+  const int src_w = vips_image_get_width(full);
+  const int src_h = vips_image_get_height(full);
+  if (src_w <= 0 || src_h <= 0) return std::nullopt;
+
+  const std::int64_t pixels =
+      static_cast<std::int64_t>(src_w) * static_cast<std::int64_t>(src_h);
+  if (pixels > kTileMaxSourcePixels) return std::nullopt;
+
+  const int q = std::clamp(jpeg_quality, 1, 100);
+
+  VipsImage* current = full;
+  g_object_ref(current);
+  for (int s = 0; s < scale; ++s) {
+    VipsImage* halved = nullptr;
+    {
+      ScopedNsAccumulator timer(global_build_stats().shrink_ns);
+      if (vips_shrink(current, &halved, 2.0, 2.0, nullptr) != 0 || !halved) {
+        g_object_unref(current);
+        return std::nullopt;
+      }
+    }
+    g_object_unref(current);
+    current = halved;
+  }
+
+  const int sw = vips_image_get_width(current);
+  const int sh = vips_image_get_height(current);
+  const int left = x * kTileSize;
+  const int top = y * kTileSize;
+  if (left >= sw || top >= sh) {
+    g_object_unref(current);
+    return std::nullopt;
+  }
+  const int tw = std::min(kTileSize, sw - left);
+  const int th = std::min(kTileSize, sh - top);
+  if (tw <= 0 || th <= 0) {
+    g_object_unref(current);
+    return std::nullopt;
+  }
+
+  VipsImage* crop = nullptr;
+  if (vips_crop(current, &crop, left, top, tw, th, nullptr) != 0 || !crop) {
+    g_object_unref(current);
+    return std::nullopt;
+  }
+  g_object_unref(current);
+
+  void* buf = nullptr;
+  size_t len = 0;
+  {
+    ScopedNsAccumulator timer(global_build_stats().jpeg_encode_ns);
+    if (vips_jpegsave_buffer(crop, &buf, &len, "Q", q, nullptr) != 0 || !buf) {
+      g_object_unref(crop);
+      return std::nullopt;
+    }
+  }
+  g_object_unref(crop);
+
+  TileBlob tb;
+  tb.scale = scale;
+  tb.x = x;
+  tb.y = y;
+  tb.width = tw;
+  tb.height = th;
+  tb.codec = kDefaultTileCodec;
+  tb.bytes.assign(static_cast<std::uint8_t*>(buf),
+                  static_cast<std::uint8_t*>(buf) + len);
+  g_free(buf);
+  global_build_stats().tiles_encoded.fetch_add(1, std::memory_order_relaxed);
+  return tb;
+}
+
 }  // namespace
 
 std::vector<TileBlob> build_tile_pyramid(const std::filesystem::path& path,
@@ -622,6 +699,38 @@ std::vector<TileBlob> build_tile_pyramid_buffer(const std::uint8_t* data,
   tiles = cut_pyramid_from_vips(full, min_scale, max_scale, jpeg_quality);
   g_object_unref(full);
   return tiles;
+}
+
+
+std::optional<TileBlob> build_tile_cell(const std::filesystem::path& path,
+                                        int scale, int x, int y,
+                                        int jpeg_quality) {
+  ensure_vips();
+  VipsImage* full = nullptr;
+  {
+    ScopedNsAccumulator timer(global_build_stats().image_load_ns);
+    full = vips_image_new_from_file(path.string().c_str(), nullptr);
+  }
+  if (!full) return std::nullopt;
+  auto tile = cut_cell_from_vips(full, scale, x, y, jpeg_quality);
+  g_object_unref(full);
+  return tile;
+}
+
+std::optional<TileBlob> build_tile_cell_buffer(const std::uint8_t* data,
+                                               std::size_t size, int scale,
+                                               int x, int y, int jpeg_quality) {
+  ensure_vips();
+  if (!data || size == 0) return std::nullopt;
+  VipsImage* full = nullptr;
+  {
+    ScopedNsAccumulator timer(global_build_stats().image_load_ns);
+    full = vips_image_new_from_buffer(data, size, nullptr, nullptr);
+  }
+  if (!full) return std::nullopt;
+  auto tile = cut_cell_from_vips(full, scale, x, y, jpeg_quality);
+  g_object_unref(full);
+  return tile;
 }
 
 }  // namespace thumtoo

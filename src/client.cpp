@@ -1144,8 +1144,38 @@ void Client::handle_ensure_tiles(
   const int min_scale = job.tile_pyramid ? job.tile_min_scale : job.tile_scale;
   const int max_scale = job.tile_max_scale;
 
-  std::vector<TileBlob> tiles;
+  // Interactive request_tile: encode only the requested cell.
+  if (!job.tile_pyramid) {
+    std::optional<TileBlob> cell;
+    if (auto arch = parse_archive_uri(job.uri)) {
+      if (!arch->member_path.empty()) {
+        auto bytes =
+            member_bytes(arch->archive_path, arch->member_path, preextracted);
+        if (bytes && !bytes->empty()) {
+          cell = build_tile_cell_buffer(bytes->data(), bytes->size(),
+                                        job.tile_scale, job.tile_x, job.tile_y,
+                                        kDefaultTileQuality);
+        }
+      }
+    } else if (auto path = path_from_file_uri(job.uri)) {
+      if (parse_pdf_uri(job.uri)) {
+        reply_one(std::nullopt);
+        return;
+      }
+      if (std::filesystem::is_regular_file(*path)) {
+        cell = build_tile_cell(*path, job.tile_scale, job.tile_x, job.tile_y,
+                               kDefaultTileQuality);
+      }
+    }
+    if (cell && !cell->bytes.empty()) {
+      store_tiles(content_id, std::vector<TileBlob>{*cell});
+    }
+    reply_one(get_tile(job.uri, job.tile_scale, job.tile_x, job.tile_y));
+    return;
+  }
 
+  // Pyramid prewarm: full scale range / grids.
+  std::vector<TileBlob> tiles;
   if (auto arch = parse_archive_uri(job.uri)) {
     if (!arch->member_path.empty()) {
       auto bytes = member_bytes(arch->archive_path, arch->member_path, preextracted);
@@ -1155,10 +1185,8 @@ void Client::handle_ensure_tiles(
       }
     }
   } else if (auto path = path_from_file_uri(job.uri)) {
-    // Skip pure PDF page URIs for tiles (Phase 4 non-goal).
     if (parse_pdf_uri(job.uri)) {
-      if (job.tile_pyramid) reply_pyramid_done(false);
-      else reply_one(std::nullopt);
+      reply_pyramid_done(false);
       return;
     }
     if (std::filesystem::is_regular_file(*path)) {
@@ -1169,13 +1197,7 @@ void Client::handle_ensure_tiles(
   if (!tiles.empty()) {
     store_tiles(content_id, tiles);
   }
-
-  if (job.tile_pyramid) {
-    reply_pyramid_done(!tiles.empty());
-    return;
-  }
-
-  reply_one(get_tile(job.uri, job.tile_scale, job.tile_x, job.tile_y));
+  reply_pyramid_done(!tiles.empty());
 }
 
 std::vector<std::string> Client::get_tags(std::string_view uri) const {

@@ -9,7 +9,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 ## Session handoff (2026-09-07)
 
 ### Bundles
-Apply in order or take tip **`thumtoo-008.bundle`**:
+Apply in order or take tip **`thumtoo-009.bundle`**:
 | Bundle | Change |
 |--------|--------|
 | thumtoo-001 | `request_tile` single-scale only |
@@ -20,6 +20,7 @@ Apply in order or take tip **`thumtoo-008.bundle`**:
 | thumtoo-006 | Stats: **wall=** vs **cpu:** summed scopes + parallel~= |
 | thumtoo-007 | **Single-edge preview** (not full ladder); thumb/jxl stats; Galapix-shaped cache |
 | thumtoo-008 | DESIGN/INTEGRATION policy; downscale smaller preview from larger cache |
+| thumtoo-009 | **Single-cell** interactive `request_tile` (not full scale grid) |
 
 ### Pixel cache policy (Galapix-first, biltoo API stable)
 * **Durable:** size index + **one** JXL preview per `request_pixels(max_edge)` (largest
@@ -47,11 +48,12 @@ Apply in order or take tip **`thumtoo-008.bundle`**:
 * [x] Stats: `thumb=` / `jxl=` / `levels=`
 * [x] DESIGN §5 + INTEGRATION_GALAPIX: preview + tiles, no double ladder
 * [x] Downscale-from-larger-cached-preview when asking a smaller max_edge
+* [x] Single-cell interactive `request_tile` (`build_tile_cell`)
 
 ### Next session — priority
 1. Optional: EXIF embedded thumb for even faster first preview
 2. Optional: tune extract cache size / eviction (clear-all is crude)
-3. **Single-cell** tile cut (encode only requested (scale,x,y), not full scale grid)
+3. [x] **Single-cell** tile cut (encode only requested (scale,x,y), not full scale grid)
 4. Not worth yet: GPU JPEG (nvJPEG) — CPU jpeg still parallelizable; extract fixed
 5. Not realistic: “cut tiles from JPEG without decode” (see below)
 

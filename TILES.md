@@ -81,3 +81,10 @@ keyed by URL → content_id.
   in the in-process extract cache (max 512 MiB).
 * Encoding: parallel JPEG for cells within a scale; Client runs multiple jobs
   across URIs concurrently.
+
+## Interactive vs prepare
+
+* `request_tile(uri, scale, x, y)` encodes **only that cell** (load → shrink to
+  scale → crop → JPEG). Does not fill the rest of the scale grid.
+* `request_tile_pyramid` / `thumtoo-prepare --tiles` still build full scale
+  ranges for offline prewarm.
