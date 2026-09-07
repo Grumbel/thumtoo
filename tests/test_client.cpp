@@ -151,12 +151,11 @@ int main() {
     expect(cov.has_value(), "tile coverage");
     expect(cov && cov->size.width == W && cov->size.height == H, "coverage size");
     expect(cov && cov->max_scale >= cov->min_scale, "coverage scales");
-  }
 
-  {
     auto bytes = client->read_source_bytes(uri);
     expect(bytes.has_value() && !bytes->empty(), "read_source_bytes file");
     auto cid = client->resolve_content_id(uri);
+    expect(cid.has_value(), "resolve_content_id after probe");
     if (cid) {
       auto by_id = client->read_source_bytes(*cid);
       expect(by_id.has_value() && by_id->size() == bytes->size(),

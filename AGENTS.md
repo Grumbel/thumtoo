@@ -41,7 +41,7 @@ archive TOC + member extract, tags, PDF `//page:N`, biltoo INTEGRATION.md.
 **Performance (2026-09-07):** Multi-worker job queue (`Client::open` worker count /
 `thumtoo-prepare --jobs`); parallel per-scale JPEG encode; 512 MiB extract cache;
 same-archive coalesce for probe **and** tiles/ladder. Prepare `--stats` prints
-`wall=` vs summed `cpu:` scopes. Tip bundle: **thumtoo-019** (Location URI API).
+`wall=` vs summed `cpu:` scopes. Tip bundle: **thumtoo-020** (Location URI API).
 
 Galapix uses thumtoo as a flake input (source `THUMTOO_DIR`); interactive
 `request_tile` is single-scale. Location URI parse/format is in-tree; next gaps: http(s) fetch, content-id blob resolve, single-cell cut if still open.
