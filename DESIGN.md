@@ -128,8 +128,10 @@ Optional **tags attached to content hash** (not path), same idea as dirtoo:
 
 Library helpers (`thumtoo/uri.hpp`): `parse_location` / `format_location` understand
 nested `//archive:` and `//page:` pipes, `is_http_uri` / `is_content_id_uri`, and
-composers `with_archive_member` / `with_pdf_page`. Fetch of http(s) and resolve of
-`sha256:` → bytes are not implemented yet — structure only.
+composers `with_archive_member` / `with_pdf_page`. Fetch of http(s) is not implemented yet. **Content-id resolve** (cache):
+`meta_for_uri("sha256:…")`, `Client::resolve_content_id`, and
+`list_uris_for_content_id` map between location URIs and durable identity.
+Raw source-byte fetch by content-id remains future work.
 
 ## 4. Non-goals (initial)
 

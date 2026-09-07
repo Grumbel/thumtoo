@@ -310,6 +310,40 @@ std::vector<Database::LocatorRow> Database::list_locators(int limit) const {
   return rows;
 }
 
+std::vector<Database::LocatorRow> Database::list_locators_for_content_id(
+    std::string_view content_id, int limit) const {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT uri, content_id, outer_path, member_path, size, mtime_ns "
+      "FROM locators WHERE content_id = ?1 ORDER BY uri LIMIT ?2;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(), static_cast<int>(content_id.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, limit > 0 ? limit : 100);
+  std::vector<LocatorRow> rows;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    LocatorRow r;
+    r.uri = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    if (sqlite3_column_type(stmt, 1) != SQLITE_NULL)
+      r.content_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    if (sqlite3_column_type(stmt, 2) != SQLITE_NULL)
+      r.outer_path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+    if (sqlite3_column_type(stmt, 3) != SQLITE_NULL)
+      r.member_path =
+          reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+      r.size = sqlite3_column_int64(stmt, 4);
+    if (sqlite3_column_type(stmt, 5) != SQLITE_NULL)
+      r.mtime_ns = sqlite3_column_int64(stmt, 5);
+    rows.push_back(std::move(r));
+  }
+  sqlite3_finalize(stmt);
+  return rows;
+}
+
+
 std::vector<Database::ContentRow> Database::list_content(int limit) const {
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
@@ -501,10 +535,9 @@ std::optional<Database::ContentRow> Database::find_content(
   return out;
 }
 
-std::optional<ContentMeta> Database::meta_for_uri(std::string_view uri) const {
-  auto loc = find_locator(uri);
-  if (!loc || !loc->content_id) return std::nullopt;
-  auto c = find_content(*loc->content_id);
+std::optional<ContentMeta> Database::meta_for_content_id(
+    std::string_view content_id) const {
+  auto c = find_content(content_id);
   if (!c) return std::nullopt;
   ContentMeta m;
   m.content_id = c->content_id;
@@ -515,6 +548,16 @@ std::optional<ContentMeta> Database::meta_for_uri(std::string_view uri) const {
   m.error_code = c->error_code;
   m.format = c->format;
   return m;
+}
+
+std::optional<ContentMeta> Database::meta_for_uri(std::string_view uri) const {
+  // Content-addressed id used as URI (sha256:… / sha1:…).
+  if (uri.starts_with("sha256:") || uri.starts_with("sha1:")) {
+    return meta_for_content_id(uri);
+  }
+  auto loc = find_locator(uri);
+  if (!loc || !loc->content_id) return std::nullopt;
+  return meta_for_content_id(*loc->content_id);
 }
 
 

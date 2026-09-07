@@ -130,7 +130,24 @@ std::optional<Database::LocatorRow> Client::find_locator(std::string_view uri) c
   return db_->find_locator(uri);
 }
 
+std::optional<std::string> Client::resolve_content_id(std::string_view uri) const {
+  if (is_content_id_uri(uri)) {
+    return std::string(uri);
+  }
+  auto loc = db_->find_locator(uri);
+  if (!loc || !loc->content_id) return std::nullopt;
+  return *loc->content_id;
+}
 
+std::vector<Database::LocatorRow> Client::list_uris_for_content_id(
+    std::string_view content_id, int limit) const {
+  return db_->list_locators_for_content_id(content_id, limit);
+}
+
+std::optional<ContentMeta> Client::get_meta_for_content_id(
+    std::string_view content_id) const {
+  return db_->meta_for_content_id(content_id);
+}
 
 std::optional<PixelLevel> Client::load_level(
     const Database::LevelRow& row) const {

@@ -63,6 +63,19 @@ class Client {
   [[nodiscard]] std::optional<Database::LocatorRow> find_locator(
       std::string_view uri) const;
 
+  /// Resolve a location or content-id URI to the durable content_id (cache only).
+  /// Returns nullopt if the locator is unknown or not yet hashed.
+  [[nodiscard]] std::optional<std::string> resolve_content_id(
+      std::string_view uri) const;
+
+  /// Locators that share this content_id (same bytes, different paths).
+  [[nodiscard]] std::vector<Database::LocatorRow> list_uris_for_content_id(
+      std::string_view content_id, int limit = 100) const;
+
+  /// Cache-only meta by content_id (same as get_meta("sha256:…")).
+  [[nodiscard]] std::optional<ContentMeta> get_meta_for_content_id(
+      std::string_view content_id) const;
+
   /// Cache-only: load best stored preview with edge <= max_edge (frame 0 default).
   [[nodiscard]] std::optional<PixelLevel> get_pixels(std::string_view uri,
                                                      int max_edge,

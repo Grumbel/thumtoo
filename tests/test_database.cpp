@@ -3,6 +3,7 @@
 
 #include "thumtoo/constants.hpp"
 #include "thumtoo/database.hpp"
+#include "thumtoo/uri.hpp"
 #include "thumtoo/status.hpp"
 #include "thumtoo/archive.hpp"
 
@@ -138,6 +139,35 @@ int main() {
     expect(db.tile_min_max_scale(cid, min_s, max_s), "min max scale");
     expect(min_s == 0 && max_s == 0, "scale range");
     expect(db.list_tiles(cid).size() == 2, "list tiles");
+  }
+
+  // Content-id URI and reverse locator lookup
+  {
+    using namespace thumtoo;
+    auto db = Database::open(root / "id-index");
+    const std::string cid = "sha256:deadbeef";
+    Database::ContentRow c;
+    c.content_id = cid;
+    c.width = 100;
+    c.height = 50;
+    c.status = ContentStatus::Ready;
+    db.upsert_content(c);
+    Database::LocatorRow a;
+    a.uri = file_uri_from_path("/tmp/a.jpg");
+    a.content_id = cid;
+    db.upsert_locator(a);
+    Database::LocatorRow b;
+    b.uri = file_uri_from_path("/tmp/renamed.jpg");
+    b.content_id = cid;
+    db.upsert_locator(b);
+
+    auto by_id = db.meta_for_content_id(cid);
+    expect(by_id.has_value() && by_id->size && by_id->size->width == 100,
+           "meta_for_content_id");
+    auto by_uri = db.meta_for_uri(cid);
+    expect(by_uri.has_value() && by_uri->content_id == cid, "meta_for_uri content-id");
+    auto locs = db.list_locators_for_content_id(cid);
+    expect(locs.size() == 2, "two locators same content");
   }
 
   std::error_code ec;

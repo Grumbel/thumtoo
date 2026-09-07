@@ -55,6 +55,9 @@ class Database {
   };
 
   [[nodiscard]] std::vector<LocatorRow> list_locators(int limit = 100) const;
+  /// All locators pointing at this content_id (rename-safe identity).
+  [[nodiscard]] std::vector<LocatorRow> list_locators_for_content_id(
+      std::string_view content_id, int limit = 100) const;
 
   struct ContentRow {
     std::string content_id;
@@ -79,7 +82,10 @@ class Database {
   [[nodiscard]] std::optional<ContentRow> find_content(std::string_view content_id) const;
 
   /// Resolve uri -> content meta via locator join (cache only).
+  /// Also accepts content-id URIs (sha256:… / sha1:…) directly.
   [[nodiscard]] std::optional<ContentMeta> meta_for_uri(std::string_view uri) const;
+  [[nodiscard]] std::optional<ContentMeta> meta_for_content_id(
+      std::string_view content_id) const;
 
   struct LevelRow {
     std::string content_id;
