@@ -98,6 +98,11 @@ void image_library_init();
     const std::uint8_t* rgb, int width, int height, int scale, int x, int y,
     int jpeg_quality = kDefaultTileQuality);
 
+/// Encode an already-cropped RGB888 buffer as a TileBlob (any scale, including negative).
+[[nodiscard]] std::optional<TileBlob> encode_tile_cell_rgb(
+    const std::uint8_t* rgb, int width, int height, int scale, int x, int y,
+    int jpeg_quality = kDefaultTileQuality);
+
 [[nodiscard]] std::vector<TileBlob> build_tile_pyramid_rgb(
     const std::uint8_t* rgb, int width, int height, int min_scale = 0,
     int max_scale = -1, int jpeg_quality = kDefaultTileQuality);

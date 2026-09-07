@@ -1013,4 +1013,41 @@ std::vector<TileBlob> build_tile_pyramid_rgb(const std::uint8_t* rgb, int width,
   return tiles;
 }
 
+
+std::optional<TileBlob> encode_tile_cell_rgb(const std::uint8_t* rgb, int width,
+                                             int height, int scale, int x, int y,
+                                             int jpeg_quality) {
+  if (!rgb || width <= 0 || height <= 0 || x < 0 || y < 0) return std::nullopt;
+  ensure_vips();
+  const int q = std::clamp(jpeg_quality, 1, 100);
+  VipsImage* img = vips_image_new_from_memory_copy(
+      rgb, static_cast<size_t>(width) * static_cast<size_t>(height) * 3u, width,
+      height, 3, VIPS_FORMAT_UCHAR);
+  if (!img) return std::nullopt;
+
+  void* buf = nullptr;
+  size_t len = 0;
+  {
+    ScopedNsAccumulator timer(global_build_stats().jpeg_encode_ns);
+    if (vips_jpegsave_buffer(img, &buf, &len, "Q", q, nullptr) != 0 || !buf) {
+      g_object_unref(img);
+      return std::nullopt;
+    }
+  }
+  g_object_unref(img);
+
+  TileBlob tb;
+  tb.scale = scale;
+  tb.x = x;
+  tb.y = y;
+  tb.width = width;
+  tb.height = height;
+  tb.codec = kDefaultTileCodec;
+  tb.bytes.assign(static_cast<std::uint8_t*>(buf),
+                  static_cast<std::uint8_t*>(buf) + len);
+  g_free(buf);
+  global_build_stats().tiles_encoded.fetch_add(1, std::memory_order_relaxed);
+  return tb;
+}
+
 }  // namespace thumtoo
