@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <cstdio>
 #include <filesystem>
 #include <iostream>
 #include <iomanip>
@@ -36,18 +37,23 @@ void usage(const char* argv0) {
       << "\n"
       << "Options:\n"
       << "  -h, --help         show this help and exit\n"
-      << "      --cache DIR    cache root (default: …/thumtoo-bench; wiped each run)\n"
+      << "      --cache DIR    cache root (wiped each run; default:\n"
+      << "                      $XDG_CACHE_HOME/thumtoo-bench or\n"
+      << "                      ~/.cache/thumtoo-bench)\n"
       << "      --jobs N       worker threads (default: CPUs, max 32)\n"
       << "      --ladder EDGE  preview long-edge (default: 256; 0 = skip)\n"
-      << "      --tiles        run full tile pyramid phase\n"
-      << "      --tile-cell    request one tile (0,0,0) per URI after probes\n"
+      << "      --tiles        run tile pyramid phase\n"
+      << "      --min-scale N  finest tile scale for --tiles (default: 0)\n"
+      << "      --max-scale M  coarsest tile scale for --tiles (default: -1)\n"
+      << "      --tile-cell    request one tile per URI after probes\n"
+      << "      --cell SCALE,X,Y  with --tile-cell, which cell (default: 0,0,0)\n"
       << "      --no-probe     skip size-probe phase (still needed for later phases)\n"
       << "\n"
       << "Phases (in order):\n"
       << "  1. size probe\n"
       << "  2. preview JXL (--ladder EDGE)\n"
       << "  3. single tile cell (--tile-cell)\n"
-      << "  4. full tile pyramid (--tiles)\n";
+      << "  4. tile pyramid (--tiles, limited by --min-scale/--max-scale)\n";
 }
 
 struct PhaseResult {
@@ -71,6 +77,9 @@ int main(int argc, char** argv) {
   bool do_tiles = false;
   bool do_tile_cell = false;
   bool do_probe = true;
+  int tile_min_scale = 0;
+  int tile_max_scale = -1;
+  int cell_scale = 0, cell_x = 0, cell_y = 0;
 
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
@@ -96,8 +105,30 @@ int main(int argc, char** argv) {
       do_tiles = true;
       continue;
     }
+    if (a == "--min-scale" && i + 1 < argc) {
+      tile_min_scale = std::atoi(argv[++i]);
+      if (tile_min_scale < 0) tile_min_scale = 0;
+      do_tiles = true;
+      continue;
+    }
+    if (a == "--max-scale" && i + 1 < argc) {
+      tile_max_scale = std::atoi(argv[++i]);
+      do_tiles = true;
+      continue;
+    }
     if (a == "--tile-cell") {
       do_tile_cell = true;
+      continue;
+    }
+    if (a == "--cell" && i + 1 < argc) {
+      // SCALE,X,Y
+      int s = 0, x = 0, y = 0;
+      if (std::sscanf(argv[++i], "%d,%d,%d", &s, &x, &y) == 3) {
+        cell_scale = s;
+        cell_x = x;
+        cell_y = y;
+        do_tile_cell = true;
+      }
       continue;
     }
     if (a == "--no-probe") {
@@ -165,11 +196,12 @@ int main(int argc, char** argv) {
       const auto t0 = std::chrono::steady_clock::now();
       for (const auto& uri : uris) {
         // Coarse stand-in: scale 0 cell (0,0) — full-res corner tile.
-        client->request_tile(uri, 0, 0, 0, {});
+        client->request_tile(uri, cell_scale, cell_x, cell_y, {});
       }
       client->drain();
       PhaseResult r;
-      r.name = "tile-cell(scale=0,0,0)";
+      r.name = "tile-cell(scale=" + std::to_string(cell_scale) + "," +
+               std::to_string(cell_x) + "," + std::to_string(cell_y) + ")";
       r.wall_s = wall_s_now(t0);
       r.pretty = thumtoo::global_build_stats().summary_pretty();
       phases.push_back(std::move(r));
@@ -179,11 +211,12 @@ int main(int argc, char** argv) {
       thumtoo::global_build_stats().reset();
       const auto t0 = std::chrono::steady_clock::now();
       for (const auto& uri : uris) {
-        client->request_tile_pyramid(uri, 0, -1, {});
+        client->request_tile_pyramid(uri, tile_min_scale, tile_max_scale, {});
       }
       client->drain();
       PhaseResult r;
-      r.name = "tiles(full pyramid)";
+      r.name = "tiles(min_scale=" + std::to_string(tile_min_scale) +
+               " max_scale=" + std::to_string(tile_max_scale) + ")";
       r.wall_s = wall_s_now(t0);
       r.pretty = thumtoo::global_build_stats().summary_pretty();
       phases.push_back(std::move(r));

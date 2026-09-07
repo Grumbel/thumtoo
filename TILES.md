@@ -94,3 +94,15 @@ keyed by URL → content_id.
 For `.jpg` sources, `build_tile_cell` uses `vips_jpegload(..., shrink=2|4|8)` so
 coarse scales avoid a full-resolution decode, then applies any remaining
 factor-of-two shrinks to match Galapix scale. Non-JPEG formats still full-load.
+
+## Scale range (detail cutoff)
+
+Galapix scale **0 = full resolution**; higher = coarser.
+
+* `request_tile_pyramid(uri, min_scale, max_scale)`  
+  - `min_scale`: finest scale to store (0 = full res; `1` skips full-res tiles)  
+  - `max_scale < 0`: generate until the image fits in one 256² tile  
+* CLI: `thumtoo-prepare --tiles --min-scale N --max-scale M`  
+  (`--min-scale` / `--max-scale` imply `--tiles`)  
+* Interactive `request_tile` still encodes only the requested cell; the app
+  chooses which scales to ask for.

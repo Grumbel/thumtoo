@@ -45,6 +45,9 @@ void usage(const char* argv0) {
       << "                      (largest policy edge ≤ EDGE; not a full ladder)\n"
       << "      --tiles        after probes, build Galapix-style 256×256 JPEG\n"
       << "                      tile pyramid for each ready URI\n"
+      << "      --min-scale N  finest tile scale to generate (default: 0 = full res)\n"
+      << "                      higher N skips finer detail (e.g. 1 = no full-res)\n"
+      << "      --max-scale M  coarsest tile scale (default: -1 = until single tile)\n"
       << "      --stats        print detailed timings on stderr (pretty multi-line)\n"
       << "                      (also implied when --tiles / --ladder is used)\n"
       << "      --stats-line   one-line timings (script-friendly)\n"
@@ -67,6 +70,8 @@ int main(int argc, char** argv) {
   bool stats_line = false;
   int ladder_edge = 0;
   bool do_tiles = false;
+  int tile_min_scale = 0;
+  int tile_max_scale = -1;  // <0 → until single-tile coverage
   unsigned jobs = 0;  // 0 → hardware_concurrency
 
   for (int i = 1; i < argc; ++i) {
@@ -89,6 +94,17 @@ int main(int argc, char** argv) {
       continue;
     }
     if (a == "--tiles") {
+      do_tiles = true;
+      continue;
+    }
+    if (a == "--min-scale" && i + 1 < argc) {
+      tile_min_scale = std::atoi(argv[++i]);
+      if (tile_min_scale < 0) tile_min_scale = 0;
+      do_tiles = true;
+      continue;
+    }
+    if (a == "--max-scale" && i + 1 < argc) {
+      tile_max_scale = std::atoi(argv[++i]);
       do_tiles = true;
       continue;
     }
@@ -192,13 +208,14 @@ int main(int argc, char** argv) {
     if (do_tiles && !sized_uris.empty()) {
       if (!quiet) {
         std::cerr << "encoding tile pyramids for " << sized_uris.size()
-                  << " uri(s)…\n";
+                  << " uri(s) (min_scale=" << tile_min_scale
+                  << " max_scale=" << tile_max_scale << ")…\n";
       }
       std::atomic<int> tile_done{0};
       const int tile_total = static_cast<int>(sized_uris.size());
       for (const auto& uri : sized_uris) {
         client->request_tile_pyramid(
-            uri, 0, -1,
+            uri, tile_min_scale, tile_max_scale,
             [&](std::string u, int /*s*/, int /*x*/, int /*y*/,
                 std::optional<thumtoo::TileBlob> t) {
               if (quiet) return;

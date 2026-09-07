@@ -9,7 +9,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 ## Session handoff (2026-09-07)
 
 ### Bundles
-Apply in order or take tip **`thumtoo-012.bundle`**:
+Apply in order or take tip **`thumtoo-013.bundle`**:
 | Bundle | Change |
 |--------|--------|
 | thumtoo-001 | `request_tile` single-scale only |
@@ -24,6 +24,7 @@ Apply in order or take tip **`thumtoo-012.bundle`**:
 | thumtoo-010 | EXIF embedded thumb for preview; JPEG shrink-on-load for tile cells |
 | thumtoo-011 | Pretty stats + `thumtoo-bench` phase benchmark tool |
 | thumtoo-012 | flake apps + `nix develop` helpers (configure/build/test/run) |
+| thumtoo-013 | `--min-scale` / `--max-scale` for tile prepare + bench |
 
 ### Pixel cache policy (Galapix-first, biltoo API stable)
 * **Durable:** size index + **one** JXL preview per `request_pixels(max_edge)` (largest
