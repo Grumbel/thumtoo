@@ -558,3 +558,10 @@ Do not maintain a parallel extension list in each app.
 Page `get_size` and live `request_tile` use **kPdfLayoutDpi (144)** so
 interactive tiles are sharper than 72 dpi media-box. Rasterize on demand from
 Poppler; durable tile cache still fills on first request.
+
+
+## Locator query (2026-09-07)
+
+Cache-only: `list_locators_by_uri_prefix`, `list_locators_by_outer_path_prefix`,
+`list_locators_like` (+ Client wrappers). Foundation for app-side library browse
+without Galapix resource SQL.

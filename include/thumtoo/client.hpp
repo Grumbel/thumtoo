@@ -63,6 +63,14 @@ class Client {
   [[nodiscard]] std::optional<Database::LocatorRow> find_locator(
       std::string_view uri) const;
 
+  /// Cache-only listing helpers (see Database::list_locators_*).
+  [[nodiscard]] std::vector<Database::LocatorRow> list_locators_by_uri_prefix(
+      std::string_view uri_prefix, int limit = 100) const;
+  [[nodiscard]] std::vector<Database::LocatorRow> list_locators_by_outer_path_prefix(
+      std::string_view path_prefix, int limit = 100) const;
+  [[nodiscard]] std::vector<Database::LocatorRow> list_locators_like(
+      std::string_view uri_like_pattern, int limit = 100) const;
+
   /// Resolve a location or content-id URI to the durable content_id (cache only).
   /// Returns nullopt if the locator is unknown or not yet hashed.
   [[nodiscard]] std::optional<std::string> resolve_content_id(

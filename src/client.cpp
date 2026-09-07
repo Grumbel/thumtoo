@@ -130,6 +130,21 @@ std::optional<Database::LocatorRow> Client::find_locator(std::string_view uri) c
   return db_->find_locator(uri);
 }
 
+std::vector<Database::LocatorRow> Client::list_locators_by_uri_prefix(
+    std::string_view uri_prefix, int limit) const {
+  return db_->list_locators_by_uri_prefix(uri_prefix, limit);
+}
+
+std::vector<Database::LocatorRow> Client::list_locators_by_outer_path_prefix(
+    std::string_view path_prefix, int limit) const {
+  return db_->list_locators_by_outer_path_prefix(path_prefix, limit);
+}
+
+std::vector<Database::LocatorRow> Client::list_locators_like(
+    std::string_view uri_like_pattern, int limit) const {
+  return db_->list_locators_like(uri_like_pattern, limit);
+}
+
 std::optional<std::string> Client::resolve_content_id(std::string_view uri) const {
   if (is_content_id_uri(uri)) {
     return std::string(uri);

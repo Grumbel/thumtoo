@@ -59,6 +59,19 @@ class Database {
   [[nodiscard]] std::vector<LocatorRow> list_locators_for_content_id(
       std::string_view content_id, int limit = 100) const;
 
+  /// Cache-only: uri GLOB or prefix match (prefix is literal, * and ? not special).
+  /// Matches uri LIKE prefix || '%' ESCAPE '\\']
+  [[nodiscard]] std::vector<LocatorRow> list_locators_by_uri_prefix(
+      std::string_view uri_prefix, int limit = 100) const;
+
+  /// Cache-only: outer_path prefix (filesystem path under which files were indexed).
+  [[nodiscard]] std::vector<LocatorRow> list_locators_by_outer_path_prefix(
+      std::string_view path_prefix, int limit = 100) const;
+
+  /// Cache-only: SQL LIKE on uri (caller supplies pattern; % and _ wildcards).
+  [[nodiscard]] std::vector<LocatorRow> list_locators_like(
+      std::string_view uri_like_pattern, int limit = 100) const;
+
   struct ContentRow {
     std::string content_id;
     std::optional<int> width;

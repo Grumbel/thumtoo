@@ -88,5 +88,6 @@ CREATE TABLE IF NOT EXISTS tiles (
 );
 
 CREATE INDEX IF NOT EXISTS idx_locators_content_id ON locators(content_id);
+CREATE INDEX IF NOT EXISTS idx_locators_outer_path ON locators(outer_path);
 CREATE INDEX IF NOT EXISTS idx_levels_content_id ON levels(content_id);
 CREATE INDEX IF NOT EXISTS idx_tiles_content_id ON tiles(content_id);

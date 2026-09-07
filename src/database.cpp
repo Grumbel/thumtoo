@@ -14,6 +14,33 @@
 namespace thumtoo {
 namespace {
 
+
+Database::LocatorRow locator_from_stmt(sqlite3_stmt* stmt) {
+  Database::LocatorRow r;
+  r.uri = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+  if (sqlite3_column_type(stmt, 1) != SQLITE_NULL)
+    r.content_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+  if (sqlite3_column_type(stmt, 2) != SQLITE_NULL)
+    r.outer_path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+  if (sqlite3_column_type(stmt, 3) != SQLITE_NULL)
+    r.member_path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+  if (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+    r.size = sqlite3_column_int64(stmt, 4);
+  if (sqlite3_column_type(stmt, 5) != SQLITE_NULL)
+    r.mtime_ns = sqlite3_column_int64(stmt, 5);
+  return r;
+}
+
+std::string escape_like_prefix(std::string_view prefix) {
+  std::string out;
+  out.reserve(prefix.size() + 8);
+  for (char c : prefix) {
+    if (c == '%' || c == '_' || c == '\\') out.push_back('\\');
+    out.push_back(c);
+  }
+  return out;
+}
+
 std::int64_t now_unix_s() {
   using namespace std::chrono;
   return duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
@@ -170,6 +197,7 @@ Database Database::open(const std::filesystem::path& cache_root) {
   out.exec("PRAGMA journal_mode=WAL;");
   out.exec("PRAGMA busy_timeout=5000;");
   out.exec("PRAGMA foreign_keys=ON;");
+  out.exec("CREATE INDEX IF NOT EXISTS idx_locators_outer_path ON locators(outer_path);");
   out.migrate_or_init();
   return out;
 }
@@ -343,6 +371,67 @@ std::vector<Database::LocatorRow> Database::list_locators_for_content_id(
   return rows;
 }
 
+
+
+std::vector<Database::LocatorRow> Database::list_locators_by_uri_prefix(
+    std::string_view uri_prefix, int limit) const {
+  const std::string pat = escape_like_prefix(uri_prefix) + "%";
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT uri, content_id, outer_path, member_path, size, mtime_ns "
+      "FROM locators WHERE uri LIKE ?1 ESCAPE '\\' ORDER BY uri LIMIT ?2;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, pat.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 2, limit > 0 ? limit : 100);
+  std::vector<LocatorRow> rows;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    rows.push_back(locator_from_stmt(stmt));
+  }
+  sqlite3_finalize(stmt);
+  return rows;
+}
+
+std::vector<Database::LocatorRow> Database::list_locators_by_outer_path_prefix(
+    std::string_view path_prefix, int limit) const {
+  const std::string pat = escape_like_prefix(path_prefix) + "%";
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT uri, content_id, outer_path, member_path, size, mtime_ns "
+      "FROM locators WHERE outer_path LIKE ?1 ESCAPE '\\' ORDER BY uri LIMIT ?2;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, pat.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 2, limit > 0 ? limit : 100);
+  std::vector<LocatorRow> rows;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    rows.push_back(locator_from_stmt(stmt));
+  }
+  sqlite3_finalize(stmt);
+  return rows;
+}
+
+std::vector<Database::LocatorRow> Database::list_locators_like(
+    std::string_view uri_like_pattern, int limit) const {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT uri, content_id, outer_path, member_path, size, mtime_ns "
+      "FROM locators WHERE uri LIKE ?1 ORDER BY uri LIMIT ?2;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, uri_like_pattern.data(),
+                    static_cast<int>(uri_like_pattern.size()), SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, limit > 0 ? limit : 100);
+  std::vector<LocatorRow> rows;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    rows.push_back(locator_from_stmt(stmt));
+  }
+  sqlite3_finalize(stmt);
+  return rows;
+}
 
 std::vector<Database::ContentRow> Database::list_content(int limit) const {
   sqlite3_stmt* stmt = nullptr;

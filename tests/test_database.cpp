@@ -171,6 +171,34 @@ int main() {
     expect(locs.size() == 2, "two locators same content");
   }
 
+
+  // Locator prefix / LIKE query
+  {
+    auto db = Database::open(root / "query-index");
+    Database::LocatorRow a;
+    a.uri = "file:///home/user/photos/a.jpg";
+    a.outer_path = "/home/user/photos/a.jpg";
+    a.content_id = "sha256:aa";
+    db.upsert_locator(a);
+    Database::LocatorRow b;
+    b.uri = "file:///home/user/photos/b.jpg";
+    b.outer_path = "/home/user/photos/b.jpg";
+    b.content_id = "sha256:bb";
+    db.upsert_locator(b);
+    Database::LocatorRow c;
+    c.uri = "file:///home/user/other/c.jpg";
+    c.outer_path = "/home/user/other/c.jpg";
+    c.content_id = "sha256:cc";
+    db.upsert_locator(c);
+
+    auto by_uri = db.list_locators_by_uri_prefix("file:///home/user/photos/");
+    expect(by_uri.size() == 2, "uri prefix photos");
+    auto by_path = db.list_locators_by_outer_path_prefix("/home/user/photos/");
+    expect(by_path.size() == 2, "outer_path prefix");
+    auto like = db.list_locators_like("%other%");
+    expect(like.size() == 1, "like other");
+  }
+
   // Durable HTTP body cache
   {
     auto blobs = BlobStore::open(root / "http-blobs");
