@@ -15,8 +15,20 @@ a **cache library** (no OpenGL / layout). Galapix keeps rendering and workspace.
 | `files` row (url, w, h) | `locators` + `content` (`get_size` / `get_meta`) |
 | `tiles` (fileid, scale, x, y) → JPEG | `get_tile` / `request_tile` → `TileBlob` (JPEG) |
 | `TileGenerator` | worker `EnsureTiles` + `build_tile_pyramid` |
-| `thumbgen` / prepare | `thumtoo-prepare --tiles` |
+| `thumbgen` / prepare | `thumtoo-prepare --tiles` (+ optional `--ladder EDGE` preview) |
 | Archive `file://…//rar:…` | `file:///…//archive:member` |
+
+
+## Pixel layers for Galapix
+
+Recommended durable cache (prepare / interactive):
+
+1. **Size** — `request_size` / probe (always).
+2. **One small preview** — `request_pixels(uri, 256)` (or 128); single JXL, not a full ladder.
+3. **Tiles** — `request_tile` / `thumtoo-prepare --tiles` up to a max scale useful for zoom.
+4. **Original** — Galapix decodes from source past max cached scale; do not store full-res in thumtoo.
+
+Do **not** prewarm a multi-edge JXL ladder for Galapix; that duplicated tile data and was slow (`--ladder` encodes one edge only as of thumtoo-007).
 
 Scale convention matches Galapix: **scale 0 = full resolution**, tile size **256**.
 
@@ -37,8 +49,7 @@ image.set_tile_provider(provider);
 
 Cache hits use `get_tile`; misses use `request_tile` (JPEG → `surf::jpeg::load_from_mem`).
 
-Default image open still uses `DatabaseTileProvider` + SQLite until the UI path
-is switched under `HAVE_THUMTOO`.
+With `HAVE_THUMTOO`, Galapix defaults to thumtoo tiles (`--no-thumtoo` forces SQLite).
 
 ## Viewer flow
 

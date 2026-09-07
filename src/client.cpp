@@ -925,8 +925,48 @@ void Client::handle_ensure_pixels(
   }
 
   // Single durable preview ≤ job.max_edge (not a full multi-edge ladder).
-  // Larger / other sizes: another request_pixels, downscale in the app, or tiles.
+  // Larger / other sizes: another request_pixels, downscale from cache, or tiles.
   const int edge_limit = job.max_edge > 0 ? job.max_edge : kLadderEdges.back();
+
+  if (auto loc_early = db_->find_locator(job.uri);
+      loc_early && loc_early->content_id) {
+    if (auto larger = db_->find_smallest_level_ge(
+            *loc_early->content_id, edge_limit, job.frame_idx)) {
+      if (auto bytes = blobs_->get_level(larger->content_id, larger->max_edge,
+                                         larger->frame_idx)) {
+        if (auto lvl = downscale_preview_jxl(
+                bytes->data(), bytes->size(), *loc_early->content_id, edge_limit,
+                kDefaultJxlQuality)) {
+          const std::string& cid = *loc_early->content_id;
+          blobs_->put_level(cid, lvl->max_edge, lvl->frame_idx, lvl->width,
+                            lvl->height, lvl->codec, lvl->quality,
+                            lvl->bytes.data(), lvl->bytes.size());
+          Database::LevelRow lr;
+          lr.content_id = cid;
+          lr.max_edge = lvl->max_edge;
+          lr.frame_idx = lvl->frame_idx;
+          lr.width = lvl->width;
+          lr.height = lvl->height;
+          lr.codec = lvl->codec;
+          lr.quality = lvl->quality;
+          lr.path = "blobs.sqlite";
+          db_->upsert_level(lr);
+          if (auto px = get_pixels(job.uri, job.max_edge, job.frame_idx)) {
+            if (job.pixels_cb) {
+              auto cb = std::move(job.pixels_cb);
+              auto uri = job.uri;
+              const int edge = job.max_edge;
+              executor_.post([cb = std::move(cb), uri = std::move(uri), edge,
+                              px = std::move(px)]() mutable {
+                cb(std::move(uri), edge, std::move(px));
+              });
+            }
+            return;
+          }
+        }
+      }
+    }
+  }
 
   if (auto pdf = parse_pdf_uri(job.uri)) {
     auto raster = pdf_rasterize_page(pdf->pdf_path, pdf->page, edge_limit);

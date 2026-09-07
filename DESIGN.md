@@ -133,13 +133,24 @@ Optional **tags attached to content hash** (not path), same idea as dirtoo:
 - Replacing every desktop thumbnailer.
 - Gigapixel region tiles (galapix-style) in phase 1.
 
-## 5. JPEG-XL vs ladder vs tiles
+## 5. Preview vs tiles vs original (pixel cache policy)
 
-| Approach | Role in thumtoo |
-|----------|-----------------|
-| **Fixed long-edge ladder** (JPEG-XL via libvips) | **Phase 1** product cache |
-| **Progressive JPEG-XL** single-file viewing | Optional consumer feature; ladder remains multi-edge |
-| **Grid tiles** `(scale, x, y)` 256² | **Phase 4** (see [TILES.md](TILES.md)); ladder stays primary |
+Durable display pixels are **not** a full multi-edge ladder by default.
+
+| Layer | Durable? | Role |
+|-------|----------|------|
+| **Size / identity** | Yes | Layout, invalidation, content id |
+| **Single preview** (JXL, one long-edge ≤ request) | Yes | Fast first paint / filmstrip (`request_pixels`) |
+| **Grid tiles** 256² JPEG | Yes (optional) | Smooth zoom for Galapix (`request_tile`) |
+| **Multi-edge ladder** (128+256+512+…) | No (on demand) | Derive by another `request_pixels` or downscale in the app |
+| **Original full-res** | No | Viewer decodes past max cached tile scale |
+
+`get_pixels` / `request_pixels(uri, max_edge)` remain the biltoo API: encode or
+return the best **stored** level with `edge ≤ max_edge`. Encoding uses one
+`vips_thumbnail` pass (JPEG shrink-on-load) for that edge only.
+
+Galapix primary path: size → optional small preview → tiles; not a second
+whole-image pyramid parallel to tiles.
 
 ## 6. Architecture
 
@@ -149,8 +160,8 @@ Apps: biltoo · dirtoo · thumtoo-prepare
                     ▼
          thumtoo::Client  (get / request + callback)
      ┌──────────┬──────────┬──────────┬──────────┐
-     │ Identity │  Meta    │  Pixels  │ Archive  │
-     │ SourceId │  SQLite  │  ladder  │ TOC+read │
+     │ Identity │  Meta    │ Preview  │ Archive  │
+     │ SourceId │  SQLite  │ + tiles  │ TOC+read │
      └──────────┴──────────┴──────────┴──────────┘
                     │
               worker pool + single SQLite writer

@@ -105,6 +105,10 @@ class Database {
   [[nodiscard]] std::optional<LevelRow> find_best_level(
       std::string_view content_id, int max_edge, int frame_idx = 0) const;
 
+  /// Smallest stored level with max_edge >= min_edge (for downscale-from-cache).
+  [[nodiscard]] std::optional<LevelRow> find_smallest_level_ge(
+      std::string_view content_id, int min_edge, int frame_idx = 0) const;
+
   [[nodiscard]] std::vector<LevelRow> list_levels(std::string_view content_id,
                                                   int limit = 32) const;
 

@@ -58,6 +58,11 @@ void image_library_init();
     const std::uint8_t* rgb, int width, int height, const std::string& content_id,
     int jxl_quality, int max_edge_limit = 0);
 
+/// Downscale an already-cached JXL preview to a smaller policy edge (no source I/O).
+[[nodiscard]] std::optional<LevelBlob> downscale_preview_jxl(
+    const std::uint8_t* jxl_data, std::size_t jxl_size,
+    const std::string& content_id, int target_edge, int jxl_quality);
+
 [[nodiscard]] std::string sha256_file_hex(const std::filesystem::path& path);
 [[nodiscard]] std::string sha256_bytes_hex(const std::uint8_t* data,
                                            std::size_t size);

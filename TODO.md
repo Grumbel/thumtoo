@@ -9,7 +9,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 ## Session handoff (2026-09-07)
 
 ### Bundles
-Apply in order or take tip **`thumtoo-007.bundle`**:
+Apply in order or take tip **`thumtoo-008.bundle`**:
 | Bundle | Change |
 |--------|--------|
 | thumtoo-001 | `request_tile` single-scale only |
@@ -19,6 +19,7 @@ Apply in order or take tip **`thumtoo-007.bundle`**:
 | thumtoo-005 | **Extract cache** (512 MiB) + coalesce EnsureTiles/Pixels same archive |
 | thumtoo-006 | Stats: **wall=** vs **cpu:** summed scopes + parallel~= |
 | thumtoo-007 | **Single-edge preview** (not full ladder); thumb/jxl stats; Galapix-shaped cache |
+| thumtoo-008 | DESIGN/INTEGRATION policy; downscale smaller preview from larger cache |
 
 ### Pixel cache policy (Galapix-first, biltoo API stable)
 * **Durable:** size index + **one** JXL preview per `request_pixels(max_edge)` (largest
@@ -44,6 +45,8 @@ Apply in order or take tip **`thumtoo-007.bundle`**:
 * [x] Single-scale interactive `request_tile`
 * [x] Single-edge `request_pixels` / `--ladder EDGE` (one `vips_thumbnail` + JXL)
 * [x] Stats: `thumb=` / `jxl=` / `levels=`
+* [x] DESIGN §5 + INTEGRATION_GALAPIX: preview + tiles, no double ladder
+* [x] Downscale-from-larger-cached-preview when asking a smaller max_edge
 
 ### Next session — priority
 1. Optional: EXIF embedded thumb for even faster first preview

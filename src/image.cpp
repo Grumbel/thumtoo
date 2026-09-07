@@ -364,6 +364,49 @@ std::vector<LevelBlob> build_ladder_rgb(const std::uint8_t* rgb, int width,
   return levels;
 }
 
+
+std::optional<LevelBlob> downscale_preview_jxl(const std::uint8_t* jxl_data,
+                                               std::size_t jxl_size,
+                                               const std::string& content_id,
+                                               int target_edge,
+                                               int jxl_quality) {
+  ensure_vips();
+  if (!jxl_data || jxl_size == 0 || target_edge <= 0) return std::nullopt;
+
+  VipsImage* full = nullptr;
+  {
+    ScopedNsAccumulator timer(global_build_stats().thumb_ns);
+    // libvips JXL loader from memory buffer
+    if (vips_jxlload_buffer(const_cast<void*>(static_cast<const void*>(jxl_data)),
+                            jxl_size, &full, nullptr) != 0 ||
+        !full) {
+      return std::nullopt;
+    }
+  }
+  const int long_edge =
+      std::max(vips_image_get_width(full), vips_image_get_height(full));
+  const int edge = pick_preview_edge(long_edge, target_edge);
+  const int q = std::clamp(jxl_quality, 1, 100);
+  const std::string id_dir = content_id_to_blob_dir(content_id);
+
+  VipsImage* thumb = nullptr;
+  {
+    ScopedNsAccumulator timer(global_build_stats().thumb_ns);
+    if (vips_thumbnail_image(full, &thumb, edge, "size", VIPS_SIZE_DOWN,
+                             nullptr) != 0 ||
+        !thumb) {
+      g_object_unref(full);
+      return std::nullopt;
+    }
+  }
+  g_object_unref(full);
+
+  LevelBlob b = encode_jxl_level(thumb, edge, id_dir, q);
+  g_object_unref(thumb);
+  if (b.bytes.empty()) return std::nullopt;
+  return b;
+}
+
 std::string sha256_file_hex(const std::filesystem::path& path) {
   std::ifstream in(path, std::ios::binary);
   if (!in) return {};
