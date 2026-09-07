@@ -1,3 +1,50 @@
+## Session handoff (2026-09-07) — tip **thumtoo-024**
+
+Apply tip **`thumtoo-024.bundle`** (or stack 016…023). Author: Ingo Ruhnke
+`<grumbel@gmail.com>` + `Co-authored-by: Grok <grok@x.ai>`.
+
+### What landed this session (API / retrieval)
+
+| Bundle | Change |
+|--------|--------|
+| thumtoo-016 | **Location URI API**: `parse_location` / `format_location`, nested `//archive` + `//page`, http/content-id helpers, `with_archive_member` / `with_pdf_page`; `Client::list_locators` / `find_locator`; `tests/test_uri` |
+| thumtoo-017 | **Content-id resolve**: `meta_for_content_id`, `list_locators_for_content_id`, `meta_for_uri` accepts `sha256:`/`sha1:`; `Client::resolve_content_id`, `list_uris_for_content_id`, `get_meta_for_content_id` |
+| thumtoo-018 | **`read_source_bytes`**: file + archive member (+ via content-id); `read_file_bytes`; size-capped |
+| thumtoo-019 | **PDF live tiles**: `kPdfLayoutDpi = 144`, `pdf_page_layout_size`; probe + `request_tile`/pyramid rasterize at layout edge |
+| thumtoo-020 | Fix `test_client` `read_source_bytes` scope |
+| thumtoo-021 | **HTTP(S) fetch**: optional libcurl (`THUMTOO_HAVE_CURL`), `network.hpp` `http_get_bytes`; probe / pixels / tiles / `read_source_bytes`; flake + CMake |
+| thumtoo-022 | **Session HTTP body cache** (`fetch_http_cached`, 512 MiB in-process) |
+| thumtoo-023 | **Fix**: declare `Client::fetch_http_cached` in `client.hpp` (022 build break) |
+
+Earlier tips (001–015) remain in the history; tip is **024** (handoff docs; code tip still 023 features).
+
+### Product direction (do not grow Galapix SQL for this)
+
+* thumtoo = shared **media index + display pixels + growing data retrieval**
+* Nested location URIs, content-id identity, network + archive + PDF
+* Query/library listing for apps (Galapix `-p` transitional)
+* Galapix/biltoo/dirtoo consume; durable HTTP disk cache / TTL still future
+
+### Build notes
+
+* `pkg-config libcurl` → `THUMTOO_HAVE_CURL=1`; without curl, http(s) parses but fetch fails
+* Poppler optional → `THUMTOO_HAVE_POPPLER` for PDF
+* Tests: `thumtoo-test-uri`, database, client
+
+### Next (priority)
+
+1. Durable HTTP/download cache + TTL (not only session map)
+2. Higher-DPI / per-tile PDF crop render (true “mandelbrot-style” region)
+3. Query API beyond `list_locators` (path prefix, tags, collections)
+4. Galapix flake: pin/update input to a tip that includes 021+ curl
+
+### Key files
+
+* `include/thumtoo/uri.hpp`, `network.hpp`, `client.hpp`, `pdf.hpp`, `constants.hpp`
+* `src/uri.cpp`, `network.cpp`, `client.cpp`, `pdf.cpp`
+* `DESIGN.md`, `TILES.md`, `AGENTS.md`, this TODO
+
+
 <!--
 SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 SPDX-License-Identifier: GPL-3.0-or-later
@@ -9,7 +56,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 ## Session handoff (2026-09-07)
 
 ### Bundles
-Apply in order or take tip **`thumtoo-023.bundle`**:
+Apply in order or take tip **`thumtoo-024.bundle`**:
 | Bundle | Change |
 |--------|--------|
 | thumtoo-001 | `request_tile` single-scale only |
