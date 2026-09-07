@@ -88,4 +88,14 @@ void image_library_init();
     const std::uint8_t* data, std::size_t size, int scale, int x, int y,
     int jpeg_quality = kDefaultTileQuality);
 
+/// Same as build_tile_cell_buffer but from contiguous RGB888 (no alpha).
+/// Used for PDF page rasters and other in-memory RGB sources.
+[[nodiscard]] std::optional<TileBlob> build_tile_cell_rgb(
+    const std::uint8_t* rgb, int width, int height, int scale, int x, int y,
+    int jpeg_quality = kDefaultTileQuality);
+
+[[nodiscard]] std::vector<TileBlob> build_tile_pyramid_rgb(
+    const std::uint8_t* rgb, int width, int height, int min_scale = 0,
+    int max_scale = -1, int jpeg_quality = kDefaultTileQuality);
+
 }  // namespace thumtoo

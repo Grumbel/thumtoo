@@ -157,7 +157,7 @@ each +1 halves linear size. Tile size fixed at 256.
    (default off so biltoo path stays light).
 9. **Non-goals this phase**
    - Replacing Galapix UI or OpenGL tile cache.
-   - Video/PDF page tiles (images + archive image members first).
+   - Video still tiles (images + archive + PDF page tiles done).
    - Eviction of tiles (shares future `thumtoo-gc`).
 
 ### Implementation order
@@ -183,3 +183,13 @@ each +1 halves linear size. Tile size fixed at 256.
 - [ ] Optional D-Bus daemon
 - [ ] Adaptive video frame count (8–64 → still_count)
 - [ ] Animated video preview level (must-have; deferred until consumers exist)
+
+
+## PDF page tiles ([x] 2026-09-07)
+
+Interactive `request_tile` and pyramid prewarm no longer stub PDF URIs.
+Flow: `pdf_page_size_72dpi` → `pdf_rasterize_page` at that long edge →
+`build_tile_cell_rgb` / `build_tile_pyramid_rgb` (new in image.hpp).
+
+Known limit: layout size remains 72 dpi media box; higher-dpi native size
+for readable scale-0 is a follow-up.

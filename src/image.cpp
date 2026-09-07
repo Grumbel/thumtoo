@@ -954,6 +954,46 @@ std::optional<TileBlob> build_tile_cell_buffer(const std::uint8_t* data,
   return tile;
 }
 
+namespace {
 
+VipsImage* vips_from_rgb888(const std::uint8_t* rgb, int width, int height) {
+  if (!rgb || width <= 0 || height <= 0) return nullptr;
+  // vips_image_new_from_memory does not copy; keep data alive for the caller's
+  // scope (cut_cell / cut_pyramid finish before returning).
+  VipsImage* img = vips_image_new_from_memory(
+      const_cast<std::uint8_t*>(rgb),
+      static_cast<size_t>(width) * static_cast<size_t>(height) * 3u, width,
+      height, 3, VIPS_FORMAT_UCHAR);
+  if (!img) return nullptr;
+  // Interpret as sRGB for JPEG encode path.
+  vips_image_set_string(img, VIPS_META_INTERPRETATION, "srgb");
+  return img;
+}
+
+}  // namespace
+
+std::optional<TileBlob> build_tile_cell_rgb(const std::uint8_t* rgb, int width,
+                                            int height, int scale, int x, int y,
+                                            int jpeg_quality) {
+  ensure_vips();
+  VipsImage* full = vips_from_rgb888(rgb, width, height);
+  if (!full) return std::nullopt;
+  auto tile = cut_cell_from_vips(full, scale, x, y, jpeg_quality);
+  g_object_unref(full);
+  if (tile) tile->scale = scale;
+  return tile;
+}
+
+std::vector<TileBlob> build_tile_pyramid_rgb(const std::uint8_t* rgb, int width,
+                                             int height, int min_scale,
+                                             int max_scale, int jpeg_quality) {
+  ensure_vips();
+  std::vector<TileBlob> tiles;
+  VipsImage* full = vips_from_rgb888(rgb, width, height);
+  if (!full) return tiles;
+  tiles = cut_pyramid_from_vips(full, min_scale, max_scale, jpeg_quality);
+  g_object_unref(full);
+  return tiles;
+}
 
 }  // namespace thumtoo

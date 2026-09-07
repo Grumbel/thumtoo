@@ -1161,11 +1161,20 @@ void Client::handle_ensure_tiles(
                                         kDefaultTileQuality);
         }
       }
-    } else if (auto path = path_from_file_uri(job.uri)) {
-      if (parse_pdf_uri(job.uri)) {
-        reply_one(std::nullopt);
-        return;
+    } else if (auto pdf = parse_pdf_uri(job.uri)) {
+      // Rasterize at reported (72 dpi) size so tiles match get_size / layout.
+      auto size72 = pdf_page_size_72dpi(pdf->pdf_path, pdf->page);
+      if (size72 && size72->width > 0 && size72->height > 0) {
+        const int edge = std::max(size72->width, size72->height);
+        auto raster = pdf_rasterize_page(pdf->pdf_path, pdf->page, edge);
+        if (raster && !raster->rgb.empty()) {
+          cell = build_tile_cell_rgb(raster->rgb.data(), raster->width,
+                                     raster->height, job.tile_scale,
+                                     job.tile_x, job.tile_y,
+                                     kDefaultTileQuality);
+        }
       }
+    } else if (auto path = path_from_file_uri(job.uri)) {
       if (std::filesystem::is_regular_file(*path)) {
         cell = build_tile_cell(*path, job.tile_scale, job.tile_x, job.tile_y,
                                kDefaultTileQuality);
@@ -1188,11 +1197,18 @@ void Client::handle_ensure_tiles(
                                           max_scale, kDefaultTileQuality);
       }
     }
-  } else if (auto path = path_from_file_uri(job.uri)) {
-    if (parse_pdf_uri(job.uri)) {
-      reply_pyramid_done(false);
-      return;
+  } else if (auto pdf = parse_pdf_uri(job.uri)) {
+    auto size72 = pdf_page_size_72dpi(pdf->pdf_path, pdf->page);
+    if (size72 && size72->width > 0 && size72->height > 0) {
+      const int edge = std::max(size72->width, size72->height);
+      auto raster = pdf_rasterize_page(pdf->pdf_path, pdf->page, edge);
+      if (raster && !raster->rgb.empty()) {
+        tiles = build_tile_pyramid_rgb(raster->rgb.data(), raster->width,
+                                       raster->height, min_scale, max_scale,
+                                       kDefaultTileQuality);
+      }
     }
+  } else if (auto path = path_from_file_uri(job.uri)) {
     if (std::filesystem::is_regular_file(*path)) {
       tiles = build_tile_pyramid(*path, min_scale, max_scale, kDefaultTileQuality);
     }
