@@ -339,7 +339,20 @@ int main(int argc, char** argv) {
       std::cerr << "request_tile returned empty\n";
       return 1;
     }
-    std::cout << "source: " << (had && !force ? "cache" : "generated") << "\n";
+    const bool now_cached = client->has_tile(uri, scale, tile_x, tile_y);
+    if (had && !force) {
+      std::cout << "source: durable cache\n";
+    } else if (now_cached) {
+      std::cout << "source: generated and stored (durable)\n";
+    } else {
+      std::cout << "source: generated live-only (not stored";
+      if (thumtoo::is_pdf_page_uri(uri) &&
+          scale < thumtoo::kPdfMinDurableTileScale) {
+        std::cout << "; scale < kPdfMinDurableTileScale="
+                  << thumtoo::kPdfMinDurableTileScale;
+      }
+      std::cout << ")\n";
+    }
   }
 
   std::cout << "blob: " << blob->bytes.size() << " bytes codec=" << blob->codec
@@ -352,7 +365,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   std::cout << "wrote " << out << " (" << w << "x" << h
-            << ") decoded from durable tile JPEG\n";
+            << ") PNG from tile JPEG decode\n";
   if (w < 200 && h < 200 && scale <= 0) {
     std::cout << "note: small decoded size at fine scale may mean the stored "
                  "cell is low-res content labeled as scale "
