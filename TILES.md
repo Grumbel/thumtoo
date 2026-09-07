@@ -70,3 +70,14 @@ See [INTEGRATION.md](INTEGRATION.md) for biltoo. Galapix mapping will live in
 `INTEGRATION_GALAPIX.md` once the Client tile API is stable: replace
 `SQLiteTileDatabase` / `TileGenerator` with thumtoo `get_tile` / `request_tile`
 keyed by URL → content_id.
+
+## Performance notes (2026-09-07)
+
+* Interactive `request_tile`: **one scale only** (`tile_max_scale = scale`). Use
+  `request_tile_pyramid` / `thumtoo-prepare --tiles` for full pyramids.
+* `prepare --tiles --stats --jobs N`: wall time vs CPU-share (jpeg usually
+  dominates after extract cache).
+* Archive members: extract once per batch when possible; bytes may live briefly
+  in the in-process extract cache (max 512 MiB).
+* Encoding: parallel JPEG for cells within a scale; Client runs multiple jobs
+  across URIs concurrently.

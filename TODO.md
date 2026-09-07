@@ -5,6 +5,49 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # TODO — thumtoo
 
+
+## Session handoff (2026-09-07)
+
+### Bundles
+Apply in order or take tip **`thumtoo-006.bundle`** (`d7a9ca1`):
+| Bundle | Change |
+|--------|--------|
+| thumtoo-001 | `request_tile` single-scale only |
+| thumtoo-002 | Parallel JPEG encode per scale; prepare timings |
+| thumtoo-003 | Clean `--help` |
+| thumtoo-004 | **Multi-worker Client pool** (default HW concurrency); `--jobs N` |
+| thumtoo-005 | **Extract cache** (512 MiB) + coalesce EnsureTiles/Pixels same archive |
+| thumtoo-006 | Stats: **wall=** vs **cpu:** summed scopes + parallel~= |
+
+### Measured (one ~26 MiB archive, 68 members, 4324 tiles)
+* After cache/coalesce: **real ~3.6 s** with 12 workers; jpeg dominates **cpu-share**
+* extract cpu-share dropped sharply vs double full-zip read
+* Stats **cpu-sum ≫ wall** when parallel — expected
+
+### Done (parallelism / prepare)
+* [x] `vips_concurrency_set(hardware_concurrency)`
+* [x] Parallel JPEG encode of independent 256² cells per scale
+* [x] Client worker pool (`open(..., worker_threads)`; 0 = auto, max 32)
+* [x] Archive member extract cache across probe → tiles/ladder
+* [x] Coalesce ProbeSize **and** EnsureTiles / EnsurePixels per archive
+* [x] `thumtoo-prepare --stats --jobs --tiles` with clear wall vs cpu labels
+* [x] Single-scale interactive `request_tile`
+
+### Next session — priority
+1. Optional: tune extract cache size / eviction (clear-all is crude)
+2. Optional: SQLite contention under high `--jobs` (WAL + busy_timeout already)
+3. **Single-cell** tile cut (encode only requested (scale,x,y), not full scale grid)
+4. Ladder JXL encode parallelization (same pattern as tile JPEG)
+5. Not worth yet: GPU JPEG (nvJPEG) — CPU jpeg still parallelizable; extract fixed
+6. Not realistic: “cut tiles from JPEG without decode” (see below)
+
+### JPEG region decode (design note)
+Baseline JPEG is not randomly tiled. libjpeg can **DCT-scale** and limited
+**skip/crop scanlines**; true per-tile extract without stream decode needs
+RST markers or a different format. Prefer one decode → shrink → encode for
+pyramids; use DCT-scale for overviews only.
+
+
 ## Done
 
 - [x] Bootstrap documentation repo (README, DESIGN, ARCHITECTURE, AGENTS)

@@ -30,14 +30,26 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 
 ## Handoff
 
-## Status (2026-09-06)
+## Status (2026-09-07)
 
 **Phase 1–2 done:** Client, prepare/status CLIs, system SQLite, libvips+JXL ladder,
 archive TOC + member extract, tags, PDF `//page:N`, biltoo INTEGRATION.md.
 
 **Phase 4 tiles done (library side):** 256² JPEG pyramid, Client get/request_tile,
-`prepare --tiles`, status. See [TILES.md](TILES.md). Ladder remains the biltoo path.
-Galapix develop still needs a TileDatabaseInterface adapter ([INTEGRATION_GALAPIX.md](INTEGRATION_GALAPIX.md)).
+`prepare --tiles`, status. See [TILES.md](TILES.md).
+
+**Performance (2026-09-07):** Multi-worker job queue (`Client::open` worker count /
+`thumtoo-prepare --jobs`); parallel per-scale JPEG encode; 512 MiB extract cache;
+same-archive coalesce for probe **and** tiles/ladder. Prepare `--stats` prints
+`wall=` vs summed `cpu:` scopes. Tip bundle: **thumtoo-006**.
+
+Galapix uses thumtoo as a flake input (source `THUMTOO_DIR`); interactive
+`request_tile` is single-scale. Next library gap: **single-cell** cut.
+
+### Threading contract (do not break)
+* `get_*` — cache-only, GUI-safe reads
+* `request_*` — enqueue; callbacks via `Executor` (not raw worker threads for GUI)
+* Workers share one SQLite (WAL + busy_timeout); watch lock storms at high jobs
 
 **Later:** cache eviction / `thumtoo-gc`; optional D-Bus; video animated preview.
 
