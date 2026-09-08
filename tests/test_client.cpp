@@ -138,7 +138,7 @@ int main() {
                            expect(scale == 0 && x == 0 && y == 0, "tile coords");
                            expect(t.has_value(), "request_tile data");
                            expect(t && !t->bytes.empty(), "tile bytes");
-                           expect(t && t->codec == "jpeg", "tile codec jpeg");
+                           expect(t && t->codec == "rgb888", "tile codec rgb888");
                            expect(t && t->width > 0 && t->height > 0, "tile dims");
                          });
     client->drain();
@@ -147,6 +147,7 @@ int main() {
     expect(client->has_tile(uri, 0, 0, 0), "has_tile after request");
     auto t0 = client->get_tile(uri, 0, 0, 0);
     expect(t0.has_value(), "get_tile cache hit");
+    expect(t0 && t0->codec == "jpeg", "durable tile codec jpeg");
     auto cov = client->get_tile_coverage(uri);
     expect(cov.has_value(), "tile coverage");
     expect(cov && cov->size.width == W && cov->size.height == H, "coverage size");

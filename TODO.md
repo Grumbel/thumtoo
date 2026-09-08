@@ -1,3 +1,9 @@
+## tests: request_tile callback expects rgb888 (2026-09-08) — tip **thumtoo-039**
+
+Interactive `request_tile` returns `codec=rgb888`; durable `get_tile` remains JPEG.
+
+---
+
 ## chore: drop unused encode_cell_from_level (2026-09-08) — tip **thumtoo-038**
 
 Interactive path uses `extract_rgb_cell_from_level` only; JPEG durable encode is `encode_tile_cell_rgb` in Client.
