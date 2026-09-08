@@ -33,6 +33,7 @@ add_library(thumtoo
   src/archive.cpp
   src/pdf.cpp
   src/djvu.cpp
+  src/expand.cpp
   src/format.cpp
   src/blob_store.cpp
   src/build_stats.cpp
@@ -53,14 +54,16 @@ target_link_libraries(thumtoo PUBLIC
   PkgConfig::LIBARCHIVE
 )
 if(POPPLERCPP_FOUND)
-  target_link_libraries(thumtoo PUBLIC PkgConfig::POPPLERCPP)
+  # PRIVATE: headers do not expose Poppler types; consumers only need thumtoo.
+  target_link_libraries(thumtoo PRIVATE PkgConfig::POPPLERCPP)
   target_compile_definitions(thumtoo PUBLIC THUMTOO_HAVE_POPPLER=1)
   message(STATUS "thumtoo: Poppler-cpp enabled (PDF pages)")
 else()
   message(STATUS "thumtoo: Poppler-cpp not found — PDF page support disabled")
 endif()
 if(DJVULIBRE_FOUND)
-  target_link_libraries(thumtoo PUBLIC PkgConfig::DJVULIBRE)
+  # PRIVATE: headers do not expose ddjvuapi types; consumers only need thumtoo.
+  target_link_libraries(thumtoo PRIVATE PkgConfig::DJVULIBRE)
   target_compile_definitions(thumtoo PUBLIC THUMTOO_HAVE_DJVU=1)
   message(STATUS "thumtoo: DjVuLibre enabled (DjVu pages) includes=${DJVULIBRE_INCLUDE_DIRS}")
 else()
@@ -70,7 +73,7 @@ else()
     "Nix: put pkgs.djvulibre in buildInputs (pulls .dev for pkg-config).")
 endif()
 if(LIBCURL_FOUND)
-  target_link_libraries(thumtoo PUBLIC PkgConfig::LIBCURL)
+  target_link_libraries(thumtoo PRIVATE PkgConfig::LIBCURL)
   target_compile_definitions(thumtoo PUBLIC THUMTOO_HAVE_CURL=1)
   message(STATUS "thumtoo: libcurl enabled (HTTP/S source fetch)")
 else()

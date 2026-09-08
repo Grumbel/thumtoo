@@ -1,3 +1,12 @@
+## expand_media_uris + PRIVATE decoder link (2026-09-08) — tip **thumtoo-066** / bundle **thumtoo-066**
+
+- [x] `thumtoo::expand_media_uris` / `is_openable_media_path` (PDF, DjVu, archive, image)
+- [x] Link Poppler / DjVuLibre / libcurl **PRIVATE** (feature macros stay PUBLIC)
+- [ ] Galapix uses expand API; drops format-specific expand
+- [ ] Bundle thumtoo-066
+
+---
+
 ## DjVu multipage: require DjVuLibre discovery (2026-09-08) — tip **thumtoo-065** / bundle **thumtoo-065**
 
 Symptom: only the first page of a multipage .djvu appears. Galapix compile
