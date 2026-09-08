@@ -12,9 +12,9 @@
 #include <cstring>
 #include <vector>
 
-#define BASIC_HANDSUM_DECODE_IMPLEMENTATION
-#define BASIC_HANDSUM_DECODE_CONFIG__STATIC_FUNCTIONS
+extern "C" {
 #include "../third_party/basic_handsum_decode.c"
+}
 
 namespace thumtoo {
 namespace {

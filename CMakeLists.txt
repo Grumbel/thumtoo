@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 cmake_minimum_required(VERSION 3.16)
-project(thumtoo VERSION 0.1.0 LANGUAGES CXX)
+project(thumtoo VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -31,6 +31,7 @@ add_library(thumtoo
   src/build_stats.cpp
   src/lqip.cpp
   src/handsum.cpp
+  third_party/basic_handsum_decode_impl.c
   src/network.cpp
 )
 add_library(thumtoo::thumtoo ALIAS thumtoo)
