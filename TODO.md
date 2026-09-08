@@ -1,3 +1,20 @@
+## Interactive tiles: reply before durable JPEG (2026-09-08) — **thumtoo-058**
+
+### Root cause
+Interactive `EnsureTiles` JPEG-encoded and wrote SQLite **before** `reply_one`.
+After the shrink ladder held the image, each cell still paid encode+store
+before the next cell could run — ~1s trickle for a zoomed grid.
+
+### Fix
+- Reply RGB (or cache hit) **first**
+- `request_tiles` batch sets `skip_durable` and flushes JPEG/SQLite **after**
+  every cell has been replied
+
+- [x] Code
+- [x] Bundle thumtoo-058
+
+---
+
 ## Interactive multi-cell request_tiles batch (2026-09-08) — **thumtoo-057**
 
 `Client::request_tiles(uri, coords, cb)` enqueues **one** EnsureTiles job for

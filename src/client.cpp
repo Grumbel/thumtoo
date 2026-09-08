@@ -1496,6 +1496,14 @@ void Client::store_tiles(const std::string& content_id,
   }
 }
 
+namespace {
+struct DeferredTileStore {
+  std::string content_id;
+  TileBlob rgb;
+};
+thread_local std::vector<DeferredTileStore> g_deferred_tile_stores;
+}  // namespace
+
 void Client::handle_ensure_tiles(
     Job& job, const std::optional<std::vector<std::uint8_t>>& preextracted) {
   global_build_stats().tile_jobs.fetch_add(1, std::memory_order_relaxed);
@@ -1525,8 +1533,9 @@ void Client::handle_ensure_tiles(
     });
   };
 
-  // Multi-cell batch: process every coordinate in this worker job so one
-  // decode/ladder serves the whole visible set (no N-way queue contention).
+  // Multi-cell batch: one worker, sequential cells. Single-cell path replies
+  // before durable encode so the GUI can queue uploads while we still JPEG
+  // the previous cell. Shared shrink ladder avoids re-decoding the file.
   if (!job.tile_batch.empty()) {
     const auto coords = std::move(job.tile_batch);
     job.tile_batch.clear();
@@ -1542,8 +1551,24 @@ void Client::handle_ensure_tiles(
       one.tile_min_scale = c.scale;
       one.tile_max_scale = c.scale;
       one.tile_pyramid = false;
-      one.tile_cb = cb;  // copy — reply_one moves the per-job copy only
+      one.skip_durable = true;  // paint whole batch before any JPEG/SQLite
+      one.tile_cb = cb;  // copy — reply_one moves only the per-job copy
       handle_ensure_tiles(one, preextracted);
+    }
+    // All interactive replies are posted; now durable-encode without blocking paint.
+    {
+      auto pending = std::move(g_deferred_tile_stores);
+      g_deferred_tile_stores.clear();
+      for (auto& d : pending) {
+        if (d.rgb.bytes.empty() || d.content_id.empty()) {
+          continue;
+        }
+        if (auto jpeg = encode_tile_cell_rgb(
+                d.rgb.bytes.data(), d.rgb.width, d.rgb.height, d.rgb.scale,
+                d.rgb.x, d.rgb.y, kDefaultTileQuality)) {
+          store_tiles(d.content_id, std::vector<TileBlob>{*jpeg});
+        }
+      }
     }
     return;
   }
@@ -1637,19 +1662,47 @@ void Client::handle_ensure_tiles(
       }
     }
     if (cell && !cell->bytes.empty()) {
-      // Durable JPEG in the blob store; interactive reply is the in-memory
-      // cell (rgb888 preferred). Never store→get_tile round-trip on the
-      // critical path — that re-read the just-written blob for every cell.
-      if (cell->codec == kTileCodecRgb888) {
-        if (auto jpeg = encode_tile_cell_rgb(
-                cell->bytes.data(), cell->width, cell->height, cell->scale,
-                cell->x, cell->y, kDefaultTileQuality)) {
+      // Interactive paint first. Previously JPEG encode + SQLite ran before
+      // reply, so each cell blocked the next on durable write (~1s trickle for
+      // a zoomed grid even when the shrink ladder already held the image).
+      TileBlob live = std::move(*cell);
+      const bool rgb = (live.codec == kTileCodecRgb888);
+      std::vector<std::uint8_t> rgb_copy;
+      int dw = 0, dh = 0, ds = 0, dx = 0, dy = 0;
+      if (rgb) {
+        rgb_copy = live.bytes;  // encode after reply
+        dw = live.width;
+        dh = live.height;
+        ds = live.scale;
+        dx = live.x;
+        dy = live.y;
+      }
+      TileBlob non_rgb_store;
+      if (!rgb) {
+        non_rgb_store = live;
+      }
+      reply_one(std::move(live));
+      if (job.skip_durable) {
+        if (rgb && !rgb_copy.empty()) {
+          TileBlob defer;
+          defer.scale = ds;
+          defer.x = dx;
+          defer.y = dy;
+          defer.width = dw;
+          defer.height = dh;
+          defer.codec = kTileCodecRgb888;
+          defer.bytes = std::move(rgb_copy);
+          g_deferred_tile_stores.push_back(
+              DeferredTileStore{content_id, std::move(defer)});
+        }
+      } else if (rgb) {
+        if (auto jpeg = encode_tile_cell_rgb(rgb_copy.data(), dw, dh, ds, dx, dy,
+                                             kDefaultTileQuality)) {
           store_tiles(content_id, std::vector<TileBlob>{*jpeg});
         }
-      } else {
-        store_tiles(content_id, std::vector<TileBlob>{*cell});
+      } else if (!non_rgb_store.bytes.empty()) {
+        store_tiles(content_id, std::vector<TileBlob>{std::move(non_rgb_store)});
       }
-      reply_one(std::move(cell));
       return;
     }
     reply_one(std::nullopt);

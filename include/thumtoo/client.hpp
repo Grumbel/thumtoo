@@ -207,6 +207,9 @@ class Client {
     int tile_min_scale = 0;
     int tile_max_scale = -1;  // <0 → until single-tile coverage
     bool tile_pyramid = false;  // true: generate range, no single-tile reply
+    /// When true, interactive RGB cells are replied without JPEG/SQLite write
+    /// (batch paints the whole view first; durable store can follow later).
+    bool skip_durable = false;
     /// Non-empty: interactive multi-cell batch for the same uri.
     std::vector<TileCoord> tile_batch;
     SizeCallback size_cb;
