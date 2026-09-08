@@ -9,18 +9,18 @@
 
 #include <algorithm>
 #include <atomic>
+#include <unordered_map>
+#include <string>
+#include <memory>
+#include <functional>
 #include <chrono>
 #include <array>
 #include <cctype>
 #include <fstream>
-#include <functional>
-#include <memory>
 #include <mutex>
-#include <unordered_map>
 #include <thread>
 #include <vector>
 #include <sstream>
-#include <string>
 #include <cstring>
 
 namespace thumtoo {
@@ -798,22 +798,19 @@ std::vector<TileBlob> cut_pyramid_from_vips(VipsImage* full, int min_scale,
     }
   }
 
-  g_obj
-// ---------------------------------------------------------------------------
-// Decode / shrink-ladder cache for interactive single-cell tiles.
-//
-// Without this, each build_tile_cell* reloads the source and re-runs the
-// factor-2 shrink chain. Galapix issues many cells per zoom level → N full
-// decodes. Cache holds a small number of per-source ladders (level[s] =
-// image at pyramid scale s) so concurrent cells share one load + shrinks.
-// ---------------------------------------------------------------------------
+  g_object_unref(current);
+  return tiles;
+}
 
+
+
+// Interactive single-cell path: cache a shrink ladder so concurrent
+// build_tile_cell* calls share one decode + successive vips_shrink levels.
 constexpr std::size_t kLadderCacheMaxEntries = 4;
 
 struct ShrinkLadder {
   std::mutex mu;
-  /// levels[s] = VipsImage at Galapix scale s (ownership: one cache ref).
-  std::vector<VipsImage*> levels;
+  std::vector<VipsImage*> levels;  // levels[s] at Galapix scale s
   std::chrono::steady_clock::time_point last_used{};
 };
 
@@ -825,8 +822,7 @@ std::int64_t file_mtime_ns_local(const std::filesystem::path& path) {
   auto ft = std::filesystem::last_write_time(path, ec);
   if (ec) return 0;
   return static_cast<std::int64_t>(
-      std::chrono::duration_cast<std::chrono::nanoseconds>(
-          ft.time_since_epoch())
+      std::chrono::duration_cast<std::chrono::nanoseconds>(ft.time_since_epoch())
           .count());
 }
 
@@ -877,8 +873,6 @@ std::shared_ptr<ShrinkLadder> ladder_get_or_create(const std::string& key) {
   return e;
 }
 
-/// Ensure levels[0..scale] exist. load_full provides scale-0 (caller timed).
-/// Returns a new ref on levels[scale] for the caller to unref, or nullptr.
 VipsImage* ladder_acquire_level(const std::string& key, int scale,
                                 const std::function<VipsImage*()>& load_full) {
   if (scale < 0 || key.empty()) return nullptr;
@@ -889,7 +883,7 @@ VipsImage* ladder_acquire_level(const std::string& key, int scale,
   if (entry->levels.empty()) {
     VipsImage* full = load_full();
     if (!full) return nullptr;
-    entry->levels.push_back(full);  // cache owns this ref
+    entry->levels.push_back(full);
   }
 
   while (static_cast<int>(entry->levels.size()) <= scale) {
@@ -916,7 +910,6 @@ VipsImage* ladder_acquire_level(const std::string& key, int scale,
   return out;
 }
 
-/// Crop + JPEG-encode one cell from an image already at the target scale.
 std::optional<TileBlob> encode_cell_from_level(VipsImage* level, int scale, int x,
                                               int y, int jpeg_quality) {
   if (!level || x < 0 || y < 0) return std::nullopt;
@@ -962,11 +955,6 @@ std::optional<TileBlob> encode_cell_from_level(VipsImage* level, int scale, int 
   global_build_stats().tiles_encoded.fetch_add(1, std::memory_order_relaxed);
   return tb;
 }
-
-ect_unref(current);
-  return tiles;
-}
-
 
 std::optional<TileBlob> cut_cell_from_vips(VipsImage* full, int scale, int x,
                                            int y, int jpeg_quality) {
@@ -1086,7 +1074,6 @@ std::optional<TileBlob> build_tile_cell(const std::filesystem::path& path,
                                         int jpeg_quality) {
   ensure_vips();
   if (scale < 0) {
-    // Negative scales (denser than nominal) are not ladder-cached the same way.
     VipsImage* full = nullptr;
     {
       ScopedNsAccumulator timer(global_build_stats().image_load_ns);
@@ -1102,8 +1089,6 @@ std::optional<TileBlob> build_tile_cell(const std::filesystem::path& path,
   const std::string key = ladder_key_for_file(path);
   VipsImage* level = ladder_acquire_level(key, scale, [&]() -> VipsImage* {
     ScopedNsAccumulator timer(global_build_stats().image_load_ns);
-    // Always load full resolution into the ladder so any scale can be derived.
-    // JPEG shrink-on-load would make finer scales unavailable from the cache.
     return vips_image_new_from_file(path.string().c_str(), nullptr);
   });
   if (!level) return std::nullopt;
@@ -1120,7 +1105,6 @@ std::optional<TileBlob> build_tile_cell_buffer(const std::uint8_t* data,
   if (!data || size == 0) return std::nullopt;
 
   if (scale < 0 || decode_cache_key.empty()) {
-    // No shared ladder: legacy one-shot load (or denser-than-nominal scale).
     VipsImage* full = nullptr;
     int remain = scale;
     {
@@ -1148,8 +1132,6 @@ std::optional<TileBlob> build_tile_cell_buffer(const std::uint8_t* data,
   }
 
   const std::string key(decode_cache_key);
-  // data must remain valid for the first load; callers pass extract-cache or
-  // durable buffers that outlive the job.
   VipsImage* level = ladder_acquire_level(key, scale, [&]() -> VipsImage* {
     ScopedNsAccumulator timer(global_build_stats().image_load_ns);
     return vips_image_new_from_buffer(data, size, nullptr, nullptr);
