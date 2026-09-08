@@ -1400,9 +1400,22 @@ void Client::handle_ensure_tiles(
       }
     }
     if (cell && !cell->bytes.empty()) {
-      store_tiles(content_id, std::vector<TileBlob>{*cell});
+      // Durable JPEG in the blob store; interactive reply is the in-memory
+      // cell (rgb888 preferred). Never store→get_tile round-trip on the
+      // critical path — that re-read the just-written blob for every cell.
+      if (cell->codec == kTileCodecRgb888) {
+        if (auto jpeg = encode_tile_cell_rgb(
+                cell->bytes.data(), cell->width, cell->height, cell->scale,
+                cell->x, cell->y, kDefaultTileQuality)) {
+          store_tiles(content_id, std::vector<TileBlob>{*jpeg});
+        }
+      } else {
+        store_tiles(content_id, std::vector<TileBlob>{*cell});
+      }
+      reply_one(std::move(cell));
+      return;
     }
-    reply_one(get_tile(job.uri, job.tile_scale, job.tile_x, job.tile_y));
+    reply_one(std::nullopt);
     return;
   }
 

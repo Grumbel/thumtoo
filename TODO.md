@@ -1,3 +1,23 @@
+## Interactive tiles: rgb888 delivery, no store→get round-trip (2026-09-08) — tip **thumtoo-037**
+
+### Problem
+Interactive `build_tile_cell*` JPEG-encoded every cell; Client then
+`store_tiles` + `reply_one(get_tile(...))` re-read the blob. Galapix JPEG-decoded
+again before GL upload — encode/decode on the hot path.
+
+### Fix
+* Ladder cut returns **rgb888** (crop + colourspace + write_to_memory)
+* Client stores durable JPEG via `encode_tile_cell_rgb`, replies with the
+  in-memory cell (no get_tile)
+* Galapix already accepts `codec=rgb888` (PDF live path)
+
+### Status
+- [x] extract_rgb_cell_from_level
+- [x] Client reply path
+- [ ] Galapix pending-upload drain (separate)
+
+---
+
 ## Interactive tile decode ladder cache (2026-09-08) — tip **thumtoo-036**
 
 ### Problem
