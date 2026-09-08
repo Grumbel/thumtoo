@@ -956,6 +956,77 @@ std::optional<TileBlob> encode_cell_from_level(VipsImage* level, int scale, int 
 }
 
 
+
+/// Crop cell and return uncompressed RGB888 (no JPEG). Interactive delivery.
+std::optional<TileBlob> extract_rgb_cell_from_level(VipsImage* level, int scale,
+                                                   int x, int y) {
+  if (!level || x < 0 || y < 0) return std::nullopt;
+
+  const int sw = vips_image_get_width(level);
+  const int sh = vips_image_get_height(level);
+  if (sw <= 0 || sh <= 0) return std::nullopt;
+
+  const int left = x * kTileSize;
+  const int top = y * kTileSize;
+  if (left >= sw || top >= sh) return std::nullopt;
+  const int tw = std::min(kTileSize, sw - left);
+  const int th = std::min(kTileSize, sh - top);
+  if (tw <= 0 || th <= 0) return std::nullopt;
+
+  VipsImage* crop = nullptr;
+  if (vips_crop(level, &crop, left, top, tw, th, nullptr) != 0 || !crop) {
+    return std::nullopt;
+  }
+
+  VipsImage* rgb = nullptr;
+  if (vips_colourspace(crop, &rgb, VIPS_INTERPRETATION_sRGB, nullptr) != 0 ||
+      !rgb) {
+    g_object_unref(crop);
+    return std::nullopt;
+  }
+  g_object_unref(crop);
+
+  if (vips_image_get_format(rgb) != VIPS_FORMAT_UCHAR) {
+    VipsImage* casted = nullptr;
+    if (vips_cast_uchar(rgb, &casted, nullptr) != 0 || !casted) {
+      g_object_unref(rgb);
+      return std::nullopt;
+    }
+    g_object_unref(rgb);
+    rgb = casted;
+  }
+
+  if (vips_image_get_bands(rgb) > 3) {
+    VipsImage* extr = nullptr;
+    if (vips_extract_band(rgb, &extr, 0, "n", 3, nullptr) != 0 || !extr) {
+      g_object_unref(rgb);
+      return std::nullopt;
+    }
+    g_object_unref(rgb);
+    rgb = extr;
+  }
+
+  size_t len = 0;
+  void* buf = vips_image_write_to_memory(rgb, &len);
+  g_object_unref(rgb);
+  if (!buf || len == 0) {
+    if (buf) g_free(buf);
+    return std::nullopt;
+  }
+
+  TileBlob tb;
+  tb.scale = scale;
+  tb.x = x;
+  tb.y = y;
+  tb.width = tw;
+  tb.height = th;
+  tb.codec = kTileCodecRgb888;
+  tb.bytes.assign(static_cast<std::uint8_t*>(buf),
+                  static_cast<std::uint8_t*>(buf) + len);
+  g_free(buf);
+  return tb;
+}
+
 std::optional<TileBlob> cut_cell_from_vips(VipsImage* full, int scale, int x,
                                            int y, int jpeg_quality) {
   if (!full || scale < 0 || x < 0 || y < 0) return std::nullopt;
@@ -1092,7 +1163,7 @@ std::optional<TileBlob> build_tile_cell(const std::filesystem::path& path,
     return vips_image_new_from_file(path.string().c_str(), nullptr);
   });
   if (!level) return std::nullopt;
-  auto tile = encode_cell_from_level(level, scale, x, y, jpeg_quality);
+  auto tile = extract_rgb_cell_from_level(level, scale, x, y);
   g_object_unref(level);
   return tile;
 }
@@ -1137,7 +1208,7 @@ std::optional<TileBlob> build_tile_cell_buffer(const std::uint8_t* data,
     return vips_image_new_from_buffer(data, size, nullptr, nullptr);
   });
   if (!level) return std::nullopt;
-  auto tile = encode_cell_from_level(level, scale, x, y, jpeg_quality);
+  auto tile = extract_rgb_cell_from_level(level, scale, x, y);
   g_object_unref(level);
   return tile;
 }
