@@ -1,3 +1,16 @@
+## BUG: never open PDF/DjVu via Vips/Magick (2026-09-09) — **thumtoo-073**
+
+Root cause of 60GB+: `vips_image_new_from_file` / `vips_thumbnail` on a
+`.djvu` goes through ImageMagick, which decodes multipage DjVu at full
+resolution (see prior stack: ReadDJVUImage → ddjvu_page_render).
+
+- [x] Refuse PDF/DjVu in probe_image_file, build_ladder, lqip_from_file, build_tile_pyramid
+- [x] ensure_pixels / size probe: fail bare container URIs (page_uri_required)
+- [x] Pyramid: cell-by-cell, no full native RGB
+- [ ] Bundle thumtoo-073
+
+---
+
 ## DjVu: one shared document + Vips concurrency 1 (2026-09-08) — **thumtoo-071**
 
 TLS per-worker document cache opened the same multipage book N times (RAM thrash).

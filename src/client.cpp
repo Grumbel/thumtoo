@@ -11,6 +11,7 @@
 #include "thumtoo/archive.hpp"
 #include "thumtoo/pdf.hpp"
 #include "thumtoo/djvu.hpp"
+#include "thumtoo/format.hpp"
 #include "thumtoo/blob_store.hpp"
 
 #include <algorithm>
@@ -1248,6 +1249,10 @@ void Client::handle_probe_size(
     if (!std::filesystem::is_regular_file(*path)) {
       row.status = ContentStatus::Failed;
       row.error_code = "not_a_file";
+    } else if (is_likely_djvu_path(*path) || is_likely_pdf_path(*path)) {
+      // Bare container URI without //page:N — refuse Magick probe.
+      row.status = ContentStatus::Failed;
+      row.error_code = "page_uri_required";
     } else {
       auto probe = probe_image_file(*path);
       if (!probe) {
@@ -1590,30 +1595,38 @@ void Client::handle_ensure_pixels(
     }
   } else if (auto path = path_from_file_uri(job.uri)) {
     if (std::filesystem::is_regular_file(*path)) {
-      auto levels = build_ladder(*path, row.content_id, kDefaultJxlQuality,
-                                 edge_limit);
-      for (const auto& lvl : levels) {
-        blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
-                           lvl.width, lvl.height, lvl.codec, lvl.quality,
-                           lvl.bytes.data(), lvl.bytes.size());
-        Database::LevelRow lr;
-        lr.content_id = row.content_id;
-        lr.max_edge = lvl.max_edge;
-        lr.frame_idx = lvl.frame_idx;
-        lr.width = lvl.width;
-        lr.height = lvl.height;
-        lr.codec = lvl.codec;
-        lr.quality = lvl.quality;
-        lr.path = "blobs.sqlite";
-        db_->upsert_level(lr);
-      }
-      row.status =
-          levels.empty() ? ContentStatus::Incomplete : ContentStatus::Ready;
-      if (levels.empty()) row.error_code = "ladder_encode_failed";
-      else row.error_code = std::nullopt;
-      db_->upsert_content(row);
-      if (!levels.empty()) {
-        store_lqip_if_missing(*db_, row.content_id, &*path, nullptr, 0, 0);
+      // path_from_file_uri strips //page:N — a bare .djvu/.pdf must never go
+      // through Vips/Magick (full multipage decode, multi-GB). Use page APIs.
+      if (is_likely_djvu_path(*path) || is_likely_pdf_path(*path)) {
+        row.status = ContentStatus::Failed;
+        row.error_code = "page_uri_required";
+        db_->upsert_content(row);
+      } else {
+        auto levels = build_ladder(*path, row.content_id, kDefaultJxlQuality,
+                                   edge_limit);
+        for (const auto& lvl : levels) {
+          blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
+                             lvl.width, lvl.height, lvl.codec, lvl.quality,
+                             lvl.bytes.data(), lvl.bytes.size());
+          Database::LevelRow lr;
+          lr.content_id = row.content_id;
+          lr.max_edge = lvl.max_edge;
+          lr.frame_idx = lvl.frame_idx;
+          lr.width = lvl.width;
+          lr.height = lvl.height;
+          lr.codec = lvl.codec;
+          lr.quality = lvl.quality;
+          lr.path = "blobs.sqlite";
+          db_->upsert_level(lr);
+        }
+        row.status =
+            levels.empty() ? ContentStatus::Incomplete : ContentStatus::Ready;
+        if (levels.empty()) row.error_code = "ladder_encode_failed";
+        else row.error_code = std::nullopt;
+        db_->upsert_content(row);
+        if (!levels.empty()) {
+          store_lqip_if_missing(*db_, row.content_id, &*path, nullptr, 0, 0);
+        }
       }
     }
   }
@@ -1927,23 +1940,55 @@ void Client::handle_ensure_tiles(
   } else if (auto pdf = parse_pdf_uri(job.uri)) {
     auto layout = pdf_page_layout_size(pdf->pdf_path, pdf->page);
     if (layout && layout->width > 0 && layout->height > 0) {
-      const int edge = std::max(layout->width, layout->height);
-      auto raster = pdf_rasterize_page(pdf->pdf_path, pdf->page, edge);
-      if (raster && !raster->rgb.empty()) {
-        tiles = build_tile_pyramid_rgb(raster->rgb.data(), raster->width,
-                                       raster->height, min_scale, max_scale,
-                                       kDefaultTileQuality);
+      int hi = max_scale;
+      if (hi < 0) {
+        hi = 0;
+        int w = layout->width, h = layout->height;
+        while (w > kTileSize || h > kTileSize) {
+          w = (w + 1) / 2;
+          h = (h + 1) / 2;
+          ++hi;
+        }
+      }
+      for (int scale = min_scale; scale <= hi; ++scale) {
+        const Size full = pdf_page_size_at_scale(*layout, scale);
+        const int nx = (full.width + kTileSize - 1) / kTileSize;
+        const int ny = (full.height + kTileSize - 1) / kTileSize;
+        for (int ty = 0; ty < ny; ++ty) {
+          for (int tx = 0; tx < nx; ++tx) {
+            if (auto cell = pdf_build_tile_cell(pdf->pdf_path, pdf->page, scale,
+                                                tx, ty, kDefaultTileQuality)) {
+              tiles.push_back(std::move(*cell));
+            }
+          }
+        }
       }
     }
   } else if (auto dj = parse_djvu_uri(job.uri)) {
     auto layout = djvu_page_layout_size(dj->djvu_path, dj->page);
     if (layout && layout->width > 0 && layout->height > 0) {
-      const int edge = std::max(layout->width, layout->height);
-      auto raster = djvu_rasterize_page(dj->djvu_path, dj->page, edge);
-      if (raster && !raster->rgb.empty()) {
-        tiles = build_tile_pyramid_rgb(raster->rgb.data(), raster->width,
-                                       raster->height, min_scale, max_scale,
-                                       kDefaultTileQuality);
+      int hi = max_scale;
+      if (hi < 0) {
+        hi = 0;
+        int w = layout->width, h = layout->height;
+        while (w > kTileSize || h > kTileSize) {
+          w = (w + 1) / 2;
+          h = (h + 1) / 2;
+          ++hi;
+        }
+      }
+      for (int scale = min_scale; scale <= hi; ++scale) {
+        const Size full = djvu_page_size_at_scale(*layout, scale);
+        const int nx = (full.width + kTileSize - 1) / kTileSize;
+        const int ny = (full.height + kTileSize - 1) / kTileSize;
+        for (int ty = 0; ty < ny; ++ty) {
+          for (int tx = 0; tx < nx; ++tx) {
+            if (auto cell = djvu_build_tile_cell(dj->djvu_path, dj->page, scale,
+                                                 tx, ty, kDefaultTileQuality)) {
+              tiles.push_back(std::move(*cell));
+            }
+          }
+        }
       }
     }
   } else if (is_http_uri(job.uri)) {
