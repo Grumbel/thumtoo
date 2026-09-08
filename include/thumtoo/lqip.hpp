@@ -3,6 +3,7 @@
 //
 // ThumbHash encode/decode adapted from Evan Wallace's reference
 // (https://github.com/evanw/thumbhash, MIT).
+// Handsum c3q4: Wuffs basic-handsum-decode + encode (Apache-2.0 OR MIT).
 
 #pragma once
 
@@ -16,6 +17,7 @@ namespace thumtoo {
 /// Kind stored in content.lqip_kind (schema v2+).
 inline constexpr int kLqipKindNone = 0;
 inline constexpr int kLqipKindThumbHash = 1;
+inline constexpr int kLqipKindHandsum = 2;
 
 struct LqipRgba {
   int width = 0;
@@ -34,5 +36,17 @@ struct LqipRgba {
 /// Downscale RGB888 (no alpha) to fit in max_edge, then ThumbHash-encode.
 [[nodiscard]] std::vector<std::uint8_t> thumbhash_encode_rgb888(
     const std::uint8_t* rgb, int width, int height, int max_edge = 32);
+
+/// Handsum c3q4 encode (always 147 bytes) from RGB888.
+[[nodiscard]] std::vector<std::uint8_t> handsum_encode_rgb888(
+    const std::uint8_t* rgb, int width, int height);
+
+/// Handsum decode (c3q4 and compatible magic).
+[[nodiscard]] std::optional<LqipRgba> handsum_decode(
+    std::span<const std::uint8_t> bytes);
+
+/// Decode LQIP blob: Handsum (magic) or ThumbHash.
+[[nodiscard]] std::optional<LqipRgba> lqip_decode_rgba(
+    std::span<const std::uint8_t> bytes);
 
 }  // namespace thumtoo

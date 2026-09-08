@@ -30,7 +30,13 @@ void store_lqip_if_missing(Database& db, const std::string& content_id,
                            const std::uint8_t* file_bytes = nullptr,
                            std::size_t file_size = 0) {
   if (content_id.empty()) return;
-  if (db.get_lqip(content_id)) return;
+  if (auto existing = db.get_lqip(content_id)) {
+    // Already Handsum — keep. Replace ThumbHash / other with Handsum.
+    if (existing->size() >= 2 && (*existing)[0] == 0xFE &&
+        ((*existing)[1] & 0xFE) == 0xD6) {
+      return;
+    }
+  }
   std::vector<std::uint8_t> hash;
   if (rgb && w > 0 && h > 0) {
     hash = lqip_thumbhash_from_rgb888(rgb, w, h);
@@ -40,7 +46,10 @@ void store_lqip_if_missing(Database& db, const std::string& content_id,
     hash = lqip_thumbhash_from_buffer(file_bytes, file_size);
   }
   if (!hash.empty()) {
-    db.set_lqip(content_id, kLqipKindThumbHash, hash);
+    int kind = (hash.size() >= 2 && hash[0] == 0xFE && (hash[1] & 0xFE) == 0xD6)
+                   ? kLqipKindHandsum
+                   : kLqipKindThumbHash;
+    db.set_lqip(content_id, kind, hash);
   }
 }
 }  // namespace
@@ -251,7 +260,12 @@ std::optional<std::vector<std::uint8_t>> Client::get_lqip(
 std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
     std::string_view uri) {
   if (auto existing = get_lqip(uri)) {
-    return existing;
+    // Keep Handsum; re-encode legacy ThumbHash rows once.
+    if (existing->size() >= 2 && (*existing)[0] == 0xFE &&
+        ((*existing)[1] & 0xFE) == 0xD6) {
+      return existing;
+    }
+    // Fall through to replace ThumbHash / unknown with Handsum.
   }
   auto loc = db_->find_locator(uri);
   if (!loc || !loc->content_id) {

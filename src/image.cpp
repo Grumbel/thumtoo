@@ -1250,6 +1250,8 @@ std::optional<TileBlob> encode_tile_cell_rgb(const std::uint8_t* rgb, int width,
 
 std::vector<std::uint8_t> lqip_thumbhash_from_rgb888(const std::uint8_t* rgb,
                                                      int width, int height) {
+  auto h = handsum_encode_rgb888(rgb, width, height);
+  if (!h.empty()) return h;
   return thumbhash_encode_rgb888(rgb, width, height, 32);
 }
 
@@ -1290,7 +1292,8 @@ std::vector<std::uint8_t> lqip_thumbhash_from_file(
     if (buf) g_free(buf);
     return {};
   }
-  auto hash = thumbhash_encode_rgb888(static_cast<const std::uint8_t*>(buf), w, h,
+  auto hash = handsum_encode_rgb888(static_cast<const std::uint8_t*>(buf), w, h);
+  if (hash.empty()) hash = thumbhash_encode_rgb888(static_cast<const std::uint8_t*>(buf), w, h,
                                       32);
   g_free(buf);
   return hash;
@@ -1337,7 +1340,8 @@ std::vector<std::uint8_t> lqip_thumbhash_from_buffer(const std::uint8_t* data,
     if (buf) g_free(buf);
     return {};
   }
-  auto hash = thumbhash_encode_rgb888(static_cast<const std::uint8_t*>(buf), w, h,
+  auto hash = handsum_encode_rgb888(static_cast<const std::uint8_t*>(buf), w, h);
+  if (hash.empty()) hash = thumbhash_encode_rgb888(static_cast<const std::uint8_t*>(buf), w, h,
                                       32);
   g_free(buf);
   return hash;

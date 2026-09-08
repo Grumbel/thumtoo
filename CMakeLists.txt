@@ -30,6 +30,7 @@ add_library(thumtoo
   src/blob_store.cpp
   src/build_stats.cpp
   src/lqip.cpp
+  src/handsum.cpp
   src/network.cpp
 )
 add_library(thumtoo::thumtoo ALIAS thumtoo)
