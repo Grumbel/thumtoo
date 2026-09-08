@@ -1050,6 +1050,8 @@ void Client::handle_probe_size(
           row.error_code = std::nullopt;
           size_out = probe->size;
           row.status = ContentStatus::Incomplete;
+          store_lqip_if_missing(*db_, row.content_id, nullptr, nullptr, 0, 0,
+                                bytes->data(), bytes->size());
         }
       }
     }

@@ -1,3 +1,13 @@
+## HTTP probe LQIP + DESIGN note (2026-09-08) — tip **thumtoo-044**
+
+Encode ThumbHash during HTTP size probe (cached body). Document LQIP stack in
+DESIGN.md.
+
+### Status
+- [x] Bundle thumtoo-044
+
+---
+
 ## Archive-member LQIP on probe (2026-09-08) — tip **thumtoo-043**
 
 `lqip_thumbhash_from_buffer` + encode ThumbHash during archive member size

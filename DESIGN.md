@@ -565,3 +565,19 @@ Poppler; durable tile cache still fills on first request.
 Cache-only: `list_locators_by_uri_prefix`, `list_locators_by_outer_path_prefix`,
 `list_locators_like` (+ Client wrappers). Foundation for app-side library browse
 without Galapix resource SQL.
+
+## Inline LQIP (ThumbHash)
+
+For gallery / list density, each `content` row may store a **ThumbHash** in
+`content.lqip` (~25–37 bytes, `lqip_kind = 1`). Written during **size probe**
+for local files, archive members, and HTTP(S) bodies — no blob-store open.
+
+Stack for progressive paint:
+
+1. **LQIP** (content row) — instant soft color/structure
+2. **Levels** (`request_pixels` / JXL ladder in blobs) — readable soft preview
+3. **Grid tiles** (`request_tile`) — zoom/pan detail
+
+API: `Client::get_lqip(uri)` (cache-only). See Galapix `ImageOverview` and
+`GLOSSARY.md` (LQIP section).
+
