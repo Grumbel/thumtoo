@@ -1,3 +1,14 @@
+## DjVu tile Y-direction (2026-09-09) — **thumtoo-074**
+
+Pages shifted upward when zooming in: ddjvu default y-direction is bottom-up
+(PostScript). Tile crops used top-down (image) coordinates without setting
+`ddjvu_format_set_y_direction(fmt, 1)`.
+
+- [x] Set y_direction + row_order top-to-bottom on all page renders
+- [ ] Bundle thumtoo-074
+
+---
+
 ## BUG: never open PDF/DjVu via Vips/Magick (2026-09-09) — **thumtoo-073**
 
 Root cause of 60GB+: `vips_image_new_from_file` / `vips_thumbnail` on a

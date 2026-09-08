@@ -286,7 +286,11 @@ std::optional<DjvuRaster> djvu_rasterize_page(const std::filesystem::path& path,
     ddjvu_page_release(page);
     return std::nullopt;
   }
+  // Image-style coordinates: y increases downward (matches tile grid / Galapix).
+  // Default ddjvu y-direction is PostScript-style (upwards); without this, tile
+  // crops flip vertically and appear to walk up the page as zoom increases.
   ddjvu_format_set_row_order(fmt, 1);
+  ddjvu_format_set_y_direction(fmt, 1);
 
   DjvuRaster out;
   out.width = out_w;
@@ -353,7 +357,11 @@ std::optional<DjvuRaster> djvu_rasterize_page_region(
     ddjvu_page_release(page);
     return std::nullopt;
   }
+  // Image-style coordinates: y increases downward (matches tile grid / Galapix).
+  // Default ddjvu y-direction is PostScript-style (upwards); without this, tile
+  // crops flip vertically and appear to walk up the page as zoom increases.
   ddjvu_format_set_row_order(fmt, 1);
+  ddjvu_format_set_y_direction(fmt, 1);
 
   DjvuRaster out;
   out.width = pw;
