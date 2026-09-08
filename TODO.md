@@ -1,3 +1,17 @@
+## DjVu multipage: require DjVuLibre discovery (2026-09-08) — tip **thumtoo-065** / bundle **thumtoo-065**
+
+Symptom: only the first page of a multipage .djvu appears. Galapix compile
+flags showed THUMTOO_HAVE_POPPLER but **not** THUMTOO_HAVE_DJVU — thumtoo was
+built without finding `ddjvuapi.pc`, so `djvu_page_count` always returns null
+and page expansion never runs (single URL → first page via other paths).
+
+- [x] CMake: clearer WARNING when ddjvuapi missing; try `djvulibre` pc name
+- [x] flake: `djvulibre.dev` on PKG_CONFIG_PATH
+- [x] page_count: extra message pump after decode
+- [ ] Bundle thumtoo-065
+
+---
+
 ## DjVu pages via DjVuLibre (2026-09-08) — tip **thumtoo-064** / bundle **thumtoo-064**
 
 Mirror PDF page support for `.djvu` / `.djv` using **ddjvuapi** (DjVuLibre).

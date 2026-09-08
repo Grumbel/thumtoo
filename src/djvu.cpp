@@ -179,7 +179,10 @@ std::optional<int> djvu_page_count(const std::filesystem::path& path) {
   return std::nullopt;
 #else
   ddjvu_document_t* doc = cached_djvu_document(path);
-  if (!doc) return std::nullopt;
+  if (!doc || !g_tls_djvu_doc.ctx) return std::nullopt;
+  // decoding_done is required before pagenum is complete for multipage docs.
+  // Pump once more in case a late DIRM/page-count message is pending.
+  pump_messages(g_tls_djvu_doc.ctx);
   const int n = ddjvu_document_get_pagenum(doc);
   if (n <= 0) return std::nullopt;
   return n;

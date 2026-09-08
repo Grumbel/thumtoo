@@ -36,6 +36,7 @@
         libarchive
         poppler
         djvulibre
+        djvulibre.dev
         curl
         openssl        # libcrypto.pc
 

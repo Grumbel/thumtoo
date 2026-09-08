@@ -17,7 +17,12 @@ pkg_check_modules(SQLITE3 REQUIRED IMPORTED_TARGET sqlite3)
 pkg_check_modules(VIPS REQUIRED IMPORTED_TARGET vips)
 pkg_check_modules(LIBARCHIVE REQUIRED IMPORTED_TARGET libarchive)
 pkg_check_modules(POPPLERCPP IMPORTED_TARGET poppler-cpp)
+# DjVuLibre ships ddjvuapi.pc (headers + libdjvulibre). On Nix the .pc lives
+# in the .dev output — ensure djvulibre is on PKG_CONFIG_PATH (buildInputs).
 pkg_check_modules(DJVULIBRE IMPORTED_TARGET ddjvuapi)
+if(NOT DJVULIBRE_FOUND)
+  pkg_check_modules(DJVULIBRE IMPORTED_TARGET djvulibre)
+endif()
 pkg_check_modules(LIBCURL IMPORTED_TARGET libcurl)
 
 add_library(thumtoo
@@ -57,9 +62,12 @@ endif()
 if(DJVULIBRE_FOUND)
   target_link_libraries(thumtoo PUBLIC PkgConfig::DJVULIBRE)
   target_compile_definitions(thumtoo PUBLIC THUMTOO_HAVE_DJVU=1)
-  message(STATUS "thumtoo: DjVuLibre enabled (DjVu pages)")
+  message(STATUS "thumtoo: DjVuLibre enabled (DjVu pages) includes=${DJVULIBRE_INCLUDE_DIRS}")
 else()
-  message(STATUS "thumtoo: DjVuLibre not found — DjVu page support disabled")
+  message(WARNING
+    "thumtoo: DjVuLibre (ddjvuapi.pc) not found — multipage DjVu will NOT expand. "
+    "Install djvulibre/libdjvulibre-dev and ensure PKG_CONFIG_PATH sees ddjvuapi.pc. "
+    "Nix: put pkgs.djvulibre in buildInputs (pulls .dev for pkg-config).")
 endif()
 if(LIBCURL_FOUND)
   target_link_libraries(thumtoo PUBLIC PkgConfig::LIBCURL)
