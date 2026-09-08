@@ -17,6 +17,7 @@ pkg_check_modules(SQLITE3 REQUIRED IMPORTED_TARGET sqlite3)
 pkg_check_modules(VIPS REQUIRED IMPORTED_TARGET vips)
 pkg_check_modules(LIBARCHIVE REQUIRED IMPORTED_TARGET libarchive)
 pkg_check_modules(POPPLERCPP IMPORTED_TARGET poppler-cpp)
+pkg_check_modules(DJVULIBRE IMPORTED_TARGET ddjvuapi)
 pkg_check_modules(LIBCURL IMPORTED_TARGET libcurl)
 
 add_library(thumtoo
@@ -26,6 +27,7 @@ add_library(thumtoo
   src/image.cpp
   src/archive.cpp
   src/pdf.cpp
+  src/djvu.cpp
   src/format.cpp
   src/blob_store.cpp
   src/build_stats.cpp
@@ -51,6 +53,13 @@ if(POPPLERCPP_FOUND)
   message(STATUS "thumtoo: Poppler-cpp enabled (PDF pages)")
 else()
   message(STATUS "thumtoo: Poppler-cpp not found — PDF page support disabled")
+endif()
+if(DJVULIBRE_FOUND)
+  target_link_libraries(thumtoo PUBLIC PkgConfig::DJVULIBRE)
+  target_compile_definitions(thumtoo PUBLIC THUMTOO_HAVE_DJVU=1)
+  message(STATUS "thumtoo: DjVuLibre enabled (DjVu pages)")
+else()
+  message(STATUS "thumtoo: DjVuLibre not found — DjVu page support disabled")
 endif()
 if(LIBCURL_FOUND)
   target_link_libraries(thumtoo PUBLIC PkgConfig::LIBCURL)

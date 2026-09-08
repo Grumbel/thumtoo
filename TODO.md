@@ -1,3 +1,18 @@
+## DjVu pages via DjVuLibre (2026-09-08) — tip **thumtoo-064** / bundle **thumtoo-064**
+
+Mirror PDF page support for `.djvu` / `.djv` using **ddjvuapi** (DjVuLibre).
+
+- `is_djvu_path` / PathKind::Djvu / MIME `image/vnd.djvu`
+- `//page:N` URIs (same pipe as PDF); `parse_pdf_uri` only matches `.pdf`
+- Size probe, live RGB888 tiles, durable JPEG ≥ `kPdfMinDurableTileScale`
+- Thread-local document cache (same worker model as Poppler)
+- Optional: `pkg-config ddjvuapi` → `THUMTOO_HAVE_DJVU`
+
+- [x] Code
+- [ ] Bundle thumtoo-064
+
+---
+
 ## Interactive tiles: FIFO queue (2026-09-08) — **thumtoo-063**
 
 LIFO (`enqueue(..., front=true)`) starved older EnsureTiles under continuous

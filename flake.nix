@@ -35,6 +35,7 @@
         # libarchive Requires.private
         libarchive
         poppler
+        djvulibre
         curl
         openssl        # libcrypto.pc
 

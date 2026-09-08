@@ -10,6 +10,7 @@
 #include "thumtoo/lqip.hpp"
 #include "thumtoo/archive.hpp"
 #include "thumtoo/pdf.hpp"
+#include "thumtoo/djvu.hpp"
 #include "thumtoo/blob_store.hpp"
 
 #include <algorithm>
@@ -214,7 +215,7 @@ std::optional<std::vector<std::uint8_t>> Client::read_source_bytes(
     }
     return std::nullopt;
   }
-  if (parse_pdf_uri(uri_or_content_id)) {
+  if (parse_pdf_uri(uri_or_content_id) || parse_djvu_uri(uri_or_content_id)) {
     // Pages are display rasters, not a single source blob here.
     return std::nullopt;
   }
@@ -596,6 +597,11 @@ void Client::request_size(std::string uri, SizeCallback cb) {
       loc.member_path = std::to_string(pdf->page);
       loc.size = file_size_bytes(pdf->pdf_path);
       loc.mtime_ns = file_mtime_ns(pdf->pdf_path);
+    } else if (auto dj = parse_djvu_uri(uri)) {
+      loc.outer_path = dj->djvu_path.string();
+      loc.member_path = std::to_string(dj->page);
+      loc.size = file_size_bytes(dj->djvu_path);
+      loc.mtime_ns = file_mtime_ns(dj->djvu_path);
     } else if (auto arch = parse_archive_uri(uri)) {
       loc.outer_path = arch->archive_path.string();
       loc.member_path = arch->member_path;
@@ -715,6 +721,39 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
         const int n = std::min(*count, kMaxPreparePages);
         for (int page = 1; page <= n; ++page) {
           const auto uri = pdf_page_uri(abs, page);
+          if (auto existing = db_->find_locator(uri)) {
+            if (auto meta = db_->meta_for_uri(uri)) {
+              if (meta->status == ContentStatus::Ready && meta->size) continue;
+            }
+            Pending item;
+            item.uri = uri;
+            pending.push_back(std::move(item));
+            continue;
+          }
+          Pending item;
+          item.uri = uri;
+          item.need_register = true;
+          item.loc.uri = uri;
+          item.loc.content_id = make_provisional_id();
+          item.loc.outer_path = abs.string();
+          item.loc.member_path = std::to_string(page);
+          item.loc.size = file_size_bytes(abs);
+          item.loc.mtime_ns = file_mtime_ns(abs);
+          item.content.content_id = *item.loc.content_id;
+          item.content.status = ContentStatus::Pending;
+          pending.push_back(std::move(item));
+        }
+      }
+      continue;
+    }
+
+    if (is_likely_djvu_path(abs)) {
+      auto count = djvu_page_count(abs);
+      if (count && *count > 0) {
+        constexpr int kMaxPreparePages = 512;
+        const int n = std::min(*count, kMaxPreparePages);
+        for (int page = 1; page <= n; ++page) {
+          const auto uri = djvu_page_uri(abs, page);
           if (auto existing = db_->find_locator(uri)) {
             if (auto meta = db_->meta_for_uri(uri)) {
               if (meta->status == ContentStatus::Ready && meta->size) continue;
@@ -1083,6 +1122,46 @@ void Client::handle_probe_size(
         row.status = ContentStatus::Incomplete;
       }
     }
+  } else if (auto dj = parse_djvu_uri(job.uri)) {
+    if (!std::filesystem::is_regular_file(dj->djvu_path)) {
+      row.status = ContentStatus::Failed;
+      row.error_code = "not_a_file";
+    } else {
+      auto layout = djvu_page_layout_size(dj->djvu_path, dj->page);
+      if (!layout) {
+        row.status = ContentStatus::Failed;
+        row.error_code = "djvu_page_failed";
+      } else {
+        std::string new_id = old_id;
+        const auto hex = sha256_file_hex(dj->djvu_path);
+        if (!hex.empty()) {
+          new_id = std::string(kContentIdSha256Prefix) + hex + ":page:"
+                   + std::to_string(dj->page);
+        }
+        if (new_id != old_id) {
+          if (auto existing = db_->find_content(new_id)) {
+            row = *existing;
+            db_->update_locator_content_id(job.uri, new_id);
+            if (old_id.rfind(std::string(kContentIdProvisionalPrefix), 0) == 0) {
+              db_->delete_content(old_id);
+            }
+          } else {
+            row.content_id = new_id;
+            db_->upsert_content(row);
+            db_->update_locator_content_id(job.uri, new_id);
+            if (old_id.rfind(std::string(kContentIdProvisionalPrefix), 0) == 0) {
+              db_->delete_content(old_id);
+            }
+          }
+        }
+        row.width = layout->width;
+        row.height = layout->height;
+        row.format = "djvu";
+        row.error_code = std::nullopt;
+        size_out = *layout;
+        row.status = ContentStatus::Incomplete;
+      }
+    }
   } else if (auto arch = parse_archive_uri(job.uri)) {
     if (arch->member_path.empty()) {
       row.status = ContentStatus::Unsupported;
@@ -1386,7 +1465,39 @@ void Client::handle_ensure_pixels(
                               raster->width, raster->height);
       }
     }
+  } else if (auto dj = parse_djvu_uri(job.uri)) {
+    auto raster = djvu_rasterize_page(dj->djvu_path, dj->page, edge_limit);
+    if (raster && !raster->rgb.empty()) {
+      auto levels = build_ladder_rgb(raster->rgb.data(), raster->width,
+                                     raster->height, row.content_id,
+                                     kDefaultJxlQuality, edge_limit);
+      for (const auto& lvl : levels) {
+        blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
+                          lvl.width, lvl.height, lvl.codec, lvl.quality,
+                          lvl.bytes.data(), lvl.bytes.size());
+        Database::LevelRow lr;
+        lr.content_id = row.content_id;
+        lr.max_edge = lvl.max_edge;
+        lr.frame_idx = lvl.frame_idx;
+        lr.width = lvl.width;
+        lr.height = lvl.height;
+        lr.codec = lvl.codec;
+        lr.quality = lvl.quality;
+        lr.path = "blobs.sqlite";
+        db_->upsert_level(lr);
+      }
+      row.status =
+          levels.empty() ? ContentStatus::Incomplete : ContentStatus::Ready;
+      if (levels.empty()) row.error_code = "ladder_encode_failed";
+      else row.error_code = std::nullopt;
+      db_->upsert_content(row);
+      if (!levels.empty() && raster) {
+        store_lqip_if_missing(*db_, row.content_id, nullptr, raster->rgb.data(),
+                              raster->width, raster->height);
+      }
+    }
   } else if (auto arch = parse_archive_uri(job.uri)) {
+
     if (!arch->member_path.empty()) {
       auto bytes = member_bytes(arch->archive_path, arch->member_path, preextracted);
       if (bytes && !bytes->empty()) {
@@ -1682,6 +1793,30 @@ void Client::handle_ensure_tiles(
       live.bytes = std::move(raster->rgb);
       reply_one(std::move(live));
       return;
+    } else if (auto dj = parse_djvu_uri(job.uri)) {
+      auto raster = djvu_render_tile_cell(dj->djvu_path, dj->page, job.tile_scale,
+                                          job.tile_x, job.tile_y);
+      if (!raster || raster->rgb.empty()) {
+        reply_one(std::nullopt);
+        return;
+      }
+      if (job.tile_scale >= kPdfMinDurableTileScale) {
+        if (auto jpeg = encode_tile_cell_rgb(
+                raster->rgb.data(), raster->width, raster->height,
+                job.tile_scale, job.tile_x, job.tile_y, kPdfTileQuality)) {
+          store_tiles(content_id, std::vector<TileBlob>{*jpeg});
+        }
+      }
+      TileBlob live;
+      live.scale = job.tile_scale;
+      live.x = job.tile_x;
+      live.y = job.tile_y;
+      live.width = raster->width;
+      live.height = raster->height;
+      live.codec = kTileCodecRgb888;
+      live.bytes = std::move(raster->rgb);
+      reply_one(std::move(live));
+      return;
     } else if (is_http_uri(job.uri)) {
       auto bytes = fetch_http_cached(job.uri);
       if (bytes && !bytes->empty()) {
@@ -1759,6 +1894,17 @@ void Client::handle_ensure_tiles(
     if (layout && layout->width > 0 && layout->height > 0) {
       const int edge = std::max(layout->width, layout->height);
       auto raster = pdf_rasterize_page(pdf->pdf_path, pdf->page, edge);
+      if (raster && !raster->rgb.empty()) {
+        tiles = build_tile_pyramid_rgb(raster->rgb.data(), raster->width,
+                                       raster->height, min_scale, max_scale,
+                                       kDefaultTileQuality);
+      }
+    }
+  } else if (auto dj = parse_djvu_uri(job.uri)) {
+    auto layout = djvu_page_layout_size(dj->djvu_path, dj->page);
+    if (layout && layout->width > 0 && layout->height > 0) {
+      const int edge = std::max(layout->width, layout->height);
+      auto raster = djvu_rasterize_page(dj->djvu_path, dj->page, edge);
       if (raster && !raster->rgb.empty()) {
         tiles = build_tile_pyramid_rgb(raster->rgb.data(), raster->width,
                                        raster->height, min_scale, max_scale,

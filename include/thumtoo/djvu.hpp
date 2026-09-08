@@ -1,0 +1,68 @@
+// SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#pragma once
+
+#include "thumtoo/constants.hpp"
+#include "thumtoo/types.hpp"
+
+#include <cstdint>
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace thumtoo {
+
+struct ParsedDjvuUri {
+  std::filesystem::path djvu_path;
+  /// 1-based page index (matches //page:N).
+  int page = 0;
+};
+
+/// file:///abs/doc.djvu//page:12  (page is 1-based; same pipe as PDF).
+[[nodiscard]] std::string djvu_page_uri(const std::filesystem::path& djvu_path,
+                                        int page_1based);
+
+[[nodiscard]] std::optional<ParsedDjvuUri> parse_djvu_uri(std::string_view uri);
+
+[[nodiscard]] bool is_likely_djvu_path(const std::filesystem::path& path);
+
+[[nodiscard]] std::optional<int> djvu_page_count(const std::filesystem::path& path);
+
+struct DjvuRaster {
+  int width = 0;
+  int height = 0;
+  /// Contiguous RGB888 rows (no padding).
+  std::vector<std::uint8_t> rgb;
+};
+
+[[nodiscard]] std::optional<DjvuRaster> djvu_rasterize_page(
+    const std::filesystem::path& path, int page_1based, int max_edge);
+
+/// Native page size in pixels (decoder units), page 1-based.
+[[nodiscard]] std::optional<Size> djvu_page_size_native(
+    const std::filesystem::path& path, int page_1based);
+
+/// Layout size for Galapix-style tiles (same DPI convention as PDF).
+[[nodiscard]] std::optional<Size> djvu_page_layout_size(
+    const std::filesystem::path& path, int page_1based);
+
+[[nodiscard]] Size djvu_page_size_at_scale(Size layout, int scale);
+
+[[nodiscard]] double djvu_dpi_for_scale(int scale);
+
+[[nodiscard]] std::optional<DjvuRaster> djvu_rasterize_page_region(
+    const std::filesystem::path& path, int page_1based, double dpi, int px,
+    int py, int pw, int ph);
+
+[[nodiscard]] std::optional<DjvuRaster> djvu_render_tile_cell(
+    const std::filesystem::path& path, int page_1based, int scale, int x,
+    int y);
+
+[[nodiscard]] std::optional<TileBlob> djvu_build_tile_cell(
+    const std::filesystem::path& path, int page_1based, int scale, int x,
+    int y, int jpeg_quality = kDefaultTileQuality);
+
+}  // namespace thumtoo

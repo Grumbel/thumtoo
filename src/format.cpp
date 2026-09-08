@@ -39,8 +39,10 @@ constexpr std::string_view kMediaMimes[] = {
     "image/heic",
     "image/heif",
     "image/avif",
-    // Documents (page raster via Poppler when enabled)
+    // Documents (page raster via Poppler / DjVuLibre when enabled)
     "application/pdf",
+    "image/vnd.djvu",
+    "image/vnd.djvu+multipage",
     // Archives (expanded to image members)
     "application/zip",
     "application/vnd.rar",
@@ -91,6 +93,10 @@ bool is_pdf_extension(std::string_view ext_with_dot) {
   return ext_with_dot == ".pdf";
 }
 
+bool is_djvu_extension(std::string_view ext_with_dot) {
+  return ext_with_dot == ".djvu" || ext_with_dot == ".djv";
+}
+
 bool is_image_path(const std::filesystem::path& path) {
   return is_image_extension(path_extension_lower(path));
 }
@@ -105,10 +111,15 @@ bool is_pdf_path(const std::filesystem::path& path) {
   return is_pdf_extension(path_extension_lower(path));
 }
 
+bool is_djvu_path(const std::filesystem::path& path) {
+  return is_djvu_extension(path_extension_lower(path));
+}
+
 PathKind classify_path(const std::filesystem::path& path) {
-  // Order: archive/pdf before generic image (pdf is not an image ext).
+  // Order: archive/document before generic image.
   if (is_archive_path(path)) return PathKind::Archive;
   if (is_pdf_path(path)) return PathKind::Pdf;
+  if (is_djvu_path(path)) return PathKind::Djvu;
   if (is_image_path(path)) return PathKind::Image;
   return PathKind::Unsupported;
 }
