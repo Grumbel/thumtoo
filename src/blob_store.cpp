@@ -325,3 +325,56 @@ std::int64_t BlobStore::count_http_bodies() const {
 }
 
 }  // namespace thumtoo
+
+std::int64_t BlobStore::delete_tiles_below_scale(int min_scale_keep) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "DELETE FROM tile_blobs WHERE scale < ?1;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_int(stmt, 1, min_scale_keep);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  const std::int64_t n = sqlite3_changes(db_);
+  sqlite3_finalize(stmt);
+  return n;
+}
+
+std::int64_t BlobStore::delete_tiles_for_content(std::string_view content_id) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "DELETE FROM tile_blobs WHERE content_id = ?1;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(),
+                    static_cast<int>(content_id.size()), SQLITE_TRANSIENT);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  const std::int64_t n = sqlite3_changes(db_);
+  sqlite3_finalize(stmt);
+  return n;
+}
+
+std::int64_t BlobStore::delete_levels_for_content(std::string_view content_id) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "DELETE FROM level_blobs WHERE content_id = ?1;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(),
+                    static_cast<int>(content_id.size()), SQLITE_TRANSIENT);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  const std::int64_t n = sqlite3_changes(db_);
+  sqlite3_finalize(stmt);
+  return n;
+}

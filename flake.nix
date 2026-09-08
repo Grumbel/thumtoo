@@ -179,6 +179,7 @@
           status = app "thumtoo-status";
           prepare = app "thumtoo-prepare";
           bench = app "thumtoo-bench";
+          gc = app "thumtoo-gc";
         });
 
       devShells = forAllSystems ({ pkgs, ... }: {

@@ -59,6 +59,13 @@ class BlobStore {
       std::string_view url, std::int64_t max_age_s = 0) const;
   [[nodiscard]] std::int64_t count_http_bodies() const;
 
+  /// Delete tile payloads with scale < min_scale_keep. Returns rows removed.
+  [[nodiscard]] std::int64_t delete_tiles_below_scale(int min_scale_keep);
+  /// Delete all tile payloads for a content_id.
+  [[nodiscard]] std::int64_t delete_tiles_for_content(std::string_view content_id);
+  /// Delete all level payloads for a content_id.
+  [[nodiscard]] std::int64_t delete_levels_for_content(std::string_view content_id);
+
  private:
   explicit BlobStore(sqlite3* db, std::filesystem::path db_path);
   void exec(const char* sql) const;

@@ -8,6 +8,8 @@
 #include "sqlite3.h"
 
 #include <chrono>
+#include <filesystem>
+#include <system_error>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -1212,3 +1214,95 @@ void Database::set_lqip(std::string_view content_id, int kind,
 }
 
 }  // namespace thumtoo
+
+std::int64_t Database::delete_tiles_below_scale(int min_scale_keep) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "DELETE FROM tiles WHERE scale < ?1;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_int(stmt, 1, min_scale_keep);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  const std::int64_t n = sqlite3_changes(db_);
+  sqlite3_finalize(stmt);
+  return n;
+}
+
+std::vector<std::string> Database::list_orphan_content_ids(int limit) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT c.content_id FROM content c "
+      "WHERE NOT EXISTS (SELECT 1 FROM locators l WHERE l.content_id = c.content_id) "
+      "LIMIT ?1;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_int(stmt, 1, limit);
+  std::vector<std::string> out;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    const char* id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    if (id) out.emplace_back(id);
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+std::vector<Database::LocatorRow> Database::list_dead_path_locators(
+    int limit) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  // Load candidates; filter by filesystem outside SQL.
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT uri, content_id, outer_path, member_path, size, mtime_ns "
+      "FROM locators WHERE outer_path IS NOT NULL AND outer_path != '' "
+      "LIMIT ?1;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  // Over-fetch then filter; caller limit is dead count target.
+  sqlite3_bind_int(stmt, 1, std::max(limit * 4, limit));
+  std::vector<LocatorRow> out;
+  while (sqlite3_step(stmt) == SQLITE_ROW &&
+         static_cast<int>(out.size()) < limit) {
+    LocatorRow r = locator_from_stmt(stmt);
+    if (!r.outer_path) continue;
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(*r.outer_path, ec)) {
+      out.push_back(std::move(r));
+    }
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+void Database::delete_locator(std::string_view uri) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "DELETE FROM locators WHERE uri = ?1;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return;
+  sqlite3_bind_text(stmt, 1, uri.data(), static_cast<int>(uri.size()),
+                    SQLITE_TRANSIENT);
+  sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+}
+
+void Database::purge_content_metadata(std::string_view content_id) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  auto run = [&](const char* sql) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return;
+    sqlite3_bind_text(stmt, 1, content_id.data(),
+                      static_cast<int>(content_id.size()), SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+  };
+  run("DELETE FROM tiles WHERE content_id = ?1;");
+  run("DELETE FROM levels WHERE content_id = ?1;");
+  run("DELETE FROM tags WHERE content_id = ?1;");
+  run("DELETE FROM content WHERE content_id = ?1;");
+}

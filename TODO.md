@@ -1,3 +1,20 @@
+## thumtoo-gc (2026-09-08) — **thumtoo-052**
+
+Manual cache cleanup CLI (no automatic eviction):
+
+```
+thumtoo-gc --dry-run --min-scale 3 --orphans --dead-paths
+```
+
+- `--min-scale N` — drop tiles with scale < N (keep coarser overview)
+- `--orphans` — content with no locators + blob purge
+- `--dead-paths` — locators whose outer file is gone
+
+- [x] Database/BlobStore GC helpers
+- [x] tools/thumtoo_gc.cpp + CMake/flake
+
+---
+
 ## LQIP backfill when size already known (2026-09-08) — tip **thumtoo-045**
 
 Probe early-return skipped LQIP for content that already had width/height

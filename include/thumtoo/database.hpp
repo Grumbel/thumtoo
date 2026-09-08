@@ -195,6 +195,19 @@ class Database {
   [[nodiscard]] std::vector<TileRow> list_tiles(std::string_view content_id,
                                                 int limit = 10000) const;
 
+  // --- maintenance / GC ---
+  /// Delete tile *metadata* rows with scale < min_scale_keep. Returns rows removed.
+  [[nodiscard]] std::int64_t delete_tiles_below_scale(int min_scale_keep);
+  /// Content rows that have no locators (orphans after deletes/renames).
+  [[nodiscard]] std::vector<std::string> list_orphan_content_ids(
+      int limit = 100000) const;
+  /// Locators whose outer_path is set but is not a regular file on disk.
+  [[nodiscard]] std::vector<LocatorRow> list_dead_path_locators(
+      int limit = 100000) const;
+  void delete_locator(std::string_view uri);
+  /// Drop content row and related levels/tiles/tags metadata (not blob store).
+  void purge_content_metadata(std::string_view content_id);
+
  private:
   explicit Database(sqlite3* db, std::filesystem::path cache_root,
                     std::filesystem::path db_path, int schema_version);
