@@ -5,7 +5,7 @@ the .djvu/.pdf path to Vips→Magick→ddjvu_page_render (whole doc, GUI stall).
 
 - [x] ensure_lqip: per-page small raster for PDF/DjVu
 - [x] size probe LQIP: same; skip Magick for page URIs
-- [ ] Bundle thumtoo-069
+- [x] Bundle thumtoo-069
 
 ---
 
