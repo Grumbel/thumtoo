@@ -31,7 +31,7 @@ add_library(thumtoo
   src/build_stats.cpp
   src/lqip.cpp
   src/handsum.cpp
-  third_party/basic_handsum_decode_impl.c
+  external/basic_handsum_decode_impl.c
   src/network.cpp
 )
 add_library(thumtoo::thumtoo ALIAS thumtoo)

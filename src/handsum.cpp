@@ -13,7 +13,7 @@
 #include <vector>
 
 extern "C" {
-#include "../third_party/basic_handsum_decode.c"
+#include "../external/basic_handsum_decode.c"
 }
 
 namespace thumtoo {
