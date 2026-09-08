@@ -90,7 +90,8 @@ void image_library_init();
 
 [[nodiscard]] std::optional<TileBlob> build_tile_cell_buffer(
     const std::uint8_t* data, std::size_t size, int scale, int x, int y,
-    int jpeg_quality = kDefaultTileQuality);
+    int jpeg_quality = kDefaultTileQuality,
+    std::string_view decode_cache_key = {});
 
 /// Same as build_tile_cell_buffer but from contiguous RGB888 (no alpha).
 /// Used for PDF page rasters and other in-memory RGB sources.

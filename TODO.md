@@ -1,3 +1,28 @@
+## Interactive tile decode ladder cache (2026-09-08) — tip **thumtoo-036**
+
+### Problem
+Galapix requests one (scale,x,y) cell at a time. `build_tile_cell*` reloaded the
+source and re-ran the shrink chain **per cell** → extreme CPU when many
+high-res tiles are missing.
+
+### Fix
+In-process **shrink-ladder cache** (up to 4 sources):
+
+* Key: file path+mtime, or caller-supplied key for buffers (`a:archive\nmember`, `h:uri`)
+* Level 0 = full decode once; coarser levels via successive `vips_shrink` ×2
+* Concurrent cells for the same source share the ladder (mutex per entry)
+* Single-cell encode is crop + JPEG only after the level exists
+
+`build_tile_cell_buffer(..., decode_cache_key)` optional key; Client passes
+keys for archive members and HTTP bodies.
+
+### Status
+- [x] Ladder cache in image.cpp
+- [x] Client cache keys for archive / HTTP
+- [ ] Bundle / land for Galapix flake bump
+
+---
+
 ## request_tile: no sync cache hit on caller thread (2026-09-07) — tip **thumtoo-035**
 
 ### Symptom (Galapix)

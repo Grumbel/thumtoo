@@ -1352,9 +1352,11 @@ void Client::handle_ensure_tiles(
         auto bytes =
             member_bytes(arch->archive_path, arch->member_path, preextracted);
         if (bytes && !bytes->empty()) {
+          const std::string dkey =
+              "a:" + extract_cache_key(arch->archive_path, arch->member_path);
           cell = build_tile_cell_buffer(bytes->data(), bytes->size(),
                                         job.tile_scale, job.tile_x, job.tile_y,
-                                        kDefaultTileQuality);
+                                        kDefaultTileQuality, dkey);
         }
       }
     } else if (auto pdf = parse_pdf_uri(job.uri)) {
@@ -1386,9 +1388,10 @@ void Client::handle_ensure_tiles(
     } else if (is_http_uri(job.uri)) {
       auto bytes = fetch_http_cached(job.uri);
       if (bytes && !bytes->empty()) {
+        const std::string dkey = "h:" + std::string(job.uri);
         cell = build_tile_cell_buffer(bytes->data(), bytes->size(),
                                       job.tile_scale, job.tile_x, job.tile_y,
-                                      kDefaultTileQuality);
+                                      kDefaultTileQuality, dkey);
       }
     } else if (auto path = path_from_file_uri(job.uri)) {
       if (std::filesystem::is_regular_file(*path)) {

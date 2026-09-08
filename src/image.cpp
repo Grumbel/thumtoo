@@ -9,13 +9,18 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <array>
 #include <cctype>
 #include <fstream>
+#include <functional>
+#include <memory>
 #include <mutex>
+#include <unordered_map>
 #include <thread>
 #include <vector>
 #include <sstream>
+#include <string>
 #include <cstring>
 
 namespace thumtoo {
@@ -793,7 +798,172 @@ std::vector<TileBlob> cut_pyramid_from_vips(VipsImage* full, int min_scale,
     }
   }
 
-  g_object_unref(current);
+  g_obj
+// ---------------------------------------------------------------------------
+// Decode / shrink-ladder cache for interactive single-cell tiles.
+//
+// Without this, each build_tile_cell* reloads the source and re-runs the
+// factor-2 shrink chain. Galapix issues many cells per zoom level → N full
+// decodes. Cache holds a small number of per-source ladders (level[s] =
+// image at pyramid scale s) so concurrent cells share one load + shrinks.
+// ---------------------------------------------------------------------------
+
+constexpr std::size_t kLadderCacheMaxEntries = 4;
+
+struct ShrinkLadder {
+  std::mutex mu;
+  /// levels[s] = VipsImage at Galapix scale s (ownership: one cache ref).
+  std::vector<VipsImage*> levels;
+  std::chrono::steady_clock::time_point last_used{};
+};
+
+std::mutex g_ladder_mu;
+std::unordered_map<std::string, std::shared_ptr<ShrinkLadder>> g_ladders;
+
+std::int64_t file_mtime_ns_local(const std::filesystem::path& path) {
+  std::error_code ec;
+  auto ft = std::filesystem::last_write_time(path, ec);
+  if (ec) return 0;
+  return static_cast<std::int64_t>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(
+          ft.time_since_epoch())
+          .count());
+}
+
+std::string ladder_key_for_file(const std::filesystem::path& path) {
+  return "f:" + path.string() + ":" + std::to_string(file_mtime_ns_local(path));
+}
+
+void ladder_entry_clear(ShrinkLadder& e) {
+  for (VipsImage* img : e.levels) {
+    if (img) g_object_unref(img);
+  }
+  e.levels.clear();
+}
+
+void ladder_cache_evict_unlocked(const std::string& keep_key) {
+  while (g_ladders.size() >= kLadderCacheMaxEntries) {
+    std::string victim;
+    auto oldest = std::chrono::steady_clock::time_point::max();
+    for (auto& kv : g_ladders) {
+      if (kv.first == keep_key) continue;
+      if (kv.second->last_used <= oldest) {
+        oldest = kv.second->last_used;
+        victim = kv.first;
+      }
+    }
+    if (victim.empty()) break;
+    auto it = g_ladders.find(victim);
+    if (it == g_ladders.end()) break;
+    {
+      std::lock_guard lock(it->second->mu);
+      ladder_entry_clear(*it->second);
+    }
+    g_ladders.erase(it);
+  }
+}
+
+std::shared_ptr<ShrinkLadder> ladder_get_or_create(const std::string& key) {
+  std::lock_guard lock(g_ladder_mu);
+  auto it = g_ladders.find(key);
+  if (it != g_ladders.end()) {
+    it->second->last_used = std::chrono::steady_clock::now();
+    return it->second;
+  }
+  ladder_cache_evict_unlocked(key);
+  auto e = std::make_shared<ShrinkLadder>();
+  e->last_used = std::chrono::steady_clock::now();
+  g_ladders.emplace(key, e);
+  return e;
+}
+
+/// Ensure levels[0..scale] exist. load_full provides scale-0 (caller timed).
+/// Returns a new ref on levels[scale] for the caller to unref, or nullptr.
+VipsImage* ladder_acquire_level(const std::string& key, int scale,
+                                const std::function<VipsImage*()>& load_full) {
+  if (scale < 0 || key.empty()) return nullptr;
+  auto entry = ladder_get_or_create(key);
+  std::lock_guard lock(entry->mu);
+  entry->last_used = std::chrono::steady_clock::now();
+
+  if (entry->levels.empty()) {
+    VipsImage* full = load_full();
+    if (!full) return nullptr;
+    entry->levels.push_back(full);  // cache owns this ref
+  }
+
+  while (static_cast<int>(entry->levels.size()) <= scale) {
+    entry->levels.push_back(nullptr);
+  }
+
+  for (int s = 1; s <= scale; ++s) {
+    if (entry->levels[static_cast<std::size_t>(s)]) continue;
+    VipsImage* prev = entry->levels[static_cast<std::size_t>(s - 1)];
+    if (!prev) return nullptr;
+    VipsImage* halved = nullptr;
+    {
+      ScopedNsAccumulator timer(global_build_stats().shrink_ns);
+      if (vips_shrink(prev, &halved, 2.0, 2.0, nullptr) != 0 || !halved) {
+        return nullptr;
+      }
+    }
+    entry->levels[static_cast<std::size_t>(s)] = halved;
+  }
+
+  VipsImage* out = entry->levels[static_cast<std::size_t>(scale)];
+  if (!out) return nullptr;
+  g_object_ref(out);
+  return out;
+}
+
+/// Crop + JPEG-encode one cell from an image already at the target scale.
+std::optional<TileBlob> encode_cell_from_level(VipsImage* level, int scale, int x,
+                                              int y, int jpeg_quality) {
+  if (!level || x < 0 || y < 0) return std::nullopt;
+
+  const int sw = vips_image_get_width(level);
+  const int sh = vips_image_get_height(level);
+  if (sw <= 0 || sh <= 0) return std::nullopt;
+
+  const int left = x * kTileSize;
+  const int top = y * kTileSize;
+  if (left >= sw || top >= sh) return std::nullopt;
+  const int tw = std::min(kTileSize, sw - left);
+  const int th = std::min(kTileSize, sh - top);
+  if (tw <= 0 || th <= 0) return std::nullopt;
+
+  const int q = std::clamp(jpeg_quality, 1, 100);
+  VipsImage* crop = nullptr;
+  if (vips_crop(level, &crop, left, top, tw, th, nullptr) != 0 || !crop) {
+    return std::nullopt;
+  }
+
+  void* buf = nullptr;
+  size_t len = 0;
+  {
+    ScopedNsAccumulator timer(global_build_stats().jpeg_encode_ns);
+    if (vips_jpegsave_buffer(crop, &buf, &len, "Q", q, nullptr) != 0 || !buf) {
+      g_object_unref(crop);
+      return std::nullopt;
+    }
+  }
+  g_object_unref(crop);
+
+  TileBlob tb;
+  tb.scale = scale;
+  tb.x = x;
+  tb.y = y;
+  tb.width = tw;
+  tb.height = th;
+  tb.codec = kDefaultTileCodec;
+  tb.bytes.assign(static_cast<std::uint8_t*>(buf),
+                  static_cast<std::uint8_t*>(buf) + len);
+  g_free(buf);
+  global_build_stats().tiles_encoded.fetch_add(1, std::memory_order_relaxed);
+  return tb;
+}
+
+ect_unref(current);
   return tiles;
 }
 
@@ -915,58 +1085,78 @@ std::optional<TileBlob> build_tile_cell(const std::filesystem::path& path,
                                         int scale, int x, int y,
                                         int jpeg_quality) {
   ensure_vips();
-  VipsImage* full = nullptr;
-  int remain = scale;
-  {
-    ScopedNsAccumulator timer(global_build_stats().image_load_ns);
-    if (path_looks_jpeg(path) && scale > 0) {
-      const int js = jpeg_shrink_factor_for_scale(scale);
-      if (vips_jpegload(path.string().c_str(), &full, "shrink", js, nullptr) ==
-              0 &&
-          full) {
-        remain = scale_steps_after_jpeg_shrink(scale, js);
-      }
-    }
-    if (!full) {
+  if (scale < 0) {
+    // Negative scales (denser than nominal) are not ladder-cached the same way.
+    VipsImage* full = nullptr;
+    {
+      ScopedNsAccumulator timer(global_build_stats().image_load_ns);
       full = vips_image_new_from_file(path.string().c_str(), nullptr);
-      remain = scale;
     }
+    if (!full) return std::nullopt;
+    auto tile = cut_cell_from_vips(full, scale, x, y, jpeg_quality);
+    g_object_unref(full);
+    if (tile) tile->scale = scale;
+    return tile;
   }
-  if (!full) return std::nullopt;
-  auto tile = cut_cell_from_vips(full, remain, x, y, jpeg_quality);
-  g_object_unref(full);
-  if (tile) tile->scale = scale;
+
+  const std::string key = ladder_key_for_file(path);
+  VipsImage* level = ladder_acquire_level(key, scale, [&]() -> VipsImage* {
+    ScopedNsAccumulator timer(global_build_stats().image_load_ns);
+    // Always load full resolution into the ladder so any scale can be derived.
+    // JPEG shrink-on-load would make finer scales unavailable from the cache.
+    return vips_image_new_from_file(path.string().c_str(), nullptr);
+  });
+  if (!level) return std::nullopt;
+  auto tile = encode_cell_from_level(level, scale, x, y, jpeg_quality);
+  g_object_unref(level);
   return tile;
 }
 
 std::optional<TileBlob> build_tile_cell_buffer(const std::uint8_t* data,
                                                std::size_t size, int scale,
-                                               int x, int y, int jpeg_quality) {
+                                               int x, int y, int jpeg_quality,
+                                               std::string_view decode_cache_key) {
   ensure_vips();
   if (!data || size == 0) return std::nullopt;
-  VipsImage* full = nullptr;
-  int remain = scale;
-  {
-    ScopedNsAccumulator timer(global_build_stats().image_load_ns);
-    const bool maybe_jpeg =
-        size >= 3 && data[0] == 0xff && data[1] == 0xd8 && data[2] == 0xff;
-    if (maybe_jpeg && scale > 0) {
-      const int js = jpeg_shrink_factor_for_scale(scale);
-      if (vips_jpegload_buffer(const_cast<std::uint8_t*>(data), size, &full,
-                               "shrink", js, nullptr) == 0 &&
-          full) {
-        remain = scale_steps_after_jpeg_shrink(scale, js);
+
+  if (scale < 0 || decode_cache_key.empty()) {
+    // No shared ladder: legacy one-shot load (or denser-than-nominal scale).
+    VipsImage* full = nullptr;
+    int remain = scale;
+    {
+      ScopedNsAccumulator timer(global_build_stats().image_load_ns);
+      const bool maybe_jpeg =
+          size >= 3 && data[0] == 0xff && data[1] == 0xd8 && data[2] == 0xff;
+      if (maybe_jpeg && scale > 0) {
+        const int js = jpeg_shrink_factor_for_scale(scale);
+        if (vips_jpegload_buffer(const_cast<std::uint8_t*>(data), size, &full,
+                                 "shrink", js, nullptr) == 0 &&
+            full) {
+          remain = scale_steps_after_jpeg_shrink(scale, js);
+        }
+      }
+      if (!full) {
+        full = vips_image_new_from_buffer(data, size, nullptr, nullptr);
+        remain = scale;
       }
     }
-    if (!full) {
-      full = vips_image_new_from_buffer(data, size, nullptr, nullptr);
-      remain = scale;
-    }
+    if (!full) return std::nullopt;
+    auto tile = cut_cell_from_vips(full, remain, x, y, jpeg_quality);
+    g_object_unref(full);
+    if (tile) tile->scale = scale;
+    return tile;
   }
-  if (!full) return std::nullopt;
-  auto tile = cut_cell_from_vips(full, remain, x, y, jpeg_quality);
-  g_object_unref(full);
-  if (tile) tile->scale = scale;
+
+  const std::string key(decode_cache_key);
+  // data must remain valid for the first load; callers pass extract-cache or
+  // durable buffers that outlive the job.
+  VipsImage* level = ladder_acquire_level(key, scale, [&]() -> VipsImage* {
+    ScopedNsAccumulator timer(global_build_stats().image_load_ns);
+    return vips_image_new_from_buffer(data, size, nullptr, nullptr);
+  });
+  if (!level) return std::nullopt;
+  auto tile = encode_cell_from_level(level, scale, x, y, jpeg_quality);
+  g_object_unref(level);
   return tile;
 }
 
