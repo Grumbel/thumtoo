@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstring>
 #include <string>
+#include <mutex>
 
 #if defined(THUMTOO_HAVE_DJVU)
 #  include <libdjvu/ddjvuapi.h>
@@ -24,33 +25,35 @@ constexpr std::string_view kPagePipe = "//page:";
 
 #if defined(THUMTOO_HAVE_DJVU)
 
-struct TlsDjvuDoc {
+// One shared document for the process. TLS caches used to open the same
+// multipage book on every worker (×N full documents in RAM + decode thrash).
+// ddjvu contexts are not safe for concurrent use; serialize all API calls.
+struct SharedDjvuDoc {
+  std::mutex mu;
   std::string path_key;
   std::filesystem::file_time_type mtime{};
   ddjvu_context_t* ctx = nullptr;
   ddjvu_document_t* doc = nullptr;
+  // Layout cache for the open document only.
+  int layout_page = 0;
+  Size layout_native{0, 0};
 };
 
-struct TlsDjvuLayout {
-  std::string path_key;
-  int page = 0;
-  Size native{0, 0};
-};
+SharedDjvuDoc g_djvu;
 
-thread_local TlsDjvuDoc g_tls_djvu_doc;
-thread_local TlsDjvuLayout g_tls_djvu_layout;
-
-void release_tls_djvu() {
-  if (g_tls_djvu_doc.doc) {
-    ddjvu_document_release(g_tls_djvu_doc.doc);
-    g_tls_djvu_doc.doc = nullptr;
+void release_shared_djvu_unlocked() {
+  if (g_djvu.doc) {
+    ddjvu_document_release(g_djvu.doc);
+    g_djvu.doc = nullptr;
   }
-  if (g_tls_djvu_doc.ctx) {
-    ddjvu_context_release(g_tls_djvu_doc.ctx);
-    g_tls_djvu_doc.ctx = nullptr;
+  if (g_djvu.ctx) {
+    ddjvu_context_release(g_djvu.ctx);
+    g_djvu.ctx = nullptr;
   }
-  g_tls_djvu_doc = {};
-  g_tls_djvu_layout = {};
+  g_djvu.path_key.clear();
+  g_djvu.mtime = {};
+  g_djvu.layout_page = 0;
+  g_djvu.layout_native = {};
 }
 
 void pump_messages(ddjvu_context_t* ctx) {
@@ -77,16 +80,16 @@ void wait_page_decoded(ddjvu_context_t* ctx, ddjvu_page_t* page) {
   }
 }
 
-ddjvu_document_t* cached_djvu_document(const std::filesystem::path& path) {
+// Caller must hold g_djvu.mu.
+ddjvu_document_t* cached_djvu_document_unlocked(const std::filesystem::path& path) {
   std::error_code ec;
   const auto mtime = std::filesystem::last_write_time(path, ec);
   const std::string key = path.lexically_normal().string();
-  if (g_tls_djvu_doc.doc && g_tls_djvu_doc.path_key == key && !ec &&
-      g_tls_djvu_doc.mtime == mtime) {
-    return g_tls_djvu_doc.doc;
+  if (g_djvu.doc && g_djvu.path_key == key && !ec && g_djvu.mtime == mtime) {
+    return g_djvu.doc;
   }
 
-  release_tls_djvu();
+  release_shared_djvu_unlocked();
 
   ddjvu_context_t* ctx = ddjvu_context_create("thumtoo");
   if (!ctx) return nullptr;
@@ -105,24 +108,24 @@ ddjvu_document_t* cached_djvu_document(const std::filesystem::path& path) {
     return nullptr;
   }
 
-  g_tls_djvu_doc.path_key = key;
-  g_tls_djvu_doc.mtime = ec ? std::filesystem::file_time_type{} : mtime;
-  g_tls_djvu_doc.ctx = ctx;
-  g_tls_djvu_doc.doc = doc;
-  if (g_tls_djvu_layout.path_key != key) {
-    g_tls_djvu_layout = {};
-  }
+  g_djvu.path_key = key;
+  g_djvu.mtime = ec ? std::filesystem::file_time_type{} : mtime;
+  g_djvu.ctx = ctx;
+  g_djvu.doc = doc;
+  g_djvu.layout_page = 0;
+  g_djvu.layout_native = {};
   return doc;
 }
 
-std::optional<Size> page_native_size(ddjvu_context_t* ctx, ddjvu_document_t* doc,
-                                     int page_1based) {
+// Caller must hold g_djvu.mu.
+std::optional<Size> page_native_size_unlocked(ddjvu_context_t* ctx,
+                                              ddjvu_document_t* doc,
+                                              int page_1based) {
   if (!ctx || !doc || page_1based < 1) return std::nullopt;
   const int n = ddjvu_document_get_pagenum(doc);
   if (page_1based > n) return std::nullopt;
 
   ddjvu_pageinfo_t info{};
-  // Prefer pageinfo without fully decoding when possible.
   while (ddjvu_document_get_pageinfo(doc, page_1based - 1, &info) <
          DDJVU_JOB_OK) {
     ddjvu_message_wait(ctx);
@@ -178,11 +181,10 @@ std::optional<int> djvu_page_count(const std::filesystem::path& path) {
   (void)path;
   return std::nullopt;
 #else
-  ddjvu_document_t* doc = cached_djvu_document(path);
-  if (!doc || !g_tls_djvu_doc.ctx) return std::nullopt;
-  // decoding_done is required before pagenum is complete for multipage docs.
-  // Pump once more in case a late DIRM/page-count message is pending.
-  pump_messages(g_tls_djvu_doc.ctx);
+  std::lock_guard lock(g_djvu.mu);
+  ddjvu_document_t* doc = cached_djvu_document_unlocked(path);
+  if (!doc || !g_djvu.ctx) return std::nullopt;
+  pump_messages(g_djvu.ctx);
   const int n = ddjvu_document_get_pagenum(doc);
   if (n <= 0) return std::nullopt;
   return n;
@@ -197,18 +199,18 @@ std::optional<Size> djvu_page_size_native(const std::filesystem::path& path,
   return std::nullopt;
 #else
   if (page_1based < 1) return std::nullopt;
+  std::lock_guard lock(g_djvu.mu);
   const std::string key = path.lexically_normal().string();
-  if (g_tls_djvu_layout.path_key == key && g_tls_djvu_layout.page == page_1based &&
-      g_tls_djvu_layout.native.width > 0) {
-    return g_tls_djvu_layout.native;
+  if (g_djvu.path_key == key && g_djvu.layout_page == page_1based &&
+      g_djvu.layout_native.width > 0) {
+    return g_djvu.layout_native;
   }
-  ddjvu_document_t* doc = cached_djvu_document(path);
-  if (!doc || !g_tls_djvu_doc.ctx) return std::nullopt;
-  auto sz = page_native_size(g_tls_djvu_doc.ctx, doc, page_1based);
+  ddjvu_document_t* doc = cached_djvu_document_unlocked(path);
+  if (!doc || !g_djvu.ctx) return std::nullopt;
+  auto sz = page_native_size_unlocked(g_djvu.ctx, doc, page_1based);
   if (!sz) return std::nullopt;
-  g_tls_djvu_layout.path_key = key;
-  g_tls_djvu_layout.page = page_1based;
-  g_tls_djvu_layout.native = *sz;
+  g_djvu.layout_page = page_1based;
+  g_djvu.layout_native = *sz;
   return sz;
 #endif
 }
@@ -245,12 +247,13 @@ std::optional<DjvuRaster> djvu_rasterize_page(const std::filesystem::path& path,
   return std::nullopt;
 #else
   if (page_1based < 1) return std::nullopt;
-  ddjvu_document_t* doc = cached_djvu_document(path);
-  if (!doc || !g_tls_djvu_doc.ctx) return std::nullopt;
+  std::lock_guard lock(g_djvu.mu);
+  ddjvu_document_t* doc = cached_djvu_document_unlocked(path);
+  if (!doc || !g_djvu.ctx) return std::nullopt;
 
   ddjvu_page_t* page = ddjvu_page_create_by_pageno(doc, page_1based - 1);
   if (!page) return std::nullopt;
-  wait_page_decoded(g_tls_djvu_doc.ctx, page);
+  wait_page_decoded(g_djvu.ctx, page);
   if (ddjvu_page_decoding_error(page)) {
     ddjvu_page_release(page);
     return std::nullopt;
@@ -316,12 +319,13 @@ std::optional<DjvuRaster> djvu_rasterize_page_region(
   return std::nullopt;
 #else
   if (page_1based < 1 || pw <= 0 || ph <= 0) return std::nullopt;
-  ddjvu_document_t* doc = cached_djvu_document(path);
-  if (!doc || !g_tls_djvu_doc.ctx) return std::nullopt;
+  std::lock_guard lock(g_djvu.mu);
+  ddjvu_document_t* doc = cached_djvu_document_unlocked(path);
+  if (!doc || !g_djvu.ctx) return std::nullopt;
 
   ddjvu_page_t* page = ddjvu_page_create_by_pageno(doc, page_1based - 1);
   if (!page) return std::nullopt;
-  wait_page_decoded(g_tls_djvu_doc.ctx, page);
+  wait_page_decoded(g_djvu.ctx, page);
   if (ddjvu_page_decoding_error(page)) {
     ddjvu_page_release(page);
     return std::nullopt;

@@ -1,3 +1,14 @@
+## DjVu: one shared document + Vips concurrency 1 (2026-09-08) — **thumtoo-071**
+
+TLS per-worker document cache opened the same multipage book N times (RAM thrash).
+Vips concurrency × worker pool compounded threads/memory on --ladder.
+
+- [x] Process-wide DjVu document cache, all API under one mutex
+- [x] vips_concurrency_set(1)
+- [ ] Bundle thumtoo-071
+
+---
+
 ## Fast size probe for multipage docs (2026-09-08) — **thumtoo-070**
 
 Opening a 250-page DjVu was still extremely slow at "Probing image sizes":

@@ -37,10 +37,9 @@ void ensure_vips() {
     if (VIPS_INIT("thumtoo") != 0) {
       // Subsequent calls surface errors via NULL returns / vips_error.
     }
-    // Let libvips use multiple cores for its own ops (shrink, etc.).
-    unsigned hw = std::thread::hardware_concurrency();
-    if (hw == 0) hw = 1;
-    vips_concurrency_set(static_cast<int>(hw));
+    // Client workers already parallelize jobs. Extra Vips threads multiply
+    // memory/CPU under multipage ladder encode (prepare --ladder N × pages).
+    vips_concurrency_set(1);
   });
 }
 
