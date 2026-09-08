@@ -257,19 +257,7 @@ std::optional<LqipRgba> thumbhash_decode_rgba(std::span<const std::uint8_t> hash
     }
   }
 
-  int ac_i = 0;
-  auto next_ac = [&](std::vector<float>& ac, int& i) {
-    return i < static_cast<int>(ac.size()) ? ac[static_cast<std::size_t>(i++)] : 0.0f;
-  };
-
-  // Simpler decode matching JS: reconstruct via DCT sum
-  // Re-read JS thumbHashToRGBA more carefully for the loop structure...
-  // Use the standard reference loop from the JS file.
-  {
-    // Reset and use separate indices per channel as in JS
-  }
-
-  // Full port of JS reconstruction:
+  // Reconstruct via DCT (ThumbHash reference algorithm).
   std::vector<float> l_ac2 = l_ac;
   std::vector<float> p_ac2 = p_ac;
   std::vector<float> q_ac2 = q_ac;
