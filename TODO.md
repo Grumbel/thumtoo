@@ -7,7 +7,7 @@ resolution (see prior stack: ReadDJVUImage → ddjvu_page_render).
 - [x] Refuse PDF/DjVu in probe_image_file, build_ladder, lqip_from_file, build_tile_pyramid
 - [x] ensure_pixels / size probe: fail bare container URIs (page_uri_required)
 - [x] Pyramid: cell-by-cell, no full native RGB
-- [ ] Bundle thumtoo-073
+- [x] Bundle thumtoo-073
 
 ---
 
