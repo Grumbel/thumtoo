@@ -1,3 +1,13 @@
+## Archive-member LQIP on probe (2026-09-08) — tip **thumtoo-043**
+
+`lqip_thumbhash_from_buffer` + encode ThumbHash during archive member size
+probe (bytes already in memory).
+
+### Status
+- [x] Bundle thumtoo-043
+
+---
+
 ## LQIP on size probe + unit test (2026-09-08) — tip **thumtoo-042**
 
 Encode ThumbHash during `handle_probe_size` for local files so cold gallery

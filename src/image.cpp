@@ -1296,4 +1296,51 @@ std::vector<std::uint8_t> lqip_thumbhash_from_file(
   return hash;
 }
 
+
+
+std::vector<std::uint8_t> lqip_thumbhash_from_buffer(const std::uint8_t* data,
+                                                     std::size_t size) {
+  if (!data || size == 0) return {};
+  ensure_vips();
+  VipsImage* img = nullptr;
+  {
+    ScopedNsAccumulator timer(global_build_stats().image_load_ns);
+    if (vips_thumbnail_buffer(const_cast<void*>(static_cast<const void*>(data)),
+                              size, &img, 32, "size", VIPS_SIZE_DOWN,
+                              nullptr) != 0 ||
+        !img) {
+      return {};
+    }
+  }
+  VipsImage* rgb = nullptr;
+  if (vips_colourspace(img, &rgb, VIPS_INTERPRETATION_sRGB, nullptr) != 0 ||
+      !rgb) {
+    g_object_unref(img);
+    return {};
+  }
+  g_object_unref(img);
+  if (vips_image_get_bands(rgb) > 3) {
+    VipsImage* extr = nullptr;
+    if (vips_extract_band(rgb, &extr, 0, "n", 3, nullptr) != 0 || !extr) {
+      g_object_unref(rgb);
+      return {};
+    }
+    g_object_unref(rgb);
+    rgb = extr;
+  }
+  size_t len = 0;
+  void* buf = vips_image_write_to_memory(rgb, &len);
+  const int w = vips_image_get_width(rgb);
+  const int h = vips_image_get_height(rgb);
+  g_object_unref(rgb);
+  if (!buf || len == 0 || w <= 0 || h <= 0) {
+    if (buf) g_free(buf);
+    return {};
+  }
+  auto hash = thumbhash_encode_rgb888(static_cast<const std::uint8_t*>(buf), w, h,
+                                      32);
+  g_free(buf);
+  return hash;
+}
+
 }  // namespace thumtoo

@@ -26,7 +26,9 @@ namespace thumtoo {
 namespace {
 void store_lqip_if_missing(Database& db, const std::string& content_id,
                            const std::filesystem::path* path,
-                           const std::uint8_t* rgb, int w, int h) {
+                           const std::uint8_t* rgb, int w, int h,
+                           const std::uint8_t* file_bytes = nullptr,
+                           std::size_t file_size = 0) {
   if (content_id.empty()) return;
   if (db.get_lqip(content_id)) return;
   std::vector<std::uint8_t> hash;
@@ -34,6 +36,8 @@ void store_lqip_if_missing(Database& db, const std::string& content_id,
     hash = lqip_thumbhash_from_rgb888(rgb, w, h);
   } else if (path) {
     hash = lqip_thumbhash_from_file(*path);
+  } else if (file_bytes && file_size > 0) {
+    hash = lqip_thumbhash_from_buffer(file_bytes, file_size);
   }
   if (!hash.empty()) {
     db.set_lqip(content_id, kLqipKindThumbHash, hash);
@@ -956,6 +960,9 @@ void Client::handle_probe_size(
           size_out = probe->size;
           // Size probe only — ladder encode runs on EnsurePixels / request_pixels.
           row.status = ContentStatus::Incomplete;
+          // Inline LQIP from extracted member bytes (no blob store).
+          store_lqip_if_missing(*db_, row.content_id, nullptr, nullptr, 0, 0,
+                                bytes->data(), bytes->size());
         }
       }
     }

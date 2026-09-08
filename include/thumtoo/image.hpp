@@ -41,6 +41,10 @@ void image_library_init();
 [[nodiscard]] std::vector<std::uint8_t> lqip_thumbhash_from_file(
     const std::filesystem::path& path);
 
+/// Decode buffer, thumbnail to ≤32 edge, encode ThumbHash.
+[[nodiscard]] std::vector<std::uint8_t> lqip_thumbhash_from_buffer(
+    const std::uint8_t* data, std::size_t size);
+
 
 /// Read a regular file up to max_bytes (rejects larger). Empty on error.
 [[nodiscard]] std::optional<std::vector<std::uint8_t>> read_file_bytes(
