@@ -803,7 +803,6 @@ std::vector<TileBlob> cut_pyramid_from_vips(VipsImage* full, int min_scale,
 }
 
 
-
 // Interactive single-cell path: cache a shrink ladder so concurrent
 // build_tile_cell* calls share one decode + successive vips_shrink levels.
 constexpr std::size_t kLadderCacheMaxEntries = 4;
@@ -955,6 +954,7 @@ std::optional<TileBlob> encode_cell_from_level(VipsImage* level, int scale, int 
   global_build_stats().tiles_encoded.fetch_add(1, std::memory_order_relaxed);
   return tb;
 }
+
 
 std::optional<TileBlob> cut_cell_from_vips(VipsImage* full, int scale, int x,
                                            int y, int jpeg_quality) {
