@@ -8,7 +8,7 @@ and page expansion never runs (single URL → first page via other paths).
 - [x] CMake: clearer WARNING when ddjvuapi missing; try `djvulibre` pc name
 - [x] flake: `djvulibre.dev` on PKG_CONFIG_PATH
 - [x] page_count: extra message pump after decode
-- [ ] Bundle thumtoo-065
+- [x] Bundle thumtoo-065
 
 ---
 
