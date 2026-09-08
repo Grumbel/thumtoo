@@ -1,3 +1,20 @@
+## Optional unrar/unzip extract backends (2026-09-08) — backlog
+
+libarchive covers most zip/rar/7z/tar. Gaps worth a future thumtoo path:
+
+1. **unrar** for RAR subformats libarchive cannot open
+2. **External unrar/unzip** for single-member extract (often faster than
+   iterating the whole archive with libarchive)
+
+Keep behind capability detection; default remains libarchive.
+Galapix no longer ships arxpcpp — any such backends belong here.
+
+- [ ] Design capability probe + fallback order
+- [ ] unrar single-member extract
+- [ ] unzip single-member extract (optional)
+
+---
+
 ## Fix Database GC methods outside namespace (2026-09-08) — **thumtoo-054**
 
 Same class of bug as thumtoo-053: GC helpers from thumtoo-052 were appended
