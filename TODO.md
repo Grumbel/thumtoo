@@ -1,7 +1,7 @@
 ## CMake feature summary (2026-09-08) — tip **thumtoo-067** / bundle **thumtoo-067**
 
 - [x] Configure-time feature summary (PDF / DjVu / curl / archive / vips / sqlite)
-- [ ] Bundle thumtoo-067
+- [x] Bundle thumtoo-067
 
 ---
 
