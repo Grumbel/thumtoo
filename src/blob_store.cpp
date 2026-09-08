@@ -324,8 +324,6 @@ std::int64_t BlobStore::count_http_bodies() const {
   return n;
 }
 
-}  // namespace thumtoo
-
 std::int64_t BlobStore::delete_tiles_below_scale(int min_scale_keep) {
   std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
@@ -378,3 +376,5 @@ std::int64_t BlobStore::delete_levels_for_content(std::string_view content_id) {
   sqlite3_finalize(stmt);
   return n;
 }
+
+}  // namespace thumtoo

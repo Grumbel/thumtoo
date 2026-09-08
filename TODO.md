@@ -1,3 +1,15 @@
+## Fix BlobStore GC methods outside namespace (2026-09-08) — **thumtoo-053**
+
+`delete_tiles_below_scale` / `delete_tiles_for_content` /
+`delete_levels_for_content` were appended after `} // namespace thumtoo` in
+`blob_store.cpp` (thumtoo-052), so the compiler saw free functions and
+`BlobStore` was undeclared.
+
+- [x] Move methods inside `namespace thumtoo`
+- [x] Bundle thumtoo-053
+
+---
+
 ## thumtoo-gc (2026-09-08) — **thumtoo-052**
 
 Manual cache cleanup CLI (no automatic eviction):
