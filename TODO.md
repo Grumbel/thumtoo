@@ -5,7 +5,7 @@ Pages shifted upward when zooming in: ddjvu default y-direction is bottom-up
 `ddjvu_format_set_y_direction(fmt, 1)`.
 
 - [x] Set y_direction + row_order top-to-bottom on all page renders
-- [ ] Bundle thumtoo-074
+- [x] Bundle thumtoo-074
 
 ---
 
