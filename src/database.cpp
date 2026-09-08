@@ -1213,8 +1213,6 @@ void Database::set_lqip(std::string_view content_id, int kind,
   sqlite3_finalize(stmt);
 }
 
-}  // namespace thumtoo
-
 std::int64_t Database::delete_tiles_below_scale(int min_scale_keep) {
   std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
@@ -1306,3 +1304,5 @@ void Database::purge_content_metadata(std::string_view content_id) {
   run("DELETE FROM tags WHERE content_id = ?1;");
   run("DELETE FROM content WHERE content_id = ?1;");
 }
+
+}  // namespace thumtoo

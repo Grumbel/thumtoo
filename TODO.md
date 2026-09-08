@@ -1,3 +1,13 @@
+## Fix Database GC methods outside namespace (2026-09-08) — **thumtoo-054**
+
+Same class of bug as thumtoo-053: GC helpers from thumtoo-052 were appended
+after `} // namespace thumtoo` in `database.cpp`.
+
+- [x] Move methods inside `namespace thumtoo`
+- [x] Bundle thumtoo-054
+
+---
+
 ## Fix BlobStore GC methods outside namespace (2026-09-08) — **thumtoo-053**
 
 `delete_tiles_below_scale` / `delete_tiles_for_content` /
