@@ -1,3 +1,18 @@
+## Interactive tiles: FIFO queue (2026-09-08) — **thumtoo-063**
+
+LIFO (`enqueue(..., front=true)`) starved older EnsureTiles under continuous
+pan/zoom — Galapix saw permanent REQUESTED with no fail/abort.
+
+### Fix
+- `request_tile` / `request_tiles` enqueue **FIFO**
+- Same-cell supersede still drops obsolete single-cell pending jobs (nullopt)
+- Rebased onto origin (PDF document cache already on master)
+
+- [x] Code
+- [x] Bundle thumtoo-063
+
+---
+
 ## PDF: thread-local document cache (2026-09-08) — **thumtoo-061**
 
 Interactive PDF tiles called `poppler::document::load_from_file` on **every**

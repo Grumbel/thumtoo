@@ -391,9 +391,10 @@ void Client::request_tile(std::string uri, int scale, int x, int y,
   job.tile_max_scale = scale;
   job.tile_pyramid = false;
   job.tile_cb = std::move(cb);
-  // LIFO: newest interactive tile first so catch-up after pan/zoom prefers
-  // the current view over a FIFO backlog of intermediate cells.
-  enqueue(std::move(job), /*front=*/true);
+  // FIFO: every issued cell eventually runs. LIFO starved older archive/grid
+  // cells forever under continuous pan/zoom (Galapix saw permanent REQUESTED).
+  // Same-cell supersede still drops obsolete pending work in enqueue().
+  enqueue(std::move(job), /*front=*/false);
 }
 
 void Client::request_tiles(std::string uri, std::vector<TileCoord> coords,
@@ -415,7 +416,7 @@ void Client::request_tiles(std::string uri, std::vector<TileCoord> coords,
   job.tile_pyramid = false;
   job.tile_batch = std::move(coords);
   job.tile_batch_cb = std::move(on_cell);
-  enqueue(std::move(job), /*front=*/true);
+  enqueue(std::move(job), /*front=*/false);
 }
 
 void Client::request_tile_pyramid(std::string uri, int min_scale, int max_scale,
@@ -433,31 +434,35 @@ void Client::request_tile_pyramid(std::string uri, int min_scale, int max_scale,
 void Client::enqueue(Job job, bool front) {
   {
     std::lock_guard lock(mu_);
-    if (front) {
-      // Drop older pending jobs for the same cell so superseded work never
-      // reaches a worker (Galapix cancel cannot remove jobs already queued).
-      if (job.kind == JobKind::EnsureTiles && !job.tile_pyramid) {
-        for (auto it = queue_.begin(); it != queue_.end();) {
-          if (it->kind == JobKind::EnsureTiles && !it->tile_pyramid &&
-              it->uri == job.uri && it->tile_scale == job.tile_scale &&
-              it->tile_x == job.tile_x && it->tile_y == job.tile_y) {
-            TileCallback cb = std::move(it->tile_cb);
-            std::string uri = it->uri;
-            int const sc = it->tile_scale;
-            int const x = it->tile_x;
-            int const y = it->tile_y;
-            it = queue_.erase(it);
-            if (cb) {
-              executor_.post(
-                  [cb = std::move(cb), uri = std::move(uri), sc, x, y]() mutable {
-                    cb(std::move(uri), sc, x, y, std::nullopt);
-                  });
-            }
-          } else {
-            ++it;
+    // Drop older pending single-cell EnsureTiles for the same uri/scale/x/y so
+    // superseded work never reaches a worker (Galapix cannot cancel queued
+    // jobs). Applies for both FIFO and LIFO enqueue. Batch jobs
+    // (tile_batch non-empty) are left alone — they complete every index.
+    if (job.kind == JobKind::EnsureTiles && !job.tile_pyramid &&
+        job.tile_batch.empty()) {
+      for (auto it = queue_.begin(); it != queue_.end();) {
+        if (it->kind == JobKind::EnsureTiles && !it->tile_pyramid &&
+            it->tile_batch.empty() && it->uri == job.uri &&
+            it->tile_scale == job.tile_scale && it->tile_x == job.tile_x &&
+            it->tile_y == job.tile_y) {
+          TileCallback cb = std::move(it->tile_cb);
+          std::string uri = it->uri;
+          int const sc = it->tile_scale;
+          int const x = it->tile_x;
+          int const y = it->tile_y;
+          it = queue_.erase(it);
+          if (cb) {
+            executor_.post(
+                [cb = std::move(cb), uri = std::move(uri), sc, x, y]() mutable {
+                  cb(std::move(uri), sc, x, y, std::nullopt);
+                });
           }
+        } else {
+          ++it;
         }
       }
+    }
+    if (front) {
       queue_.push_front(std::move(job));
     } else {
       queue_.push_back(std::move(job));
