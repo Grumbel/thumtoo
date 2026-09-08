@@ -4,7 +4,7 @@ Some intentional blank pages fail `ddjvu_page_render` (returns 0). That became
 nullopt → Galapix purple missing-tile placeholder. Emit solid white RGB instead.
 
 - [x] Full-page + region render: white on render failure
-- [ ] Bundle thumtoo-075
+- [x] Bundle thumtoo-075
 
 ---
 
