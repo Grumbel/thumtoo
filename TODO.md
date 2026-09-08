@@ -5,7 +5,7 @@ Vips concurrency × worker pool compounded threads/memory on --ladder.
 
 - [x] Process-wide DjVu document cache, all API under one mutex
 - [x] vips_concurrency_set(1)
-- [ ] Bundle thumtoo-071
+- [x] Bundle thumtoo-071
 
 ---
 
