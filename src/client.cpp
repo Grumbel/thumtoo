@@ -821,9 +821,9 @@ void Client::worker_main() {
         members.push_back(arch->member_path);
       }
 
-      // Warm tile path: never open the archive if every cell is already in the
-      // blob store. Previously we always extract_archive_members() first, so a
-      // fully-cached RAR gallery paid full decompress cost on every open.
+      // Warm paths: never open the archive when DB/blob already has the answer.
+      // Previously we always extract_archive_members() first, so a fully-cached
+      // RAR gallery paid full decompress cost on every open (tiles, levels, size).
       std::vector<char> need_extract(batch.size(), 1);
       if (batch_kind == JobKind::EnsureTiles) {
         for (size_t i = 0; i < batch.size(); ++i) {
@@ -833,6 +833,34 @@ void Client::worker_main() {
             need_extract[i] = 0;
             try {
               handle_ensure_tiles(j, std::nullopt);
+            } catch (...) {
+            }
+            std::lock_guard lock(mu_);
+            --inflight_;
+          }
+        }
+      } else if (batch_kind == JobKind::EnsurePixels) {
+        for (size_t i = 0; i < batch.size(); ++i) {
+          auto& j = batch[i];
+          if (get_pixels(j.uri, j.max_edge, j.frame_idx)) {
+            need_extract[i] = 0;
+            try {
+              handle_ensure_pixels(j, std::nullopt);
+            } catch (...) {
+            }
+            std::lock_guard lock(mu_);
+            --inflight_;
+          }
+        }
+      } else if (batch_kind == JobKind::ProbeSize) {
+        for (size_t i = 0; i < batch.size(); ++i) {
+          auto& j = batch[i];
+          // Size already known → handle_probe_size returns without source bytes.
+          if (auto meta = db_->meta_for_uri(j.uri);
+              meta && meta->size && meta->size->width > 0 && meta->size->height > 0) {
+            need_extract[i] = 0;
+            try {
+              handle_probe_size(j, std::nullopt);
             } catch (...) {
             }
             std::lock_guard lock(mu_);
