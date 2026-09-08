@@ -1,3 +1,14 @@
+## Index-based tile batch completion (2026-09-08) — **thumtoo-060**
+
+Fresh-generate tiles could stay REQUESTED forever: batch used one shared
+TileCallback that re-matched scale/x/y; missed matches never completed
+Galapix JobHandles. `request_tiles` now calls `on_cell(index, tile)`.
+
+- [x] Code
+- [x] Bundle thumtoo-060
+
+---
+
 ## Unstick interactive tile batch (2026-09-08) — **thumtoo-059**
 
 Pending requests could sit at ~100 after batch path:

@@ -134,8 +134,13 @@ class Client {
     int x = 0;
     int y = 0;
   };
+  /// \a on_cell is invoked once per coordinate (index matches \a coords).
+  /// Prefer this over a shared TileCallback that must re-match scale/x/y —
+  /// missed matches left Galapix JobHandles REQUESTED forever.
+  using TileBatchCallback =
+      std::function<void(std::size_t index, std::optional<TileBlob> tile)>;
   void request_tiles(std::string uri, std::vector<TileCoord> coords,
-                     TileCallback cb);
+                     TileBatchCallback on_cell);
 
   void invalidate_tile(std::string_view uri, int scale, int x, int y);
 
@@ -214,6 +219,7 @@ class Client {
     bool skip_probe = false;
     /// Non-empty: interactive multi-cell batch for the same uri.
     std::vector<TileCoord> tile_batch;
+    TileBatchCallback tile_batch_cb;
     SizeCallback size_cb;
     PixelsCallback pixels_cb;
     TileCallback tile_cb;

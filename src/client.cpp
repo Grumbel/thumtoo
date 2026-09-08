@@ -397,13 +397,16 @@ void Client::request_tile(std::string uri, int scale, int x, int y,
 }
 
 void Client::request_tiles(std::string uri, std::vector<TileCoord> coords,
-                           TileCallback cb) {
-  if (coords.empty() || !cb) {
+                           TileBatchCallback on_cell) {
+  if (coords.empty() || !on_cell) {
     return;
   }
   if (coords.size() == 1) {
     request_tile(std::move(uri), coords[0].scale, coords[0].x, coords[0].y,
-                 std::move(cb));
+                 [on_cell = std::move(on_cell)](std::string, int, int, int,
+                                                std::optional<TileBlob> tb) {
+                   on_cell(0, std::move(tb));
+                 });
     return;
   }
   Job job;
@@ -411,7 +414,7 @@ void Client::request_tiles(std::string uri, std::vector<TileCoord> coords,
   job.uri = std::move(uri);
   job.tile_pyramid = false;
   job.tile_batch = std::move(coords);
-  job.tile_cb = std::move(cb);
+  job.tile_batch_cb = std::move(on_cell);
   enqueue(std::move(job), /*front=*/true);
 }
 
@@ -1540,7 +1543,7 @@ void Client::handle_ensure_tiles(
     const auto coords = std::move(job.tile_batch);
     job.tile_batch.clear();
     const std::string uri = job.uri;
-    const TileCallback cb = std::move(job.tile_cb);
+    const TileBatchCallback on_cell = std::move(job.tile_batch_cb);
 
     {
       Job probe;
@@ -1549,11 +1552,11 @@ void Client::handle_ensure_tiles(
       try {
         handle_probe_size(probe, preextracted);
       } catch (...) {
-        // Still try cells; each may fail cleanly via nullopt reply.
       }
     }
 
-    for (const TileCoord& c : coords) {
+    for (std::size_t i = 0; i < coords.size(); ++i) {
+      const TileCoord& c = coords[i];
       Job one;
       one.kind = JobKind::EnsureTiles;
       one.uri = uri;
@@ -1565,14 +1568,18 @@ void Client::handle_ensure_tiles(
       one.tile_pyramid = false;
       one.skip_durable = true;
       one.skip_probe = true;
-      one.tile_cb = cb;
+      // Capture result into on_cell(index) — never re-match by coordinates.
+      one.tile_cb = [on_cell, i](std::string, int, int, int,
+                                 std::optional<TileBlob> tb) {
+        if (on_cell) {
+          on_cell(i, std::move(tb));
+        }
+      };
       try {
         handle_ensure_tiles(one, preextracted);
       } catch (...) {
-        if (cb) {
-          executor_.post([cb, uri, scale = c.scale, x = c.x, y = c.y]() mutable {
-            cb(std::move(uri), scale, x, y, std::nullopt);
-          });
+        if (on_cell) {
+          executor_.post([on_cell, i]() { on_cell(i, std::nullopt); });
         }
       }
     }
