@@ -1,3 +1,13 @@
+## DjVu blank pages → white tiles (2026-09-09) — **thumtoo-075**
+
+Some intentional blank pages fail `ddjvu_page_render` (returns 0). That became
+nullopt → Galapix purple missing-tile placeholder. Emit solid white RGB instead.
+
+- [x] Full-page + region render: white on render failure
+- [ ] Bundle thumtoo-075
+
+---
+
 ## DjVu tile Y-direction (2026-09-09) — **thumtoo-074**
 
 Pages shifted upward when zooming in: ddjvu default y-direction is bottom-up

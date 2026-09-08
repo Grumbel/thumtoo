@@ -304,7 +304,12 @@ std::optional<DjvuRaster> djvu_rasterize_page(const std::filesystem::path& path,
                                    reinterpret_cast<char*>(out.rgb.data()));
   ddjvu_format_release(fmt);
   ddjvu_page_release(page);
-  if (!ok) return std::nullopt;
+  if (g_djvu.ctx) ddjvu_cache_clear(g_djvu.ctx);
+  // Blank / non-image DjVu pages often return 0 from render with a valid size.
+  // Emit white so Galapix does not keep a permanent purple missing-tile cell.
+  if (!ok) {
+    std::fill(out.rgb.begin(), out.rgb.end(), static_cast<std::uint8_t>(255));
+  }
   return out;
 #endif
 }
@@ -375,7 +380,12 @@ std::optional<DjvuRaster> djvu_rasterize_page_region(
                                    reinterpret_cast<char*>(out.rgb.data()));
   ddjvu_format_release(fmt);
   ddjvu_page_release(page);
-  if (!ok) return std::nullopt;
+  if (g_djvu.ctx) ddjvu_cache_clear(g_djvu.ctx);
+  // Blank / non-image DjVu pages often return 0 from render with a valid size.
+  // Emit white so Galapix does not keep a permanent purple missing-tile cell.
+  if (!ok) {
+    std::fill(out.rgb.begin(), out.rgb.end(), static_cast<std::uint8_t>(255));
+  }
   return out;
 #endif
 }
