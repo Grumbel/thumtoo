@@ -1,3 +1,10 @@
+## CMake feature summary (2026-09-08) — tip **thumtoo-067** / bundle **thumtoo-067**
+
+- [x] Configure-time feature summary (PDF / DjVu / curl / archive / vips / sqlite)
+- [ ] Bundle thumtoo-067
+
+---
+
 ## expand_media_uris + PRIVATE decoder link (2026-09-08) — tip **thumtoo-066** / bundle **thumtoo-066**
 
 - [x] `thumtoo::expand_media_uris` / `is_openable_media_path` (PDF, DjVu, archive, image)
