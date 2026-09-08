@@ -9,7 +9,7 @@ Mirror PDF page support for `.djvu` / `.djv` using **ddjvuapi** (DjVuLibre).
 - Optional: `pkg-config ddjvuapi` → `THUMTOO_HAVE_DJVU`
 
 - [x] Code
-- [ ] Bundle thumtoo-064
+- [x] Bundle thumtoo-064
 
 ---
 
