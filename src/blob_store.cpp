@@ -5,6 +5,8 @@
 
 #include <sqlite3.h>
 
+#include <mutex>
+
 #include <chrono>
 #include <stdexcept>
 #include <utility>
@@ -35,6 +37,7 @@ BlobStore::~BlobStore() {
 }
 
 void BlobStore::exec(const char* sql) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   char* err = nullptr;
   const int rc = sqlite3_exec(db_, sql, nullptr, nullptr, &err);
   if (rc != SQLITE_OK) {
@@ -63,6 +66,7 @@ BlobStore BlobStore::open(const std::filesystem::path& cache_root) {
 }
 
 void BlobStore::migrate_or_init() {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   exec(
       "CREATE TABLE IF NOT EXISTS level_blobs ("
       "  content_id TEXT NOT NULL,"
@@ -100,6 +104,7 @@ void BlobStore::put_level(std::string_view content_id, int max_edge,
                           int frame_idx, int width, int height,
                           std::string_view codec, int quality,
                           const std::uint8_t* data, std::size_t size) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "INSERT INTO level_blobs(content_id, max_edge, frame_idx, width, height, "
@@ -129,6 +134,7 @@ void BlobStore::put_level(std::string_view content_id, int max_edge,
 
 std::optional<std::vector<std::uint8_t>> BlobStore::get_level(
     std::string_view content_id, int max_edge, int frame_idx) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT data FROM level_blobs WHERE content_id = ?1 AND max_edge = ?2 "
@@ -151,6 +157,7 @@ std::optional<std::vector<std::uint8_t>> BlobStore::get_level(
 }
 
 std::int64_t BlobStore::count_levels() const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   sqlite3_prepare_v2(db_, "SELECT COUNT(*) FROM level_blobs;", -1, &stmt,
                      nullptr);
@@ -165,6 +172,7 @@ void BlobStore::put_tile(std::string_view content_id, int scale, int x, int y,
                          int width, int height, std::string_view codec,
                          int quality, const std::uint8_t* data,
                          std::size_t size) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "INSERT INTO tile_blobs(content_id, scale, x, y, width, height, "
@@ -194,6 +202,7 @@ void BlobStore::put_tile(std::string_view content_id, int scale, int x, int y,
 }
 
 void BlobStore::delete_tile(std::string_view content_id, int scale, int x, int y) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "DELETE FROM tile_blobs WHERE content_id = ?1 AND scale = ?2 AND x = ?3 "
@@ -210,6 +219,7 @@ void BlobStore::delete_tile(std::string_view content_id, int scale, int x, int y
 
 std::optional<std::vector<std::uint8_t>> BlobStore::get_tile(
     std::string_view content_id, int scale, int x, int y) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT data FROM tile_blobs WHERE content_id = ?1 AND scale = ?2 "
@@ -234,6 +244,7 @@ std::optional<std::vector<std::uint8_t>> BlobStore::get_tile(
 }
 
 std::int64_t BlobStore::count_tiles() const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   sqlite3_prepare_v2(db_, "SELECT COUNT(*) FROM tile_blobs;", -1, &stmt,
                      nullptr);
@@ -245,6 +256,7 @@ std::int64_t BlobStore::count_tiles() const {
 
 void BlobStore::put_http_body(std::string_view url, const std::uint8_t* data,
                               std::size_t size, std::int64_t fetched_at_unix_s) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   if (url.empty() || !data || size == 0) return;
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
@@ -267,6 +279,7 @@ void BlobStore::put_http_body(std::string_view url, const std::uint8_t* data,
 
 std::optional<std::vector<std::uint8_t>> BlobStore::get_http_body(
     std::string_view url, std::int64_t max_age_s) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT fetched_at, data FROM http_bodies WHERE url = ?1;";
@@ -299,6 +312,7 @@ std::optional<std::vector<std::uint8_t>> BlobStore::get_http_body(
 }
 
 std::int64_t BlobStore::count_http_bodies() const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(db_, "SELECT COUNT(*) FROM http_bodies;", -1, &stmt,
                          nullptr) != SQLITE_OK) {

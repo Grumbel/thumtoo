@@ -1,3 +1,4 @@
+#include <mutex>
 // SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -174,6 +175,7 @@ Database::~Database() {
 }
 
 void Database::exec(const char* sql) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   char* err = nullptr;
   const int rc = sqlite3_exec(db_, sql, nullptr, nullptr, &err);
   if (rc != SQLITE_OK) {
@@ -206,6 +208,7 @@ Database Database::open(const std::filesystem::path& cache_root) {
 }
 
 void Database::migrate_or_init() {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   exec(kSchemaSql);
 
   auto ver = meta_get(kSchemaMetaVersionKey);
@@ -233,6 +236,7 @@ void Database::migrate_or_init() {
 }
 
 std::optional<std::string> Database::meta_get(std::string_view key) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql = "SELECT value FROM schema_meta WHERE key = ?1;";
   if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -250,6 +254,7 @@ std::optional<std::string> Database::meta_get(std::string_view key) const {
 }
 
 void Database::meta_set(std::string_view key, std::string_view value) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "INSERT INTO schema_meta(key, value) VALUES(?1, ?2) "
@@ -269,6 +274,7 @@ void Database::meta_set(std::string_view key, std::string_view value) {
 }
 
 std::int64_t Database::count_content() const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   sqlite3_prepare_v2(db_, "SELECT COUNT(*) FROM content;", -1, &stmt, nullptr);
   std::int64_t n = 0;
@@ -278,6 +284,7 @@ std::int64_t Database::count_content() const {
 }
 
 std::int64_t Database::count_locators() const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   sqlite3_prepare_v2(db_, "SELECT COUNT(*) FROM locators;", -1, &stmt, nullptr);
   std::int64_t n = 0;
@@ -287,6 +294,7 @@ std::int64_t Database::count_locators() const {
 }
 
 std::int64_t Database::count_levels() const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   sqlite3_prepare_v2(db_, "SELECT COUNT(*) FROM levels;", -1, &stmt, nullptr);
   std::int64_t n = 0;
@@ -296,6 +304,7 @@ std::int64_t Database::count_levels() const {
 }
 
 std::int64_t Database::count_tiles() const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   sqlite3_prepare_v2(db_, "SELECT COUNT(*) FROM tiles;", -1, &stmt, nullptr);
   std::int64_t n = 0;
@@ -305,6 +314,7 @@ std::int64_t Database::count_tiles() const {
 }
 
 std::int64_t Database::count_directory_snapshots() const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   sqlite3_prepare_v2(db_, "SELECT COUNT(*) FROM directory_snapshots;", -1,
                      &stmt, nullptr);
@@ -315,6 +325,7 @@ std::int64_t Database::count_directory_snapshots() const {
 }
 
 std::vector<Database::LocatorRow> Database::list_locators(int limit) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT uri, content_id, outer_path, member_path, size, mtime_ns "
@@ -346,6 +357,7 @@ std::vector<Database::LocatorRow> Database::list_locators(int limit) const {
 
 std::vector<Database::LocatorRow> Database::list_locators_for_content_id(
     std::string_view content_id, int limit) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT uri, content_id, outer_path, member_path, size, mtime_ns "
@@ -381,6 +393,7 @@ std::vector<Database::LocatorRow> Database::list_locators_for_content_id(
 
 std::vector<Database::LocatorRow> Database::list_locators_by_uri_prefix(
     std::string_view uri_prefix, int limit) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   const std::string pat = escape_like_prefix(uri_prefix) + "%";
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
@@ -401,6 +414,7 @@ std::vector<Database::LocatorRow> Database::list_locators_by_uri_prefix(
 
 std::vector<Database::LocatorRow> Database::list_locators_by_outer_path_prefix(
     std::string_view path_prefix, int limit) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   const std::string pat = escape_like_prefix(path_prefix) + "%";
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
@@ -421,6 +435,7 @@ std::vector<Database::LocatorRow> Database::list_locators_by_outer_path_prefix(
 
 std::vector<Database::LocatorRow> Database::list_locators_like(
     std::string_view uri_like_pattern, int limit) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT uri, content_id, outer_path, member_path, size, mtime_ns "
@@ -440,6 +455,7 @@ std::vector<Database::LocatorRow> Database::list_locators_like(
 }
 
 std::vector<Database::ContentRow> Database::list_content(int limit) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT content_id, width, height, format, duration_ms, still_count, "
@@ -473,6 +489,7 @@ std::vector<Database::ContentRow> Database::list_content(int limit) const {
 }
 
 void Database::upsert_locator(const LocatorRow& row) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "INSERT INTO locators(uri, content_id, outer_path, member_path, size, "
@@ -515,6 +532,7 @@ void Database::upsert_locator(const LocatorRow& row) {
 }
 
 void Database::upsert_content(const ContentRow& row) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "INSERT INTO content(content_id, width, height, format, duration_ms, "
@@ -565,6 +583,7 @@ void Database::upsert_content(const ContentRow& row) {
 
 
 std::optional<Database::LocatorRow> Database::find_locator(std::string_view uri) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT uri, content_id, outer_path, member_path, size, mtime_ns "
@@ -597,6 +616,7 @@ std::optional<Database::LocatorRow> Database::find_locator(std::string_view uri)
 
 std::optional<Database::ContentRow> Database::find_content(
     std::string_view content_id) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT content_id, width, height, format, duration_ms, still_count, "
@@ -632,6 +652,7 @@ std::optional<Database::ContentRow> Database::find_content(
 
 std::optional<ContentMeta> Database::meta_for_content_id(
     std::string_view content_id) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   auto c = find_content(content_id);
   if (!c) return std::nullopt;
   ContentMeta m;
@@ -646,6 +667,7 @@ std::optional<ContentMeta> Database::meta_for_content_id(
 }
 
 std::optional<ContentMeta> Database::meta_for_uri(std::string_view uri) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   // Content-addressed id used as URI (sha256:… / sha1:…).
   if (uri.starts_with("sha256:") || uri.starts_with("sha1:")) {
     return meta_for_content_id(uri);
@@ -657,6 +679,7 @@ std::optional<ContentMeta> Database::meta_for_uri(std::string_view uri) const {
 
 
 void Database::upsert_level(const LevelRow& row) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "INSERT INTO levels(content_id, max_edge, frame_idx, pts_ms, width, height, "
@@ -703,6 +726,7 @@ void Database::upsert_level(const LevelRow& row) {
 
 void Database::update_locator_content_id(std::string_view uri,
                                          std::string_view content_id) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql = "UPDATE locators SET content_id = ?1 WHERE uri = ?2;";
   if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -720,6 +744,7 @@ void Database::update_locator_content_id(std::string_view uri,
 }
 
 void Database::delete_content(std::string_view content_id) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql = "DELETE FROM content WHERE content_id = ?1;";
   if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -762,6 +787,7 @@ std::optional<Database::LevelRow> step_level_row(sqlite3_stmt* stmt) {
 
 std::optional<Database::LevelRow> Database::find_best_level(
     std::string_view content_id, int max_edge, int frame_idx) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT content_id, max_edge, frame_idx, pts_ms, width, height, codec, "
@@ -781,6 +807,7 @@ std::optional<Database::LevelRow> Database::find_best_level(
 
 std::optional<Database::LevelRow> Database::find_smallest_level_ge(
     std::string_view content_id, int min_edge, int frame_idx) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT content_id, max_edge, frame_idx, pts_ms, width, height, codec, "
@@ -800,6 +827,7 @@ std::optional<Database::LevelRow> Database::find_smallest_level_ge(
 
 std::vector<Database::LevelRow> Database::list_levels(
     std::string_view content_id, int limit) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT content_id, max_edge, frame_idx, pts_ms, width, height, codec, "
@@ -838,6 +866,7 @@ std::vector<Database::LevelRow> Database::list_levels(
 
 void Database::replace_archive_entries(
     std::string_view archive_uri, const std::vector<ArchiveEntryRow>& entries) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* del = nullptr;
   if (sqlite3_prepare_v2(db_,
                          "DELETE FROM archive_entries WHERE archive_uri = ?1;",
@@ -877,6 +906,7 @@ void Database::replace_archive_entries(
 
 std::vector<Database::ArchiveEntryRow> Database::list_archive_entries(
     std::string_view archive_uri, int limit) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT archive_uri, member_path, uncompressed_size FROM archive_entries "
@@ -903,6 +933,7 @@ std::vector<Database::ArchiveEntryRow> Database::list_archive_entries(
 
 void Database::add_tag(std::string_view content_id, std::string_view tag,
                        std::string_view source) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   if (content_id.empty() || tag.empty()) return;
   // trim-ish: reject all-whitespace later via empty after simple skip
   sqlite3_stmt* stmt = nullptr;
@@ -929,6 +960,7 @@ void Database::add_tag(std::string_view content_id, std::string_view tag,
 }
 
 bool Database::remove_tag(std::string_view content_id, std::string_view tag) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   if (content_id.empty() || tag.empty()) return false;
   sqlite3_stmt* stmt = nullptr;
   const char* sql = "DELETE FROM tags WHERE content_id = ?1 AND tag = ?2;";
@@ -950,6 +982,7 @@ bool Database::remove_tag(std::string_view content_id, std::string_view tag) {
 
 std::vector<std::string> Database::tags_for_content(
     std::string_view content_id) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   std::vector<std::string> out;
   if (content_id.empty()) return out;
   sqlite3_stmt* stmt = nullptr;
@@ -969,6 +1002,7 @@ std::vector<std::string> Database::tags_for_content(
 
 std::vector<std::string> Database::content_ids_for_tag(std::string_view tag,
                                                       int limit) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   std::vector<std::string> out;
   if (tag.empty()) return out;
   sqlite3_stmt* stmt = nullptr;
@@ -989,6 +1023,7 @@ std::vector<std::string> Database::content_ids_for_tag(std::string_view tag,
 
 
 void Database::upsert_tile(const TileRow& row) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "INSERT INTO tiles(content_id, scale, x, y, width, height, codec, quality) "
@@ -1023,6 +1058,7 @@ void Database::upsert_tile(const TileRow& row) {
 std::optional<Database::TileRow> Database::find_tile(std::string_view content_id,
                                                      int scale, int x,
                                                      int y) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT content_id, scale, x, y, width, height, codec, quality FROM tiles "
@@ -1057,6 +1093,7 @@ std::optional<Database::TileRow> Database::find_tile(std::string_view content_id
 }
 
 void Database::delete_tile(std::string_view content_id, int scale, int x, int y) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "DELETE FROM tiles WHERE content_id = ?1 AND scale = ?2 AND x = ?3 AND y = ?4;";
@@ -1072,6 +1109,7 @@ void Database::delete_tile(std::string_view content_id, int scale, int x, int y)
 
 bool Database::tile_min_max_scale(std::string_view content_id, int& min_scale_out,
                                   int& max_scale_out) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT MIN(scale), MAX(scale) FROM tiles WHERE content_id = ?1;";
@@ -1093,6 +1131,7 @@ bool Database::tile_min_max_scale(std::string_view content_id, int& min_scale_ou
 
 std::vector<Database::TileRow> Database::list_tiles(std::string_view content_id,
                                                     int limit) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   std::vector<TileRow> rows;
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
@@ -1127,6 +1166,7 @@ std::vector<Database::TileRow> Database::list_tiles(std::string_view content_id,
 
 std::optional<std::vector<std::uint8_t>> Database::get_lqip(
     std::string_view content_id) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql = "SELECT lqip FROM content WHERE content_id = ?1;";
   if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -1149,6 +1189,7 @@ std::optional<std::vector<std::uint8_t>> Database::get_lqip(
 
 void Database::set_lqip(std::string_view content_id, int kind,
                        std::span<const std::uint8_t> bytes) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
   if (content_id.empty() || bytes.empty()) return;
   sqlite3_stmt* stmt = nullptr;
   const char* sql =

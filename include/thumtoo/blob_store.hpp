@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -63,6 +64,7 @@ class BlobStore {
   void exec(const char* sql) const;
   void migrate_or_init();
 
+  mutable std::recursive_mutex mu_;
   sqlite3* db_ = nullptr;
   std::filesystem::path db_path_;
 };
