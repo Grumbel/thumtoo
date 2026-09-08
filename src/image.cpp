@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "thumtoo/image.hpp"
+#include "thumtoo/lqip.hpp"
 #include "thumtoo/build_stats.hpp"
 #include "thumtoo/constants.hpp"
 
@@ -1243,6 +1244,56 @@ std::optional<TileBlob> encode_tile_cell_rgb(const std::uint8_t* rgb, int width,
   g_free(buf);
   global_build_stats().tiles_encoded.fetch_add(1, std::memory_order_relaxed);
   return tb;
+}
+
+
+
+std::vector<std::uint8_t> lqip_thumbhash_from_rgb888(const std::uint8_t* rgb,
+                                                     int width, int height) {
+  return thumbhash_encode_rgb888(rgb, width, height, 32);
+}
+
+std::vector<std::uint8_t> lqip_thumbhash_from_file(
+    const std::filesystem::path& path) {
+  ensure_vips();
+  VipsImage* thumb = nullptr;
+  {
+    ScopedNsAccumulator timer(global_build_stats().image_load_ns);
+    if (vips_thumbnail(path.string().c_str(), &thumb, 32, "size",
+                       VIPS_SIZE_DOWN, nullptr) != 0 ||
+        !thumb) {
+      return {};
+    }
+  }
+  VipsImage* rgb = nullptr;
+  if (vips_colourspace(thumb, &rgb, VIPS_INTERPRETATION_sRGB, nullptr) != 0 ||
+      !rgb) {
+    g_object_unref(thumb);
+    return {};
+  }
+  g_object_unref(thumb);
+  if (vips_image_get_bands(rgb) > 3) {
+    VipsImage* extr = nullptr;
+    if (vips_extract_band(rgb, &extr, 0, "n", 3, nullptr) != 0 || !extr) {
+      g_object_unref(rgb);
+      return {};
+    }
+    g_object_unref(rgb);
+    rgb = extr;
+  }
+  size_t len = 0;
+  void* buf = vips_image_write_to_memory(rgb, &len);
+  const int w = vips_image_get_width(rgb);
+  const int h = vips_image_get_height(rgb);
+  g_object_unref(rgb);
+  if (!buf || len == 0 || w <= 0 || h <= 0) {
+    if (buf) g_free(buf);
+    return {};
+  }
+  auto hash = thumbhash_encode_rgb888(static_cast<const std::uint8_t*>(buf), w, h,
+                                      32);
+  g_free(buf);
+  return hash;
 }
 
 }  // namespace thumtoo

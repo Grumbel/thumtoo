@@ -70,7 +70,9 @@ CREATE TABLE IF NOT EXISTS content (
   still_count INTEGER,
   status INTEGER NOT NULL DEFAULT 0,
   error_code TEXT,
-  updated_at INTEGER
+  updated_at INTEGER,
+  lqip BLOB,
+  lqip_kind INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS locators (
   uri TEXT PRIMARY KEY,
@@ -219,9 +221,12 @@ void Database::migrate_or_init() {
   if (schema_version_ > kSchemaVersion) {
     throw std::runtime_error("database schema_version is newer than this build");
   }
-  // Future: migrate schema_version_ -> kSchemaVersion
   if (schema_version_ < kSchemaVersion) {
-    // v1 is the first version; nothing to migrate yet.
+    if (schema_version_ < 2) {
+      // Inline LQIP (ThumbHash) on content rows — no blob store.
+      exec("ALTER TABLE content ADD COLUMN lqip BLOB;");
+      exec("ALTER TABLE content ADD COLUMN lqip_kind INTEGER NOT NULL DEFAULT 0;");
+    }
     meta_set(kSchemaMetaVersionKey, std::to_string(kSchemaVersion));
     schema_version_ = kSchemaVersion;
   }
@@ -1117,6 +1122,52 @@ std::vector<Database::TileRow> Database::list_tiles(std::string_view content_id,
   }
   sqlite3_finalize(stmt);
   return rows;
+}
+
+
+std::optional<std::vector<std::uint8_t>> Database::get_lqip(
+    std::string_view content_id) const {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "SELECT lqip FROM content WHERE content_id = ?1;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return std::nullopt;
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(), static_cast<int>(content_id.size()),
+                    SQLITE_STATIC);
+  std::optional<std::vector<std::uint8_t>> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW &&
+      sqlite3_column_type(stmt, 0) == SQLITE_BLOB) {
+    const auto* p = static_cast<const std::uint8_t*>(sqlite3_column_blob(stmt, 0));
+    const int n = sqlite3_column_bytes(stmt, 0);
+    if (p && n > 0) {
+      out = std::vector<std::uint8_t>(p, p + n);
+    }
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+void Database::set_lqip(std::string_view content_id, int kind,
+                       std::span<const std::uint8_t> bytes) {
+  if (content_id.empty() || bytes.empty()) return;
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "UPDATE content SET lqip = ?1, lqip_kind = ?2, updated_at = ?3 "
+      "WHERE content_id = ?4;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_blob(stmt, 1, bytes.data(), static_cast<int>(bytes.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, kind);
+  sqlite3_bind_int64(stmt, 3, now_unix_s());
+  sqlite3_bind_text(stmt, 4, content_id.data(), static_cast<int>(content_id.size()),
+                    SQLITE_STATIC);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_finalize(stmt);
 }
 
 }  // namespace thumtoo

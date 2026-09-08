@@ -97,6 +97,10 @@ class Client {
                                                      int max_edge,
                                                      int frame_idx = 0) const;
 
+  /// Cache-only: inline LQIP (ThumbHash) on the content row — no blob I/O.
+  [[nodiscard]] std::optional<std::vector<std::uint8_t>> get_lqip(
+      std::string_view uri) const;
+
   void request_size(std::string uri, SizeCallback cb);
 
   /// Ensure ladder exists (probe if needed), then return pixels via callback.

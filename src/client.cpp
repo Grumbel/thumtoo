@@ -7,6 +7,7 @@
 #include "thumtoo/uri.hpp"
 #include "thumtoo/network.hpp"
 #include "thumtoo/image.hpp"
+#include "thumtoo/lqip.hpp"
 #include "thumtoo/archive.hpp"
 #include "thumtoo/pdf.hpp"
 #include "thumtoo/blob_store.hpp"
@@ -21,6 +22,25 @@
 #include <string_view>
 
 namespace thumtoo {
+
+namespace {
+void store_lqip_if_missing(Database& db, const std::string& content_id,
+                           const std::filesystem::path* path,
+                           const std::uint8_t* rgb, int w, int h) {
+  if (content_id.empty()) return;
+  if (db.get_lqip(content_id)) return;
+  std::vector<std::uint8_t> hash;
+  if (rgb && w > 0 && h > 0) {
+    hash = lqip_thumbhash_from_rgb888(rgb, w, h);
+  } else if (path) {
+    hash = lqip_thumbhash_from_file(*path);
+  }
+  if (!hash.empty()) {
+    db.set_lqip(content_id, kLqipKindThumbHash, hash);
+  }
+}
+}  // namespace
+
 namespace {
 
 std::string format_from_member(std::string_view member) {
@@ -214,6 +234,14 @@ std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
   auto row = db_->find_best_level(meta->content_id, max_edge, frame_idx);
   if (!row) return std::nullopt;
   return load_level(*row);
+}
+
+
+std::optional<std::vector<std::uint8_t>> Client::get_lqip(
+    std::string_view uri) const {
+  auto loc = db_->find_locator(uri);
+  if (!loc || !loc->content_id) return std::nullopt;
+  return db_->get_lqip(*loc->content_id);
 }
 
 void Client::request_pixels(std::string uri, int max_edge, PixelsCallback cb,
@@ -1166,6 +1194,10 @@ void Client::handle_ensure_pixels(
       if (levels.empty()) row.error_code = "ladder_encode_failed";
       else row.error_code = std::nullopt;
       db_->upsert_content(row);
+      if (!levels.empty() && raster) {
+        store_lqip_if_missing(*db_, row.content_id, nullptr, raster->rgb.data(),
+                              raster->width, raster->height);
+      }
     }
   } else if (auto arch = parse_archive_uri(job.uri)) {
     if (!arch->member_path.empty()) {
@@ -1247,6 +1279,9 @@ void Client::handle_ensure_pixels(
       if (levels.empty()) row.error_code = "ladder_encode_failed";
       else row.error_code = std::nullopt;
       db_->upsert_content(row);
+      if (!levels.empty()) {
+        store_lqip_if_missing(*db_, row.content_id, &*path, nullptr, 0, 0);
+      }
     }
   }
 

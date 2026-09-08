@@ -1,6 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 -- SPDX-License-Identifier: GPL-3.0-or-later
--- thumtoo schema_version 1
+-- thumtoo schema_version 2
 
 CREATE TABLE IF NOT EXISTS schema_meta (
   key TEXT PRIMARY KEY,
@@ -16,7 +16,9 @@ CREATE TABLE IF NOT EXISTS content (
   still_count INTEGER,
   status INTEGER NOT NULL DEFAULT 0,
   error_code TEXT,
-  updated_at INTEGER
+  updated_at INTEGER,
+  lqip BLOB,
+  lqip_kind INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS locators (

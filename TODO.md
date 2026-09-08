@@ -1,3 +1,25 @@
+## Inline LQIP (ThumbHash) on content rows (2026-09-08) — tip **thumtoo-040**
+
+### Goal
+Extremely small gallery placeholders stored **on the content row** (~25–37 B
+ThumbHash) so first paint for ~1000 images does not touch blob storage.
+
+### Done
+- Schema v2: `content.lqip` BLOB + `content.lqip_kind`
+- ThumbHash encode/decode (`lqip.hpp` / `lqip.cpp`)
+- `Database::get_lqip` / `set_lqip`
+- `Client::get_lqip(uri)` cache-only
+- Encode after successful ladder build (file path + PDF rgb)
+
+### Next (Galapix)
+- Paint LQIP under overview when present
+- Optional: request_pixels only after LQIP shown / larger on-screen size
+
+### Status
+- [x] thumtoo-040 bundle
+
+---
+
 ## tests: request_tile callback expects rgb888 (2026-09-08) — tip **thumtoo-039**
 
 Interactive `request_tile` returns `codec=rgb888`; durable `get_tile` remains JPEG.

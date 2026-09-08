@@ -33,6 +33,15 @@ struct LevelBlob {
 
 void image_library_init();
 
+/// Build ThumbHash bytes from RGB888 (downscales to ≤32 edge internally).
+[[nodiscard]] std::vector<std::uint8_t> lqip_thumbhash_from_rgb888(
+    const std::uint8_t* rgb, int width, int height);
+
+/// Load file, thumbnail to ≤32 edge, encode ThumbHash (empty on failure).
+[[nodiscard]] std::vector<std::uint8_t> lqip_thumbhash_from_file(
+    const std::filesystem::path& path);
+
+
 /// Read a regular file up to max_bytes (rejects larger). Empty on error.
 [[nodiscard]] std::optional<std::vector<std::uint8_t>> read_file_bytes(
     const std::filesystem::path& path, std::uint64_t max_bytes);

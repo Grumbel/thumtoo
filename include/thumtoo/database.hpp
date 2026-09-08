@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <span>
 #include <vector>
 
 struct sqlite3;
@@ -81,6 +82,9 @@ class Database {
     std::optional<int> still_count;
     ContentStatus status = ContentStatus::Pending;
     std::optional<std::string> error_code;
+    /// Inline LQIP (e.g. ThumbHash); empty if unknown.
+    std::vector<std::uint8_t> lqip;
+    int lqip_kind = 0;  // kLqipKind*
   };
 
   [[nodiscard]] std::vector<ContentRow> list_content(int limit = 100) const;
@@ -93,6 +97,13 @@ class Database {
 
   [[nodiscard]] std::optional<LocatorRow> find_locator(std::string_view uri) const;
   [[nodiscard]] std::optional<ContentRow> find_content(std::string_view content_id) const;
+
+  /// Cache-only: ThumbHash (or other LQIP) stored on the content row.
+  [[nodiscard]] std::optional<std::vector<std::uint8_t>> get_lqip(
+      std::string_view content_id) const;
+  void set_lqip(std::string_view content_id, int kind,
+                std::span<const std::uint8_t> bytes);
+
 
   /// Resolve uri -> content meta via locator join (cache only).
   /// Also accepts content-id URIs (sha256:… / sha1:…) directly.
