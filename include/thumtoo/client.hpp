@@ -101,6 +101,10 @@ class Client {
   [[nodiscard]] std::optional<std::vector<std::uint8_t>> get_lqip(
       std::string_view uri) const;
 
+  /// If LQIP missing, try a cheap file/buffer thumbnail encode (worker-safe).
+  /// Returns get_lqip afterward. No-op when already present.
+  std::optional<std::vector<std::uint8_t>> ensure_lqip(std::string_view uri);
+
   void request_size(std::string uri, SizeCallback cb);
 
   /// Ensure ladder exists (probe if needed), then return pixels via callback.

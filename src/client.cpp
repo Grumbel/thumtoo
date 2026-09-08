@@ -248,6 +248,32 @@ std::optional<std::vector<std::uint8_t>> Client::get_lqip(
   return db_->get_lqip(*loc->content_id);
 }
 
+std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
+    std::string_view uri) {
+  if (auto existing = get_lqip(uri)) {
+    return existing;
+  }
+  auto loc = db_->find_locator(uri);
+  if (!loc || !loc->content_id) {
+    return std::nullopt;
+  }
+  const std::string& cid = *loc->content_id;
+  if (auto path = path_from_file_uri(uri)) {
+    if (std::filesystem::is_regular_file(*path)) {
+      store_lqip_if_missing(*db_, cid, &*path, nullptr, 0, 0);
+    }
+  } else if (auto arch = parse_archive_uri(std::string(uri))) {
+    if (!arch->member_path.empty()) {
+      if (auto bytes = member_bytes(arch->archive_path, arch->member_path,
+                                    std::nullopt)) {
+        store_lqip_if_missing(*db_, cid, nullptr, nullptr, 0, 0, bytes->data(),
+                              bytes->size());
+      }
+    }
+  }
+  return get_lqip(uri);
+}
+
 void Client::request_pixels(std::string uri, int max_edge, PixelsCallback cb,
                             int frame_idx) {
   if (auto px = get_pixels(uri, max_edge, frame_idx)) {
@@ -859,11 +885,19 @@ void Client::handle_probe_size(
   std::optional<Size> size_out;
 
   // Size already known (ladder may still be missing — Incomplete).
-  // Do not re-hash / re-probe on every request_size.
+  // Do not re-hash / re-probe on every request_size — but backfill LQIP when
+  // missing (content probed before schema v2 / ThumbHash, or encode failed).
   if (row.width && row.height
       && (row.status == ContentStatus::Ready
           || row.status == ContentStatus::Incomplete)) {
     size_out = Size{*row.width, *row.height};
+    if (!db_->get_lqip(row.content_id)) {
+      if (auto path = path_from_file_uri(job.uri)) {
+        if (std::filesystem::is_regular_file(*path)) {
+          store_lqip_if_missing(*db_, row.content_id, &*path, nullptr, 0, 0);
+        }
+      }
+    }
     if (job.size_cb) {
       auto cb = std::move(job.size_cb);
       auto uri = job.uri;

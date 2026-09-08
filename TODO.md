@@ -1,3 +1,14 @@
+## LQIP backfill when size already known (2026-09-08) — tip **thumtoo-045**
+
+Probe early-return skipped LQIP for content that already had width/height
+(typical warm cache from before ThumbHash). Backfill on that path +
+`Client::ensure_lqip()` for explicit fill.
+
+### Status
+- [x] Bundle thumtoo-045
+
+---
+
 ## HTTP probe LQIP + DESIGN note (2026-09-08) — tip **thumtoo-044**
 
 Encode ThumbHash during HTTP size probe (cached body). Document LQIP stack in
