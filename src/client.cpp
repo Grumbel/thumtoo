@@ -13,6 +13,7 @@
 #include "thumtoo/blob_store.hpp"
 
 #include <algorithm>
+#include <deque>
 #include <unordered_map>
 #include <cctype>
 #include <chrono>
@@ -390,7 +391,9 @@ void Client::request_tile(std::string uri, int scale, int x, int y,
   job.tile_max_scale = scale;
   job.tile_pyramid = false;
   job.tile_cb = std::move(cb);
-  enqueue(std::move(job));
+  // LIFO: newest interactive tile first so catch-up after pan/zoom prefers
+  // the current view over a FIFO backlog of intermediate cells.
+  enqueue(std::move(job), /*front=*/true);
 }
 
 void Client::request_tile_pyramid(std::string uri, int min_scale, int max_scale,
@@ -405,10 +408,38 @@ void Client::request_tile_pyramid(std::string uri, int min_scale, int max_scale,
   enqueue(std::move(job));
 }
 
-void Client::enqueue(Job job) {
+void Client::enqueue(Job job, bool front) {
   {
     std::lock_guard lock(mu_);
-    queue_.push_back(std::move(job));
+    if (front) {
+      // Drop older pending jobs for the same cell so superseded work never
+      // reaches a worker (Galapix cancel cannot remove jobs already queued).
+      if (job.kind == JobKind::EnsureTiles && !job.tile_pyramid) {
+        for (auto it = queue_.begin(); it != queue_.end();) {
+          if (it->kind == JobKind::EnsureTiles && !it->tile_pyramid &&
+              it->uri == job.uri && it->tile_scale == job.tile_scale &&
+              it->tile_x == job.tile_x && it->tile_y == job.tile_y) {
+            TileCallback cb = std::move(it->tile_cb);
+            std::string uri = it->uri;
+            int const sc = it->tile_scale;
+            int const x = it->tile_x;
+            int const y = it->tile_y;
+            it = queue_.erase(it);
+            if (cb) {
+              executor_.post(
+                  [cb = std::move(cb), uri = std::move(uri), sc, x, y]() mutable {
+                    cb(std::move(uri), sc, x, y, std::nullopt);
+                  });
+            }
+          } else {
+            ++it;
+          }
+        }
+      }
+      queue_.push_front(std::move(job));
+    } else {
+      queue_.push_back(std::move(job));
+    }
   }
   cv_.notify_one();
 }

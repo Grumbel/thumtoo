@@ -19,6 +19,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <deque>
 #include <vector>
 
 namespace thumtoo {
@@ -201,7 +202,8 @@ class Client {
   };
 
   void worker_main();
-  void enqueue(Job job);
+  /// \param front true → LIFO (interactive tiles); false → FIFO (bulk).
+  void enqueue(Job job, bool front = false);
   void handle_probe_size(
       Job& job,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);
@@ -241,7 +243,7 @@ class Client {
 
   std::mutex mu_;
   std::condition_variable cv_;
-  std::vector<Job> queue_;
+  std::deque<Job> queue_;
   bool stop_ = false;
   int inflight_ = 0;
   std::vector<std::thread> workers_;

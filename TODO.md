@@ -1,3 +1,16 @@
+## Interactive tile queue LIFO + coalesce (2026-09-08) — **thumtoo-056**
+
+`request_tile` (single-cell interactive) enqueues at the **front** of the
+worker queue so the latest view is processed before a backlog of intermediate
+pan/zoom cells. Older pending jobs for the same (uri, scale, x, y) are dropped
+and complete with empty. `request_tile_pyramid` / size / pixels stay FIFO
+(`push_back`).
+
+- [x] deque + enqueue(front)
+- [x] Bundle thumtoo-056
+
+---
+
 ## Optional unrar/unzip extract backends (2026-09-08) — backlog
 
 libarchive covers most zip/rar/7z/tar. Gaps worth a future thumtoo path:
