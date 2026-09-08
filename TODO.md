@@ -1,3 +1,14 @@
+## LQIP: no Magick on PDF/DjVu containers (2026-09-08) — **thumtoo-069**
+
+Size probe / ensure_lqip used path_from_file_uri which strips //page: and fed
+the .djvu/.pdf path to Vips→Magick→ddjvu_page_render (whole doc, GUI stall).
+
+- [x] ensure_lqip: per-page small raster for PDF/DjVu
+- [x] size probe LQIP: same; skip Magick for page URIs
+- [ ] Bundle thumtoo-069
+
+---
+
 ## CMake feature summary (2026-09-08) — tip **thumtoo-067** / bundle **thumtoo-067**
 
 - [x] Configure-time feature summary (PDF / DjVu / curl / archive / vips / sqlite)

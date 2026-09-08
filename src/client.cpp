@@ -275,17 +275,48 @@ std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
     return std::nullopt;
   }
   const std::string& cid = *loc->content_id;
-  if (auto path = path_from_file_uri(uri)) {
-    if (std::filesystem::is_regular_file(*path)) {
-      store_lqip_if_missing(*db_, cid, &*path, nullptr, 0, 0);
+
+  // PDF / DjVu pages: never feed the container path to Vips/Magick — that
+  // decodes the whole document (or wrong page) and can lock the UI for minutes.
+  // Rasterize only this page at a tiny edge for Handsum.
+  constexpr int kLqipPageEdge = 64;
+  if (auto pdf = parse_pdf_uri(std::string(uri))) {
+    if (auto raster =
+            pdf_rasterize_page(pdf->pdf_path, pdf->page, kLqipPageEdge)) {
+      if (!raster->rgb.empty()) {
+        store_lqip_if_missing(*db_, cid, nullptr, raster->rgb.data(),
+                              raster->width, raster->height);
+      }
     }
-  } else if (auto arch = parse_archive_uri(std::string(uri))) {
+    return get_lqip(uri);
+  }
+  if (auto dj = parse_djvu_uri(std::string(uri))) {
+    if (auto raster =
+            djvu_rasterize_page(dj->djvu_path, dj->page, kLqipPageEdge)) {
+      if (!raster->rgb.empty()) {
+        store_lqip_if_missing(*db_, cid, nullptr, raster->rgb.data(),
+                              raster->width, raster->height);
+      }
+    }
+    return get_lqip(uri);
+  }
+
+  if (auto arch = parse_archive_uri(std::string(uri))) {
     if (!arch->member_path.empty()) {
       if (auto bytes = member_bytes(arch->archive_path, arch->member_path,
                                     std::nullopt)) {
         store_lqip_if_missing(*db_, cid, nullptr, nullptr, 0, 0, bytes->data(),
                               bytes->size());
       }
+    }
+    return get_lqip(uri);
+  }
+
+  // Plain file:// image only (no //page: / //archive:).
+  if (auto path = path_from_file_uri(uri)) {
+    if (std::filesystem::is_regular_file(*path) && !is_pdf_page_uri(uri) &&
+        !is_archive_uri(uri)) {
+      store_lqip_if_missing(*db_, cid, &*path, nullptr, 0, 0);
     }
   }
   return get_lqip(uri);
@@ -1309,11 +1340,28 @@ void Client::handle_probe_size(
 
   db_->upsert_content(row);
 
-  // Cheap ThumbHash during size probe (local files). Gallery can paint from the
-  // content row without touching levels/blob storage. Ladder still deferred.
+  // LQIP during size probe. Never pass PDF/DjVu container paths to Vips/Magick.
   if (size_out && !row.content_id.empty()) {
-    if (auto path = path_from_file_uri(job.uri)) {
-      if (std::filesystem::is_regular_file(*path)) {
+    constexpr int kLqipPageEdge = 64;
+    if (auto pdf = parse_pdf_uri(job.uri)) {
+      if (auto raster =
+              pdf_rasterize_page(pdf->pdf_path, pdf->page, kLqipPageEdge)) {
+        if (!raster->rgb.empty()) {
+          store_lqip_if_missing(*db_, row.content_id, nullptr, raster->rgb.data(),
+                                raster->width, raster->height);
+        }
+      }
+    } else if (auto dj = parse_djvu_uri(job.uri)) {
+      if (auto raster =
+              djvu_rasterize_page(dj->djvu_path, dj->page, kLqipPageEdge)) {
+        if (!raster->rgb.empty()) {
+          store_lqip_if_missing(*db_, row.content_id, nullptr, raster->rgb.data(),
+                                raster->width, raster->height);
+        }
+      }
+    } else if (auto path = path_from_file_uri(job.uri)) {
+      if (std::filesystem::is_regular_file(*path) && !is_pdf_page_uri(job.uri) &&
+          !is_archive_uri(job.uri)) {
         store_lqip_if_missing(*db_, row.content_id, &*path, nullptr, 0, 0);
       }
     }
