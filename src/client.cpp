@@ -396,6 +396,25 @@ void Client::request_tile(std::string uri, int scale, int x, int y,
   enqueue(std::move(job), /*front=*/true);
 }
 
+void Client::request_tiles(std::string uri, std::vector<TileCoord> coords,
+                           TileCallback cb) {
+  if (coords.empty() || !cb) {
+    return;
+  }
+  if (coords.size() == 1) {
+    request_tile(std::move(uri), coords[0].scale, coords[0].x, coords[0].y,
+                 std::move(cb));
+    return;
+  }
+  Job job;
+  job.kind = JobKind::EnsureTiles;
+  job.uri = std::move(uri);
+  job.tile_pyramid = false;
+  job.tile_batch = std::move(coords);
+  job.tile_cb = std::move(cb);
+  enqueue(std::move(job), /*front=*/true);
+}
+
 void Client::request_tile_pyramid(std::string uri, int min_scale, int max_scale,
                                   TileCallback on_done) {
   Job job;
@@ -1505,6 +1524,29 @@ void Client::handle_ensure_tiles(
         cb(std::move(uri), 0, 0, 0, std::nullopt);
     });
   };
+
+  // Multi-cell batch: process every coordinate in this worker job so one
+  // decode/ladder serves the whole visible set (no N-way queue contention).
+  if (!job.tile_batch.empty()) {
+    const auto coords = std::move(job.tile_batch);
+    job.tile_batch.clear();
+    const std::string uri = job.uri;
+    const TileCallback cb = std::move(job.tile_cb);
+    for (const TileCoord& c : coords) {
+      Job one;
+      one.kind = JobKind::EnsureTiles;
+      one.uri = uri;
+      one.tile_scale = c.scale;
+      one.tile_x = c.x;
+      one.tile_y = c.y;
+      one.tile_min_scale = c.scale;
+      one.tile_max_scale = c.scale;
+      one.tile_pyramid = false;
+      one.tile_cb = cb;  // copy — reply_one moves the per-job copy only
+      handle_ensure_tiles(one, preextracted);
+    }
+    return;
+  }
 
   if (!job.tile_pyramid) {
     if (auto t = get_tile(job.uri, job.tile_scale, job.tile_x, job.tile_y)) {

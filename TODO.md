@@ -1,3 +1,15 @@
+## Interactive multi-cell request_tiles batch (2026-09-08) — **thumtoo-057**
+
+`Client::request_tiles(uri, coords, cb)` enqueues **one** EnsureTiles job for
+many cells of the same image. The worker shares size-probe / shrink-ladder
+work instead of N competing queue entries. Galapix deep-zoom uses this so
+visible tiles arrive together instead of trickling over ~1s.
+
+- [x] API + handle_ensure_tiles batch loop
+- [x] Bundle thumtoo-057
+
+---
+
 ## Interactive tile queue LIFO + coalesce (2026-09-08) — **thumtoo-056**
 
 `request_tile` (single-cell interactive) enqueues at the **front** of the

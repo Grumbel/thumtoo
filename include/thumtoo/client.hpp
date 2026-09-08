@@ -126,6 +126,17 @@ class Client {
   /// Async: always enqueued (never does blob I/O on the caller thread).
   /// Cache hits are resolved on a worker; callback via Executor.
   void request_tile(std::string uri, int scale, int x, int y, TileCallback cb);
+
+  /// One interactive worker job for many cells of the same URI (shared size
+  /// probe / shrink ladder). \a cb is invoked once per coordinate.
+  struct TileCoord {
+    int scale = 0;
+    int x = 0;
+    int y = 0;
+  };
+  void request_tiles(std::string uri, std::vector<TileCoord> coords,
+                     TileCallback cb);
+
   void invalidate_tile(std::string_view uri, int scale, int x, int y);
 
   /// Prewarm pyramid [min_scale..max_scale] (max_scale < 0 → until single tile).
@@ -196,6 +207,8 @@ class Client {
     int tile_min_scale = 0;
     int tile_max_scale = -1;  // <0 → until single-tile coverage
     bool tile_pyramid = false;  // true: generate range, no single-tile reply
+    /// Non-empty: interactive multi-cell batch for the same uri.
+    std::vector<TileCoord> tile_batch;
     SizeCallback size_cb;
     PixelsCallback pixels_cb;
     TileCallback tile_cb;
