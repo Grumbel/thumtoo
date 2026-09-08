@@ -13,6 +13,7 @@
 #include "thumtoo/blob_store.hpp"
 
 #include <algorithm>
+#include <unordered_map>
 #include <cctype>
 #include <chrono>
 #include <condition_variable>
@@ -819,12 +820,45 @@ void Client::worker_main() {
         archive_path = arch->archive_path;
         members.push_back(arch->member_path);
       }
-      auto extracted =
-          extract_archive_members(archive_path, members);
-      for (const auto& kv : extracted) {
-        extract_cache_put(archive_path, kv.first, kv.second);
+
+      // Warm tile path: never open the archive if every cell is already in the
+      // blob store. Previously we always extract_archive_members() first, so a
+      // fully-cached RAR gallery paid full decompress cost on every open.
+      std::vector<char> need_extract(batch.size(), 1);
+      if (batch_kind == JobKind::EnsureTiles) {
+        for (size_t i = 0; i < batch.size(); ++i) {
+          auto& j = batch[i];
+          if (!j.tile_pyramid &&
+              get_tile(j.uri, j.tile_scale, j.tile_x, j.tile_y)) {
+            need_extract[i] = 0;
+            try {
+              handle_ensure_tiles(j, std::nullopt);
+            } catch (...) {
+            }
+            std::lock_guard lock(mu_);
+            --inflight_;
+          }
+        }
       }
+
+      std::vector<std::string> extract_members;
+      extract_members.reserve(batch.size());
       for (size_t i = 0; i < batch.size(); ++i) {
+        if (!need_extract[i]) continue;
+        if (i < members.size() && !members[i].empty())
+          extract_members.push_back(members[i]);
+      }
+
+      std::unordered_map<std::string, std::vector<std::uint8_t>> extracted;
+      if (!extract_members.empty()) {
+        extracted = extract_archive_members(archive_path, extract_members);
+        for (const auto& kv : extracted) {
+          extract_cache_put(archive_path, kv.first, kv.second);
+        }
+      }
+
+      for (size_t i = 0; i < batch.size(); ++i) {
+        if (!need_extract[i]) continue;
         try {
           std::optional<std::vector<std::uint8_t>> pre;
           if (i < members.size() && !members[i].empty()) {
