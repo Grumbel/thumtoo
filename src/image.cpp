@@ -909,54 +909,6 @@ VipsImage* ladder_acquire_level(const std::string& key, int scale,
   return out;
 }
 
-std::optional<TileBlob> encode_cell_from_level(VipsImage* level, int scale, int x,
-                                              int y, int jpeg_quality) {
-  if (!level || x < 0 || y < 0) return std::nullopt;
-
-  const int sw = vips_image_get_width(level);
-  const int sh = vips_image_get_height(level);
-  if (sw <= 0 || sh <= 0) return std::nullopt;
-
-  const int left = x * kTileSize;
-  const int top = y * kTileSize;
-  if (left >= sw || top >= sh) return std::nullopt;
-  const int tw = std::min(kTileSize, sw - left);
-  const int th = std::min(kTileSize, sh - top);
-  if (tw <= 0 || th <= 0) return std::nullopt;
-
-  const int q = std::clamp(jpeg_quality, 1, 100);
-  VipsImage* crop = nullptr;
-  if (vips_crop(level, &crop, left, top, tw, th, nullptr) != 0 || !crop) {
-    return std::nullopt;
-  }
-
-  void* buf = nullptr;
-  size_t len = 0;
-  {
-    ScopedNsAccumulator timer(global_build_stats().jpeg_encode_ns);
-    if (vips_jpegsave_buffer(crop, &buf, &len, "Q", q, nullptr) != 0 || !buf) {
-      g_object_unref(crop);
-      return std::nullopt;
-    }
-  }
-  g_object_unref(crop);
-
-  TileBlob tb;
-  tb.scale = scale;
-  tb.x = x;
-  tb.y = y;
-  tb.width = tw;
-  tb.height = th;
-  tb.codec = kDefaultTileCodec;
-  tb.bytes.assign(static_cast<std::uint8_t*>(buf),
-                  static_cast<std::uint8_t*>(buf) + len);
-  g_free(buf);
-  global_build_stats().tiles_encoded.fetch_add(1, std::memory_order_relaxed);
-  return tb;
-}
-
-
-
 /// Crop cell and return uncompressed RGB888 (no JPEG). Interactive delivery.
 std::optional<TileBlob> extract_rgb_cell_from_level(VipsImage* level, int scale,
                                                    int x, int y) {

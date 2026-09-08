@@ -1,3 +1,9 @@
+## chore: drop unused encode_cell_from_level (2026-09-08) — tip **thumtoo-038**
+
+Interactive path uses `extract_rgb_cell_from_level` only; JPEG durable encode is `encode_tile_cell_rgb` in Client.
+
+---
+
 ## Interactive tiles: rgb888 delivery, no store→get round-trip (2026-09-08) — tip **thumtoo-037**
 
 ### Problem
