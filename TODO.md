@@ -1,3 +1,14 @@
+## Fast size probe for multipage docs (2026-09-08) — **thumtoo-070**
+
+Opening a 250-page DjVu was still extremely slow at "Probing image sizes":
+each page re-hashed the whole file and rasterized for LQIP.
+
+- [x] Cache sha256_file_hex by path+mtime
+- [x] Size probe: dimensions only for PDF/DjVu (no per-page LQIP raster)
+- [ ] Bundle thumtoo-070
+
+---
+
 ## LQIP: no Magick on PDF/DjVu containers (2026-09-08) — **thumtoo-069**
 
 Size probe / ensure_lqip used path_from_file_uri which strips //page: and fed

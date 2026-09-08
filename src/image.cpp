@@ -19,6 +19,8 @@
 #include <cctype>
 #include <fstream>
 #include <mutex>
+#include <filesystem>
+#include <cstdint>
 #include <thread>
 #include <vector>
 #include <sstream>
@@ -622,7 +624,34 @@ std::optional<LevelBlob> downscale_preview_jxl(const std::uint8_t* jxl_data,
   return b;
 }
 
+
+namespace {
+// Multipage PDF/DjVu size probes hash the same container once per page without
+// this cache (hundreds of full-file SHA-256s of a multi‑MB book).
+struct Sha256FileCache {
+  std::mutex mu;
+  std::string path_key;
+  std::int64_t mtime_tick = 0;
+  std::string hex;
+};
+Sha256FileCache g_sha256_file_cache;
+}  // namespace
+
 std::string sha256_file_hex(const std::filesystem::path& path) {
+  std::error_code ec;
+  const auto mtime = std::filesystem::last_write_time(path, ec);
+  const auto tick = ec ? std::int64_t{0}
+                       : static_cast<std::int64_t>(mtime.time_since_epoch().count());
+  const std::string key = path.lexically_normal().string();
+  {
+    std::lock_guard lock(g_sha256_file_cache.mu);
+    if (g_sha256_file_cache.path_key == key &&
+        g_sha256_file_cache.mtime_tick == tick &&
+        !g_sha256_file_cache.hex.empty()) {
+      return g_sha256_file_cache.hex;
+    }
+  }
+
   std::ifstream in(path, std::ios::binary);
   if (!in) return {};
   Sha256 ctx;
@@ -642,6 +671,12 @@ std::string sha256_file_hex(const std::filesystem::path& path) {
   for (int i = 0; i < 32; ++i) {
     out[static_cast<std::size_t>(i) * 2] = kHex[hash[i] >> 4];
     out[static_cast<std::size_t>(i) * 2 + 1] = kHex[hash[i] & 0xf];
+  }
+  {
+    std::lock_guard lock(g_sha256_file_cache.mu);
+    g_sha256_file_cache.path_key = key;
+    g_sha256_file_cache.mtime_tick = tick;
+    g_sha256_file_cache.hex = out;
   }
   return out;
 }

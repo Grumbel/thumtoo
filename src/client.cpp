@@ -1340,25 +1340,12 @@ void Client::handle_probe_size(
 
   db_->upsert_content(row);
 
-  // LQIP during size probe. Never pass PDF/DjVu container paths to Vips/Magick.
+  // LQIP during size probe for plain images only. PDF/DjVu pages are
+  // dimensions-only here (no per-page raster) — LQIP comes from EnsurePixels /
+  // ensure_lqip later. Avoids N full-page decodes on open.
   if (size_out && !row.content_id.empty()) {
-    constexpr int kLqipPageEdge = 64;
-    if (auto pdf = parse_pdf_uri(job.uri)) {
-      if (auto raster =
-              pdf_rasterize_page(pdf->pdf_path, pdf->page, kLqipPageEdge)) {
-        if (!raster->rgb.empty()) {
-          store_lqip_if_missing(*db_, row.content_id, nullptr, raster->rgb.data(),
-                                raster->width, raster->height);
-        }
-      }
-    } else if (auto dj = parse_djvu_uri(job.uri)) {
-      if (auto raster =
-              djvu_rasterize_page(dj->djvu_path, dj->page, kLqipPageEdge)) {
-        if (!raster->rgb.empty()) {
-          store_lqip_if_missing(*db_, row.content_id, nullptr, raster->rgb.data(),
-                                raster->width, raster->height);
-        }
-      }
+    if (parse_pdf_uri(job.uri) || parse_djvu_uri(job.uri)) {
+      // size only
     } else if (auto path = path_from_file_uri(job.uri)) {
       if (std::filesystem::is_regular_file(*path) && !is_pdf_page_uri(job.uri) &&
           !is_archive_uri(job.uri)) {
