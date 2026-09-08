@@ -5,7 +5,7 @@ each page re-hashed the whole file and rasterized for LQIP.
 
 - [x] Cache sha256_file_hex by path+mtime
 - [x] Size probe: dimensions only for PDF/DjVu (no per-page LQIP raster)
-- [ ] Bundle thumtoo-070
+- [x] Bundle thumtoo-070
 
 ---
 
