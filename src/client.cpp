@@ -1533,14 +1533,26 @@ void Client::handle_ensure_tiles(
     });
   };
 
-  // Multi-cell batch: one worker, sequential cells. Single-cell path replies
-  // before durable encode so the GUI can queue uploads while we still JPEG
-  // the previous cell. Shared shrink ladder avoids re-decoding the file.
+  // Multi-cell batch: probe once, then every cell. Per-cell try/catch so one
+  // failure cannot leave the rest of the visible set stuck REQUESTED forever.
+  // skip_durable: reply all RGB first, then JPEG/SQLite.
   if (!job.tile_batch.empty()) {
     const auto coords = std::move(job.tile_batch);
     job.tile_batch.clear();
     const std::string uri = job.uri;
     const TileCallback cb = std::move(job.tile_cb);
+
+    {
+      Job probe;
+      probe.kind = JobKind::ProbeSize;
+      probe.uri = uri;
+      try {
+        handle_probe_size(probe, preextracted);
+      } catch (...) {
+        // Still try cells; each may fail cleanly via nullopt reply.
+      }
+    }
+
     for (const TileCoord& c : coords) {
       Job one;
       one.kind = JobKind::EnsureTiles;
@@ -1551,11 +1563,19 @@ void Client::handle_ensure_tiles(
       one.tile_min_scale = c.scale;
       one.tile_max_scale = c.scale;
       one.tile_pyramid = false;
-      one.skip_durable = true;  // paint whole batch before any JPEG/SQLite
-      one.tile_cb = cb;  // copy — reply_one moves only the per-job copy
-      handle_ensure_tiles(one, preextracted);
+      one.skip_durable = true;
+      one.skip_probe = true;
+      one.tile_cb = cb;
+      try {
+        handle_ensure_tiles(one, preextracted);
+      } catch (...) {
+        if (cb) {
+          executor_.post([cb, uri, scale = c.scale, x = c.x, y = c.y]() mutable {
+            cb(std::move(uri), scale, x, y, std::nullopt);
+          });
+        }
+      }
     }
-    // All interactive replies are posted; now durable-encode without blocking paint.
     {
       auto pending = std::move(g_deferred_tile_stores);
       g_deferred_tile_stores.clear();
@@ -1563,10 +1583,13 @@ void Client::handle_ensure_tiles(
         if (d.rgb.bytes.empty() || d.content_id.empty()) {
           continue;
         }
-        if (auto jpeg = encode_tile_cell_rgb(
-                d.rgb.bytes.data(), d.rgb.width, d.rgb.height, d.rgb.scale,
-                d.rgb.x, d.rgb.y, kDefaultTileQuality)) {
-          store_tiles(d.content_id, std::vector<TileBlob>{*jpeg});
+        try {
+          if (auto jpeg = encode_tile_cell_rgb(
+                  d.rgb.bytes.data(), d.rgb.width, d.rgb.height, d.rgb.scale,
+                  d.rgb.x, d.rgb.y, kDefaultTileQuality)) {
+            store_tiles(d.content_id, std::vector<TileBlob>{*jpeg});
+          }
+        } catch (...) {
         }
       }
     }
@@ -1581,11 +1604,11 @@ void Client::handle_ensure_tiles(
   }
 
   // Size probe first (sets content_id + dimensions).
-  {
+  if (!job.skip_probe) {
     Job probe;
     probe.kind = JobKind::ProbeSize;
     probe.uri = job.uri;
-    handle_probe_size(probe);
+    handle_probe_size(probe, preextracted);
   }
 
   if (!job.tile_pyramid) {

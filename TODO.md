@@ -1,3 +1,19 @@
+## Unstick interactive tile batch (2026-09-08) — **thumtoo-059**
+
+Pending requests could sit at ~100 after batch path:
+
+1. Every cell re-ran `handle_probe_size` (LQIP backfill could re-encode full image)
+2. Exception on one cell aborted the rest with JobHandles left REQUESTED
+
+### Fix
+- Probe **once** per `request_tiles` batch; children set `skip_probe`
+- try/catch per cell + nullopt reply so every JobHandle completes
+
+- [x] Code
+- [x] Bundle thumtoo-059
+
+---
+
 ## Interactive tiles: reply before durable JPEG (2026-09-08) — **thumtoo-058**
 
 ### Root cause

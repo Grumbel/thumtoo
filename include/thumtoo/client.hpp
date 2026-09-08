@@ -210,6 +210,8 @@ class Client {
     /// When true, interactive RGB cells are replied without JPEG/SQLite write
     /// (batch paints the whole view first; durable store can follow later).
     bool skip_durable = false;
+    /// Batch already probed size; skip handle_probe_size in children.
+    bool skip_probe = false;
     /// Non-empty: interactive multi-cell batch for the same uri.
     std::vector<TileCoord> tile_batch;
     SizeCallback size_cb;
