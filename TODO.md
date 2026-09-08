@@ -3,7 +3,7 @@
 - [x] `thumtoo::expand_media_uris` / `is_openable_media_path` (PDF, DjVu, archive, image)
 - [x] Link Poppler / DjVuLibre / libcurl **PRIVATE** (feature macros stay PUBLIC)
 - [ ] Galapix uses expand API; drops format-specific expand
-- [ ] Bundle thumtoo-066
+- [x] Bundle thumtoo-066
 
 ---
 
