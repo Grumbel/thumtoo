@@ -8,6 +8,7 @@
 #include "thumtoo/image.hpp"
 
 #include <algorithm>
+#include <filesystem>
 #include <memory>
 #include <cmath>
 #include <cstring>
@@ -23,6 +24,53 @@ namespace thumtoo {
 namespace {
 
 constexpr std::string_view kPagePipe = "//page:";
+
+#if defined(THUMTOO_HAVE_POPPLER)
+/// Per-worker PDF document cache. Poppler documents are not shared across
+/// threads; Client workers process jobs sequentially per thread, so the same
+/// page's tiles reuse one open document instead of load_from_file per cell.
+struct TlsPdfDocument {
+  std::string path_key;
+  std::filesystem::file_time_type mtime{};
+  std::unique_ptr<poppler::document> doc;
+};
+
+thread_local TlsPdfDocument g_tls_pdf_doc;
+
+struct TlsPdfLayout {
+  std::string path_key;
+  int page = 0;
+  Size size72{};
+};
+
+thread_local TlsPdfLayout g_tls_pdf_layout;
+
+[[nodiscard]] poppler::document* cached_pdf_document(
+    const std::filesystem::path& path) {
+  std::error_code ec;
+  const auto mtime = std::filesystem::last_write_time(path, ec);
+  const std::string key = path.lexically_normal().string();
+  if (g_tls_pdf_doc.doc && g_tls_pdf_doc.path_key == key && !ec &&
+      g_tls_pdf_doc.mtime == mtime) {
+    return g_tls_pdf_doc.doc.get();
+  }
+  auto loaded = std::unique_ptr<poppler::document>(
+      poppler::document::load_from_file(path.string()));
+  if (!loaded || loaded->is_locked()) {
+    g_tls_pdf_doc = {};
+    return nullptr;
+  }
+  g_tls_pdf_doc.path_key = key;
+  g_tls_pdf_doc.mtime =
+      ec ? std::filesystem::file_time_type{} : mtime;
+  g_tls_pdf_doc.doc = std::move(loaded);
+  // Path change invalidates layout cache for a different file.
+  if (g_tls_pdf_layout.path_key != key) {
+    g_tls_pdf_layout = {};
+  }
+  return g_tls_pdf_doc.doc.get();
+}
+#endif
 
 }  // namespace
 
@@ -66,9 +114,8 @@ std::optional<int> pdf_page_count(const std::filesystem::path& path) {
   (void)path;
   return std::nullopt;
 #else
-  std::unique_ptr<poppler::document> doc(
-      poppler::document::load_from_file(path.string()));
-  if (!doc || doc->is_locked()) return std::nullopt;
+  poppler::document* doc = cached_pdf_document(path);
+  if (!doc) return std::nullopt;
   const int n = doc->pages();
   if (n <= 0) return std::nullopt;
   return n;
@@ -83,16 +130,23 @@ std::optional<Size> pdf_page_size_72dpi(const std::filesystem::path& path,
   return std::nullopt;
 #else
   if (page_1based < 1) return std::nullopt;
-  std::unique_ptr<poppler::document> doc(
-      poppler::document::load_from_file(path.string()));
-  if (!doc || doc->is_locked()) return std::nullopt;
+  const std::string key = path.lexically_normal().string();
+  if (g_tls_pdf_layout.path_key == key && g_tls_pdf_layout.page == page_1based &&
+      g_tls_pdf_layout.size72.width > 0) {
+    return g_tls_pdf_layout.size72;
+  }
+  poppler::document* doc = cached_pdf_document(path);
+  if (!doc) return std::nullopt;
   if (page_1based > doc->pages()) return std::nullopt;
   std::unique_ptr<poppler::page> page(doc->create_page(page_1based - 1));
   if (!page) return std::nullopt;
   const poppler::rectf box = page->page_rect(poppler::media_box);
   const int w = std::max(1, static_cast<int>(std::lround(box.width())));
   const int h = std::max(1, static_cast<int>(std::lround(box.height())));
-  return Size{w, h};
+  g_tls_pdf_layout.path_key = key;
+  g_tls_pdf_layout.page = page_1based;
+  g_tls_pdf_layout.size72 = Size{w, h};
+  return g_tls_pdf_layout.size72;
 #endif
 }
 
@@ -116,9 +170,8 @@ std::optional<PdfRaster> pdf_rasterize_page(const std::filesystem::path& path,
   return std::nullopt;
 #else
   if (page_1based < 1) return std::nullopt;
-  std::unique_ptr<poppler::document> doc(
-      poppler::document::load_from_file(path.string()));
-  if (!doc || doc->is_locked()) return std::nullopt;
+  poppler::document* doc = cached_pdf_document(path);
+  if (!doc) return std::nullopt;
   if (page_1based > doc->pages()) return std::nullopt;
   std::unique_ptr<poppler::page> page(doc->create_page(page_1based - 1));
   if (!page) return std::nullopt;
@@ -296,9 +349,8 @@ std::optional<PdfRaster> pdf_rasterize_page_region(
   return std::nullopt;
 #else
   if (page_1based < 1 || pw <= 0 || ph <= 0 || dpi <= 0.0) return std::nullopt;
-  std::unique_ptr<poppler::document> doc(
-      poppler::document::load_from_file(path.string()));
-  if (!doc || doc->is_locked()) return std::nullopt;
+  poppler::document* doc = cached_pdf_document(path);
+  if (!doc) return std::nullopt;
   if (page_1based > doc->pages()) return std::nullopt;
   std::unique_ptr<poppler::page> page(doc->create_page(page_1based - 1));
   if (!page) return std::nullopt;

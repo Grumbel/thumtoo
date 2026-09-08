@@ -1,3 +1,19 @@
+## PDF: thread-local document cache (2026-09-08) — **thumtoo-061**
+
+Interactive PDF tiles called `poppler::document::load_from_file` on **every**
+cell (layout size + region render + optional full-page fallback). A viewport
+of N tiles reopened the same PDF N–3N times.
+
+### Fix
+- `thread_local` open-document cache keyed by path + mtime (Poppler is not
+  cross-thread safe; matches Client worker model)
+- Cache media-box size at 72 dpi per path+page for layout queries
+
+- [x] Code
+- [x] Bundle thumtoo-061
+
+---
+
 ## Index-based tile batch completion (2026-09-08) — **thumtoo-060**
 
 Fresh-generate tiles could stay REQUESTED forever: batch used one shared

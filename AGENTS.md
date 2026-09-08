@@ -32,7 +32,7 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 
 ## Status (2026-09-07)
 
-**Tip: thumtoo-031.** Full session notes: top of [TODO.md](TODO.md).
+**Tip: thumtoo-061.** Full session notes: top of [TODO.md](TODO.md).
 Live PDF tiles return `rgb888` (tests + Galapix codec branch required).
 Retrieval stack: Location URIs → content-id → read_source_bytes → PDF@144dpi → HTTP(S)+session cache.
 
