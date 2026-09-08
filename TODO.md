@@ -1,3 +1,15 @@
+## LQIP on size probe + unit test (2026-09-08) — tip **thumtoo-042**
+
+Encode ThumbHash during `handle_probe_size` for local files so cold gallery
+open gets inline LQIP without waiting for `request_pixels` / ladder.
+
+Add `tests/test_lqip.cpp` encode/decode round-trip.
+
+### Status
+- [x] Bundle thumtoo-042
+
+---
+
 ## Inline LQIP (ThumbHash) on content rows (2026-09-08) — tip **thumtoo-040**
 
 ### Goal

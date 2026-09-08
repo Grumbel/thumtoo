@@ -1053,6 +1053,16 @@ void Client::handle_probe_size(
 
   db_->upsert_content(row);
 
+  // Cheap ThumbHash during size probe (local files). Gallery can paint from the
+  // content row without touching levels/blob storage. Ladder still deferred.
+  if (size_out && !row.content_id.empty()) {
+    if (auto path = path_from_file_uri(job.uri)) {
+      if (std::filesystem::is_regular_file(*path)) {
+        store_lqip_if_missing(*db_, row.content_id, &*path, nullptr, 0, 0);
+      }
+    }
+  }
+
   if (job.size_cb) {
     auto cb = std::move(job.size_cb);
     auto uri = job.uri;
