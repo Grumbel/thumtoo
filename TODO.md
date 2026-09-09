@@ -855,12 +855,14 @@ Goal: exhaustive audit of thumbnail / ladder / tile generation in thumtoo
 - [x] Deep pass: client.cpp request_size / ensure_lqip / request_tile
 - [x] Deep pass: archive.cpp extract paths (TOC + sequential extract)
 - [x] Deep pass: lqip/handsum obtain path (vips_thumbnail 32)
-- [ ] Deep pass: pdf.cpp / djvu.cpp raster costs (spot-checked only)
-- [x] Deep pass: galapix ImageOverview LQIP policy
+- [x] Deep pass: pdf.cpp / djvu.cpp raster costs
+- [x] Deep pass: galapix ImageOverview + ThumtooTileProvider
 - [x] Microbench harness (Pillow results + C++ vips tool wired)
 - [x] Initial numbers in docs/MICROBENCH_RESULTS.md
+- [x] Propose JPEG shrink / LQIP / schema fixes (audit §8)
 - [ ] Vips/libjpeg numbers under nix develop
 - [ ] RAR / solid archive extract comparison
-- [ ] Propose code fix for interactive JPEG shrink (discussion)
+- [ ] Implement interactive JPEG shrink (after agreement on Option A/B)
+- [ ] Decouple LQIP from size probe (after agreement)
 
-Tip: **thumtoo-076** (this work).
+Tip: **thumtoo-078** next bundle after this commit.

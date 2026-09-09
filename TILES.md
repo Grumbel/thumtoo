@@ -91,9 +91,15 @@ keyed by URL → content_id.
 
 ### JPEG load for interactive cells
 
-For `.jpg` sources, `build_tile_cell` uses `vips_jpegload(..., shrink=2|4|8)` so
-coarse scales avoid a full-resolution decode, then applies any remaining
-factor-of-two shrinks to match Galapix scale. Non-JPEG formats still full-load.
+**Intended:** For JPEG sources, `build_tile_cell_buffer` can use
+`vips_jpegload(..., shrink=2|4|8)` so coarse scales avoid a full-resolution
+decode, then apply remaining factor-of-two shrinks.
+
+**Current (2026-09-09):** That branch only runs when `decode_cache_key` is
+empty. Interactive Client paths always pass a non-empty key (`a:…` / `h:…`)
+or use file `build_tile_cell` → in-process shrink ladder from a **full**
+load. See [docs/THUMBNAIL_AUDIT.md](docs/THUMBNAIL_AUDIT.md) §4.1–4.2 and §8.1.
+Non-JPEG formats still full-load.
 
 ## Scale range (detail cutoff)
 

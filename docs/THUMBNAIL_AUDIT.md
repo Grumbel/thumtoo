@@ -189,14 +189,38 @@ Reply-before-durable-store is already implemented (live paint first).
   for JPEG — but still non-trivial I/O + decode, and runs on size probe.
 - Does **not** try EXIF embedded thumb first (ladder does; LQIP does not).
 
-### 4.6 `src/pdf.cpp` / `src/djvu.cpp`
+### 4.6 `src/pdf.cpp`
 
-- Region/page raster at needed resolution for tiles; blank DjVu → white
-  (thumtoo-075).
-- Must never go through Vips/Magick (thumtoo-073).
-- Live interactive tiles: rgb888; durable JPEG only above scale threshold.
+| Op | Cost class | Notes |
+|----|------------|-------|
+| `pdf_page_size_72dpi` / layout | Fast | Media box; TLS layout cache per path+page |
+| `pdf_rasterize_page(max_edge)` | Slow | Full page at DPI scaled to long edge |
+| `pdf_rasterize_page_region` | Medium–slow | Poppler crop at target DPI; O(tile) pixels |
+| `pdf_render_tile_cell` | Medium | Prefer region; **fallback full-page** if region size mismatch >2px |
+| Document open | Medium | TLS per-worker document cache (path+mtime) |
 
-### 4.7 Schema / blobs
+- Layout DPI constant (`kPdfLayoutDpi`, historically 144) defines scale 0.
+- Live interactive: rgb888; durable JPEG only for scale ≥ `kPdfMinDurableTileScale`.
+- Galapix allows live min_scale down to **−8** (~36k dpi) — each cell still
+  region-renders, so memory is O(256²), but CPU grows with DPI.
+- Fallback full-page path is a footgun for large pages when region API
+  misbehaves (rare size mismatch).
+
+### 4.7 `src/djvu.cpp`
+
+| Op | Cost class | Notes |
+|----|------------|-------|
+| page layout size | Fast–medium | Needs decoded page dimensions |
+| `djvu_rasterize_page` | Slow | Full page; shared process-wide doc cache + mutex |
+| region render | Medium–slow | Crop rect; y_direction top-down (thumtoo-074) |
+| blank page | Fast | solid white on render failure (thumtoo-075) |
+
+- **Process-wide mutex** on all DjVu API (thumtoo-071): correct for ddjvu,
+  serializes workers — high `--jobs` does not parallelize DjVu well.
+- `ddjvu_cache_clear` after each page render — avoids unbounded RAM, may
+  re-decode shared structure across pages.
+
+### 4.8 Schema / blobs
 
 - Tiles: `(content_id, scale, x, y, width, height, codec, quality)`.
 - No column for decode path / quality class (HQ full vs shrink=N vs embedded).
@@ -210,23 +234,34 @@ Reply-before-durable-store is already implemented (live paint first).
 | Stage | Cold cache | Warm cache |
 |-------|------------|------------|
 | Size | `request_size` + worker probe (+ LQIP for plain files) | `get_size` ~instant |
-| Soft underlay | `get_lqip` miss until probe/EnsurePixels fills; UI never `ensure_lqip` | `get_lqip` + Handsum decode on main thread |
-| Coarse tile | extract + **full** decode + shrink ladder + JPEG | `get_tile` + JPEG decode + GL |
-| Overview levels | `request_pixels` / tile max_scale after budget | cache hit |
+| Soft underlay | `get_lqip` miss until probe fills; UI never `ensure_lqip` | `get_lqip` + Handsum decode on main |
+| Coarse tile | extract + **full** decode + RAM shrink ladder + JPEG | `get_tile` + JPEG decode + GL |
+| Overview levels | `request_pixels` / max_scale tile after budget | cache hit |
 
-### 5.2 `ImageOverview` (galapix)
+### 5.2 `ThumtooTileProvider` (`src/thumtoo/thumtoo_tile_provider.cpp`)
 
-- thumtoo path: **only** `get_lqip` on GUI; retry each frame; never
-  `ensure_lqip` (galapix-082).
-- Non-thumtoo: `OverviewLoadJob` + libjpeg DCT scale (historical path).
-- `ensure_levels` after grid budget; postage-stamp ≤128 stays LQIP-only.
+- `create_from_size`: pure local; max_scale matches thumtoo loop (fit in 256²).
+- `create`: **blocking** `request_size` + `drain` — must not be used in a
+  per-URI loop on open (ViewerCommand uses SizeProbeSession batch instead).
+- `request_tile` / `request_tiles`: callback on Client worker; JPEG/rgb888
+  → RGBA8 **on worker** (good — not GUI).
+- `surface_from_tile_blob`:
+  - rgb888: per-pixel expand to RGBA8 (PDF/DjVu live).
+  - JPEG: `surf::jpeg::load_from_mem` then convert to RGBA8 if needed.
+- Warm TTFB still pays: SQLite get + JPEG decode of ≤256² + RGBA convert +
+  queue to main + GL upload. Should be low tens of ms for many tiles if
+  workers keep up; stampede limited by galapix job budget.
 
-### 5.3 Existing measurement tools
+### 5.3 `ImageOverview`
 
-- `thumtoo-bench`, `open_phase_bench`, `GALAPIX_OPEN_TIMING` (see
-  galapix `BENCHMARKS.md`).
-- Gap: no microbench isolating JPEG shrink vs full, archive extract
-  strategies, or quality metrics — addressed in §7.
+- thumtoo: **only** `get_lqip` on GUI; retry each frame (galapix-082).
+- Non-thumtoo: `OverviewLoadJob` + libjpeg DCT scale.
+- `ensure_levels` after grid budget; ≤128 long-edge stays LQIP-only.
+
+### 5.4 Existing measurement tools
+
+- `thumtoo-bench`, `open_phase_bench`, `GALAPIX_OPEN_TIMING`.
+- New: `thumtoo-microbench-decode`, `docs/MICROBENCH_RESULTS.md`.
 
 ## 6. Things we could do but do not (yet)
 
@@ -264,7 +299,58 @@ single multipage PDF/DjVu if tools present.
 
 Output: machine-readable JSON + markdown table in this doc.
 
-## 8. Progress log
+## 8. Proposed fixes (not implemented — discuss before code)
+
+### 8.1 Interactive JPEG shrink on the hot path
+
+**Problem:** `build_tile_cell_buffer` only uses `vips_jpegload(shrink=N)` when
+`decode_cache_key.empty()`. Client always passes `a:…` / `h:…` keys; file path
+uses `build_tile_cell` → `ladder_acquire_level` full load.
+
+**Option A — single-cell fast path (preferred for TTFB)**  
+When interactive request is **one cell** and no other scale for that key is
+cached yet:
+
+1. If magic/path is JPEG and `scale > 0`, load with `shrink = jpeg_shrink_factor_for_scale(scale)`.
+2. Crop cell; JPEG-encode; reply.
+3. Optionally **do not** populate the full-res RAM ladder (or populate only
+   the shrink level) so memory stays low.
+
+When the same image later needs multiple scales/tiles, fall back to full load
++ ladder (current behaviour) or progressively fill ladder from finest
+requested.
+
+**Option B — shrink-aware ladder_acquire_level**  
+Change `load_full` to `load_at_min_scale(scale)`: first open uses
+`jpegload(shrink=min(8, 2^scale))`, store as level `applied_steps`, then
+`vips_shrink` only remaining steps. Non-JPEG still full load.
+
+**Option C — leave ladder; fix only file path**  
+Mirror buffer JPEG branch into `build_tile_cell` when scale>0 and ladder miss.
+Does not fix archive/HTTP unless decode_cache_key is empty for single-shot.
+
+Recommend **A** for cold coarse tiles (gallery overview), **B** if multi-tile
+same image is the common case after first paint.
+
+### 8.2 Decouple LQIP from size probe
+
+Size callback should not wait on Handsum. Enqueue LQIP as a separate low-priority
+job after size is stored (or only on `ensure_lqip` / EnsurePixels). Galapix
+already tolerates missing LQIP and retries `get_lqip`.
+
+### 8.3 Optional `tile_source` / quality column
+
+`tiles` table: add `source TINYINT` — `0=full`, `1=jpeg_shrink`, `2=embedded`,
+`3=pdf_region`, … Re-generate if UI requests HQ and only fast-path exists.
+Not required for correctness; helps cache policy and debugging.
+
+### 8.4 Extract cache LRU
+
+Replace clear-all-on-overflow with size-based LRU so large albums do not
+thrash the entire 512 MiB map after one oversized member.
+
+## 9. Progress log
+
 
 - 2026-09-09: Initial taxonomy and image.cpp findings written.
 - 2026-09-09: Client/LQIP/archive/galapix paths documented; JPEG shrink
@@ -274,6 +360,8 @@ Output: machine-readable JSON + markdown table in this doc.
   1.3–2.3× vs full on large JPEG; PIL thumb32 on 8K ~207ms).
 - 2026-09-09: `tools/microbench_decode.cpp` + CMake target
   `thumtoo-microbench-decode` (needs vips build).
-- Next: run vips microbench under nix; RAR corpus; fix interactive
-  JPEG shrink (design discussion); optional `tile_quality` schema.
+- 2026-09-09: PDF/DjVu cost tables; Galapix `ThumtooTileProvider` decode
+  path; fix proposals §8 (JPEG shrink, LQIP decoupling, tile_source, LRU).
+- Next: implement Option A under discussion; vips numbers under nix;
+  RAR corpus; galapix ImageTileCache budget interaction notes.
 
