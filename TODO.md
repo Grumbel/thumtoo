@@ -1,3 +1,16 @@
+
+## Plan / work (2026-09-09) — bundle `thumtoo-109-pdf-nopoppler-build`
+
+### Change
+Gate Poppler-only body of `pdf_render_tile_cell` so MuPDF-only configures
+compile (cache TLS lived under `#if HAVE_POPPLER`).
+
+### Verify
+- [x] `libthumtoo` builds without Poppler
+- [x] `thumtoo-test-uri` ok (EPUB w/h/fs + margin roundtrip)
+- [x] Docs; next **110**
+
+---
 ## EPUB via MuPDF — **thumtoo-103**
 
 - [x] Design [docs/EPUB.md](docs/EPUB.md)
