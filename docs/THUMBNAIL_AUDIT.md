@@ -180,9 +180,10 @@ Reply-before-durable-store is already implemented (live paint first).
 - PDF/DjVu in `ensure_lqip`: dedicated page raster at edge 64 (not Vips).
 - Archive in `ensure_lqip`: full member extract then thumbnail_buffer 32.
 - **Policy (thumtoo-086):** LQIP is **not** generated on size probe.
-  Workers store LQIP after the first durable tile (or EnsurePixels RGB
-  ladder) so successive opens get a fast soft underlay. Galapix shows LQIP
-  only if it was already cached at session start (cold open uses tiles only).
+  Workers store LQIP only after the first durable tile (or EnsurePixels RGB
+  ladder). That is the whole mechanism: on a cold open LQIP is simply not in
+  the cache yet while better tiles paint; successive opens find it stored.
+  No Galapix “warm/cold” display special-case is required or desired.
 
 **Tiles**
 - Warm: `get_tile` then reply; no decode of source.
