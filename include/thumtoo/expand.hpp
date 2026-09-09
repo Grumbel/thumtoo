@@ -26,4 +26,10 @@ namespace thumtoo {
 /// as openable media (image, PDF, DjVu, EPUB, or archive container).
 [[nodiscard]] bool is_openable_media_path(const std::filesystem::path& path);
 
+/// Expand a PDF to `//pdfimage:1..N` (embedded Image XObjects at native res).
+/// Empty if MuPDF unavailable or no images found. Does not change default
+/// expand_media_uris (still uses rendered //page:N).
+[[nodiscard]] std::vector<std::string> expand_pdf_image_uris(
+    const std::filesystem::path& path, int max_images = 4096);
+
 }  // namespace thumtoo
