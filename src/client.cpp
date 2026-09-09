@@ -219,8 +219,9 @@ std::optional<std::vector<std::uint8_t>> Client::read_source_bytes(
     }
     return std::nullopt;
   }
-  if (parse_pdf_uri(uri_or_content_id) || parse_djvu_uri(uri_or_content_id)) {
-    // Pages are display rasters, not a single source blob here.
+  if (parse_pdf_uri(uri_or_content_id) || parse_pdf_image_uri(uri_or_content_id) ||
+      parse_djvu_uri(uri_or_content_id)) {
+    // Pages / embedded extracts are display rasters, not a single source blob.
     return std::nullopt;
   }
   if (auto arch = parse_archive_uri(uri_or_content_id)) {
@@ -295,6 +296,16 @@ std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
     }
     return get_lqip(uri);
   }
+  if (auto pimg = parse_pdf_image_uri(std::string(uri))) {
+    if (auto raster = pdf_rasterize_embedded_image(pimg->pdf_path, pimg->image,
+                                                     kLqipPageEdge)) {
+      if (!raster->rgb.empty()) {
+        store_lqip_if_missing(*db_, cid, nullptr, raster->rgb.data(),
+                              raster->width, raster->height);
+      }
+    }
+    return get_lqip(uri);
+  }
   if (auto dj = parse_djvu_uri(std::string(uri))) {
     if (auto raster =
             djvu_rasterize_page(dj->djvu_path, dj->page, kLqipPageEdge)) {
@@ -331,7 +342,7 @@ std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
   // Plain file:// image only (no //page: / //archive:).
   if (auto path = path_from_file_uri(uri)) {
     if (std::filesystem::is_regular_file(*path) && !is_pdf_page_uri(uri) &&
-        !is_archive_uri(uri)) {
+        !is_pdf_image_uri(uri) && !is_archive_uri(uri)) {
       store_lqip_if_missing(*db_, cid, &*path, nullptr, 0, 0);
     }
   }
@@ -1298,6 +1309,46 @@ void Client::handle_probe_size(
         row.status = ContentStatus::Incomplete;
       }
     }
+  } else if (auto pimg = parse_pdf_image_uri(job.uri)) {
+    if (!std::filesystem::is_regular_file(pimg->pdf_path)) {
+      row.status = ContentStatus::Failed;
+      row.error_code = "not_a_file";
+    } else {
+      auto layout = pdf_embedded_image_size(pimg->pdf_path, pimg->image);
+      if (!layout) {
+        row.status = ContentStatus::Failed;
+        row.error_code = "pdf_image_failed";
+      } else {
+        std::string new_id = old_id;
+        const auto hex = sha256_file_hex(pimg->pdf_path);
+        if (!hex.empty()) {
+          new_id = std::string(kContentIdSha256Prefix) + hex + ":pdfimage:"
+                   + std::to_string(pimg->image);
+        }
+        if (new_id != old_id) {
+          if (auto existing = db_->find_content(new_id)) {
+            row = *existing;
+            db_->update_locator_content_id(job.uri, new_id);
+            if (old_id.rfind(std::string(kContentIdProvisionalPrefix), 0) == 0) {
+              db_->delete_content(old_id);
+            }
+          } else {
+            row.content_id = new_id;
+            db_->upsert_content(row);
+            db_->update_locator_content_id(job.uri, new_id);
+            if (old_id.rfind(std::string(kContentIdProvisionalPrefix), 0) == 0) {
+              db_->delete_content(old_id);
+            }
+          }
+        }
+        row.width = layout->width;
+        row.height = layout->height;
+        row.format = "pdfimage";
+        row.error_code = std::nullopt;
+        size_out = *layout;
+        row.status = ContentStatus::Incomplete;
+      }
+    }
   } else if (auto dj = parse_djvu_uri(job.uri)) {
     if (!std::filesystem::is_regular_file(dj->djvu_path)) {
       row.status = ContentStatus::Failed;
@@ -1648,6 +1699,38 @@ void Client::handle_ensure_pixels(
   if (auto pdf = parse_pdf_uri(job.uri)) {
     auto raster = pdf_rasterize_page(pdf->pdf_path, pdf->page, edge_limit,
                                       pdf->backend);
+    if (raster && !raster->rgb.empty()) {
+      auto levels = build_ladder_rgb(raster->rgb.data(), raster->width,
+                                     raster->height, row.content_id,
+                                     kDefaultJxlQuality, edge_limit);
+      for (const auto& lvl : levels) {
+        blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
+                          lvl.width, lvl.height, lvl.codec, lvl.quality,
+                          lvl.bytes.data(), lvl.bytes.size());
+        Database::LevelRow lr;
+        lr.content_id = row.content_id;
+        lr.max_edge = lvl.max_edge;
+        lr.frame_idx = lvl.frame_idx;
+        lr.width = lvl.width;
+        lr.height = lvl.height;
+        lr.codec = lvl.codec;
+        lr.quality = lvl.quality;
+        lr.path = "blobs.sqlite";
+        db_->upsert_level(lr);
+      }
+      row.status =
+          levels.empty() ? ContentStatus::Incomplete : ContentStatus::Ready;
+      if (levels.empty()) row.error_code = "ladder_encode_failed";
+      else row.error_code = std::nullopt;
+      db_->upsert_content(row);
+      if (!levels.empty() && raster) {
+        store_lqip_if_missing(*db_, row.content_id, nullptr, raster->rgb.data(),
+                              raster->width, raster->height);
+      }
+    }
+  } else if (auto pimg = parse_pdf_image_uri(job.uri)) {
+    auto raster = pdf_rasterize_embedded_image(pimg->pdf_path, pimg->image,
+                                               edge_limit);
     if (raster && !raster->rgb.empty()) {
       auto levels = build_ladder_rgb(raster->rgb.data(), raster->width,
                                      raster->height, row.content_id,

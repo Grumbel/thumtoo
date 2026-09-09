@@ -11,6 +11,7 @@
 
 #if defined(THUMTOO_HAVE_MUPDF)
 #include <mupdf/fitz.h>
+#include <mupdf/pdf.h>
 #endif
 
 namespace thumtoo {
@@ -432,5 +433,192 @@ std::optional<PdfRaster> mupdf_render_tile_cell(const std::filesystem::path& pat
   const double dpi = pdf_dpi_for_scale(scale);
   return mupdf_rasterize_page_region(path, page_1based, dpi, left, top, tw, th);
 }
+
+
+std::optional<int> mupdf_embedded_image_count(const std::filesystem::path& path) {
+#if !defined(THUMTOO_HAVE_MUPDF)
+  (void)path;
+  return std::nullopt;
+#else
+  fz_context* ctx = tls_ctx();
+  fz_document* doc = tls_document(path);
+  if (!ctx || !doc) return std::nullopt;
+  pdf_document* pdf = pdf_document_from_fz_document(ctx, doc);
+  if (!pdf) return std::nullopt;
+
+  int total = 0;
+  int pages = 0;
+  fz_try(ctx) { pages = fz_count_pages(ctx, doc); }
+  fz_catch(ctx) { return std::nullopt; }
+
+  for (int pi = 0; pi < pages; ++pi) {
+    pdf_page* page = nullptr;
+    fz_var(page);
+    fz_try(ctx) {
+      page = pdf_load_page(ctx, pdf, pi);
+      pdf_obj* resources = pdf_page_resources(ctx, page);
+      // Walk page XObject dict (non-recursive for forms in v1 depth-1 forms).
+      pdf_obj* xobject = pdf_dict_get(ctx, resources, PDF_NAME(XObject));
+      if (xobject && pdf_is_dict(ctx, xobject)) {
+        const int n = pdf_dict_len(ctx, xobject);
+        for (int i = 0; i < n; ++i) {
+          pdf_obj* obj = pdf_dict_get_val(ctx, xobject, i);
+          if (!obj) continue;
+          obj = pdf_resolve_indirect(ctx, obj);
+          pdf_obj* subtype = pdf_dict_get(ctx, obj, PDF_NAME(Subtype));
+          if (pdf_name_eq(ctx, subtype, PDF_NAME(Image))) {
+            ++total;
+          } else if (pdf_name_eq(ctx, subtype, PDF_NAME(Form))) {
+            pdf_obj* form_res = pdf_dict_get(ctx, obj, PDF_NAME(Resources));
+            pdf_obj* form_xo = pdf_dict_get(ctx, form_res, PDF_NAME(XObject));
+            if (form_xo && pdf_is_dict(ctx, form_xo)) {
+              const int fn = pdf_dict_len(ctx, form_xo);
+              for (int j = 0; j < fn; ++j) {
+                pdf_obj* fobj = pdf_dict_get_val(ctx, form_xo, j);
+                if (!fobj) continue;
+                fobj = pdf_resolve_indirect(ctx, fobj);
+                pdf_obj* fs = pdf_dict_get(ctx, fobj, PDF_NAME(Subtype));
+                if (pdf_name_eq(ctx, fs, PDF_NAME(Image))) ++total;
+              }
+            }
+          }
+        }
+      }
+    }
+    fz_always(ctx) {
+      if (page) pdf_drop_page(ctx, page);
+    }
+    fz_catch(ctx) { /* skip page */ }
+  }
+  return total;
+#endif
+}
+
+std::optional<PdfRaster> mupdf_rasterize_embedded_image(
+    const std::filesystem::path& path, int image_1based, int max_edge) {
+#if !defined(THUMTOO_HAVE_MUPDF)
+  (void)path;
+  (void)image_1based;
+  (void)max_edge;
+  return std::nullopt;
+#else
+  if (image_1based < 1) return std::nullopt;
+  fz_context* ctx = tls_ctx();
+  fz_document* doc = tls_document(path);
+  if (!ctx || !doc) return std::nullopt;
+  pdf_document* pdf = pdf_document_from_fz_document(ctx, doc);
+  if (!pdf) return std::nullopt;
+
+  int pages = 0;
+  fz_try(ctx) { pages = fz_count_pages(ctx, doc); }
+  fz_catch(ctx) { return std::nullopt; }
+
+  int seen = 0;
+  pdf_obj* target = nullptr;
+
+  for (int pi = 0; pi < pages && !target; ++pi) {
+    pdf_page* page = nullptr;
+    fz_var(page);
+    fz_try(ctx) {
+      page = pdf_load_page(ctx, pdf, pi);
+      pdf_obj* resources = pdf_page_resources(ctx, page);
+      pdf_obj* xobject = pdf_dict_get(ctx, resources, PDF_NAME(XObject));
+      auto consider = [&](pdf_obj* obj) {
+        if (!obj || target) return;
+        obj = pdf_resolve_indirect(ctx, obj);
+        pdf_obj* subtype = pdf_dict_get(ctx, obj, PDF_NAME(Subtype));
+        if (pdf_name_eq(ctx, subtype, PDF_NAME(Image))) {
+          ++seen;
+          if (seen == image_1based) target = obj;
+        }
+      };
+      if (xobject && pdf_is_dict(ctx, xobject)) {
+        const int n = pdf_dict_len(ctx, xobject);
+        for (int i = 0; i < n; ++i) {
+          pdf_obj* obj = pdf_dict_get_val(ctx, xobject, i);
+          if (!obj) continue;
+          obj = pdf_resolve_indirect(ctx, obj);
+          pdf_obj* subtype = pdf_dict_get(ctx, obj, PDF_NAME(Subtype));
+          if (pdf_name_eq(ctx, subtype, PDF_NAME(Image))) {
+            consider(obj);
+          } else if (pdf_name_eq(ctx, subtype, PDF_NAME(Form))) {
+            pdf_obj* form_res = pdf_dict_get(ctx, obj, PDF_NAME(Resources));
+            pdf_obj* form_xo = pdf_dict_get(ctx, form_res, PDF_NAME(XObject));
+            if (form_xo && pdf_is_dict(ctx, form_xo)) {
+              const int fn = pdf_dict_len(ctx, form_xo);
+              for (int j = 0; j < fn; ++j) {
+                consider(pdf_dict_get_val(ctx, form_xo, j));
+              }
+            }
+          }
+        }
+      }
+    }
+    fz_always(ctx) {
+      if (page) pdf_drop_page(ctx, page);
+    }
+    fz_catch(ctx) { /* next page */ }
+  }
+  if (!target) return std::nullopt;
+
+  fz_image* image = nullptr;
+  fz_pixmap* pix = nullptr;
+  fz_var(image);
+  fz_var(pix);
+  std::optional<PdfRaster> out;
+  fz_try(ctx) {
+    image = pdf_load_image(ctx, pdf, target);
+    // Native resolution pixmap (identity matrix / full image).
+    pix = fz_get_pixmap_from_image(ctx, image, nullptr, nullptr, nullptr, nullptr);
+    if (pix) {
+      // Convert to RGB if needed via pixmap_to_rgb helper path: convert colorspace.
+      if (fz_pixmap_colorspace(ctx, pix) &&
+          fz_colorspace_n(ctx, fz_pixmap_colorspace(ctx, pix)) != 3) {
+        fz_pixmap* rgb = fz_convert_pixmap(ctx, pix, fz_device_rgb(ctx), nullptr,
+                                           nullptr, fz_default_color_params, 0);
+        fz_drop_pixmap(ctx, pix);
+        pix = rgb;
+      }
+      if (max_edge > 0 && pix) {
+        const int w = fz_pixmap_width(ctx, pix);
+        const int h = fz_pixmap_height(ctx, pix);
+        const int long_edge = std::max(w, h);
+        if (long_edge > max_edge) {
+          const float scale = static_cast<float>(max_edge) / static_cast<float>(long_edge);
+          const int nw = std::max(1, static_cast<int>(std::lround(w * scale)));
+          const int nh = std::max(1, static_cast<int>(std::lround(h * scale)));
+          fz_pixmap* scaled = fz_new_pixmap(ctx, fz_pixmap_colorspace(ctx, pix),
+                                            nw, nh, nullptr, 0);
+          if (scaled) {
+            fz_clear_pixmap_with_value(ctx, scaled, 0);
+            const int n = fz_pixmap_components(ctx, pix);
+            const unsigned char* src = fz_pixmap_samples(ctx, pix);
+            unsigned char* dst = fz_pixmap_samples(ctx, scaled);
+            for (int y = 0; y < nh; ++y) {
+              const int sy = std::min(h - 1, static_cast<int>(y / scale));
+              for (int x = 0; x < nw; ++x) {
+                const int sx = std::min(w - 1, static_cast<int>(x / scale));
+                const unsigned char* s = src + (static_cast<size_t>(sy) * w + sx) * n;
+                unsigned char* d = dst + (static_cast<size_t>(y) * nw + x) * n;
+                for (int c = 0; c < n; ++c) d[c] = s[c];
+              }
+            }
+            fz_drop_pixmap(ctx, pix);
+            pix = scaled;
+          }
+        }
+      }
+      out = pixmap_to_rgb(ctx, pix);
+    }
+  }
+  fz_always(ctx) {
+    if (pix) fz_drop_pixmap(ctx, pix);
+    if (image) fz_drop_image(ctx, image);
+  }
+  fz_catch(ctx) { out = std::nullopt; }
+  return out;
+#endif
+}
+
 
 }  // namespace thumtoo

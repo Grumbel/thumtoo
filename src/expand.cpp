@@ -106,3 +106,20 @@ std::vector<std::string> expand_media_uris(const std::filesystem::path& path,
 }
 
 }  // namespace thumtoo
+
+std::vector<std::string> expand_pdf_image_uris(const std::filesystem::path& path,
+                                               int max_images) {
+  std::vector<std::string> out;
+  std::error_code ec;
+  if (!std::filesystem::is_regular_file(path, ec) || ec) return out;
+  const auto abs = path.lexically_normal();
+  auto count = pdf_embedded_image_count(abs);
+  if (!count || *count < 1) return out;
+  const int cap = max_images > 0 ? max_images : 4096;
+  const int n = std::min(*count, cap);
+  out.reserve(static_cast<std::size_t>(n));
+  for (int i = 1; i <= n; ++i) {
+    out.push_back(pdf_image_uri(abs, i));
+  }
+  return out;
+}

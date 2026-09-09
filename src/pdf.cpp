@@ -174,6 +174,73 @@ const char* pdf_backend_name(PdfBackend backend) {
   return "unknown";
 }
 
+
+std::string pdf_image_uri(const std::filesystem::path& pdf_path, int image_1based) {
+  std::string uri = file_uri_from_path(pdf_path.lexically_normal());
+  uri += "//pdfimage:";
+  uri += std::to_string(std::max(1, image_1based));
+  return uri;
+}
+
+std::optional<ParsedPdfImageUri> parse_pdf_image_uri(std::string_view uri) {
+  constexpr std::string_view kPipe = "//pdfimage:";
+  auto pos = uri.find(kPipe);
+  if (pos == std::string_view::npos) return std::nullopt;
+  const auto outer = uri.substr(0, pos);
+  auto path = path_from_file_uri(outer);
+  if (!path) {
+    // Allow plain path + pipe (non-file URI) for session strings.
+    if (outer.find("://") != std::string_view::npos) return std::nullopt;
+    path = std::filesystem::path(std::string(outer));
+  }
+  if (!is_pdf_path(*path) && !is_likely_pdf_path(*path)) return std::nullopt;
+  std::string_view rest = uri.substr(pos + kPipe.size());
+  if (rest.empty()) return std::nullopt;
+  int image = 0;
+  for (char c : rest) {
+    if (c < '0' || c > '9') break;
+    image = image * 10 + (c - '0');
+    if (image > 1'000'000) return std::nullopt;
+  }
+  if (image < 1) return std::nullopt;
+  ParsedPdfImageUri out;
+  out.pdf_path = *path;
+  out.image = image;
+  return out;
+}
+
+std::optional<int> pdf_embedded_image_count(const std::filesystem::path& path) {
+#if defined(THUMTOO_HAVE_MUPDF)
+  return mupdf_embedded_image_count(path);
+#else
+  (void)path;
+  return std::nullopt;
+#endif
+}
+
+std::optional<PdfRaster> pdf_rasterize_embedded_image(const std::filesystem::path& path,
+                                                      int image_1based, int max_edge) {
+#if defined(THUMTOO_HAVE_MUPDF)
+  return mupdf_rasterize_embedded_image(path, image_1based, max_edge);
+#else
+  (void)path;
+  (void)image_1based;
+  (void)max_edge;
+  return std::nullopt;
+#endif
+}
+
+std::optional<Size> pdf_embedded_image_size(const std::filesystem::path& path,
+                                            int image_1based) {
+#if defined(THUMTOO_HAVE_MUPDF)
+  return mupdf_embedded_image_size(path, image_1based);
+#else
+  (void)path;
+  (void)image_1based;
+  return std::nullopt;
+#endif
+}
+
 std::string pdf_page_uri(const std::filesystem::path& pdf_path, int page_1based,
                          PdfBackend backend) {
   auto uri = file_uri_from_path(pdf_path.lexically_normal());

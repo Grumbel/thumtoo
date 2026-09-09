@@ -36,12 +36,36 @@ struct ParsedPdfUri {
   PdfBackend backend = PdfBackend::Default;
 };
 
+/// Embedded Image XObject extract (//pdfimage:N) — native pixel size, not a page render.
+struct ParsedPdfImageUri {
+  std::filesystem::path pdf_path;
+  /// 1-based index in document order (page 1 resources, then page 2, …).
+  int image = 0;
+};
+
 /// file:///abs/doc.pdf//page:12  (default backend).
 [[nodiscard]] std::string pdf_page_uri(const std::filesystem::path& pdf_path,
                                        int page_1based,
                                        PdfBackend backend = PdfBackend::Default);
 
 [[nodiscard]] std::optional<ParsedPdfUri> parse_pdf_uri(std::string_view uri);
+
+/// file:///abs/doc.pdf//pdfimage:3 — MuPDF embedded image extract at native resolution.
+[[nodiscard]] std::string pdf_image_uri(const std::filesystem::path& pdf_path,
+                                        int image_1based);
+
+[[nodiscard]] std::optional<ParsedPdfImageUri> parse_pdf_image_uri(std::string_view uri);
+
+/// Count of extractable Image XObjects (page order, including duplicates across pages).
+[[nodiscard]] std::optional<int> pdf_embedded_image_count(const std::filesystem::path& path);
+
+/// Native-size RGB888 raster of the N-th embedded image (1-based). Optional
+/// max_edge downscales the long edge when > 0 (ladder / LQIP).
+[[nodiscard]] std::optional<PdfRaster> pdf_rasterize_embedded_image(
+    const std::filesystem::path& path, int image_1based, int max_edge = 0);
+
+[[nodiscard]] std::optional<Size> pdf_embedded_image_size(
+    const std::filesystem::path& path, int image_1based);
 
 [[nodiscard]] bool is_likely_pdf_path(const std::filesystem::path& path);
 

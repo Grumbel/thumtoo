@@ -39,3 +39,20 @@ file:///data/doc.pdf//mupdf-page:1
 - [x] Dispatch count / size / raster / tiles by backend
 - [x] Galapix min_scale uses backend from URI
 - [x] MuPDF image coverage via structured-text image blocks
+
+
+## Embedded images (`//pdfimage:N`)
+
+For scanned PDFs it is often better to extract **Image XObjects** at native
+resolution instead of rendering the page at a chosen DPI.
+
+```
+file:///book.pdf//pdfimage:1
+```
+
+- Implemented with **MuPDF** (`pdf_load_image` + pixmap), not the external
+  `pdfimages` binary.
+- Index is **1-based**, document order: page 1 resources, then page 2, …
+  (includes one-level Form XObject nesting).
+- Expand helper: `expand_pdf_image_uris(path)` → `//pdfimage:1..N`.
+- Default `expand_media_uris` for PDFs still uses `//page:N` (rendered pages).

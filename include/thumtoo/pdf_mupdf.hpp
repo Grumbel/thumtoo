@@ -32,4 +32,13 @@ namespace thumtoo {
     const std::filesystem::path& path, int page_1based, int scale, int x,
     int y);
 
+[[nodiscard]] std::optional<int> mupdf_embedded_image_count(
+    const std::filesystem::path& path);
+
+[[nodiscard]] std::optional<PdfRaster> mupdf_rasterize_embedded_image(
+    const std::filesystem::path& path, int image_1based, int max_edge);
+
+[[nodiscard]] std::optional<Size> mupdf_embedded_image_size(
+    const std::filesystem::path& path, int image_1based);
+
 }  // namespace thumtoo

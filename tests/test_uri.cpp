@@ -61,6 +61,15 @@ int main() {
              muloc->pipes[0].kind == LocationPipeKind::PdfPageMupdf,
          "mupdf page pipe");
   expect(format_location(*muloc) == page_mu, "format mupdf-page");
+  {
+    auto img = with_pdf_image(file_uri_from_path("/tmp/scan.pdf"), 3);
+    expect(is_pdf_image_uri(img), "pdfimage detect");
+    auto loc = parse_location(img);
+    expect(loc && !loc->pipes.empty() &&
+               loc->pipes.back().kind == LocationPipeKind::PdfImage &&
+               loc->pipes.back().value == "3",
+           "pdfimage pipe");
+  }
 
   {
     const auto layout = default_epub_layout();

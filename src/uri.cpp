@@ -104,6 +104,16 @@ bool parse_pipes(std::string_view rest, std::vector<LocationPipe>& out) {
       pipe.value = std::string(after.substr(0, n));
       out.push_back(std::move(pipe));
       i = next + tag.size() + n;
+    } else if (hit == PipeHit::PdfImage) {
+      std::string_view after = rest.substr(next + kPdfImagePipe.size());
+      std::size_t n = 0;
+      while (n < after.size() && after[n] >= '0' && after[n] <= '9') ++n;
+      if (n == 0) return false;
+      LocationPipe pipe;
+      pipe.kind = LocationPipeKind::PdfImage;
+      pipe.value = std::string(after.substr(0, n));
+      out.push_back(std::move(pipe));
+      i = next + kPdfImagePipe.size() + n;
     } else if (hit == PipeHit::EpubLayout) {
       std::string_view after = rest.substr(next + kEpubPipe.size());
       std::size_t end = after.size();
@@ -176,6 +186,10 @@ bool is_pdf_page_uri(std::string_view uri) {
   return uri.find(kPagePipe) != std::string_view::npos ||
          uri.find(kPopplerPagePipe) != std::string_view::npos ||
          uri.find(kMupdfPagePipe) != std::string_view::npos;
+}
+
+bool is_pdf_image_uri(std::string_view uri) {
+  return uri.find(kPdfImagePipe) != std::string_view::npos;
 }
 
 bool is_http_uri(std::string_view uri) {
@@ -295,6 +309,10 @@ std::string format_location(const Location& loc) {
       case LocationPipeKind::EpubLayout:
         out += "//epub:";
         out += format_epub_layout_params(parse_epub_layout_params(pipe.value));
+        break;
+      case LocationPipeKind::PdfImage:
+        out += "//pdfimage:";
+        out += pipe.value;
         break;
     }
   }
