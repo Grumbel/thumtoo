@@ -448,10 +448,13 @@ std::optional<int> mupdf_embedded_image_count(const std::filesystem::path& path)
 
   int total = 0;
   int pages = 0;
+  int pi = 0;
+  fz_var(total);
+  fz_var(pi);
   fz_try(ctx) { pages = fz_count_pages(ctx, doc); }
   fz_catch(ctx) { return std::nullopt; }
 
-  for (int pi = 0; pi < pages; ++pi) {
+  for (pi = 0; pi < pages; ++pi) {
     pdf_page* page = nullptr;
     fz_var(page);
     fz_try(ctx) {
@@ -515,8 +518,12 @@ std::optional<PdfRaster> mupdf_rasterize_embedded_image(
 
   int seen = 0;
   pdf_obj* target = nullptr;
+  int pi = 0;
+  fz_var(seen);
+  fz_var(target);
+  fz_var(pi);
 
-  for (int pi = 0; pi < pages && !target; ++pi) {
+  for (pi = 0; pi < pages && !target; ++pi) {
     pdf_page* page = nullptr;
     fz_var(page);
     fz_try(ctx) {
@@ -613,6 +620,95 @@ std::optional<PdfRaster> mupdf_rasterize_embedded_image(
   }
   fz_always(ctx) {
     if (pix) fz_drop_pixmap(ctx, pix);
+    if (image) fz_drop_image(ctx, image);
+  }
+  fz_catch(ctx) { out = std::nullopt; }
+  return out;
+#endif
+}
+
+
+
+std::optional<Size> mupdf_embedded_image_size(const std::filesystem::path& path,
+                                              int image_1based) {
+#if !defined(THUMTOO_HAVE_MUPDF)
+  (void)path;
+  (void)image_1based;
+  return std::nullopt;
+#else
+  if (image_1based < 1) return std::nullopt;
+  fz_context* ctx = tls_ctx();
+  fz_document* doc = tls_document(path);
+  if (!ctx || !doc) return std::nullopt;
+  pdf_document* pdf = pdf_document_from_fz_document(ctx, doc);
+  if (!pdf) return std::nullopt;
+
+  int pages = 0;
+  fz_try(ctx) { pages = fz_count_pages(ctx, doc); }
+  fz_catch(ctx) { return std::nullopt; }
+
+  int seen = 0;
+  pdf_obj* target = nullptr;
+  int pi = 0;
+  fz_var(seen);
+  fz_var(target);
+  fz_var(pi);
+
+  for (pi = 0; pi < pages && !target; ++pi) {
+    pdf_page* page = nullptr;
+    fz_var(page);
+    fz_try(ctx) {
+      page = pdf_load_page(ctx, pdf, pi);
+      pdf_obj* resources = pdf_page_resources(ctx, page);
+      pdf_obj* xobject = pdf_dict_get(ctx, resources, PDF_NAME(XObject));
+      auto consider = [&](pdf_obj* obj) {
+        if (!obj || target) return;
+        obj = pdf_resolve_indirect(ctx, obj);
+        if (pdf_name_eq(ctx, pdf_dict_get(ctx, obj, PDF_NAME(Subtype)),
+                        PDF_NAME(Image))) {
+          ++seen;
+          if (seen == image_1based) target = obj;
+        }
+      };
+      if (xobject && pdf_is_dict(ctx, xobject)) {
+        const int n = pdf_dict_len(ctx, xobject);
+        for (int i = 0; i < n; ++i) {
+          pdf_obj* obj = pdf_dict_get_val(ctx, xobject, i);
+          if (!obj) continue;
+          obj = pdf_resolve_indirect(ctx, obj);
+          pdf_obj* subtype = pdf_dict_get(ctx, obj, PDF_NAME(Subtype));
+          if (pdf_name_eq(ctx, subtype, PDF_NAME(Image))) {
+            consider(obj);
+          } else if (pdf_name_eq(ctx, subtype, PDF_NAME(Form))) {
+            pdf_obj* form_xo =
+                pdf_dict_get(ctx, pdf_dict_get(ctx, obj, PDF_NAME(Resources)),
+                             PDF_NAME(XObject));
+            if (form_xo && pdf_is_dict(ctx, form_xo)) {
+              for (int j = 0, fn = pdf_dict_len(ctx, form_xo); j < fn; ++j) {
+                consider(pdf_dict_get_val(ctx, form_xo, j));
+              }
+            }
+          }
+        }
+      }
+    }
+    fz_always(ctx) {
+      if (page) pdf_drop_page(ctx, page);
+    }
+    fz_catch(ctx) { /* next page */ }
+  }
+  if (!target) return std::nullopt;
+
+  fz_image* image = nullptr;
+  std::optional<Size> out;
+  fz_var(image);
+  fz_try(ctx) {
+    image = pdf_load_image(ctx, pdf, target);
+    if (image) {
+      out = Size{image->w, image->h};
+    }
+  }
+  fz_always(ctx) {
     if (image) fz_drop_image(ctx, image);
   }
   fz_catch(ctx) { out = std::nullopt; }
