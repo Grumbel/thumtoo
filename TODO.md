@@ -9,8 +9,10 @@
 - [x] MuPDF image coverage via fz_stext image blocks
 - [x] Implement `with_pdf_page_poppler` / `with_pdf_page_mupdf` (link fix for test_uri)
 - [x] Silence `-Wclobbered` in `pdf_mupdf.cpp` via MuPDF `fz_var` (not C++ `volatile` on structs)
+- [x] `is_pdf_page_uri` recognizes `//poppler-page:` / `//mupdf-page:`
+- [x] test_pdf_tiles: denser fixture text (avoid sparse-text image_heavy gate)
 
-Tip: **thumtoo-100**.
+Tip: **thumtoo-101**.
 
 ---
 

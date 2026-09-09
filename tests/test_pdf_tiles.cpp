@@ -17,12 +17,14 @@
 #include "thumtoo/uri.hpp"
 
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -53,40 +55,64 @@ void expect_eq_str(const std::string& a, const std::string& b, const char* msg) 
 }
 
 /// Self-contained letter-page PDF (no Ghostscript / external tools).
-/// Poppler opens it; MediaBox 612×792 pt → layout 1224×1584 @ 144 dpi.
+/// MediaBox 612×792 pt → layout 1224×1584 @ 144 dpi.
+/// Content has enough printable characters that the sparse-text /
+/// image-heavy gate (kPdfSparseTextPerPoint2) does not refuse negative
+/// live scales — those are reserved for blank / scanned pages.
 std::optional<fs::path> make_test_pdf(const fs::path& dir) {
-  // Minimal PDF-1.4 with Helvetica text. Xref offsets are absolute.
-  static constexpr char kPdf[] =
-      "%PDF-1.4\n"
-      "1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj\n"
-      "2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj\n"
-      "3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-      "/Contents 4 0 R /Resources<< /Font<< /F1 5 0 R >> >> >>endobj\n"
-      "4 0 obj<< /Length 51 >>stream\n"
-      "BT /F1 24 Tf 72 700 Td (Hello PDF Tile Test) Tj ET\n"
-      "endstream\n"
-      "endobj\n"
-      "5 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj\n"
-      "xref\n"
-      "0 6\n"
-      "0000000000 65535 f \n"
-      "0000000009 00000 n \n"
-      "0000000056 00000 n \n"
-      "0000000111 00000 n \n"
-      "0000000233 00000 n \n"
-      "0000000331 00000 n \n"
-      "trailer<< /Size 6 /Root 1 0 R >>\n"
-      "startxref\n"
-      "399\n"
-      "%%EOF\n";
+  // Build a content stream with ~1600 printable chars (40 lines × ~40).
+  std::string body;
+  body.reserve(4096);
+  for (int i = 0; i < 40; ++i) {
+    body += "BT /F1 10 Tf 36 ";
+    body += std::to_string(750 - i * 18);
+    body += " Td (Line ";
+    if (i < 10) body += '0';
+    body += std::to_string(i);
+    body += " ABCDEFGHIJKLMNOPQRSTUVWXYZ012345) Tj ET\n";
+  }
 
-  const fs::path pdf = dir / "tile-test.pdf";
-  std::ofstream out(pdf, std::ios::binary);
+  std::string pdf;
+  pdf.reserve(body.size() + 512);
+  auto append = [&](std::string_view s) { pdf.append(s); };
+
+  // Object offsets recorded as we append (byte offset from file start).
+  std::vector<std::size_t> obj_off(6, 0);
+  append("%PDF-1.4\n");
+  obj_off[1] = pdf.size();
+  append("1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj\n");
+  obj_off[2] = pdf.size();
+  append("2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj\n");
+  obj_off[3] = pdf.size();
+  append("3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+         "/Contents 4 0 R /Resources<< /Font<< /F1 5 0 R >> >> >>endobj\n");
+  obj_off[4] = pdf.size();
+  append("4 0 obj<< /Length ");
+  append(std::to_string(body.size()));
+  append(" >>stream\n");
+  append(body);
+  append("endstream\nendobj\n");
+  obj_off[5] = pdf.size();
+  append("5 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj\n");
+  const std::size_t xref_pos = pdf.size();
+  append("xref\n0 6\n");
+  append("0000000000 65535 f \n");
+  for (int i = 1; i <= 5; ++i) {
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%010zu 00000 n \n", obj_off[static_cast<std::size_t>(i)]);
+    append(buf);
+  }
+  append("trailer<< /Size 6 /Root 1 0 R >>\nstartxref\n");
+  append(std::to_string(xref_pos));
+  append("\n%%EOF\n");
+
+  const fs::path path = dir / "tile-test.pdf";
+  std::ofstream out(path, std::ios::binary);
   if (!out) return std::nullopt;
-  out.write(kPdf, static_cast<std::streamsize>(sizeof(kPdf) - 1));
+  out.write(pdf.data(), static_cast<std::streamsize>(pdf.size()));
   out.close();
-  if (!fs::is_regular_file(pdf) || fs::file_size(pdf) < 100) return std::nullopt;
-  return pdf;
+  if (!fs::is_regular_file(path) || fs::file_size(path) < 100) return std::nullopt;
+  return path;
 }
 
 std::optional<thumtoo::TileBlob> request_one(thumtoo::Client& client,

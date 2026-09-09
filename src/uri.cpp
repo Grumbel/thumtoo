@@ -152,7 +152,9 @@ bool is_archive_uri(std::string_view uri) {
 }
 
 bool is_pdf_page_uri(std::string_view uri) {
-  return uri.find(kPagePipe) != std::string_view::npos;
+  return uri.find(kPagePipe) != std::string_view::npos ||
+         uri.find(kPopplerPagePipe) != std::string_view::npos ||
+         uri.find(kMupdfPagePipe) != std::string_view::npos;
 }
 
 bool is_http_uri(std::string_view uri) {
