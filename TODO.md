@@ -1,3 +1,13 @@
+## PDF image-heavy gate for live tiles — **thumtoo-093**
+
+- [x] `PdfPageContentStats` + `pdf_page_allows_live_tiles`
+- [x] Optional poppler-glib image coverage; text heuristic fallback
+- [x] Refuse scale < 0 render for image-heavy pages
+- [x] Full-page cache only at scale ≥ 0
+- [x] Bundle thumtoo-093
+
+---
+
 ## PDF page/raster TLS cache — **thumtoo-092**
 
 - [x] TLS `poppler::page` cache (avoid create_page per cell)

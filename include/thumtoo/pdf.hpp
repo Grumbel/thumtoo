@@ -39,6 +39,23 @@ struct PdfRaster {
   std::vector<std::uint8_t> rgb;
 };
 
+/// Page content mix — used to gate live (negative-scale) tiles.
+struct PdfPageContentStats {
+  int image_count = 0;
+  /// Union of image mapping boxes / media-box area in [0,1]. -1 if unknown.
+  double image_coverage = -1.0;
+  int text_chars = 0;
+  /// True when live deep-zoom region tiles are a bad idea (scanned / photo pages).
+  bool image_heavy = false;
+};
+
+[[nodiscard]] PdfPageContentStats pdf_page_content_stats(
+    const std::filesystem::path& path, int page_1based);
+
+/// Live tiles finer than layout (scale < 0) only when the page is not image-heavy.
+[[nodiscard]] bool pdf_page_allows_live_tiles(const std::filesystem::path& path,
+                                              int page_1based);
+
 /**
  * Rasterize one page so the long edge is about max_edge pixels (at least the
  * natural 72 dpi size when max_edge is large). Page is 1-based.

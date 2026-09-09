@@ -511,13 +511,16 @@ content. For scanned pages (one large image XObject) Splash often **re-decodes
 the full JPEG** for each crop. That is Poppler behaviour, not Galapix throwing
 away handles.
 
-**thumtoo-092:** when page long edge ≤ 4096 at the tile scale, rasterize the
-**full page once** into a TLS cache and `memcpy` crops. Above that, keep region
-render (memory bound).
+**Full-page RGB cache:** only for **scale ≥ 0** and long edge ≤ 4096. Never at
+deep live zoom (would be huge).
 
-**Metadata “scanned vs vector”:** PDF has no standard flag. Heuristics only
-(Producer/Creator “Scanner”, empty text + large image XObjects). poppler-cpp
-does not expose a simple image-count API; not implemented yet.
+**Image-heavy detection (thumtoo-093):**
+- With **poppler-glib**: `poppler_page_get_image_mapping` → image count +
+  coverage fraction (box area / media box). Coverage ≥ 0.45 → image_heavy.
+- Without glib: sparse text (`text_chars / page_points²` < threshold) →
+  image_heavy (scanned heuristic).
+- **Live tiles** (scale < 0) **refused** when image_heavy; Galapix sets
+  `min_scale = 0` for those pages. Vector pages keep deep live zoom.
 
 ## 7c. Sleeping USB / GUI thread policy
 

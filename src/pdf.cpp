@@ -380,6 +380,123 @@ std::optional<PdfRaster> image_to_rgb(const poppler::image& img) {
 
 }  // namespace
 
+
+PdfPageContentStats pdf_page_content_stats(const std::filesystem::path& path,
+                                           int page_1based) {
+  PdfPageContentStats st;
+#if !defined(THUMTOO_HAVE_POPPLER)
+  (void)path;
+  (void)page_1based;
+  return st;
+#else
+  if (page_1based < 1) return st;
+  struct TlsStats {
+    std::string path_key;
+    int page = 0;
+    PdfPageContentStats st{};
+    bool valid = false;
+  };
+  static thread_local TlsStats tls;
+  const std::string key = path.lexically_normal().string();
+  if (tls.valid && tls.path_key == key && tls.page == page_1based) {
+    return tls.st;
+  }
+  poppler::document* doc = cached_pdf_document(path);
+  if (!doc) return st;
+  if (!doc) return st;
+  poppler::page* page = cached_pdf_page(doc, key, page_1based);
+  if (!page) return st;
+
+  const poppler::rectf box = page->page_rect(poppler::media_box);
+  const double page_w = std::max(1.0, box.width());
+  const double page_h = std::max(1.0, box.height());
+  const double page_area = page_w * page_h;
+
+  // Text density (always available via poppler-cpp).
+  try {
+    // Full-page text length (UTF-16 code units in ustring::size).
+    const poppler::ustring all = page->text(page->page_rect(poppler::media_box));
+    st.text_chars = static_cast<int>(all.size());
+  } catch (...) {
+    try {
+      const auto boxes = page->text_list();
+      for (const auto& tb : boxes) {
+        st.text_chars += static_cast<int>(tb.text().size());
+      }
+    } catch (...) {
+    }
+  }
+
+  // Image coverage needs poppler-glib (not in poppler-cpp). Without it,
+  // image_coverage stays -1 and we fall back to the sparse-text heuristic.
+#if defined(THUMTOO_HAVE_POPPLER_GLIB)
+  {
+    // GLib document is separate from cpp; open once per path in TLS.
+    struct TlsGlibPdf {
+      std::string path_key;
+      PopplerDocument* doc = nullptr;
+    };
+    static thread_local TlsGlibPdf glib_doc;
+    if (glib_doc.path_key != key) {
+      if (glib_doc.doc) {
+        g_object_unref(glib_doc.doc);
+        glib_doc.doc = nullptr;
+      }
+      glib_doc.path_key = key;
+      GError* err = nullptr;
+      std::string uri = "file://" + path.lexically_normal().string();
+      glib_doc.doc = poppler_document_new_from_file(uri.c_str(), nullptr, &err);
+      if (err) {
+        g_error_free(err);
+        glib_doc.doc = nullptr;
+      }
+    }
+    if (glib_doc.doc) {
+      PopplerPage* gpage =
+          poppler_document_get_page(glib_doc.doc, page_1based - 1);
+      if (gpage) {
+        GList* maps = poppler_page_get_image_mapping(gpage);
+        double covered = 0.0;
+        for (GList* l = maps; l; l = l->next) {
+          auto* m = static_cast<PopplerImageMapping*>(l->data);
+          if (!m) continue;
+          ++st.image_count;
+          const double iw = std::abs(m->area.x2 - m->area.x1);
+          const double ih = std::abs(m->area.y2 - m->area.y1);
+          covered += iw * ih;
+        }
+        poppler_page_free_image_mapping(maps);
+        g_object_unref(gpage);
+        st.image_coverage = std::min(1.0, covered / page_area);
+      }
+    }
+  }
+#endif
+
+  const double text_density = static_cast<double>(st.text_chars) / page_area;
+  if (st.image_coverage >= 0.0) {
+    st.image_heavy = st.image_coverage >= kPdfImageHeavyCoverage;
+  } else {
+    // No image map: sparse/no text → treat as scanned/photo page.
+    st.image_heavy = text_density < kPdfSparseTextPerPoint2;
+  }
+  // Single near-full-page image is the classic scan even with a caption.
+  if (st.image_count == 1 && st.image_coverage >= 0.35) {
+    st.image_heavy = true;
+  }
+  tls.path_key = key;
+  tls.page = page_1based;
+  tls.st = st;
+  tls.valid = true;
+  return st;
+#endif
+}
+
+bool pdf_page_allows_live_tiles(const std::filesystem::path& path,
+                                int page_1based) {
+  return !pdf_page_content_stats(path, page_1based).image_heavy;
+}
+
 std::optional<PdfRaster> pdf_rasterize_page_region(
     const std::filesystem::path& path, int page_1based, double dpi, int px,
     int py, int pw, int ph) {
@@ -414,6 +531,12 @@ std::optional<PdfRaster> pdf_render_tile_cell(const std::filesystem::path& path,
                                                int page_1based, int scale, int x,
                                                int y) {
   if (x < 0 || y < 0) return std::nullopt;
+  // Image-heavy (scanned) pages: refuse live finer-than-layout tiles. Region
+  // render re-decodes large JPEG XObjects per cell; vector pages stay live.
+  if (scale < kPdfMinLiveTileScaleImageHeavy &&
+      !pdf_page_allows_live_tiles(path, page_1based)) {
+    return std::nullopt;
+  }
   auto layout = pdf_page_layout_size(path, page_1based);
   if (!layout || layout->width <= 0 || layout->height <= 0) return std::nullopt;
 
@@ -428,11 +551,11 @@ std::optional<PdfRaster> pdf_render_tile_cell(const std::filesystem::path& path,
   const double dpi = pdf_dpi_for_scale(scale);
   const int full_edge = std::max(full.width, full.height);
 
-  // Prefer a full-page raster cache when the page is not enormous. Scanned
-  // PDFs re-decode the same image XObject on every region render otherwise.
+  // Full-page cache only for coarse/layout scales (scale >= 0). Deep live zoom
+  // would allocate enormous buffers; vector pages region-render fine without it.
   std::optional<PdfRaster> cell_raster;
   const std::string path_key = path.lexically_normal().string();
-  if (full_edge > 0 && full_edge <= kPdfPageRasterCacheMaxEdge) {
+  if (scale >= 0 && full_edge > 0 && full_edge <= kPdfPageRasterCacheMaxEdge) {
     bool cache_hit =
         g_tls_pdf_page_raster.path_key == path_key &&
         g_tls_pdf_page_raster.page == page_1based &&

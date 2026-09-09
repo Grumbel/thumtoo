@@ -48,6 +48,16 @@ inline constexpr int kPdfLayoutDpi = 144;
 /// are not stored — avoids filling the cache with 1k–9k dpi cells.
 inline constexpr int kPdfMinDurableTileScale = -2;  // 144 * 4 = 576 dpi
 
+/// Image-heavy pages: no live tiles finer than this (0 = layout dpi only).
+inline constexpr int kPdfMinLiveTileScaleImageHeavy = 0;
+
+/// Fraction of page area covered by image XObjects → treat as image-heavy.
+inline constexpr double kPdfImageHeavyCoverage = 0.45;
+
+/// Sparse text (chars per square point of media box) → scanned heuristic
+/// when image-mapping is unavailable.
+inline constexpr double kPdfSparseTextPerPoint2 = 0.002;
+
 /// Grid tiles (Phase 4 / Galapix-compatible). See TILES.md.
 inline constexpr int kTileSize = 256;
 inline constexpr int kDefaultTileQuality = 80;
