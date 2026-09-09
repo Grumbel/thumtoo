@@ -434,67 +434,56 @@ std::optional<PdfRaster> mupdf_render_tile_cell(const std::filesystem::path& pat
 }
 
 
-/// Document-order walk of Image XObjects (page resources + depth-1 Form XObjects).
-/// Returns the 1-based index's object number (pdf_to_num), or 0 if not found.
-/// Size uses /Width /Height from the dict — no stream decode required.
+/// True for a usable embedded raster Image XObject (not a stencil ImageMask).
+[[nodiscard]] bool mupdf_obj_is_raster_image(fz_context* ctx, pdf_obj* obj) {
+  if (!ctx || !obj) return false;
+  obj = pdf_resolve_indirect(ctx, obj);
+  if (!pdf_name_eq(ctx, pdf_dict_get(ctx, obj, PDF_NAME(Subtype)), PDF_NAME(Image))) {
+    return false;
+  }
+  // Stencil / soft-mask bitmaps are Subtype Image with ImageMask true — skip.
+  if (pdf_dict_get_bool(ctx, obj, PDF_NAME(ImageMask))) {
+    return false;
+  }
+  const int w = pdf_to_int(ctx, pdf_dict_get(ctx, obj, PDF_NAME(Width)));
+  const int h = pdf_to_int(ctx, pdf_dict_get(ctx, obj, PDF_NAME(Height)));
+  // Reject empty / broken dicts (mutool extract still lists them; we need pixels).
+  return w > 0 && h > 0;
+}
+
+/// mutool-style: walk the whole xref for Image objects (stable object-number order).
+/// Page-resource walks miss images only referenced from deeper forms / content and
+/// can disagree with load. Returns 1-based index → object number, or 0.
 [[nodiscard]] int mupdf_find_embedded_image_objnum(fz_context* ctx, pdf_document* pdf,
-                                                   fz_document* doc, int image_1based) {
-  if (!ctx || !pdf || !doc || image_1based < 1) return 0;
-  int pages = 0;
-  int seen = 0;
+                                                   fz_document* /*doc*/, int image_1based) {
+  if (!ctx || !pdf || image_1based < 1) return 0;
   int found_num = 0;
-  int pi = 0;
-  fz_var(seen);
+  int seen = 0;
+  int xref_len = 0;
+  int num = 0;
   fz_var(found_num);
-  fz_var(pi);
-  fz_try(ctx) { pages = fz_count_pages(ctx, doc); }
+  fz_var(seen);
+  fz_var(xref_len);
+  fz_var(num);
+  fz_try(ctx) { xref_len = pdf_xref_len(ctx, pdf); }
   fz_catch(ctx) { return 0; }
 
-  for (pi = 0; pi < pages && found_num == 0; ++pi) {
-    pdf_page* page = nullptr;
-    fz_var(page);
+  for (num = 1; num < xref_len && found_num == 0; ++num) {
+    pdf_obj* obj = nullptr;
+    fz_var(obj);
     fz_try(ctx) {
-      page = pdf_load_page(ctx, pdf, pi);
-      pdf_obj* resources = pdf_page_resources(ctx, page);
-      pdf_obj* xobject = pdf_dict_get(ctx, resources, PDF_NAME(XObject));
-      auto consider = [&](pdf_obj* obj) {
-        if (!obj || found_num != 0) return;
-        obj = pdf_resolve_indirect(ctx, obj);
-        if (!pdf_name_eq(ctx, pdf_dict_get(ctx, obj, PDF_NAME(Subtype)),
-                         PDF_NAME(Image))) {
-          return;
-        }
+      obj = pdf_load_object(ctx, pdf, num);
+      if (mupdf_obj_is_raster_image(ctx, obj)) {
         ++seen;
         if (seen == image_1based) {
-          found_num = pdf_to_num(ctx, obj);
-        }
-      };
-      if (xobject && pdf_is_dict(ctx, xobject)) {
-        const int n = pdf_dict_len(ctx, xobject);
-        for (int i = 0; i < n; ++i) {
-          pdf_obj* obj = pdf_dict_get_val(ctx, xobject, i);
-          if (!obj) continue;
-          obj = pdf_resolve_indirect(ctx, obj);
-          pdf_obj* subtype = pdf_dict_get(ctx, obj, PDF_NAME(Subtype));
-          if (pdf_name_eq(ctx, subtype, PDF_NAME(Image))) {
-            consider(obj);
-          } else if (pdf_name_eq(ctx, subtype, PDF_NAME(Form))) {
-            pdf_obj* form_xo =
-                pdf_dict_get(ctx, pdf_dict_get(ctx, obj, PDF_NAME(Resources)),
-                             PDF_NAME(XObject));
-            if (form_xo && pdf_is_dict(ctx, form_xo)) {
-              for (int j = 0, fn = pdf_dict_len(ctx, form_xo); j < fn; ++j) {
-                consider(pdf_dict_get_val(ctx, form_xo, j));
-              }
-            }
-          }
+          found_num = num;
         }
       }
     }
     fz_always(ctx) {
-      if (page) pdf_drop_page(ctx, page);
+      if (obj) pdf_drop_obj(ctx, obj);
     }
-    fz_catch(ctx) { /* next page */ }
+    fz_catch(ctx) { /* skip broken object */ }
   }
   return found_num;
 }
@@ -511,51 +500,27 @@ std::optional<int> mupdf_embedded_image_count(const std::filesystem::path& path)
   if (!pdf) return std::nullopt;
 
   int total = 0;
-  int pages = 0;
-  int pi = 0;
+  int xref_len = 0;
+  int num = 0;
   fz_var(total);
-  fz_var(pi);
-  fz_try(ctx) { pages = fz_count_pages(ctx, doc); }
+  fz_var(xref_len);
+  fz_var(num);
+  fz_try(ctx) { xref_len = pdf_xref_len(ctx, pdf); }
   fz_catch(ctx) { return std::nullopt; }
 
-  for (pi = 0; pi < pages; ++pi) {
-    pdf_page* page = nullptr;
-    fz_var(page);
+  for (num = 1; num < xref_len; ++num) {
+    pdf_obj* obj = nullptr;
+    fz_var(obj);
     fz_try(ctx) {
-      page = pdf_load_page(ctx, pdf, pi);
-      pdf_obj* resources = pdf_page_resources(ctx, page);
-      // Walk page XObject dict (non-recursive for forms in v1 depth-1 forms).
-      pdf_obj* xobject = pdf_dict_get(ctx, resources, PDF_NAME(XObject));
-      if (xobject && pdf_is_dict(ctx, xobject)) {
-        const int n = pdf_dict_len(ctx, xobject);
-        for (int i = 0; i < n; ++i) {
-          pdf_obj* obj = pdf_dict_get_val(ctx, xobject, i);
-          if (!obj) continue;
-          obj = pdf_resolve_indirect(ctx, obj);
-          pdf_obj* subtype = pdf_dict_get(ctx, obj, PDF_NAME(Subtype));
-          if (pdf_name_eq(ctx, subtype, PDF_NAME(Image))) {
-            ++total;
-          } else if (pdf_name_eq(ctx, subtype, PDF_NAME(Form))) {
-            pdf_obj* form_res = pdf_dict_get(ctx, obj, PDF_NAME(Resources));
-            pdf_obj* form_xo = pdf_dict_get(ctx, form_res, PDF_NAME(XObject));
-            if (form_xo && pdf_is_dict(ctx, form_xo)) {
-              const int fn = pdf_dict_len(ctx, form_xo);
-              for (int j = 0; j < fn; ++j) {
-                pdf_obj* fobj = pdf_dict_get_val(ctx, form_xo, j);
-                if (!fobj) continue;
-                fobj = pdf_resolve_indirect(ctx, fobj);
-                pdf_obj* fs = pdf_dict_get(ctx, fobj, PDF_NAME(Subtype));
-                if (pdf_name_eq(ctx, fs, PDF_NAME(Image))) ++total;
-              }
-            }
-          }
-        }
+      obj = pdf_load_object(ctx, pdf, num);
+      if (mupdf_obj_is_raster_image(ctx, obj)) {
+        ++total;
       }
     }
     fz_always(ctx) {
-      if (page) pdf_drop_page(ctx, page);
+      if (obj) pdf_drop_obj(ctx, obj);
     }
-    fz_catch(ctx) { /* skip page */ }
+    fz_catch(ctx) { /* skip */ }
   }
   return total;
 #endif
@@ -587,7 +552,9 @@ std::optional<PdfRaster> mupdf_rasterize_embedded_image(
   fz_var(pix);
   std::optional<PdfRaster> out;
   fz_try(ctx) {
-    target = pdf_load_object(ctx, pdf, objnum);
+    // mutool extract uses an indirect ref; load_object alone is not enough for
+    // all stream Image XObjects across MuPDF versions.
+    target = pdf_new_indirect(ctx, pdf, objnum, 0);
     if (!target) {
       fz_throw(ctx, FZ_ERROR_GENERIC, "pdfimage: missing object %d", objnum);
     }
@@ -669,13 +636,14 @@ std::optional<Size> mupdf_embedded_image_size(const std::filesystem::path& path,
   std::optional<Size> out;
   fz_var(target);
   fz_try(ctx) {
-    target = pdf_load_object(ctx, pdf, objnum);
+    target = pdf_new_indirect(ctx, pdf, objnum, 0);
     if (!target) {
       fz_throw(ctx, FZ_ERROR_GENERIC, "pdfimage: missing object %d", objnum);
     }
+    pdf_obj* resolved = pdf_resolve_indirect(ctx, target);
     // Prefer dictionary /Width /Height (no stream decode). Fallback to fz_image.
-    const int w = pdf_to_int(ctx, pdf_dict_get(ctx, target, PDF_NAME(Width)));
-    const int h = pdf_to_int(ctx, pdf_dict_get(ctx, target, PDF_NAME(Height)));
+    const int w = pdf_to_int(ctx, pdf_dict_get(ctx, resolved, PDF_NAME(Width)));
+    const int h = pdf_to_int(ctx, pdf_dict_get(ctx, resolved, PDF_NAME(Height)));
     if (w > 0 && h > 0) {
       out = Size{w, h};
     } else {

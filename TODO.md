@@ -2,7 +2,14 @@
 
 ## Status (2026-09-09)
 
-**Tip: thumtoo-123-pdfimage-objnum-locator.**
+**Tip: thumtoo-124-pdfimage-xref-scan.**
+
+### 124 (this tip)
+- Document-wide xref scan for Image XObjects (mutool-style); skip ImageMask
+- Load via `pdf_new_indirect` + `pdf_load_image`
+- biltoo: soft-miss await ladder for pdfimage; tooltip on permanent fail
+
+
 
 ### Shipped
 - Embedded image size via PDF dict `/Width` `/Height` (no stream decode).
