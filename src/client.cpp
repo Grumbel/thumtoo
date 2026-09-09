@@ -297,11 +297,12 @@ std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
     return get_lqip(uri);
   }
   if (auto pimg = parse_pdf_image_uri(std::string(uri))) {
-    if (auto raster = pdf_rasterize_embedded_image(pimg->pdf_path, pimg->image,
-                                                     kLqipPageEdge)) {
-      if (!raster->rgb.empty()) {
-        store_lqip_if_missing(*db_, cid, nullptr, raster->rgb.data(),
-                              raster->width, raster->height);
+    if (auto raster_opt = thumtoo::pdf_rasterize_embedded_image(
+            pimg->pdf_path, pimg->image, kLqipPageEdge)) {
+      const PdfRaster& raster = *raster_opt;
+      if (!raster.rgb.empty()) {
+        store_lqip_if_missing(*db_, cid, nullptr, raster.rgb.data(),
+                              raster.width, raster.height);
       }
     }
     return get_lqip(uri);
@@ -1729,35 +1730,37 @@ void Client::handle_ensure_pixels(
       }
     }
   } else if (auto pimg = parse_pdf_image_uri(job.uri)) {
-    auto raster = pdf_rasterize_embedded_image(pimg->pdf_path, pimg->image,
-                                               edge_limit);
-    if (raster && !raster->rgb.empty()) {
-      auto levels = build_ladder_rgb(raster->rgb.data(), raster->width,
-                                     raster->height, row.content_id,
-                                     kDefaultJxlQuality, edge_limit);
-      for (const auto& lvl : levels) {
-        blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
-                          lvl.width, lvl.height, lvl.codec, lvl.quality,
-                          lvl.bytes.data(), lvl.bytes.size());
-        Database::LevelRow lr;
-        lr.content_id = row.content_id;
-        lr.max_edge = lvl.max_edge;
-        lr.frame_idx = lvl.frame_idx;
-        lr.width = lvl.width;
-        lr.height = lvl.height;
-        lr.codec = lvl.codec;
-        lr.quality = lvl.quality;
-        lr.path = "blobs.sqlite";
-        db_->upsert_level(lr);
-      }
-      row.status =
-          levels.empty() ? ContentStatus::Incomplete : ContentStatus::Ready;
-      if (levels.empty()) row.error_code = "ladder_encode_failed";
-      else row.error_code = std::nullopt;
-      db_->upsert_content(row);
-      if (!levels.empty() && raster) {
-        store_lqip_if_missing(*db_, row.content_id, nullptr, raster->rgb.data(),
-                              raster->width, raster->height);
+    if (auto raster_opt = thumtoo::pdf_rasterize_embedded_image(
+            pimg->pdf_path, pimg->image, edge_limit)) {
+      const PdfRaster& raster = *raster_opt;
+      if (!raster.rgb.empty()) {
+        auto levels = build_ladder_rgb(raster.rgb.data(), raster.width,
+                                       raster.height, row.content_id,
+                                       kDefaultJxlQuality, edge_limit);
+        for (const auto& lvl : levels) {
+          blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
+                            lvl.width, lvl.height, lvl.codec, lvl.quality,
+                            lvl.bytes.data(), lvl.bytes.size());
+          Database::LevelRow lr;
+          lr.content_id = row.content_id;
+          lr.max_edge = lvl.max_edge;
+          lr.frame_idx = lvl.frame_idx;
+          lr.width = lvl.width;
+          lr.height = lvl.height;
+          lr.codec = lvl.codec;
+          lr.quality = lvl.quality;
+          lr.path = "blobs.sqlite";
+          db_->upsert_level(lr);
+        }
+        row.status =
+            levels.empty() ? ContentStatus::Incomplete : ContentStatus::Ready;
+        if (levels.empty()) row.error_code = "ladder_encode_failed";
+        else row.error_code = std::nullopt;
+        db_->upsert_content(row);
+        if (!levels.empty()) {
+          store_lqip_if_missing(*db_, row.content_id, nullptr, raster.rgb.data(),
+                                raster.width, raster.height);
+        }
       }
     }
   } else if (auto dj = parse_djvu_uri(job.uri)) {
