@@ -2,36 +2,17 @@
 
 ## Status (2026-09-09)
 
-**Tip: thumtoo-122-pdfimage-keep-obj.**
+**Tip: thumtoo-123-pdfimage-objnum-locator.**
 
-### Shipped this session (high level)
-
-- **//pdfimage:N fix:** `pdf_keep_obj` the selected Image XObject before
-  `pdf_drop_page` in `mupdf_rasterize_embedded_image` / `mupdf_embedded_image_size`
-  (borrowed resource dict pointers became invalid → wrong size / no pixels).
-- `pixmap_to_rgb`: allow grey (n=1/2); convert only non-grey non-RGB colourspaces.
-
-Previous tip **121** (still required base):
-- EPUB layout URI: pixels for w/h; `fs`; per-side margins; `lh`, `cols`/`cgap`,
-  `align`, font/theme/pubcss; aggressive user CSS; **canonical format on parse**.
-- **//pdfimage:N** — MuPDF Image XObject extract at native resolution; client
-  size/LQIP/pixels; content-id `:pdfimage:N`.
-- **//pdfimages** collection pipe → `expand_pdf_images_collection_uri` /
-  `expand_pdf_image_uris` (default bare-PDF expand remains `//page:N`).
-- Build-fix series: decl order (`PdfRaster`), namespace for expand helpers,
-  pipe constants in uri.cpp anonymous namespace, `fz_var` clobber fixes.
-
-### Open / later
-
-- URL normalization beyond format-on-parse (documented earlier).
-- Pixel filters (`//crop:`, invert, …) — see design notes below in this file.
-- Deeper Form XObject / inline image extraction if scans miss images.
-- biltoo menu affordance for `//pdfimages` (biltoo already expands the pipe).
-- Smoke-test `//pdfimages` in biltoo against a multi-image PDF after this tip.
+### Shipped
+- Embedded image size via PDF dict `/Width` `/Height` (no stream decode).
+- Locate image by `pdf_to_num` + `pdf_load_object` (no borrowed page-resource ptrs).
+- `request_size` / `request_pixels` register `//pdfimage:` locators (member_path `pdfimage:N`).
+- biltoo: treat `//pdfimage:` like page refs for probe/placeholder; preparePaths skip leaves;
+  ImageLoader load/thumbnail paths for pdfimage ladder.
 
 ### biltoo pairing
-
-Human should stack **biltoo-353+** on a tree that uses this thumtoo tip (or newer).
+Stack **biltoo-354** with this tip.
 
 ---
 
