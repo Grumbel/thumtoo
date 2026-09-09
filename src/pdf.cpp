@@ -633,6 +633,15 @@ std::optional<PdfRaster> pdf_render_tile_cell(const std::filesystem::path& path,
   if (pdf_resolve_backend(backend) == PdfBackend::MuPDF) {
     return mupdf_render_tile_cell(path, page_1based, scale, x, y);
   }
+#if !defined(THUMTOO_HAVE_POPPLER)
+  (void)path;
+  (void)page_1based;
+  (void)scale;
+  (void)x;
+  (void)y;
+  (void)backend;
+  return std::nullopt;
+#else
   if (x < 0 || y < 0) return std::nullopt;
   // Image-heavy (scanned) pages: refuse live finer-than-layout tiles. Region
   // render re-decodes large JPEG XObjects per cell; vector pages stay live.
@@ -754,6 +763,7 @@ std::optional<PdfRaster> pdf_render_tile_cell(const std::filesystem::path& path,
 
   if (!cell_raster || cell_raster->rgb.empty()) return std::nullopt;
   return cell_raster;
+#endif
 }
 
 std::optional<TileBlob> pdf_build_tile_cell(const std::filesystem::path& path,
