@@ -58,11 +58,13 @@ inline constexpr double kPdfImageHeavyCoverage = 0.45;
 /// when image-mapping is unavailable.
 inline constexpr double kPdfSparseTextPerPoint2 = 0.002;
 
-/// EPUB default virtual page (points) and base font size for fz_layout_document.
-/// Changing these invalidates default expand URIs and cached tiles for that profile.
-inline constexpr int kEpubDefaultPageWidthPt = 600;
-inline constexpr int kEpubDefaultPageHeightPt = 900;
-inline constexpr int kEpubDefaultEmPt = 12;
+/// EPUB default virtual page size in **pixels** at kEpubLayoutDpi and base font
+/// size in points for fz_layout_document. Changing these invalidates default
+/// expand URIs and cached tiles for that profile.
+/// (Legacy used points; URI now carries pixels so image-viewer math stays simple.)
+inline constexpr int kEpubDefaultPageWidthPx = 1200;
+inline constexpr int kEpubDefaultPageHeightPx = 1800;
+inline constexpr int kEpubDefaultFontSizePt = 12;
 /// Layout pixel density for EPUB pages (same convention as PDF layout DPI).
 inline constexpr int kEpubLayoutDpi = 144;
 

@@ -74,8 +74,8 @@ int main() {
     expect(eloc && eloc->pipes[1].kind == LocationPipeKind::PdfPage, "epub page pipe");
     expect(format_location(*eloc) == ep, "format epub uri");
     auto parsed = parse_epub_layout_params(eloc->pipes[0].value);
-    expect(parsed.width_pt == layout.width_pt && parsed.height_pt == layout.height_pt &&
-               parsed.em_pt == layout.em_pt,
+    expect(parsed.width_px == layout.width_px && parsed.height_px == layout.height_px &&
+               parsed.fs_pt == layout.fs_pt,
            "epub layout params roundtrip");
   }
 

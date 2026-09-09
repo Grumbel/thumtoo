@@ -29,7 +29,7 @@ struct ParsedEpubUri {
 
 [[nodiscard]] std::optional<ParsedEpubUri> parse_epub_uri(std::string_view uri);
 
-/// file:///…//epub:w=…,h=…,em=…//page:N
+/// file:///…//epub:w=…,h=…,fs=…//page:N
 [[nodiscard]] std::string epub_page_uri(const std::filesystem::path& path,
                                         int page_1based,
                                         const EpubLayout& layout = default_epub_layout());

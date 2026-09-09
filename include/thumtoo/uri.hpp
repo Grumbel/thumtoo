@@ -56,7 +56,7 @@ enum class UriScheme {
 enum class LocationPipeKind {
   ArchiveRoot,     // …//archive
   ArchiveMember,   // …//archive:member/path
-  EpubLayout,      // …//epub:w=600,h=900,em=12
+  EpubLayout,      // …//epub:w=1200,h=1800,fs=12
   PdfPage,         // …//page:N (1-based, default PDF backend)
   PdfPagePoppler,  // …//poppler-page:N
   PdfPageMupdf,    // …//mupdf-page:N
@@ -96,22 +96,25 @@ struct Location {
 [[nodiscard]] std::string with_pdf_page_mupdf(std::string_view base_uri,
                                               int page_1based);
 
-/// EPUB layout profile (points). Defaults match kEpubDefault* constants.
+/// EPUB layout profile for //epub: URIs.
+/// w/h are pixels at kEpubLayoutDpi; fs is MuPDF default font size in points.
+/// Defaults match kEpubDefault* constants.
 struct EpubLayout {
-  int width_pt = 0;
-  int height_pt = 0;
-  int em_pt = 0;
+  int width_px = 0;
+  int height_px = 0;
+  int fs_pt = 0;
 };
 
 [[nodiscard]] EpubLayout default_epub_layout();
 
-/// Encode layout as the //epub: payload (w=,h=,em=).
+/// Encode layout as the //epub: payload in canonical key order: w=,h=,fs=.
 [[nodiscard]] std::string format_epub_layout_params(const EpubLayout& layout);
 
-/// Parse w=/h=/em= from an //epub: value (missing keys keep defaults).
+/// Parse w=/h=/fs= from an //epub: value (missing keys keep defaults).
+/// Unknown keys ignored. No legacy em=/points aliases.
 [[nodiscard]] EpubLayout parse_epub_layout_params(std::string_view params);
 
-/// Append //epub:w=…,h=…,em=… onto a base URI.
+/// Append //epub:w=…,h=…,fs=… onto a base URI.
 [[nodiscard]] std::string with_epub_layout(std::string_view base_uri,
                                            const EpubLayout& layout);
 

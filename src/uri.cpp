@@ -335,21 +335,22 @@ std::string with_pdf_page_mupdf(std::string_view base_uri, int page_1based) {
 }
 
 EpubLayout default_epub_layout() {
-  return EpubLayout{kEpubDefaultPageWidthPt, kEpubDefaultPageHeightPt,
-                    kEpubDefaultEmPt};
+  return EpubLayout{kEpubDefaultPageWidthPx, kEpubDefaultPageHeightPx,
+                    kEpubDefaultFontSizePt};
 }
 
 std::string format_epub_layout_params(const EpubLayout& layout) {
+  // Canonical key order w,h,fs so callers always get a stable cache key.
   EpubLayout L = layout;
-  if (L.width_pt < 1) L.width_pt = kEpubDefaultPageWidthPt;
-  if (L.height_pt < 1) L.height_pt = kEpubDefaultPageHeightPt;
-  if (L.em_pt < 1) L.em_pt = kEpubDefaultEmPt;
+  if (L.width_px < 1) L.width_px = kEpubDefaultPageWidthPx;
+  if (L.height_px < 1) L.height_px = kEpubDefaultPageHeightPx;
+  if (L.fs_pt < 1) L.fs_pt = kEpubDefaultFontSizePt;
   std::string out = "w=";
-  out += std::to_string(L.width_pt);
+  out += std::to_string(L.width_px);
   out += ",h=";
-  out += std::to_string(L.height_pt);
-  out += ",em=";
-  out += std::to_string(L.em_pt);
+  out += std::to_string(L.height_px);
+  out += ",fs=";
+  out += std::to_string(L.fs_pt);
   return out;
 }
 
@@ -357,9 +358,9 @@ EpubLayout parse_epub_layout_params(std::string_view params) {
   EpubLayout L = default_epub_layout();
   auto apply = [&](std::string_view key, int v) {
     if (v < 1) return;
-    if (key == "w") L.width_pt = v;
-    else if (key == "h") L.height_pt = v;
-    else if (key == "em") L.em_pt = v;
+    if (key == "w") L.width_px = v;
+    else if (key == "h") L.height_px = v;
+    else if (key == "fs") L.fs_pt = v;
   };
   std::size_t i = 0;
   while (i < params.size()) {

@@ -1,7 +1,7 @@
 ## EPUB via MuPDF — **thumtoo-103**
 
 - [x] Design [docs/EPUB.md](docs/EPUB.md)
-- [x] URI `//epub:w,h,em` + `//page:N`; format classify `.epub` before zip
+- [x] URI `//epub:w,h,fs` (pixels + font size pt) + `//page:N`; format classify `.epub` before zip
 - [x] `epub.cpp`: layout, page count, layout size, region/tile raster (MuPDF)
 - [x] `expand_media_uris` default profile pages
 - [x] Client size probe + live tiles + LQIP
@@ -28,6 +28,29 @@
 - [x] MuPDF region scissor is device-space (fix white bottom tiles)
 
 Tip: **thumtoo-106**.
+
+## Plan / work (2026-09-09) — bundle `thumtoo-107-epub-layout-pixels`
+
+### Change
+- `//epub:` **w/h are pixels** at `kEpubLayoutDpi` (was points). Converted to
+  points only at `fz_layout_document`.
+- Font size key renamed **`fs=`** (points). Dropped `em=` — CSS rules often
+  size margins in `em`, so changing font size looked like a margin control.
+- Defaults: 1200×1800 px, fs=12 (same physical page as old 600×900 pt @ 144 dpi).
+- Canonical emit order always `w,h,fs` for stable cache keys from format().
+
+### Follow-ups
+- [ ] Per-side margins (`mt`/`mr`/`mb`/`ml`) via injected user CSS
+- [ ] Full layout-param normalization on parse so `fs=12,w=10` and `w=10,fs=12`
+      become the same cache key even for hand-written URIs
+- [ ] Optional minimal user CSS (kill/replace MuPDF default sheet)
+
+### Done criteria
+- [x] pixels w/h + fs in URI/API/docs/tests
+- [x] Docs; next **108**
+
+---
+
 
 ---
 

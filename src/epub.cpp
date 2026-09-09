@@ -23,9 +23,9 @@ struct TlsEpub {
   fz_context* ctx = nullptr;
   std::string path_key;
   std::filesystem::file_time_type mtime{};
-  int width_pt = 0;
-  int height_pt = 0;
-  int em_pt = 0;
+  int width_px = 0;
+  int height_px = 0;
+  int fs_pt = 0;
   fz_document* doc = nullptr;
   bool laid_out = false;
   int page_index = -1;
@@ -56,9 +56,9 @@ void tls_drop_doc() {
   }
   g_tls.path_key.clear();
   g_tls.laid_out = false;
-  g_tls.width_pt = 0;
-  g_tls.height_pt = 0;
-  g_tls.em_pt = 0;
+  g_tls.width_px = 0;
+  g_tls.height_px = 0;
+  g_tls.fs_pt = 0;
 }
 
 fz_context* tls_ctx() {
@@ -81,16 +81,16 @@ fz_document* tls_document(const std::filesystem::path& path,
   if (!ctx) return nullptr;
 
   EpubLayout L = layout;
-  if (L.width_pt < 1) L.width_pt = kEpubDefaultPageWidthPt;
-  if (L.height_pt < 1) L.height_pt = kEpubDefaultPageHeightPt;
-  if (L.em_pt < 1) L.em_pt = kEpubDefaultEmPt;
+  if (L.width_px < 1) L.width_px = kEpubDefaultPageWidthPx;
+  if (L.height_px < 1) L.height_px = kEpubDefaultPageHeightPx;
+  if (L.fs_pt < 1) L.fs_pt = kEpubDefaultFontSizePt;
 
   std::error_code ec;
   const auto mtime = std::filesystem::last_write_time(path, ec);
   const std::string key = path.lexically_normal().string();
   if (g_tls.doc && g_tls.path_key == key && !ec && g_tls.mtime == mtime &&
-      g_tls.width_pt == L.width_pt && g_tls.height_pt == L.height_pt &&
-      g_tls.em_pt == L.em_pt && g_tls.laid_out) {
+      g_tls.width_px == L.width_px && g_tls.height_px == L.height_px &&
+      g_tls.fs_pt == L.fs_pt && g_tls.laid_out) {
     return g_tls.doc;
   }
 
@@ -101,12 +101,17 @@ fz_document* tls_document(const std::filesystem::path& path,
   fz_catch(ctx) { doc = nullptr; }
   if (!doc) return nullptr;
 
+  // URI w/h are pixels at kEpubLayoutDpi; MuPDF wants page size in points.
+  const float width_pt =
+      static_cast<float>(L.width_px) * 72.f / static_cast<float>(kEpubLayoutDpi);
+  const float height_pt =
+      static_cast<float>(L.height_px) * 72.f / static_cast<float>(kEpubLayoutDpi);
+
   int ok = 0;
   fz_var(ok);
   fz_try(ctx) {
-    fz_layout_document(ctx, doc, static_cast<float>(L.width_pt),
-                       static_cast<float>(L.height_pt),
-                       static_cast<float>(L.em_pt));
+    fz_layout_document(ctx, doc, width_pt, height_pt,
+                       static_cast<float>(L.fs_pt));
     ok = 1;
   }
   fz_catch(ctx) { ok = 0; }
@@ -117,9 +122,9 @@ fz_document* tls_document(const std::filesystem::path& path,
 
   g_tls.path_key = key;
   g_tls.mtime = ec ? std::filesystem::file_time_type{} : mtime;
-  g_tls.width_pt = L.width_pt;
-  g_tls.height_pt = L.height_pt;
-  g_tls.em_pt = L.em_pt;
+  g_tls.width_px = L.width_px;
+  g_tls.height_px = L.height_px;
+  g_tls.fs_pt = L.fs_pt;
   g_tls.doc = doc;
   g_tls.laid_out = true;
   return doc;
