@@ -1142,6 +1142,10 @@ std::vector<TileBlob> build_tile_pyramid_buffer(const std::uint8_t* data,
 std::optional<TileBlob> build_tile_cell(const std::filesystem::path& path,
                                         int scale, int x, int y,
                                         int jpeg_quality) {
+  // Multipage containers must use dedicated backends (pdfimage / page / djvu).
+  if (is_pdf_path(path) || is_djvu_path(path) || is_epub_path(path)) {
+    return std::nullopt;
+  }
   ensure_vips();
   // Option A: coarse JPEG cells use DCT shrink — no full-res decode, no ladder.
   if (scale > 0 && path_looks_jpeg(path)) {

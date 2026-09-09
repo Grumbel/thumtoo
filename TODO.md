@@ -2,9 +2,20 @@
 
 ## Status (2026-09-09)
 
-**Tip: thumtoo-125-with-pdf-image-defs.**
+**Tip: thumtoo-126-pdfimage-native-tiles.**
 
-### 125 (this tip)
+### 126 (this tip)
+- **Bug:** `//pdfimage:` tile requests fell through to `path_from_file_uri` (strips
+  pipes) → Vips opened the **PDF file** at ~72 dpi page 1 — not the embedded
+  Image XObject → extremely low-res “pages”.
+- **Fix:** interactive + pyramid `EnsureTiles` branches for `parse_pdf_image_uri`:
+  `pdf_rasterize_embedded_image(..., max_edge=0)` then `build_tile_cell_rgb` /
+  `build_tile_pyramid_rgb`.
+- `EnsurePixels` ladder: rasterize **native** then encode with `edge_limit` (no
+  pre-scale in MuPDF that discarded detail before JXL).
+- Defense: `build_tile_cell` refuses PDF/DjVu/EPUB paths (pyramid already did).
+
+### Prior 125
 - Define missing `with_pdf_image` / `with_pdf_images` in `src/uri.cpp` (declared in
   uri.hpp, used by test_uri; link failed with undefined reference).
 

@@ -1779,8 +1779,10 @@ void Client::handle_ensure_pixels(
       }
     }
   } else if (auto pimg = parse_pdf_image_uri(job.uri)) {
+    // Native Image XObject pixels; ladder may downscale for soft preview only.
+    // Do not pre-scale in the MuPDF path — that discarded detail before encode.
     if (auto raster_opt = thumtoo::pdf_rasterize_embedded_image(
-            pimg->pdf_path, pimg->image, edge_limit)) {
+            pimg->pdf_path, pimg->image, /*max_edge=*/0)) {
       const PdfRaster& raster = *raster_opt;
       if (!raster.rgb.empty()) {
         auto levels = build_ladder_rgb(raster.rgb.data(), raster.width,
@@ -2235,6 +2237,18 @@ void Client::handle_ensure_tiles(
       live.bytes = std::move(raster->rgb);
       reply_one(std::move(live));
       return;
+    } else if (auto pimg = parse_pdf_image_uri(job.uri)) {
+      // Embedded Image XObject at native pixel size — never open the PDF path
+      // via Vips (path_from_file_uri strips //pdfimage: and would decode page 1
+      // at ~72 dpi).
+      if (auto raster = thumtoo::pdf_rasterize_embedded_image(
+              pimg->pdf_path, pimg->image, /*max_edge=*/0)) {
+        if (!raster->rgb.empty()) {
+          cell = build_tile_cell_rgb(raster->rgb.data(), raster->width,
+                                     raster->height, job.tile_scale, job.tile_x,
+                                     job.tile_y, kDefaultTileQuality);
+        }
+      }
     } else if (is_http_uri(job.uri)) {
       auto bytes = fetch_http_cached(job.uri);
       if (bytes && !bytes->empty()) {
@@ -2395,6 +2409,15 @@ void Client::handle_ensure_tiles(
             }
           }
         }
+      }
+    }
+  } else if (auto pimg = parse_pdf_image_uri(job.uri)) {
+    if (auto raster = thumtoo::pdf_rasterize_embedded_image(
+            pimg->pdf_path, pimg->image, /*max_edge=*/0)) {
+      if (!raster->rgb.empty()) {
+        tiles = build_tile_pyramid_rgb(raster->rgb.data(), raster->width,
+                                       raster->height, min_scale, max_scale,
+                                       kDefaultTileQuality);
       }
     }
   } else if (is_http_uri(job.uri)) {
