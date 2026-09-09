@@ -934,7 +934,8 @@ void Client::worker_main() {
       if (!single.uri.empty() &&
           (single.kind == JobKind::ProbeSize ||
            single.kind == JobKind::EnsureTiles ||
-           single.kind == JobKind::EnsurePixels)) {
+           single.kind == JobKind::EnsurePixels ||
+           single.kind == JobKind::EnsureLqip)) {
         if (auto arch = parse_archive_uri(single.uri);
             arch && !arch->member_path.empty()) {
           const JobKind batch_kind = single.kind;
@@ -1077,6 +1078,7 @@ void Client::worker_main() {
       if (single.kind == JobKind::ProbeSize) handle_probe_size(single);
       else if (single.kind == JobKind::EnsurePixels) handle_ensure_pixels(single);
       else if (single.kind == JobKind::EnsureTiles) handle_ensure_tiles(single);
+      else if (single.kind == JobKind::EnsureLqip) handle_ensure_lqip(single);
     } catch (...) {
       // Always release inflight_; status stays pending/failed for retry.
     }
@@ -1085,6 +1087,26 @@ void Client::worker_main() {
       --inflight_;
     }
   }
+}
+
+
+void Client::request_lqip(std::string uri) {
+  if (uri.empty()) return;
+  if (get_lqip(uri)) return;
+  Job job;
+  job.kind = JobKind::EnsureLqip;
+  job.uri = std::move(uri);
+  {
+    std::lock_guard lock(mu_);
+    // Prefer back of queue so ProbeSize / EnsureTiles stay ahead.
+    queue_.push_back(std::move(job));
+  }
+  cv_.notify_one();
+}
+
+void Client::handle_ensure_lqip(Job& job) {
+  // Decode/Handsum only — must not run on the GUI thread.
+  (void)ensure_lqip(job.uri);
 }
 
 void Client::handle_probe_size(
@@ -1931,26 +1953,9 @@ void Client::handle_ensure_tiles(
       } else if (!non_rgb_store.bytes.empty()) {
         store_tiles(content_id, std::vector<TileBlob>{std::move(non_rgb_store)});
       }
-      // Opportunistic LQIP for successive opens only (display skips if absent
-      // at session start). Prefer in-memory bytes over a second full open.
+      // LQIP for successive opens — separate job so Handsum cannot starve tiles.
       if (!db_->get_lqip(content_id)) {
-        if (auto arch = parse_archive_uri(job.uri);
-            arch && !arch->member_path.empty()) {
-          if (auto bytes = member_bytes(arch->archive_path, arch->member_path,
-                                          preextracted)) {
-            store_lqip_if_missing(*db_, content_id, nullptr, nullptr, 0, 0,
-                                  bytes->data(), bytes->size());
-          }
-        } else if (is_http_uri(job.uri)) {
-          if (auto bytes = fetch_http_cached(job.uri)) {
-            store_lqip_if_missing(*db_, content_id, nullptr, nullptr, 0, 0,
-                                  bytes->data(), bytes->size());
-          }
-        } else if (auto path = path_from_file_uri(job.uri)) {
-          if (std::filesystem::is_regular_file(*path)) {
-            store_lqip_if_missing(*db_, content_id, &*path, nullptr, 0, 0);
-          }
-        }
+        request_lqip(job.uri);
       }
       return;
     }

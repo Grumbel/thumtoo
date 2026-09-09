@@ -185,6 +185,11 @@ Reply-before-durable-store is already implemented (live paint first).
   the cache yet while better tiles paint; successive opens find it stored.
   No Galapix “warm/cold” display special-case is required or desired.
 
+**thumtoo-088:** Handsum after the first tile must not run on the tile
+worker inline — it starved further cells (black gallery). `request_lqip`
+queues `EnsureLqip` behind Probe/Tiles work. Cold-open underlay is the
+max-scale tile itself, not LQIP.
+
 **Tiles**
 - Warm: `get_tile` then reply; no decode of source.
 - Cold interactive: see §4.2 (no JPEG shrink on hot path).

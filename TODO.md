@@ -1,3 +1,15 @@
+## Fix: LQIP must not starve tile workers — **thumtoo-088**
+
+Inline Handsum after the first tile blocked the same worker from encoding
+more cells → black/empty until the queue drained. LQIP is now a separate
+low-priority `EnsureLqip` job after durable tile store.
+
+- [x] `request_lqip` / `JobKind::EnsureLqip`
+- [x] Remove inline post-tile Handsum from `handle_ensure_tiles`
+- [x] Bundle thumtoo-088
+
+---
+
 ## LQIP after first thumbnail (2026-09-09) — **thumtoo-086**
 
 - [x] No LQIP on size probe (archive path cleaned)

@@ -200,7 +200,7 @@ class Client {
                   std::unique_ptr<BlobStore> blobs, Executor executor,
                   unsigned worker_threads);
 
-  enum class JobKind { ProbeSize, EnsurePixels, EnsureTiles };
+  enum class JobKind { ProbeSize, EnsurePixels, EnsureTiles, EnsureLqip };
 
   struct Job {
     JobKind kind = JobKind::ProbeSize;
@@ -238,6 +238,7 @@ class Client {
   void handle_ensure_tiles(
       Job& job,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);
+  void handle_ensure_lqip(Job& job);
   void store_tiles(const std::string& content_id,
                    const std::vector<TileBlob>& tiles);
 
