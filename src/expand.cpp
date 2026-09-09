@@ -105,8 +105,6 @@ std::vector<std::string> expand_media_uris(const std::filesystem::path& path,
   return out;
 }
 
-}  // namespace thumtoo
-
 std::vector<std::string> expand_pdf_image_uris(const std::filesystem::path& path,
                                                int max_images) {
   std::vector<std::string> out;
@@ -137,3 +135,5 @@ std::vector<std::string> expand_pdf_images_collection_uri(std::string_view uri,
   }
   return expand_pdf_image_uris(*path, max_images);
 }
+
+}  // namespace thumtoo
