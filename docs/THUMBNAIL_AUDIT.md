@@ -158,9 +158,10 @@ Reply-before-durable-store is already implemented (live paint first).
 - PDF/DjVu in `ensure_lqip`: dedicated page raster at edge 64 (not Vips).
 - Archive in `ensure_lqip`: full member extract then thumbnail_buffer 32.
 - **Bug/design smell:** cold size probe for plain files still pays
-  thumbnail-32 + Handsum on the same worker job as dimensions. Galapix
-  only *reads* `get_lqip` on the UI thread (good), but first open still
-  generates LQIP before size callback returns for that URI.
+  thumbnail-32 + Handsum **synchronously** in `handle_probe_size` after
+  size upsert, before `size_cb`. Size is visible in SQLite mid-job (so
+  SizeProbeSession can attach providers), but that worker cannot start
+  the next probe until LQIP finishes. Galapix UI only *reads* `get_lqip`.
 
 **Tiles**
 - Warm: `get_tile` then reply; no decode of source.
@@ -263,6 +264,48 @@ Reply-before-durable-store is already implemented (live paint first).
 - `thumtoo-bench`, `open_phase_bench`, `GALAPIX_OPEN_TIMING`.
 - New: `thumtoo-microbench-decode`, `docs/MICROBENCH_RESULTS.md`.
 
+### 5.5 `SizeProbeSession` (galapix)
+
+- Open path queues `request_size` for all URIs, constructs placeholder Images,
+  launches viewer, then `start_drain` on a **background thread**.
+- Main-thread `tick()` polls `get_size` and attaches `create_from_size` when
+  ready — does **not** wait on size callbacks.
+- **Interaction with LQIP:** `handle_probe_size` upserts size, then
+  synchronously runs `store_lqip_if_missing` for plain files, then posts
+  `size_cb`. Size is in SQLite before LQIP finishes, so `tick()` can attach
+  providers while the same worker is still encoding Handsum — good for
+  layout. Throughput of the worker pool still pays LQIP cost per plain
+  file before that worker takes the next probe (multi-worker mitigates).
+
+### 5.6 `ImageTileCache` request path
+
+- Global per-frame budget: `begin_frame_request_budget(128)` in `Viewer`
+  (raised from historical 48).
+- `issue_requests`: sort **finer scale first**, then distance to focus.
+  Coalesces into `request_tiles` batch for ThumtooTileProvider.
+- Failed/aborted cells retried up to 3 attempts (important for live PDF).
+- `find_smaller_tile`: **lookup only** (no request from draw path) — avoids
+  O(max_scale) job storm.
+- GL upload cap: 64 tiles per image per frame.
+- `cleanup()` aborts in-flight only; retains all SUCCEEDED surfaces (memory
+  grows with browsing).
+- Interactive thumtoo queue: **FIFO** (`enqueue(..., front=false)`); same-cell
+  supersede drops obsolete pending work. (Older LIFO starved archive grids.)
+
+### 5.7 End-to-end cold open (many JPEGs in ZIP)
+
+```
+expand TOC → request_size×N → drain workers:
+  per member: extract (sequential archive coalesce) → probe header
+              → upsert size → LQIP thumb32+Handsum  [plain-like member]
+UI: get_size → provider → overview get_lqip (may still miss)
+    → issue_requests coarse cells → full JPEG decode path (§4.2)
+    → reply RGB/JPEG → worker RGBA → upload ≤64/frame
+```
+
+Warm open skips extract/probe/LQIP/decode-source; still pays get_tile +
+JPEG decode 256² + RGBA + GL.
+
 ## 6. Things we could do but do not (yet)
 
 1. Systematic EXIF / embedded thumbnail for **any** first pixel (tiles + LQIP).
@@ -298,6 +341,22 @@ single multipage PDF/DjVu if tools present.
 | End-to-end request_tile cold | ms |
 
 Output: machine-readable JSON + markdown table in this doc.
+
+## 7b. Policy constants (`include/thumtoo/constants.hpp`)
+
+| Constant | Value | Role |
+|----------|-------|------|
+| `kLadderEdges` | 128…2048 | Display ladder long edges |
+| `kDefaultJxlQuality` | 80 | Ladder encode |
+| `kTileSize` | 256 | Grid cell |
+| `kDefaultTileQuality` | (see constants) | JPEG tiles |
+| `kPdfLayoutDpi` | 144 | Scale 0 / size layout |
+| `kPdfMinDurableTileScale` | (see file) | Below this: live only |
+| `kArchiveMaxMemberUncompressedBytes` | 512 MiB | Extract cap |
+| `Client::kExtractCacheMaxBytes` | 512 MiB | Process RAM cache |
+| `kLadderCacheMaxEntries` | 4 | In-process shrink ladder |
+| Galapix frame tile budget | 128 | `begin_frame_request_budget` |
+| Galapix GL uploads/image/frame | 64 | `kMaxUploadsPerFrame` |
 
 ## 8. Proposed fixes (not implemented — discuss before code)
 
@@ -362,6 +421,8 @@ thrash the entire 512 MiB map after one oversized member.
   `thumtoo-microbench-decode` (needs vips build).
 - 2026-09-09: PDF/DjVu cost tables; Galapix `ThumtooTileProvider` decode
   path; fix proposals §8 (JPEG shrink, LQIP decoupling, tile_source, LRU).
+- 2026-09-09: SizeProbeSession, ImageTileCache budget (128), FIFO tiles,
+  end-to-end cold ZIP open diagram (§5.5–5.7).
 - Next: implement Option A under discussion; vips numbers under nix;
-  RAR corpus; galapix ImageTileCache budget interaction notes.
+  RAR corpus; constants.hpp policy table.
 

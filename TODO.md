@@ -865,4 +865,7 @@ Goal: exhaustive audit of thumbnail / ladder / tile generation in thumtoo
 - [ ] Implement interactive JPEG shrink (after agreement on Option A/B)
 - [ ] Decouple LQIP from size probe (after agreement)
 
-Tip: **thumtoo-078** next bundle after this commit.
+- [x] ImageTileCache / SizeProbeSession / FIFO notes (§5.5–5.7)
+- [x] Policy constants table (§7b)
+
+Tip: **thumtoo-079**.
