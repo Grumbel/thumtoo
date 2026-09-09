@@ -24,6 +24,8 @@ namespace thumtoo {
 namespace {
 
 constexpr std::string_view kPagePipe = "//page:";
+constexpr std::string_view kPopplerPagePipe = "//poppler-page:";
+constexpr std::string_view kMupdfPagePipe = "//mupdf-page:";
 
 #if defined(THUMTOO_HAVE_POPPLER)
 /// Per-worker PDF document cache. Poppler documents are not shared across
@@ -122,23 +124,99 @@ bool is_likely_pdf_path(const std::filesystem::path& path) {
   return is_pdf_path(path);
 }
 
-std::string pdf_page_uri(const std::filesystem::path& pdf_path, int page_1based) {
+PdfBackend pdf_resolve_backend(PdfBackend requested) {
+  if (requested == PdfBackend::Default) {
+#if defined(THUMTOO_HAVE_MUPDF)
+    return PdfBackend::MuPDF;
+#elif defined(THUMTOO_HAVE_POPPLER)
+    return PdfBackend::Poppler;
+#else
+    return PdfBackend::Default;
+#endif
+  }
+  return requested;
+}
+
+bool pdf_backend_available(PdfBackend backend) {
+  const PdfBackend b = pdf_resolve_backend(backend);
+  switch (b) {
+    case PdfBackend::Poppler:
+#if defined(THUMTOO_HAVE_POPPLER)
+      return true;
+#else
+      return false;
+#endif
+    case PdfBackend::MuPDF:
+#if defined(THUMTOO_HAVE_MUPDF)
+      return true;
+#else
+      return false;
+#endif
+    case PdfBackend::Default:
+      return false;
+  }
+  return false;
+}
+
+const char* pdf_backend_name(PdfBackend backend) {
+  switch (pdf_resolve_backend(backend)) {
+    case PdfBackend::Poppler:
+      return "poppler";
+    case PdfBackend::MuPDF:
+      return "mupdf";
+    case PdfBackend::Default:
+      return "none";
+  }
+  return "unknown";
+}
+
+std::string pdf_page_uri(const std::filesystem::path& pdf_path, int page_1based,
+                         PdfBackend backend) {
   auto uri = file_uri_from_path(pdf_path.lexically_normal());
-  uri += "//page:";
+  switch (backend) {
+    case PdfBackend::Poppler:
+      uri += "//poppler-page:";
+      break;
+    case PdfBackend::MuPDF:
+      uri += "//mupdf-page:";
+      break;
+    case PdfBackend::Default:
+    default:
+      uri += "//page:";
+      break;
+  }
   uri += std::to_string(std::max(1, page_1based));
   return uri;
 }
 
 std::optional<ParsedPdfUri> parse_pdf_uri(std::string_view uri) {
-  const auto pipe = uri.find(kPagePipe);
-  if (pipe == std::string_view::npos) return std::nullopt;
+  PdfBackend backend = PdfBackend::Default;
+  std::string_view tag = kPagePipe;
+  auto pipe = uri.find(kPagePipe);
+  auto pop = uri.find(kPopplerPagePipe);
+  auto mu = uri.find(kMupdfPagePipe);
 
-  const auto outer = uri.substr(0, pipe);
+  // Prefer the leftmost explicit/default page pipe.
+  std::size_t pos = std::string_view::npos;
+  auto consider = [&](std::size_t p, PdfBackend b, std::string_view t) {
+    if (p == std::string_view::npos) return;
+    if (pos == std::string_view::npos || p < pos) {
+      pos = p;
+      backend = b;
+      tag = t;
+    }
+  };
+  consider(pipe, PdfBackend::Default, kPagePipe);
+  consider(pop, PdfBackend::Poppler, kPopplerPagePipe);
+  consider(mu, PdfBackend::MuPDF, kMupdfPagePipe);
+  if (pos == std::string_view::npos) return std::nullopt;
+
+  const auto outer = uri.substr(0, pos);
   auto path = path_from_file_uri(outer);
   if (!path) return std::nullopt;
   if (!is_pdf_path(*path)) return std::nullopt;
 
-  std::string_view rest = uri.substr(pipe + kPagePipe.size());
+  std::string_view rest = uri.substr(pos + tag.size());
   if (rest.empty()) return std::nullopt;
   int page = 0;
   for (char c : rest) {
@@ -151,6 +229,7 @@ std::optional<ParsedPdfUri> parse_pdf_uri(std::string_view uri) {
   ParsedPdfUri out;
   out.pdf_path = *path;
   out.page = page;
+  out.backend = backend;
   return out;
 }
 

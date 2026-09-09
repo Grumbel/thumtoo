@@ -46,6 +46,22 @@ int main() {
   expect(ploc->pipes[0].value == "3", "page number");
   expect(path_from_file_uri(page).value_or("") == "/tmp/doc.pdf", "path strips page");
 
+  const auto page_pop = with_pdf_page_poppler(file_uri_from_path("/tmp/doc.pdf"), 2);
+  expect(is_pdf_page_uri(page_pop), "poppler-page detect");
+  auto poploc = parse_location(page_pop);
+  expect(poploc && poploc->pipes.size() == 1 &&
+             poploc->pipes[0].kind == LocationPipeKind::PdfPagePoppler,
+         "poppler page pipe");
+  expect(format_location(*poploc) == page_pop, "format poppler-page");
+
+  const auto page_mu = with_pdf_page_mupdf(file_uri_from_path("/tmp/doc.pdf"), 4);
+  expect(is_pdf_page_uri(page_mu), "mupdf-page detect");
+  auto muloc = parse_location(page_mu);
+  expect(muloc && muloc->pipes.size() == 1 &&
+             muloc->pipes[0].kind == LocationPipeKind::PdfPageMupdf,
+         "mupdf page pipe");
+  expect(format_location(*muloc) == page_mu, "format mupdf-page");
+
   // PDF inside archive
   const auto deep = with_pdf_page(
       with_archive_member(file_uri_from_path("/tmp/outer.zip"), "docs/x.pdf"), 2);

@@ -1,3 +1,15 @@
+## PDF dual backend (MuPDF + Poppler) — **thumtoo-094+**
+
+- [x] Design [docs/PDF_BACKENDS.md](docs/PDF_BACKENDS.md)
+- [x] URI: `//page:`, `//poppler-page:`, `//mupdf-page:` + `PdfBackend`
+- [ ] MuPDF module + cmake/flake
+- [ ] Dispatch render/count/stats by backend
+- [ ] Default `//page:` → MuPDF when available
+
+Tip: **thumtoo-094** (URI + backend enum only).
+
+---
+
 ## PDF image-heavy gate for live tiles — **thumtoo-093**
 
 - [x] `PdfPageContentStats` + `pdf_page_allows_live_tiles`

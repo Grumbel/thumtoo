@@ -15,15 +15,31 @@
 
 namespace thumtoo {
 
-struct ParsedPdfUri {
-  std::filesystem::path pdf_path;
-  /// 1-based page index (matches //page:N).
-  int page = 0;
+/// Which PDF engine handles a page URI.
+enum class PdfBackend {
+  Default,  ///< Resolves to MuPDF when built with it, else Poppler
+  Poppler,
+  MuPDF,
 };
 
-/// file:///abs/doc.pdf//page:12  (page is 1-based).
+/// Effective backend after applying Default + build flags.
+[[nodiscard]] PdfBackend pdf_resolve_backend(PdfBackend requested);
+
+[[nodiscard]] bool pdf_backend_available(PdfBackend backend);
+
+[[nodiscard]] const char* pdf_backend_name(PdfBackend backend);
+
+struct ParsedPdfUri {
+  std::filesystem::path pdf_path;
+  /// 1-based page index.
+  int page = 0;
+  PdfBackend backend = PdfBackend::Default;
+};
+
+/// file:///abs/doc.pdf//page:12  (default backend).
 [[nodiscard]] std::string pdf_page_uri(const std::filesystem::path& pdf_path,
-                                       int page_1based);
+                                       int page_1based,
+                                       PdfBackend backend = PdfBackend::Default);
 
 [[nodiscard]] std::optional<ParsedPdfUri> parse_pdf_uri(std::string_view uri);
 

@@ -24,7 +24,7 @@ namespace thumtoo {
 /// True if uri uses the //archive: pipe form somewhere after file:///.
 [[nodiscard]] bool is_archive_uri(std::string_view uri);
 
-/// True if uri contains //page:N (PDF page location).
+/// True if uri contains a PDF page pipe (//page:N, //poppler-page:N, //mupdf-page:N).
 [[nodiscard]] bool is_pdf_page_uri(std::string_view uri);
 
 /// True if scheme is http: or https: (fetch not implemented yet).
@@ -54,14 +54,16 @@ enum class UriScheme {
 };
 
 enum class LocationPipeKind {
-  ArchiveRoot,    // …//archive
-  ArchiveMember,  // …//archive:member/path
-  PdfPage,        // …//page:N (1-based)
+  ArchiveRoot,     // …//archive
+  ArchiveMember,   // …//archive:member/path
+  PdfPage,         // …//page:N (1-based, default PDF backend)
+  PdfPagePoppler,  // …//poppler-page:N
+  PdfPageMupdf,    // …//mupdf-page:N
 };
 
 struct LocationPipe {
   LocationPipeKind kind = LocationPipeKind::ArchiveRoot;
-  /// Member path, or decimal page number for PdfPage; empty for ArchiveRoot.
+  /// Member path, or decimal page number for PdfPage*; empty for ArchiveRoot.
   std::string value;
 };
 
@@ -83,7 +85,13 @@ struct Location {
 [[nodiscard]] std::string with_archive_member(std::string_view base_uri,
                                              std::string_view member_path = {});
 
-/// Append //page:N (1-based) onto a base URI (typically a PDF file or archive member).
+/// Append //page:N (1-based) — default PDF backend route.
 [[nodiscard]] std::string with_pdf_page(std::string_view base_uri, int page_1based);
+
+/// Append //poppler-page:N or //mupdf-page:N for explicit backend comparison.
+[[nodiscard]] std::string with_pdf_page_poppler(std::string_view base_uri,
+                                                int page_1based);
+[[nodiscard]] std::string with_pdf_page_mupdf(std::string_view base_uri,
+                                              int page_1based);
 
 }  // namespace thumtoo

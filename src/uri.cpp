@@ -11,6 +11,31 @@ namespace {
 
 constexpr std::string_view kArchivePipe = "//archive";
 constexpr std::string_view kPagePipe = "//page:";
+constexpr std::string_view kPopplerPagePipe = "//poppler-page:";
+constexpr std::string_view kMupdfPagePipe = "//mupdf-page:";
+
+[[nodiscard]] std::size_t find_first_pipe(std::string_view rest, std::size_t from,
+                                          bool* is_page, LocationPipeKind* page_kind) {
+  const auto arch = rest.find(kArchivePipe, from);
+  const auto page = rest.find(kPagePipe, from);
+  const auto pop = rest.find(kPopplerPagePipe, from);
+  const auto mu = rest.find(kMupdfPagePipe, from);
+  std::size_t next = std::string_view::npos;
+  *is_page = false;
+  auto consider = [&](std::size_t pos, bool page_pipe, LocationPipeKind kind) {
+    if (pos == std::string_view::npos) return;
+    if (next == std::string_view::npos || pos < next) {
+      next = pos;
+      *is_page = page_pipe;
+      if (page_pipe) *page_kind = kind;
+    }
+  };
+  consider(arch, false, LocationPipeKind::ArchiveRoot);
+  consider(page, true, LocationPipeKind::PdfPage);
+  consider(pop, true, LocationPipeKind::PdfPagePoppler);
+  consider(mu, true, LocationPipeKind::PdfPageMupdf);
+  return next;
+}
 
 std::string percent_decode_path(std::string_view rest) {
   std::string path;
@@ -37,50 +62,35 @@ std::string percent_decode_path(std::string_view rest) {
 }
 
 std::string_view strip_pipes(std::string_view rest) {
-  const auto arch = rest.find(kArchivePipe);
-  const auto page = rest.find(kPagePipe);
-  std::size_t cut = rest.size();
-  if (arch != std::string_view::npos) cut = std::min(cut, arch);
-  if (page != std::string_view::npos) cut = std::min(cut, page);
-  return rest.substr(0, cut);
+  bool is_page = false;
+  LocationPipeKind pk = LocationPipeKind::PdfPage;
+  const auto next = find_first_pipe(rest, 0, &is_page, &pk);
+  if (next == std::string_view::npos) return rest;
+  return rest.substr(0, next);
 }
 
 bool parse_pipes(std::string_view rest, std::vector<LocationPipe>& out) {
-  // rest is the full uri after scheme handling, including base path and pipes.
-  // Find first pipe on the entire string after base was taken from strip.
-  // Caller passes the full post-scheme remainder; we scan for //archive and //page.
+  // Caller passes the full post-scheme remainder; scan for archive and page pipes.
   std::size_t i = 0;
   while (i < rest.size()) {
-    const auto arch = rest.find(kArchivePipe, i);
-    const auto page = rest.find(kPagePipe, i);
-    std::size_t next = std::string_view::npos;
     bool is_page = false;
-    if (arch != std::string_view::npos && page != std::string_view::npos) {
-      if (arch < page) {
-        next = arch;
-      } else {
-        next = page;
-        is_page = true;
-      }
-    } else if (arch != std::string_view::npos) {
-      next = arch;
-    } else if (page != std::string_view::npos) {
-      next = page;
-      is_page = true;
-    } else {
-      break;
-    }
+    LocationPipeKind page_kind = LocationPipeKind::PdfPage;
+    const std::size_t next = find_first_pipe(rest, i, &is_page, &page_kind);
+    if (next == std::string_view::npos) break;
 
     if (is_page) {
-      std::string_view after = rest.substr(next + kPagePipe.size());
+      std::string_view tag = kPagePipe;
+      if (page_kind == LocationPipeKind::PdfPagePoppler) tag = kPopplerPagePipe;
+      else if (page_kind == LocationPipeKind::PdfPageMupdf) tag = kMupdfPagePipe;
+      std::string_view after = rest.substr(next + tag.size());
       std::size_t n = 0;
       while (n < after.size() && after[n] >= '0' && after[n] <= '9') ++n;
       if (n == 0) return false;
       LocationPipe pipe;
-      pipe.kind = LocationPipeKind::PdfPage;
+      pipe.kind = page_kind;
       pipe.value = std::string(after.substr(0, n));
       out.push_back(std::move(pipe));
-      i = next + kPagePipe.size() + n;
+      i = next + tag.size() + n;
     } else {
       std::string_view after = rest.substr(next + kArchivePipe.size());
       LocationPipe pipe;
@@ -98,8 +108,10 @@ bool parse_pipes(std::string_view rest, std::vector<LocationPipe>& out) {
       after.remove_prefix(1);
       // Member runs until next pipe or end
       std::size_t mem_end = after.size();
+      bool dummy = false;
+      LocationPipeKind pk = LocationPipeKind::PdfPage;
       const auto na = after.find(kArchivePipe);
-      const auto np = after.find(kPagePipe);
+      const auto np = find_first_pipe(after, 0, &dummy, &pk);
       if (na != std::string_view::npos) mem_end = std::min(mem_end, na);
       if (np != std::string_view::npos) mem_end = std::min(mem_end, np);
       pipe.kind = LocationPipeKind::ArchiveMember;
@@ -182,7 +194,9 @@ std::optional<Location> parse_location(std::string_view uri) {
     loc.base = std::string(uri.substr(8));
     // Pipes on remote URLs are reserved for later; reject nested for now.
     if (loc.base.find("//archive") != std::string::npos ||
-        loc.base.find("//page:") != std::string::npos) {
+        loc.base.find("//page:") != std::string::npos ||
+        loc.base.find("//poppler-page:") != std::string::npos ||
+        loc.base.find("//mupdf-page:") != std::string::npos) {
       // Allow pipes on the path portion for future networked archives
       std::string_view rest = uri.substr(8);
       auto base = strip_pipes(rest);

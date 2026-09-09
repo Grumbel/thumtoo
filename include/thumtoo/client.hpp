@@ -7,6 +7,7 @@
 #include "thumtoo/blob_store.hpp"
 #include "thumtoo/executor.hpp"
 #include "thumtoo/types.hpp"
+#include "thumtoo/pdf.hpp"
 
 #include <cstdint>
 #include <filesystem>

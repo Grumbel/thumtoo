@@ -892,8 +892,8 @@ std::optional<Client::PdfPageRaster> Client::pdf_rasterize_page(
 }
 
 std::string Client::pdf_page_uri(const std::filesystem::path& path,
-                                 int page_1based) {
-  return thumtoo::pdf_page_uri(path, page_1based);
+                                 int page_1based, PdfBackend backend) {
+  return thumtoo::pdf_page_uri(path, page_1based, backend);
 }
 
 bool Client::is_pdf_path(const std::filesystem::path& path) {
