@@ -868,4 +868,8 @@ Goal: exhaustive audit of thumbnail / ladder / tile generation in thumtoo
 - [x] ImageTileCache / SizeProbeSession / FIFO notes (§5.5–5.7)
 - [x] Policy constants table (§7b)
 
-Tip: **thumtoo-079**.
+- [x] Archive coalesce / warm extract skip documented
+- [x] Schema + BlobStore tile path documented
+- [x] ZIP stored/deflate extract numbers in MICROBENCH_RESULTS
+
+Tip: **thumtoo-080**.

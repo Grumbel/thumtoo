@@ -37,3 +37,46 @@ Not identical to `vips_jpegload(shrink=N)` but same 1/2/4/8 factors.
 5. libarchive vs unzip vs unrar on large RAR
 6. Warm `get_tile` latency (SQLite + JPEG decode of 256² only)
 
+
+## Archive extract (2026-09-09, Python zipfile / unzip)
+
+Corpus under `/tmp/bench_corpus` (regenerable).
+
+### ZIP stored, 200× 640×480 JPEG (~37 MB archive)
+
+| Op | median ms |
+|----|-----------|
+| TOC `namelist` | 0.50 |
+| extract all sequential | 16.8 |
+| extract first member | 0.58 |
+| extract last member | 0.58 |
+| ~10 scattered members | 1.24 |
+| `unzip -l` | 2.73 |
+| `unzip -p` last | 2.77 |
+
+Stored ZIP: random member ≈ sequential first member — central directory allows
+seek. Process spawn (`unzip -p`) costs ~2 ms extra vs in-process.
+
+### ZIP deflate, 50× 1280×720 JPEG
+
+| Op | median ms |
+|----|-----------|
+| TOC | 0.14 |
+| extract all sequential | 145 |
+| extract first | 3.0 |
+| extract last | 3.2 |
+| ~10 scattered | 29.5 |
+| `unzip -p` last | 7.6 |
+
+Deflate: still near-random access per member for non-solid ZIP; cost is
+inflate, not full-archive scan. **Solid RAR** is different (must decode prior
+members) — not measured here (no `unrar` in sandbox).
+
+### Implications for thumtoo
+
+- Warm path that skips extract when `get_tile` hits (client coalesce) is
+  essential for large galleries — already implemented.
+- Cold open of deflate ZIP is dominated by inflate×members + image probe/LQIP,
+  not TOC.
+- libarchive sequential multi-member extract in one pass matches “extract all”
+  class of cost; better than N process spawns.

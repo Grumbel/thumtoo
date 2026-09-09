@@ -173,15 +173,19 @@ Reply-before-durable-store is already implemented (live paint first).
 - Shared SQLite WAL; recursive_mutex on DB/BlobStore (thumtoo-051).
 - Interactive tile queue FIFO (starve fixes in galapix history).
 
-### 4.4 `src/archive.cpp`
+### 4.4 `src/archive.cpp` + client archive batching
 
 - `read_archive_toc`: sequential libarchive headers only (skip data).
-- `extract_archive_members`: single sequential pass; collect wanted members.
-- No random-access API; RAR/solid archives are inherently sequential.
-- Client `member_bytes`: preextracted → RAM cache → extract one member
-  (which still walks the archive until that header).
-- Benchmark needed: N random members via libarchive vs `unzip -p` vs
-  (if present) `unrar p`.
+- `extract_archive_members`: one sequential pass; collect wanted members into
+  a map (good for cold multi-member batches).
+- Client worker **coalesces** same-archive same-`JobKind` jobs from the queue
+  into one extract pass; feeds `preextracted` into handlers.
+- **Warm skip:** for EnsureTiles, if `get_tile` already hits, **no extract**
+  (avoids full RAR cost on every open of a cached gallery).
+- `member_bytes`: preextracted → extract_cache → single-member extract.
+- Extract cache: 512 MiB; overflow clears **entire** map (not LRU) — §8.4.
+- ZIP non-solid: random member is cheap (see MICROBENCH_RESULTS). Solid RAR:
+  sequential dependency — coalesce batch still one pass, but cannot seek.
 
 ### 4.5 LQIP encode (`lqip.cpp` / `handsum.cpp` / `image.cpp` helpers)
 
@@ -223,10 +227,20 @@ Reply-before-durable-store is already implemented (live paint first).
 
 ### 4.8 Schema / blobs
 
-- Tiles: `(content_id, scale, x, y, width, height, codec, quality)`.
-- No column for decode path / quality class (HQ full vs shrink=N vs embedded).
-- Ladder levels in `blobs.sqlite` separately from tiles.
-- LQIP on content row (kind + blob).
+**index.sqlite (`schema.sql` v2)**
+- `content`: size, status, **lqip BLOB + lqip_kind**
+- `locators`, `archive_entries`, `levels` (metadata only), `tiles` (metadata)
+- `tiles` PK `(content_id, scale, x, y)` — columns width/height/codec/quality
+- **No** `source` / fast-path flag on tiles
+
+**blobs.sqlite**
+- `level_blobs`, `tile_blobs`, `http_bodies` — WAL, busy_timeout 5000
+- `recursive_mutex` on BlobStore (and Database) for multi-worker
+- get/put prepare statements each call (no statement cache) — optional later
+- No blob size quota / eviction beyond manual `thumtoo-gc`
+
+Warm `get_tile`: index row + blob SELECT of one JPEG ≤256² — should be
+milliseconds; measure under load when SQLite contended.
 
 ## 5. Galapix consumption
 
@@ -423,6 +437,8 @@ thrash the entire 512 MiB map after one oversized member.
   path; fix proposals §8 (JPEG shrink, LQIP decoupling, tile_source, LRU).
 - 2026-09-09: SizeProbeSession, ImageTileCache budget (128), FIFO tiles,
   end-to-end cold ZIP open diagram (§5.5–5.7).
+- 2026-09-09: Archive coalesce + warm extract skip; schema/blob_store;
+  ZIP stored/deflate microbench numbers.
 - Next: implement Option A under discussion; vips numbers under nix;
-  RAR corpus; constants.hpp policy table.
+  RAR/solid when tools available.
 
