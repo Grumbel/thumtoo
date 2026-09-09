@@ -304,6 +304,17 @@ std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
     }
     return get_lqip(uri);
   }
+  if (auto ep = parse_epub_uri(std::string(uri))) {
+    if (auto raster =
+            epub_rasterize_page(ep->epub_path, ep->page, ep->layout,
+                                kLqipPageEdge)) {
+      if (!raster->rgb.empty()) {
+        store_lqip_if_missing(*db_, cid, nullptr, raster->rgb.data(),
+                              raster->width, raster->height);
+      }
+    }
+    return get_lqip(uri);
+  }
 
   if (auto arch = parse_archive_uri(std::string(uri))) {
     if (!arch->member_path.empty()) {
