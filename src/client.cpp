@@ -1256,11 +1256,9 @@ void Client::handle_probe_size(
           row.format = probe->format;
           row.error_code = std::nullopt;
           size_out = probe->size;
-          // Size probe only — ladder encode runs on EnsurePixels / request_pixels.
+          // Size probe only — no LQIP. LQIP is filled after the first durable
+          // thumbnail/tile (for successive opens).
           row.status = ContentStatus::Incomplete;
-          // Inline LQIP from extracted member bytes (no blob store).
-          store_lqip_if_missing(*db_, row.content_id, nullptr, nullptr, 0, 0,
-                                bytes->data(), bytes->size());
         }
       }
     }
@@ -1932,6 +1930,27 @@ void Client::handle_ensure_tiles(
         }
       } else if (!non_rgb_store.bytes.empty()) {
         store_tiles(content_id, std::vector<TileBlob>{std::move(non_rgb_store)});
+      }
+      // Opportunistic LQIP for successive opens only (display skips if absent
+      // at session start). Prefer in-memory bytes over a second full open.
+      if (!db_->get_lqip(content_id)) {
+        if (auto arch = parse_archive_uri(job.uri);
+            arch && !arch->member_path.empty()) {
+          if (auto bytes = member_bytes(arch->archive_path, arch->member_path,
+                                          preextracted)) {
+            store_lqip_if_missing(*db_, content_id, nullptr, nullptr, 0, 0,
+                                  bytes->data(), bytes->size());
+          }
+        } else if (is_http_uri(job.uri)) {
+          if (auto bytes = fetch_http_cached(job.uri)) {
+            store_lqip_if_missing(*db_, content_id, nullptr, nullptr, 0, 0,
+                                  bytes->data(), bytes->size());
+          }
+        } else if (auto path = path_from_file_uri(job.uri)) {
+          if (std::filesystem::is_regular_file(*path)) {
+            store_lqip_if_missing(*db_, content_id, &*path, nullptr, 0, 0);
+          }
+        }
       }
       return;
     }

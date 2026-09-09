@@ -179,11 +179,10 @@ Reply-before-durable-store is already implemented (live paint first).
   - buffer → `vips_thumbnail_buffer(..., 32)`
 - PDF/DjVu in `ensure_lqip`: dedicated page raster at edge 64 (not Vips).
 - Archive in `ensure_lqip`: full member extract then thumbnail_buffer 32.
-- **Bug/design smell:** cold size probe for plain files still pays
-  thumbnail-32 + Handsum **synchronously** in `handle_probe_size` after
-  size upsert, before `size_cb`. Size is visible in SQLite mid-job (so
-  SizeProbeSession can attach providers), but that worker cannot start
-  the next probe until LQIP finishes. Galapix UI only *reads* `get_lqip`.
+- **Policy (thumtoo-086):** LQIP is **not** generated on size probe.
+  Workers store LQIP after the first durable tile (or EnsurePixels RGB
+  ladder) so successive opens get a fast soft underlay. Galapix shows LQIP
+  only if it was already cached at session start (cold open uses tiles only).
 
 **Tiles**
 - Warm: `get_tile` then reply; no decode of source.

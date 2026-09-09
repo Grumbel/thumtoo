@@ -1,3 +1,12 @@
+## LQIP after first thumbnail (2026-09-09) — **thumtoo-086**
+
+- [x] No LQIP on size probe (archive path cleaned)
+- [x] Generate LQIP after first interactive durable tile
+- [x] EnsurePixels still stores LQIP from in-memory RGB after ladder
+- [x] Bundle thumtoo-086
+
+---
+
 ## Code: Option A + LQIP + LRU + tile source (2026-09-09) — **thumtoo-083**
 
 - [x] `build_tile_cell` / `_buffer`: JPEG `scale > 0` → `vips_jpegload(shrink=N)`
