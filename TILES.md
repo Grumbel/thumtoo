@@ -30,7 +30,8 @@ th = ceil(height / 2^s / 256)
 
 ## Storage
 
-- **index.sqlite** `tiles(content_id, scale, x, y, width, height, codec, quality)`
+- **index.sqlite** `tiles(content_id, scale, x, y, width, height, codec, quality, source)`
+  (`source`: 0=full, 1=jpeg_shrink, 3=pdf_region, 4=djvu_region — see `TileSource`)
 - **blobs.sqlite** `tile_blobs(... same key ..., data BLOB)`
 - Content identity is still `sha256:…` / provisional; locators unchanged.
 
@@ -95,11 +96,12 @@ keyed by URL → content_id.
 `vips_jpegload(..., shrink=2|4|8)` so coarse scales avoid a full-resolution
 decode, then apply remaining factor-of-two shrinks.
 
-**Current (2026-09-09):** That branch only runs when `decode_cache_key` is
-empty. Interactive Client paths always pass a non-empty key (`a:…` / `h:…`)
-or use file `build_tile_cell` → in-process shrink ladder from a **full**
-load. See [docs/THUMBNAIL_AUDIT.md](docs/THUMBNAIL_AUDIT.md) §4.1–4.2 and §8.1.
-Non-JPEG formats still full-load.
+**Current (2026-09-09, Option A):** Interactive `build_tile_cell` /
+`build_tile_cell_buffer` use `vips_jpegload(..., shrink=2|4|8)` for
+**scale > 0** JPEG sources (file path and buffer), independent of
+`decode_cache_key`. Stored tiles record `source = JpegShrink`. Scale 0 and
+non-JPEG still full-load; multi-cell scale 0 can use the in-process shrink
+ladder after a full decode.
 
 ## Scale range (detail cutoff)
 

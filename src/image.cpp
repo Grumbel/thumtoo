@@ -1143,6 +1143,30 @@ std::optional<TileBlob> build_tile_cell(const std::filesystem::path& path,
                                         int scale, int x, int y,
                                         int jpeg_quality) {
   ensure_vips();
+  // Option A: coarse JPEG cells use DCT shrink — no full-res decode, no ladder.
+  if (scale > 0 && path_looks_jpeg(path)) {
+    VipsImage* shrunk = nullptr;
+    int remain = scale;
+    {
+      ScopedNsAccumulator timer(global_build_stats().image_load_ns);
+      const int js = jpeg_shrink_factor_for_scale(scale);
+      if (vips_jpegload(path.string().c_str(), &shrunk, "shrink", js, nullptr) ==
+              0 &&
+          shrunk) {
+        remain = scale_steps_after_jpeg_shrink(scale, js);
+      }
+    }
+    if (shrunk) {
+      auto tile = cut_cell_from_vips(shrunk, remain, x, y, jpeg_quality);
+      g_object_unref(shrunk);
+      if (tile) {
+        tile->scale = scale;
+        tile->source = TileSource::JpegShrink;
+      }
+      return tile;
+    }
+  }
+
   if (scale < 0) {
     VipsImage* full = nullptr;
     {
@@ -1174,28 +1198,42 @@ std::optional<TileBlob> build_tile_cell_buffer(const std::uint8_t* data,
   ensure_vips();
   if (!data || size == 0) return std::nullopt;
 
-  if (scale < 0 || decode_cache_key.empty()) {
-    VipsImage* full = nullptr;
+  const bool maybe_jpeg =
+      size >= 3 && data[0] == 0xff && data[1] == 0xd8 && data[2] == 0xff;
+
+  // Option A: coarse JPEG cells always use DCT shrink (ignore decode_cache_key).
+  // Avoids full-res load when Client passes archive/http cache keys.
+  if (maybe_jpeg && scale > 0) {
+    VipsImage* shrunk = nullptr;
     int remain = scale;
     {
       ScopedNsAccumulator timer(global_build_stats().image_load_ns);
-      const bool maybe_jpeg =
-          size >= 3 && data[0] == 0xff && data[1] == 0xd8 && data[2] == 0xff;
-      if (maybe_jpeg && scale > 0) {
-        const int js = jpeg_shrink_factor_for_scale(scale);
-        if (vips_jpegload_buffer(const_cast<std::uint8_t*>(data), size, &full,
-                                 "shrink", js, nullptr) == 0 &&
-            full) {
-          remain = scale_steps_after_jpeg_shrink(scale, js);
-        }
-      }
-      if (!full) {
-        full = vips_image_new_from_buffer(data, size, nullptr, nullptr);
-        remain = scale;
+      const int js = jpeg_shrink_factor_for_scale(scale);
+      if (vips_jpegload_buffer(const_cast<std::uint8_t*>(data), size, &shrunk,
+                               "shrink", js, nullptr) == 0 &&
+          shrunk) {
+        remain = scale_steps_after_jpeg_shrink(scale, js);
       }
     }
+    if (shrunk) {
+      auto tile = cut_cell_from_vips(shrunk, remain, x, y, jpeg_quality);
+      g_object_unref(shrunk);
+      if (tile) {
+        tile->scale = scale;
+        tile->source = TileSource::JpegShrink;
+      }
+      return tile;
+    }
+  }
+
+  if (scale < 0 || decode_cache_key.empty()) {
+    VipsImage* full = nullptr;
+    {
+      ScopedNsAccumulator timer(global_build_stats().image_load_ns);
+      full = vips_image_new_from_buffer(data, size, nullptr, nullptr);
+    }
     if (!full) return std::nullopt;
-    auto tile = cut_cell_from_vips(full, remain, x, y, jpeg_quality);
+    auto tile = cut_cell_from_vips(full, scale, x, y, jpeg_quality);
     g_object_unref(full);
     if (tile) tile->scale = scale;
     return tile;

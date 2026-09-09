@@ -37,6 +37,15 @@ struct PixelLevel {
   std::vector<std::uint8_t> bytes;
 };
 
+/// How the tile pixels were produced (stored in index for cache policy).
+enum class TileSource : int {
+  Full = 0,         ///< Full-resolution decode (or non-JPEG path)
+  JpegShrink = 1,   ///< libjpeg/vips DCT shrink (scale > 0)
+  Embedded = 2,     ///< EXIF/embedded thumbnail (reserved)
+  PdfRegion = 3,    ///< Poppler region raster
+  DjvuRegion = 4,   ///< ddjvu region raster
+};
+
 /// Encoded grid tile (Phase 4 / Galapix-compatible). See TILES.md.
 struct TileBlob {
   int scale = 0;
@@ -46,6 +55,7 @@ struct TileBlob {
   int height = 0;
   std::string codec;  // "jpeg" by default
   std::vector<std::uint8_t> bytes;
+  TileSource source = TileSource::Full;
 };
 
 struct TileCoverage {
