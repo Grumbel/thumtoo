@@ -136,7 +136,8 @@ std::optional<PdfRaster> pixmap_to_rgb(fz_context* ctx, fz_pixmap* pix) {
   const int w = fz_pixmap_width(ctx, pix);
   const int h = fz_pixmap_height(ctx, pix);
   const int n = fz_pixmap_components(ctx, pix);
-  if (w <= 0 || h <= 0 || n < 3) return std::nullopt;
+  // n==1/2 grey(+alpha), n==3/4 rgb(+alpha); reject empty or exotic.
+  if (w <= 0 || h <= 0 || n < 1 || n > 4) return std::nullopt;
 
   PdfRaster out;
   out.width = w;
@@ -154,15 +155,13 @@ std::optional<PdfRaster> pixmap_to_rgb(fz_context* ctx, fz_pixmap* pix) {
         dst[x * 3 + 1] = row[x * n + 1];
         dst[x * 3 + 2] = row[x * n + 2];
       }
-    } else if (n == 1 || n == 2) {
+    } else {  // n == 1 || n == 2
       for (int x = 0; x < w; ++x) {
         const unsigned char g = row[x * n];
         dst[x * 3 + 0] = g;
         dst[x * 3 + 1] = g;
         dst[x * 3 + 2] = g;
       }
-    } else {
-      return std::nullopt;
     }
   }
   return out;
@@ -536,7 +535,10 @@ std::optional<PdfRaster> mupdf_rasterize_embedded_image(
         pdf_obj* subtype = pdf_dict_get(ctx, obj, PDF_NAME(Subtype));
         if (pdf_name_eq(ctx, subtype, PDF_NAME(Image))) {
           ++seen;
-          if (seen == image_1based) target = obj;
+          if (seen == image_1based) {
+            // Keep across pdf_drop_page — resources are borrowed until kept.
+            target = pdf_keep_obj(ctx, obj);
+          }
         }
       };
       if (xobject && pdf_is_dict(ctx, xobject)) {
@@ -579,8 +581,8 @@ std::optional<PdfRaster> mupdf_rasterize_embedded_image(
     pix = fz_get_pixmap_from_image(ctx, image, nullptr, nullptr, nullptr, nullptr);
     if (pix) {
       // Convert to RGB if needed via pixmap_to_rgb helper path: convert colorspace.
-      if (fz_pixmap_colorspace(ctx, pix) &&
-          fz_colorspace_n(ctx, fz_pixmap_colorspace(ctx, pix)) != 3) {
+      fz_colorspace* cs = fz_pixmap_colorspace(ctx, pix);
+      if (cs && fz_colorspace_n(ctx, cs) != 3 && fz_colorspace_n(ctx, cs) != 1) {
         fz_pixmap* rgb = fz_convert_pixmap(ctx, pix, fz_device_rgb(ctx), nullptr,
                                            nullptr, fz_default_color_params, 0);
         fz_drop_pixmap(ctx, pix);
@@ -621,6 +623,7 @@ std::optional<PdfRaster> mupdf_rasterize_embedded_image(
   fz_always(ctx) {
     if (pix) fz_drop_pixmap(ctx, pix);
     if (image) fz_drop_image(ctx, image);
+    if (target) pdf_drop_obj(ctx, target);
   }
   fz_catch(ctx) { out = std::nullopt; }
   return out;
@@ -667,7 +670,9 @@ std::optional<Size> mupdf_embedded_image_size(const std::filesystem::path& path,
         if (pdf_name_eq(ctx, pdf_dict_get(ctx, obj, PDF_NAME(Subtype)),
                         PDF_NAME(Image))) {
           ++seen;
-          if (seen == image_1based) target = obj;
+          if (seen == image_1based) {
+            target = pdf_keep_obj(ctx, obj);
+          }
         }
       };
       if (xobject && pdf_is_dict(ctx, xobject)) {
@@ -710,6 +715,7 @@ std::optional<Size> mupdf_embedded_image_size(const std::filesystem::path& path,
   }
   fz_always(ctx) {
     if (image) fz_drop_image(ctx, image);
+    if (target) pdf_drop_obj(ctx, target);
   }
   fz_catch(ctx) { out = std::nullopt; }
   return out;

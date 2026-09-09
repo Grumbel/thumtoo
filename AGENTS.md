@@ -32,8 +32,9 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 
 ## Status (2026-09-09)
 
-**Tip: thumtoo-121.** Full session notes: top of [TODO.md](TODO.md).
-PDF dual backend (MuPDF + Poppler) with `//page:` / `//poppler-page:` / `//mupdf-page:`.
+**Tip: thumtoo-122.** Full session notes: top of [TODO.md](TODO.md).
+`//pdfimage:N` keep_obj fix (size/raster after page drop). Prior: PDF dual backend
+(MuPDF + Poppler) with `//page:` / `//poppler-page:` / `//mupdf-page:`.
 Live PDF tiles return `rgb888` (tests + Galapix codec branch required).
 Retrieval stack: Location URIs → content-id → read_source_bytes → PDF@144dpi → HTTP(S)+session cache.
 

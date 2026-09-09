@@ -1,11 +1,17 @@
 # TODO / agent handoff
 
-## Status (2026-09-09, session end)
+## Status (2026-09-09)
 
-**Tip: thumtoo-121-uri-pdfimage-consts.**
+**Tip: thumtoo-122-pdfimage-keep-obj.**
 
 ### Shipped this session (high level)
 
+- **//pdfimage:N fix:** `pdf_keep_obj` the selected Image XObject before
+  `pdf_drop_page` in `mupdf_rasterize_embedded_image` / `mupdf_embedded_image_size`
+  (borrowed resource dict pointers became invalid → wrong size / no pixels).
+- `pixmap_to_rgb`: allow grey (n=1/2); convert only non-grey non-RGB colourspaces.
+
+Previous tip **121** (still required base):
 - EPUB layout URI: pixels for w/h; `fs`; per-side margins; `lh`, `cols`/`cgap`,
   `align`, font/theme/pubcss; aggressive user CSS; **canonical format on parse**.
 - **//pdfimage:N** — MuPDF Image XObject extract at native resolution; client
@@ -21,10 +27,22 @@
 - Pixel filters (`//crop:`, invert, …) — see design notes below in this file.
 - Deeper Form XObject / inline image extraction if scans miss images.
 - biltoo menu affordance for `//pdfimages` (biltoo already expands the pipe).
+- Smoke-test `//pdfimages` in biltoo against a multi-image PDF after this tip.
 
 ### biltoo pairing
 
-Human should stack **biltoo-353** on a tree that uses this thumtoo tip (or newer).
+Human should stack **biltoo-353+** on a tree that uses this thumtoo tip (or newer).
+
+---
+
+## Plan / work — bundle `thumtoo-122-pdfimage-keep-obj`
+
+Fix borrowed `pdf_obj*` lifetime for embedded image size/raster.
+
+### Done criteria
+- [x] keep/drop target obj in size + rasterize
+- [x] grey pixmap_to_rgb path
+- [ ] next **123** after human verify
 
 ---
 
