@@ -17,6 +17,7 @@ enum class PathKind {
   Archive,
   Pdf,
   Djvu,
+  Epub,
 };
 
 /// Lowercased extension including the dot (".jpg"), or empty.
@@ -29,11 +30,13 @@ enum class PathKind {
 [[nodiscard]] bool is_archive_filename(std::string_view lower_filename);
 [[nodiscard]] bool is_pdf_extension(std::string_view ext_with_dot);
 [[nodiscard]] bool is_djvu_extension(std::string_view ext_with_dot);
+[[nodiscard]] bool is_epub_extension(std::string_view ext_with_dot);
 
 [[nodiscard]] bool is_image_path(const std::filesystem::path& path);
 [[nodiscard]] bool is_archive_path(const std::filesystem::path& path);
 [[nodiscard]] bool is_pdf_path(const std::filesystem::path& path);
 [[nodiscard]] bool is_djvu_path(const std::filesystem::path& path);
+[[nodiscard]] bool is_epub_path(const std::filesystem::path& path);
 
 [[nodiscard]] PathKind classify_path(const std::filesystem::path& path);
 

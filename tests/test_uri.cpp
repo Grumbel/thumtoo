@@ -62,6 +62,23 @@ int main() {
          "mupdf page pipe");
   expect(format_location(*muloc) == page_mu, "format mupdf-page");
 
+  {
+    const auto layout = default_epub_layout();
+    const auto ep =
+        with_pdf_page(with_epub_layout(file_uri_from_path("/tmp/book.epub"), layout), 7);
+    expect(is_epub_layout_uri(ep), "epub layout detect");
+    expect(is_pdf_page_uri(ep), "epub still has page pipe");
+    auto eloc = parse_location(ep);
+    expect(eloc && eloc->pipes.size() == 2, "epub two pipes");
+    expect(eloc && eloc->pipes[0].kind == LocationPipeKind::EpubLayout, "epub layout pipe");
+    expect(eloc && eloc->pipes[1].kind == LocationPipeKind::PdfPage, "epub page pipe");
+    expect(format_location(*eloc) == ep, "format epub uri");
+    auto parsed = parse_epub_layout_params(eloc->pipes[0].value);
+    expect(parsed.width_pt == layout.width_pt && parsed.height_pt == layout.height_pt &&
+               parsed.em_pt == layout.em_pt,
+           "epub layout params roundtrip");
+  }
+
   // PDF inside archive
   const auto deep = with_pdf_page(
       with_archive_member(file_uri_from_path("/tmp/outer.zip"), "docs/x.pdf"), 2);

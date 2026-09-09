@@ -15,6 +15,7 @@
 #include "thumtoo/blob_store.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <atomic>
 #include <deque>
 #include <unordered_map>
@@ -661,6 +662,11 @@ void Client::request_size(std::string uri, SizeCallback cb) {
       loc.member_path = std::to_string(dj->page);
       loc.size = file_size_bytes(dj->djvu_path);
       loc.mtime_ns = file_mtime_ns(dj->djvu_path);
+    } else if (auto ep = parse_epub_uri(uri)) {
+      loc.outer_path = ep->epub_path.string();
+      loc.member_path = std::to_string(ep->page);
+      loc.size = file_size_bytes(ep->epub_path);
+      loc.mtime_ns = file_mtime_ns(ep->epub_path);
     } else if (auto arch = parse_archive_uri(uri)) {
       loc.outer_path = arch->archive_path.string();
       loc.member_path = arch->member_path;
@@ -1280,6 +1286,47 @@ void Client::handle_probe_size(
         row.width = layout->width;
         row.height = layout->height;
         row.format = "djvu";
+        row.error_code = std::nullopt;
+        size_out = *layout;
+        row.status = ContentStatus::Incomplete;
+      }
+    }
+  } else if (auto ep = parse_epub_uri(job.uri)) {
+    if (!std::filesystem::is_regular_file(ep->epub_path)) {
+      row.status = ContentStatus::Failed;
+      row.error_code = "not_a_file";
+    } else {
+      auto layout = epub_page_layout_size(ep->epub_path, ep->page, ep->layout);
+      if (!layout) {
+        row.status = ContentStatus::Failed;
+        row.error_code = "epub_page_failed";
+      } else {
+        std::string new_id = old_id;
+        const auto hex = sha256_file_hex(ep->epub_path);
+        if (!hex.empty()) {
+          new_id = std::string(kContentIdSha256Prefix) + hex + ":epub:"
+                   + format_epub_layout_params(ep->layout) + ":page:"
+                   + std::to_string(ep->page);
+        }
+        if (new_id != old_id) {
+          if (auto existing = db_->find_content(new_id)) {
+            row = *existing;
+            db_->update_locator_content_id(job.uri, new_id);
+            if (old_id.rfind(std::string(kContentIdProvisionalPrefix), 0) == 0) {
+              db_->delete_content(old_id);
+            }
+          } else {
+            row.content_id = new_id;
+            db_->upsert_content(row);
+            db_->update_locator_content_id(job.uri, new_id);
+            if (old_id.rfind(std::string(kContentIdProvisionalPrefix), 0) == 0) {
+              db_->delete_content(old_id);
+            }
+          }
+        }
+        row.width = layout->width;
+        row.height = layout->height;
+        row.format = "epub";
         row.error_code = std::nullopt;
         size_out = *layout;
         row.status = ContentStatus::Incomplete;
@@ -1945,6 +1992,32 @@ void Client::handle_ensure_tiles(
       live.height = raster->height;
       live.codec = kTileCodecRgb888;
       live.source = TileSource::DjvuRegion;
+      live.bytes = std::move(raster->rgb);
+      reply_one(std::move(live));
+      return;
+    } else if (auto ep = parse_epub_uri(job.uri)) {
+      auto raster = epub_render_tile_cell(ep->epub_path, ep->page, ep->layout,
+                                          job.tile_scale, job.tile_x, job.tile_y);
+      if (!raster || raster->rgb.empty()) {
+        reply_one(std::nullopt);
+        return;
+      }
+      if (job.tile_scale >= kPdfMinDurableTileScale) {
+        if (auto jpeg = encode_tile_cell_rgb(
+                raster->rgb.data(), raster->width, raster->height,
+                job.tile_scale, job.tile_x, job.tile_y, kPdfTileQuality)) {
+          jpeg->source = TileSource::PdfRegion;
+          store_tiles(content_id, std::vector<TileBlob>{*jpeg});
+        }
+      }
+      TileBlob live;
+      live.scale = job.tile_scale;
+      live.x = job.tile_x;
+      live.y = job.tile_y;
+      live.width = raster->width;
+      live.height = raster->height;
+      live.codec = kTileCodecRgb888;
+      live.source = TileSource::PdfRegion;
       live.bytes = std::move(raster->rgb);
       reply_one(std::move(live));
       return;

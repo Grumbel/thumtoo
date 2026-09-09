@@ -10,30 +10,39 @@ namespace thumtoo {
 namespace {
 
 constexpr std::string_view kArchivePipe = "//archive";
+constexpr std::string_view kEpubPipe = "//epub:";
 constexpr std::string_view kPagePipe = "//page:";
 constexpr std::string_view kPopplerPagePipe = "//poppler-page:";
 constexpr std::string_view kMupdfPagePipe = "//mupdf-page:";
 
+enum class PipeHit {
+  Archive,
+  EpubLayout,
+  PdfPage,
+  PdfPagePoppler,
+  PdfPageMupdf,
+};
+
 [[nodiscard]] std::size_t find_first_pipe(std::string_view rest, std::size_t from,
-                                          bool* is_page, LocationPipeKind* page_kind) {
+                                          PipeHit* hit) {
   const auto arch = rest.find(kArchivePipe, from);
+  const auto epub = rest.find(kEpubPipe, from);
   const auto page = rest.find(kPagePipe, from);
   const auto pop = rest.find(kPopplerPagePipe, from);
   const auto mu = rest.find(kMupdfPagePipe, from);
   std::size_t next = std::string_view::npos;
-  *is_page = false;
-  auto consider = [&](std::size_t pos, bool page_pipe, LocationPipeKind kind) {
+  auto consider = [&](std::size_t pos, PipeHit kind) {
     if (pos == std::string_view::npos) return;
     if (next == std::string_view::npos || pos < next) {
       next = pos;
-      *is_page = page_pipe;
-      if (page_pipe) *page_kind = kind;
+      *hit = kind;
     }
   };
-  consider(arch, false, LocationPipeKind::ArchiveRoot);
-  consider(page, true, LocationPipeKind::PdfPage);
-  consider(pop, true, LocationPipeKind::PdfPagePoppler);
-  consider(mu, true, LocationPipeKind::PdfPageMupdf);
+  consider(arch, PipeHit::Archive);
+  consider(epub, PipeHit::EpubLayout);
+  consider(page, PipeHit::PdfPage);
+  consider(pop, PipeHit::PdfPagePoppler);
+  consider(mu, PipeHit::PdfPageMupdf);
   return next;
 }
 
@@ -62,26 +71,30 @@ std::string percent_decode_path(std::string_view rest) {
 }
 
 std::string_view strip_pipes(std::string_view rest) {
-  bool is_page = false;
-  LocationPipeKind pk = LocationPipeKind::PdfPage;
-  const auto next = find_first_pipe(rest, 0, &is_page, &pk);
+  PipeHit hit = PipeHit::Archive;
+  const auto next = find_first_pipe(rest, 0, &hit);
   if (next == std::string_view::npos) return rest;
   return rest.substr(0, next);
 }
 
 bool parse_pipes(std::string_view rest, std::vector<LocationPipe>& out) {
-  // Caller passes the full post-scheme remainder; scan for archive and page pipes.
   std::size_t i = 0;
   while (i < rest.size()) {
-    bool is_page = false;
-    LocationPipeKind page_kind = LocationPipeKind::PdfPage;
-    const std::size_t next = find_first_pipe(rest, i, &is_page, &page_kind);
+    PipeHit hit = PipeHit::Archive;
+    const std::size_t next = find_first_pipe(rest, i, &hit);
     if (next == std::string_view::npos) break;
 
-    if (is_page) {
+    if (hit == PipeHit::PdfPage || hit == PipeHit::PdfPagePoppler ||
+        hit == PipeHit::PdfPageMupdf) {
       std::string_view tag = kPagePipe;
-      if (page_kind == LocationPipeKind::PdfPagePoppler) tag = kPopplerPagePipe;
-      else if (page_kind == LocationPipeKind::PdfPageMupdf) tag = kMupdfPagePipe;
+      LocationPipeKind page_kind = LocationPipeKind::PdfPage;
+      if (hit == PipeHit::PdfPagePoppler) {
+        tag = kPopplerPagePipe;
+        page_kind = LocationPipeKind::PdfPagePoppler;
+      } else if (hit == PipeHit::PdfPageMupdf) {
+        tag = kMupdfPagePipe;
+        page_kind = LocationPipeKind::PdfPageMupdf;
+      }
       std::string_view after = rest.substr(next + tag.size());
       std::size_t n = 0;
       while (n < after.size() && after[n] >= '0' && after[n] <= '9') ++n;
@@ -91,6 +104,17 @@ bool parse_pipes(std::string_view rest, std::vector<LocationPipe>& out) {
       pipe.value = std::string(after.substr(0, n));
       out.push_back(std::move(pipe));
       i = next + tag.size() + n;
+    } else if (hit == PipeHit::EpubLayout) {
+      std::string_view after = rest.substr(next + kEpubPipe.size());
+      std::size_t end = after.size();
+      PipeHit dummy = PipeHit::Archive;
+      const auto np = find_first_pipe(after, 0, &dummy);
+      if (np != std::string_view::npos) end = np;
+      LocationPipe pipe;
+      pipe.kind = LocationPipeKind::EpubLayout;
+      pipe.value = std::string(after.substr(0, end));
+      out.push_back(std::move(pipe));
+      i = next + kEpubPipe.size() + end;
     } else {
       std::string_view after = rest.substr(next + kArchivePipe.size());
       LocationPipe pipe;
@@ -102,18 +126,13 @@ bool parse_pipes(std::string_view rest, std::vector<LocationPipe>& out) {
         break;
       }
       if (after.front() != ':') {
-        // //archive without colon only valid if end
         return false;
       }
       after.remove_prefix(1);
-      // Member runs until next pipe or end
       std::size_t mem_end = after.size();
-      bool dummy = false;
-      LocationPipeKind pk = LocationPipeKind::PdfPage;
-      const auto na = after.find(kArchivePipe);
-      const auto np = find_first_pipe(after, 0, &dummy, &pk);
-      if (na != std::string_view::npos) mem_end = std::min(mem_end, na);
-      if (np != std::string_view::npos) mem_end = std::min(mem_end, np);
+      PipeHit dummy = PipeHit::Archive;
+      const auto np = find_first_pipe(after, 0, &dummy);
+      if (np != std::string_view::npos) mem_end = np;
       pipe.kind = LocationPipeKind::ArchiveMember;
       pipe.value = std::string(after.substr(0, mem_end));
       out.push_back(std::move(pipe));
@@ -271,6 +290,10 @@ std::string format_location(const Location& loc) {
         out += "//mupdf-page:";
         out += pipe.value;
         break;
+      case LocationPipeKind::EpubLayout:
+        out += "//epub:";
+        out += pipe.value;
+        break;
     }
   }
   return out;
@@ -309,6 +332,68 @@ std::string with_pdf_page_mupdf(std::string_view base_uri, int page_1based) {
   out += "//mupdf-page:";
   out += std::to_string(page_1based);
   return out;
+}
+
+EpubLayout default_epub_layout() {
+  return EpubLayout{kEpubDefaultPageWidthPt, kEpubDefaultPageHeightPt,
+                    kEpubDefaultEmPt};
+}
+
+std::string format_epub_layout_params(const EpubLayout& layout) {
+  EpubLayout L = layout;
+  if (L.width_pt < 1) L.width_pt = kEpubDefaultPageWidthPt;
+  if (L.height_pt < 1) L.height_pt = kEpubDefaultPageHeightPt;
+  if (L.em_pt < 1) L.em_pt = kEpubDefaultEmPt;
+  std::string out = "w=";
+  out += std::to_string(L.width_pt);
+  out += ",h=";
+  out += std::to_string(L.height_pt);
+  out += ",em=";
+  out += std::to_string(L.em_pt);
+  return out;
+}
+
+EpubLayout parse_epub_layout_params(std::string_view params) {
+  EpubLayout L = default_epub_layout();
+  auto apply = [&](std::string_view key, int v) {
+    if (v < 1) return;
+    if (key == "w") L.width_pt = v;
+    else if (key == "h") L.height_pt = v;
+    else if (key == "em") L.em_pt = v;
+  };
+  std::size_t i = 0;
+  while (i < params.size()) {
+    while (i < params.size() && (params[i] == ',' || params[i] == ' ')) ++i;
+    if (i >= params.size()) break;
+    std::size_t eq = params.find('=', i);
+    if (eq == std::string_view::npos) break;
+    std::string_view key = params.substr(i, eq - i);
+    std::size_t vstart = eq + 1;
+    std::size_t vend = params.find(',', vstart);
+    if (vend == std::string_view::npos) vend = params.size();
+    int val = 0;
+    bool any = false;
+    for (std::size_t j = vstart; j < vend; ++j) {
+      if (params[j] >= '0' && params[j] <= '9') {
+        any = true;
+        val = val * 10 + (params[j] - '0');
+      }
+    }
+    if (any) apply(key, val);
+    i = vend;
+  }
+  return L;
+}
+
+std::string with_epub_layout(std::string_view base_uri, const EpubLayout& layout) {
+  std::string out(base_uri);
+  out += "//epub:";
+  out += format_epub_layout_params(layout);
+  return out;
+}
+
+bool is_epub_layout_uri(std::string_view uri) {
+  return uri.find(kEpubPipe) != std::string_view::npos;
 }
 
 }  // namespace thumtoo

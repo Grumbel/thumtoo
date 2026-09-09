@@ -1,3 +1,15 @@
+## EPUB via MuPDF — **thumtoo-103**
+
+- [x] Design [docs/EPUB.md](docs/EPUB.md)
+- [x] URI `//epub:w,h,em` + `//page:N`; format classify `.epub` before zip
+- [x] `epub.cpp`: layout, page count, layout size, region/tile raster (MuPDF)
+- [x] `expand_media_uris` default profile pages
+- [x] Client size probe + live tiles + LQIP
+- [ ] Galapix open/expand integration
+- [ ] User CSS / presets beyond defaults
+
+---
+
 ## PDF dual backend (MuPDF + Poppler) — **thumtoo-094+**
 
 - [x] Design [docs/PDF_BACKENDS.md](docs/PDF_BACKENDS.md)
@@ -13,7 +25,7 @@
 - [x] test_pdf_tiles: denser fixture text (avoid sparse-text image_heavy gate)
 - [x] MuPDF region scissor is device-space (fix white bottom tiles)
 
-Tip: **thumtoo-102**.
+Tip: **thumtoo-103**.
 
 ---
 

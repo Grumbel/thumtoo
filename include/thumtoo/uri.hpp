@@ -56,6 +56,7 @@ enum class UriScheme {
 enum class LocationPipeKind {
   ArchiveRoot,     // …//archive
   ArchiveMember,   // …//archive:member/path
+  EpubLayout,      // …//epub:w=600,h=900,em=12
   PdfPage,         // …//page:N (1-based, default PDF backend)
   PdfPagePoppler,  // …//poppler-page:N
   PdfPageMupdf,    // …//mupdf-page:N
@@ -63,7 +64,8 @@ enum class LocationPipeKind {
 
 struct LocationPipe {
   LocationPipeKind kind = LocationPipeKind::ArchiveRoot;
-  /// Member path, or decimal page number for PdfPage*; empty for ArchiveRoot.
+  /// Member path, epub layout params, or decimal page number for PdfPage*;
+  /// empty for ArchiveRoot.
   std::string value;
 };
 
@@ -93,5 +95,27 @@ struct Location {
                                                 int page_1based);
 [[nodiscard]] std::string with_pdf_page_mupdf(std::string_view base_uri,
                                               int page_1based);
+
+/// EPUB layout profile (points). Defaults match kEpubDefault* constants.
+struct EpubLayout {
+  int width_pt = 0;
+  int height_pt = 0;
+  int em_pt = 0;
+};
+
+[[nodiscard]] EpubLayout default_epub_layout();
+
+/// Encode layout as the //epub: payload (w=,h=,em=).
+[[nodiscard]] std::string format_epub_layout_params(const EpubLayout& layout);
+
+/// Parse w=/h=/em= from an //epub: value (missing keys keep defaults).
+[[nodiscard]] EpubLayout parse_epub_layout_params(std::string_view params);
+
+/// Append //epub:w=…,h=…,em=… onto a base URI.
+[[nodiscard]] std::string with_epub_layout(std::string_view base_uri,
+                                           const EpubLayout& layout);
+
+/// True if uri contains an //epub: layout pipe.
+[[nodiscard]] bool is_epub_layout_uri(std::string_view uri);
 
 }  // namespace thumtoo

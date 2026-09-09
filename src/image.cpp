@@ -209,7 +209,7 @@ std::optional<std::vector<std::uint8_t>> read_file_bytes(
 std::optional<ProbeResult> probe_image_file(const std::filesystem::path& path) {
   // Never open PDF/DjVu via Vips/Magick — multipage docs decode at full
   // resolution and can allocate tens of GB. Use pdf.hpp / djvu.hpp instead.
-  if (is_pdf_path(path) || is_djvu_path(path)) {
+  if (is_pdf_path(path) || is_djvu_path(path) || is_epub_path(path)) {
     return std::nullopt;
   }
   ensure_vips();
@@ -409,7 +409,7 @@ std::vector<LevelBlob> build_ladder(const std::filesystem::path& path,
                                     const std::string& content_id,
                                     int jxl_quality, int max_edge_limit) {
   std::vector<LevelBlob> levels;
-  if (is_pdf_path(path) || is_djvu_path(path)) {
+  if (is_pdf_path(path) || is_djvu_path(path) || is_epub_path(path)) {
     return levels;
   }
   ensure_vips();
@@ -1105,7 +1105,7 @@ std::vector<TileBlob> build_tile_pyramid(const std::filesystem::path& path,
                                          int min_scale, int max_scale,
                                          int jpeg_quality) {
   std::vector<TileBlob> tiles;
-  if (is_pdf_path(path) || is_djvu_path(path)) {
+  if (is_pdf_path(path) || is_djvu_path(path) || is_epub_path(path)) {
     return tiles;
   }
   ensure_vips();
@@ -1341,7 +1341,7 @@ std::vector<std::uint8_t> lqip_thumbhash_from_rgb888(const std::uint8_t* rgb,
 
 std::vector<std::uint8_t> lqip_thumbhash_from_file(
     const std::filesystem::path& path) {
-  if (is_pdf_path(path) || is_djvu_path(path)) {
+  if (is_pdf_path(path) || is_djvu_path(path) || is_epub_path(path)) {
     return {};
   }
   ensure_vips();

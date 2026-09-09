@@ -43,6 +43,7 @@ constexpr std::string_view kMediaMimes[] = {
     "application/pdf",
     "image/vnd.djvu",
     "image/vnd.djvu+multipage",
+    "application/epub+zip",
     // Archives (expanded to image members)
     "application/zip",
     "application/vnd.rar",
@@ -93,6 +94,10 @@ bool is_pdf_extension(std::string_view ext_with_dot) {
   return ext_with_dot == ".pdf";
 }
 
+bool is_epub_extension(std::string_view ext_with_dot) {
+  return ext_with_dot == ".epub";
+}
+
 bool is_djvu_extension(std::string_view ext_with_dot) {
   return ext_with_dot == ".djvu" || ext_with_dot == ".djv";
 }
@@ -115,8 +120,15 @@ bool is_djvu_path(const std::filesystem::path& path) {
   return is_djvu_extension(path_extension_lower(path));
 }
 
+bool is_epub_path(const std::filesystem::path& path) {
+  return is_epub_extension(path_extension_lower(path));
+}
+
 PathKind classify_path(const std::filesystem::path& path) {
   // Order: archive/document before generic image.
+  // Note: .epub is a zip; classify as Epub before Archive so we layout pages
+  // instead of expanding as a zip of HTML/CSS members.
+  if (is_epub_path(path)) return PathKind::Epub;
   if (is_archive_path(path)) return PathKind::Archive;
   if (is_pdf_path(path)) return PathKind::Pdf;
   if (is_djvu_path(path)) return PathKind::Djvu;

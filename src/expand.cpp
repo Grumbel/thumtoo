@@ -6,6 +6,7 @@
 #include "thumtoo/archive.hpp"
 #include "thumtoo/djvu.hpp"
 #include "thumtoo/format.hpp"
+#include "thumtoo/epub.hpp"
 #include "thumtoo/pdf.hpp"
 #include "thumtoo/uri.hpp"
 
@@ -19,6 +20,7 @@ bool is_openable_media_path(const std::filesystem::path& path) {
     case PathKind::Image:
     case PathKind::Pdf:
     case PathKind::Djvu:
+    case PathKind::Epub:
     case PathKind::Archive:
       return true;
     case PathKind::Unsupported:
@@ -64,6 +66,20 @@ std::vector<std::string> expand_media_uris(const std::filesystem::path& path,
       out.reserve(static_cast<std::size_t>(n));
       for (int page = 1; page <= n; ++page) {
         out.push_back(djvu_page_uri(abs, page));
+      }
+      return out;
+    }
+    case PathKind::Epub: {
+      const auto layout = default_epub_layout();
+      auto count = epub_page_count(abs, layout);
+      if (!count || *count < 1) {
+        out.push_back(file_uri_from_path(abs));
+        return out;
+      }
+      const int n = std::min(*count, page_cap);
+      out.reserve(static_cast<std::size_t>(n));
+      for (int page = 1; page <= n; ++page) {
+        out.push_back(epub_page_uri(abs, page, layout));
       }
       return out;
     }

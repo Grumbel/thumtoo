@@ -35,6 +35,7 @@ add_library(thumtoo
   src/archive.cpp
   src/pdf.cpp
   src/pdf_mupdf.cpp
+  src/epub.cpp
   src/djvu.cpp
   src/expand.cpp
   src/format.cpp
