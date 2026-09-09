@@ -112,7 +112,9 @@ bool parse_pipes(std::string_view rest, std::vector<LocationPipe>& out) {
       if (np != std::string_view::npos) end = np;
       LocationPipe pipe;
       pipe.kind = LocationPipeKind::EpubLayout;
-      pipe.value = std::string(after.substr(0, end));
+      // Canonical key order so hand-written URIs share cache keys with format().
+      pipe.value = format_epub_layout_params(
+          parse_epub_layout_params(after.substr(0, end)));
       out.push_back(std::move(pipe));
       i = next + kEpubPipe.size() + end;
     } else {
@@ -292,7 +294,7 @@ std::string format_location(const Location& loc) {
         break;
       case LocationPipeKind::EpubLayout:
         out += "//epub:";
-        out += pipe.value;
+        out += format_epub_layout_params(parse_epub_layout_params(pipe.value));
         break;
     }
   }

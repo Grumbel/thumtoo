@@ -112,6 +112,17 @@ int main() {
     // Default layout includes lh=140
     auto def = format_epub_layout_params(default_epub_layout());
     expect(def.find("lh=140") != std::string::npos, "default emits lh");
+    // Key order must not affect canonical form / cache identity
+    auto scrambled = parse_epub_layout_params("fs=15,lh=140,w=900,h=1350");
+    auto ordered = parse_epub_layout_params("w=900,h=1350,fs=15,lh=140");
+    expect(format_epub_layout_params(scrambled) == format_epub_layout_params(ordered),
+           "epub layout key order normalized");
+    auto loc_sc = parse_location(
+        "file:///tmp/book.epub//epub:fs=15,w=900,h=1350,lh=140//page:2");
+    expect(loc_sc && !loc_sc->pipes.empty() &&
+               loc_sc->pipes[0].kind == LocationPipeKind::EpubLayout &&
+               loc_sc->pipes[0].value == format_epub_layout_params(ordered),
+           "parse_location canonicalizes epub pipe");
   }
 
   // PDF inside archive

@@ -70,8 +70,10 @@ Helpers: `with_epub_layout(base, layout)`, `epub_page_uri(path, page, layout)`.
 ### Cache-key stability
 
 `format_epub_layout_params` always emits keys in fixed order (`w,h,fs` then `mt,mr,mb,ml` when any margin is set).
-Hand-written URIs with a different key order still parse the same values but
-produce a different string until something re-serializes them — full
+`parse_location` and `format_location` rewrite `//epub:` payloads through
+`format_epub_layout_params`, so key order does not split the tile cache.
+Hand-written URIs with a different key order still parse the same values;
+full
 normalization on parse is a follow-up (see TODO).
 
 ## API surface (`epub.hpp`)

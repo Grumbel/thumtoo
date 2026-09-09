@@ -176,7 +176,7 @@ Tip: **thumtoo-106**.
 
 ### Follow-ups
 - [x] Per-side margins (`mt`/`mr`/`mb`/`ml`) via injected user CSS
-- [ ] Full layout-param normalization on parse so `fs=12,w=10` and `w=10,fs=12`
+- [x] Full layout-param normalization on parse so `fs=12,w=10` and `w=10,fs=12`
       become the same cache key even for hand-written URIs
 - [ ] Optional minimal user CSS (kill/replace MuPDF default sheet)
 
@@ -194,7 +194,7 @@ Default remains no extra margin (empty user CSS). Format emits the four
 keys only when at least one is non-zero.
 
 ### Still open
-- [ ] Full layout-param normalization on parse (key order independence)
+- [x] Full layout-param normalization on parse (key order independence)
 - [ ] Optional minimal / replacement user CSS beyond margins
 
 ### Done criteria
