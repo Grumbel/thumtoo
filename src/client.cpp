@@ -877,13 +877,15 @@ std::vector<Database::ArchiveEntryRow> Client::refresh_archive_toc(
 }
 
 
-std::optional<int> Client::pdf_page_count(const std::filesystem::path& path) {
-  return thumtoo::pdf_page_count(path);
+std::optional<int> Client::pdf_page_count(const std::filesystem::path& path,
+                                         PdfBackend backend) {
+  return thumtoo::pdf_page_count(path, backend);
 }
 
 std::optional<Client::PdfPageRaster> Client::pdf_rasterize_page(
-    const std::filesystem::path& path, int page_1based, int max_edge) {
-  auto r = thumtoo::pdf_rasterize_page(path, page_1based, max_edge);
+    const std::filesystem::path& path, int page_1based, int max_edge,
+    PdfBackend backend) {
+  auto r = thumtoo::pdf_rasterize_page(path, page_1based, max_edge, backend);
   if (!r) return std::nullopt;
   PdfPageRaster out;
   out.width = r->width;

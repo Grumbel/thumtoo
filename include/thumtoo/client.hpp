@@ -172,9 +172,10 @@ class Client {
   std::vector<Database::ArchiveEntryRow> refresh_archive_toc(
       const std::filesystem::path& archive_path);
 
-  /// PDF page count (1-based pages). nullopt if Poppler missing or open fails.
+  /// PDF page count (1-based pages). nullopt if no backend can open the file.
   [[nodiscard]] static std::optional<int> pdf_page_count(
-      const std::filesystem::path& path);
+      const std::filesystem::path& path,
+      PdfBackend backend = PdfBackend::Default);
 
   /// Rasterize one page (1-based) to RGB888; empty rgb on failure.
   struct PdfPageRaster {
@@ -183,11 +184,13 @@ class Client {
     std::vector<std::uint8_t> rgb;
   };
   [[nodiscard]] static std::optional<PdfPageRaster> pdf_rasterize_page(
-      const std::filesystem::path& path, int page_1based, int max_edge);
+      const std::filesystem::path& path, int page_1based, int max_edge,
+      PdfBackend backend = PdfBackend::Default);
 
-  /// file:///abs.pdf//page:N (1-based).
+  /// file:///abs.pdf//page:N (or //poppler-page: / //mupdf-page:).
   [[nodiscard]] static std::string pdf_page_uri(
-      const std::filesystem::path& path, int page_1based);
+      const std::filesystem::path& path, int page_1based,
+      PdfBackend backend = PdfBackend::Default);
 
   [[nodiscard]] static bool is_pdf_path(const std::filesystem::path& path);
 
