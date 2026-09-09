@@ -59,14 +59,6 @@ struct ParsedPdfImageUri {
 /// Count of extractable Image XObjects (page order, including duplicates across pages).
 [[nodiscard]] std::optional<int> pdf_embedded_image_count(const std::filesystem::path& path);
 
-/// Native-size RGB888 raster of the N-th embedded image (1-based). Optional
-/// max_edge downscales the long edge when > 0 (ladder / LQIP).
-[[nodiscard]] std::optional<PdfRaster> pdf_rasterize_embedded_image(
-    const std::filesystem::path& path, int image_1based, int max_edge = 0);
-
-[[nodiscard]] std::optional<Size> pdf_embedded_image_size(
-    const std::filesystem::path& path, int image_1based);
-
 [[nodiscard]] bool is_likely_pdf_path(const std::filesystem::path& path);
 
 /// Page count, or nullopt if the file cannot be opened / is not a PDF.
@@ -79,6 +71,14 @@ struct PdfRaster {
   /// Contiguous RGB888 rows (no padding).
   std::vector<std::uint8_t> rgb;
 };
+
+/// Native-size RGB888 raster of the N-th embedded image (1-based). Optional
+/// max_edge downscales the long edge when > 0 (ladder / LQIP).
+[[nodiscard]] std::optional<PdfRaster> pdf_rasterize_embedded_image(
+    const std::filesystem::path& path, int image_1based, int max_edge = 0);
+
+[[nodiscard]] std::optional<Size> pdf_embedded_image_size(
+    const std::filesystem::path& path, int image_1based);
 
 /// Page content mix — used to gate live (negative-scale) tiles.
 struct PdfPageContentStats {
