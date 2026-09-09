@@ -98,23 +98,29 @@ struct Location {
 
 /// EPUB layout profile for //epub: URIs.
 /// w/h are pixels at kEpubLayoutDpi; fs is MuPDF default font size in points.
-/// Defaults match kEpubDefault* constants.
+/// Optional per-side margins (mt/mr/mb/ml) are pixels at the same DPI and are
+/// applied via MuPDF user CSS (converted to points). Defaults match kEpubDefault*.
 struct EpubLayout {
   int width_px = 0;
   int height_px = 0;
   int fs_pt = 0;
+  int mt_px = 0;  // top margin
+  int mr_px = 0;  // right
+  int mb_px = 0;  // bottom
+  int ml_px = 0;  // left
 };
 
 [[nodiscard]] EpubLayout default_epub_layout();
 
-/// Encode layout as the //epub: payload in canonical key order: w=,h=,fs=.
+/// Encode layout as the //epub: payload in canonical key order:
+/// w=,h=,fs=[,mt=,mr=,mb=,ml= when any margin is non-zero].
 [[nodiscard]] std::string format_epub_layout_params(const EpubLayout& layout);
 
-/// Parse w=/h=/fs= from an //epub: value (missing keys keep defaults).
-/// Unknown keys ignored. No legacy em=/points aliases.
+/// Parse w=/h=/fs=/mt=/mr=/mb=/ml= from an //epub: value (missing keys keep defaults).
+/// Unknown keys ignored.
 [[nodiscard]] EpubLayout parse_epub_layout_params(std::string_view params);
 
-/// Append //epub:w=…,h=…,fs=… onto a base URI.
+/// Append //epub:… layout payload onto a base URI.
 [[nodiscard]] std::string with_epub_layout(std::string_view base_uri,
                                            const EpubLayout& layout);
 

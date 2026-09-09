@@ -22,15 +22,19 @@ Unlike PDF, page index and pixel size depend on:
 | `w` | **pixels** at `kEpubLayoutDpi` | Virtual page width |
 | `h` | **pixels** at `kEpubLayoutDpi` | Virtual page height |
 | `fs` | points | MuPDF default font size (`fz_layout_document` em arg) |
+| `mt`/`mr`/`mb`/`ml` | **pixels** at `kEpubLayoutDpi` | Top/right/bottom/left margin (optional) |
 
-`w`/`h` are converted to points when calling MuPDF:
+`w`/`h`/margins are converted to points when calling MuPDF:
 `pt = px * 72 / kEpubLayoutDpi`.
+
+Margins are applied with MuPDF user CSS  
+(`body { margin: Tpt Rpt Bpt Lpt !important; }`) before layout. Omitted or
+zero margins leave the user stylesheet empty (MuPDF + document CSS only).
 
 `fs` is font size only. (The old `em` name was dropped: many EPUB/CSS rules
 size margins in `em`, so changing the base font size also scaled margins.)
 
-Optional later: per-side margin (`mt`/`mr`/`mb`/`ml`), user CSS
-(`css=sha256:…` + blob), `pubcss=0`.
+Optional later: user CSS blob (`css=sha256:…`), `pubcss=0`.
 
 **Content id** stays `sha256` of the `.epub` file bytes.  
 **Tile / size rows** key off the full locator URI including the layout pipe.
@@ -43,7 +47,7 @@ file:///books/foo.epub//epub:w=1200,h=1800,fs=12//page:3
 
 | Pipe | Meaning |
 |------|---------|
-| `//epub:w=…,h=…,fs=…` | Layout profile (canonical emit order is always `w,h,fs`; unknown keys ignored) |
+| `//epub:w=…,h=…,fs=…[,mt=…,mr=…,mb=…,ml=…]` | Layout profile (canonical emit order `w,h,fs` then margins if any; unknown keys ignored) |
 | `//page:N` | 1-based page **after** that layout |
 
 Helpers: `with_epub_layout(base, layout)`, `epub_page_uri(path, page, layout)`.
@@ -61,7 +65,7 @@ Helpers: `with_epub_layout(base, layout)`, `epub_page_uri(path, page, layout)`.
 
 ### Cache-key stability
 
-`format_epub_layout_params` always emits keys in fixed order (`w,h,fs`).
+`format_epub_layout_params` always emits keys in fixed order (`w,h,fs` then `mt,mr,mb,ml` when any margin is set).
 Hand-written URIs with a different key order still parse the same values but
 produce a different string until something re-serializes them — full
 normalization on parse is a follow-up (see TODO).

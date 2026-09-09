@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <string>
 
@@ -26,6 +27,10 @@ struct TlsEpub {
   int width_px = 0;
   int height_px = 0;
   int fs_pt = 0;
+  int mt_px = 0;
+  int mr_px = 0;
+  int mb_px = 0;
+  int ml_px = 0;
   fz_document* doc = nullptr;
   bool laid_out = false;
   int page_index = -1;
@@ -59,6 +64,10 @@ void tls_drop_doc() {
   g_tls.width_px = 0;
   g_tls.height_px = 0;
   g_tls.fs_pt = 0;
+  g_tls.mt_px = 0;
+  g_tls.mr_px = 0;
+  g_tls.mb_px = 0;
+  g_tls.ml_px = 0;
 }
 
 fz_context* tls_ctx() {
@@ -84,13 +93,18 @@ fz_document* tls_document(const std::filesystem::path& path,
   if (L.width_px < 1) L.width_px = kEpubDefaultPageWidthPx;
   if (L.height_px < 1) L.height_px = kEpubDefaultPageHeightPx;
   if (L.fs_pt < 1) L.fs_pt = kEpubDefaultFontSizePt;
+  if (L.mt_px < 0) L.mt_px = 0;
+  if (L.mr_px < 0) L.mr_px = 0;
+  if (L.mb_px < 0) L.mb_px = 0;
+  if (L.ml_px < 0) L.ml_px = 0;
 
   std::error_code ec;
   const auto mtime = std::filesystem::last_write_time(path, ec);
   const std::string key = path.lexically_normal().string();
   if (g_tls.doc && g_tls.path_key == key && !ec && g_tls.mtime == mtime &&
       g_tls.width_px == L.width_px && g_tls.height_px == L.height_px &&
-      g_tls.fs_pt == L.fs_pt && g_tls.laid_out) {
+      g_tls.fs_pt == L.fs_pt && g_tls.mt_px == L.mt_px && g_tls.mr_px == L.mr_px &&
+      g_tls.mb_px == L.mb_px && g_tls.ml_px == L.ml_px && g_tls.laid_out) {
     return g_tls.doc;
   }
 
@@ -101,11 +115,29 @@ fz_document* tls_document(const std::filesystem::path& path,
   fz_catch(ctx) { doc = nullptr; }
   if (!doc) return nullptr;
 
-  // URI w/h are pixels at kEpubLayoutDpi; MuPDF wants page size in points.
-  const float width_pt =
-      static_cast<float>(L.width_px) * 72.f / static_cast<float>(kEpubLayoutDpi);
-  const float height_pt =
-      static_cast<float>(L.height_px) * 72.f / static_cast<float>(kEpubLayoutDpi);
+  // URI w/h/margins are pixels at kEpubLayoutDpi; MuPDF wants points.
+  const float dpi = static_cast<float>(kEpubLayoutDpi);
+  const float width_pt = static_cast<float>(L.width_px) * 72.f / dpi;
+  const float height_pt = static_cast<float>(L.height_px) * 72.f / dpi;
+  const float mt_pt = static_cast<float>(L.mt_px) * 72.f / dpi;
+  const float mr_pt = static_cast<float>(L.mr_px) * 72.f / dpi;
+  const float mb_pt = static_cast<float>(L.mb_px) * 72.f / dpi;
+  const float ml_pt = static_cast<float>(L.ml_px) * 72.f / dpi;
+
+  // Per-side margins via user CSS (last in cascade). Clear when all zero so
+  // a prior book with margins does not leak into the next open on this TLS ctx.
+  {
+    char css[192];
+    if (L.mt_px > 0 || L.mr_px > 0 || L.mb_px > 0 || L.ml_px > 0) {
+      std::snprintf(css, sizeof(css),
+                    "body { margin: %gpt %gpt %gpt %gpt !important; }",
+                    static_cast<double>(mt_pt), static_cast<double>(mr_pt),
+                    static_cast<double>(mb_pt), static_cast<double>(ml_pt));
+      fz_set_user_css(ctx, css);
+    } else {
+      fz_set_user_css(ctx, "");
+    }
+  }
 
   int ok = 0;
   fz_var(ok);
@@ -125,6 +157,10 @@ fz_document* tls_document(const std::filesystem::path& path,
   g_tls.width_px = L.width_px;
   g_tls.height_px = L.height_px;
   g_tls.fs_pt = L.fs_pt;
+  g_tls.mt_px = L.mt_px;
+  g_tls.mr_px = L.mr_px;
+  g_tls.mb_px = L.mb_px;
+  g_tls.ml_px = L.ml_px;
   g_tls.doc = doc;
   g_tls.laid_out = true;
   return doc;

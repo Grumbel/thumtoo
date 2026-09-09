@@ -75,8 +75,21 @@ int main() {
     expect(format_location(*eloc) == ep, "format epub uri");
     auto parsed = parse_epub_layout_params(eloc->pipes[0].value);
     expect(parsed.width_px == layout.width_px && parsed.height_px == layout.height_px &&
-               parsed.fs_pt == layout.fs_pt,
+               parsed.fs_pt == layout.fs_pt && parsed.mt_px == 0 && parsed.ml_px == 0,
            "epub layout params roundtrip");
+    EpubLayout with_m = layout;
+    with_m.mt_px = 24;
+    with_m.mr_px = 16;
+    with_m.mb_px = 24;
+    with_m.ml_px = 16;
+    auto formatted = format_epub_layout_params(with_m);
+    expect(formatted.find("mt=24") != std::string::npos &&
+               formatted.find("ml=16") != std::string::npos,
+           "epub margins in format");
+    auto parsed_m = parse_epub_layout_params(formatted);
+    expect(parsed_m.mt_px == 24 && parsed_m.mr_px == 16 && parsed_m.mb_px == 24 &&
+               parsed_m.ml_px == 16,
+           "epub margin params roundtrip");
   }
 
   // PDF inside archive

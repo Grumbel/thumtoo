@@ -336,31 +336,57 @@ std::string with_pdf_page_mupdf(std::string_view base_uri, int page_1based) {
 
 EpubLayout default_epub_layout() {
   return EpubLayout{kEpubDefaultPageWidthPx, kEpubDefaultPageHeightPx,
-                    kEpubDefaultFontSizePt};
+                    kEpubDefaultFontSizePt, 0, 0, 0, 0};
 }
 
 std::string format_epub_layout_params(const EpubLayout& layout) {
-  // Canonical key order w,h,fs so callers always get a stable cache key.
+  // Canonical key order: w,h,fs[,mt,mr,mb,ml when any margin non-zero].
   EpubLayout L = layout;
   if (L.width_px < 1) L.width_px = kEpubDefaultPageWidthPx;
   if (L.height_px < 1) L.height_px = kEpubDefaultPageHeightPx;
   if (L.fs_pt < 1) L.fs_pt = kEpubDefaultFontSizePt;
+  if (L.mt_px < 0) L.mt_px = 0;
+  if (L.mr_px < 0) L.mr_px = 0;
+  if (L.mb_px < 0) L.mb_px = 0;
+  if (L.ml_px < 0) L.ml_px = 0;
   std::string out = "w=";
   out += std::to_string(L.width_px);
   out += ",h=";
   out += std::to_string(L.height_px);
   out += ",fs=";
   out += std::to_string(L.fs_pt);
+  if (L.mt_px > 0 || L.mr_px > 0 || L.mb_px > 0 || L.ml_px > 0) {
+    out += ",mt=";
+    out += std::to_string(L.mt_px);
+    out += ",mr=";
+    out += std::to_string(L.mr_px);
+    out += ",mb=";
+    out += std::to_string(L.mb_px);
+    out += ",ml=";
+    out += std::to_string(L.ml_px);
+  }
   return out;
 }
 
 EpubLayout parse_epub_layout_params(std::string_view params) {
   EpubLayout L = default_epub_layout();
-  auto apply = [&](std::string_view key, int v) {
-    if (v < 1) return;
-    if (key == "w") L.width_px = v;
-    else if (key == "h") L.height_px = v;
-    else if (key == "fs") L.fs_pt = v;
+  auto apply = [&](std::string_view key, int v, bool any_digit) {
+    if (!any_digit) return;
+    if (key == "w") {
+      if (v >= 1) L.width_px = v;
+    } else if (key == "h") {
+      if (v >= 1) L.height_px = v;
+    } else if (key == "fs") {
+      if (v >= 1) L.fs_pt = v;
+    } else if (key == "mt") {
+      if (v >= 0) L.mt_px = v;
+    } else if (key == "mr") {
+      if (v >= 0) L.mr_px = v;
+    } else if (key == "mb") {
+      if (v >= 0) L.mb_px = v;
+    } else if (key == "ml") {
+      if (v >= 0) L.ml_px = v;
+    }
   };
   std::size_t i = 0;
   while (i < params.size()) {
@@ -380,7 +406,7 @@ EpubLayout parse_epub_layout_params(std::string_view params) {
         val = val * 10 + (params[j] - '0');
       }
     }
-    if (any) apply(key, val);
+    apply(key, val, any);
     i = vend;
   }
   return L;

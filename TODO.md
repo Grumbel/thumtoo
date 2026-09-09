@@ -40,7 +40,7 @@ Tip: **thumtoo-106**.
 - Canonical emit order always `w,h,fs` for stable cache keys from format().
 
 ### Follow-ups
-- [ ] Per-side margins (`mt`/`mr`/`mb`/`ml`) via injected user CSS
+- [x] Per-side margins (`mt`/`mr`/`mb`/`ml`) via injected user CSS
 - [ ] Full layout-param normalization on parse so `fs=12,w=10` and `w=10,fs=12`
       become the same cache key even for hand-written URIs
 - [ ] Optional minimal user CSS (kill/replace MuPDF default sheet)
@@ -48,6 +48,26 @@ Tip: **thumtoo-106**.
 ### Done criteria
 - [x] pixels w/h + fs in URI/API/docs/tests
 - [x] Docs; next **108**
+
+## Plan / work (2026-09-09) — bundle `thumtoo-108-epub-margins`
+
+### Change
+Per-side margins on `//epub:` layout: `mt`, `mr`, `mb`, `ml` (pixels at
+layout DPI). Applied via `fz_set_user_css` as
+`body { margin: Tpt Rpt Bpt Lpt !important; }` before `fz_layout_document`.
+Default remains no extra margin (empty user CSS). Format emits the four
+keys only when at least one is non-zero.
+
+### Still open
+- [ ] Full layout-param normalization on parse (key order independence)
+- [ ] Optional minimal / replacement user CSS beyond margins
+
+### Done criteria
+- [x] mt/mr/mb/ml in URI + CSS application
+- [x] Docs/tests; next **109**
+
+---
+
 
 ---
 
