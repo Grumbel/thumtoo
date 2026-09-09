@@ -29,7 +29,7 @@ file:///data/doc.pdf//mupdf-page:1
 ## MuPDF specifics
 
 - Per-worker TLS: `fz_context`, document, page, **display list**
-- Region tiles: `fz_run_display_list` with page-space clip (list built once per page)
+- Region tiles: `fz_run_display_list` with **device-space** scissor (pixmap bbox; list built once per page)
 - Image-heavy gate: `fz_stext` image blocks (coverage) + sparse-text fallback
 
 ## Status

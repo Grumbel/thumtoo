@@ -11,8 +11,9 @@
 - [x] Silence `-Wclobbered` in `pdf_mupdf.cpp` via MuPDF `fz_var` (not C++ `volatile` on structs)
 - [x] `is_pdf_page_uri` recognizes `//poppler-page:` / `//mupdf-page:`
 - [x] test_pdf_tiles: denser fixture text (avoid sparse-text image_heavy gate)
+- [x] MuPDF region scissor is device-space (fix white bottom tiles)
 
-Tip: **thumtoo-101**.
+Tip: **thumtoo-102**.
 
 ---
 

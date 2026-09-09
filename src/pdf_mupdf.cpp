@@ -351,19 +351,17 @@ std::optional<PdfRaster> mupdf_rasterize_page_region(
 
   const float s = static_cast<float>(dpi / 72.0);
   fz_matrix ctm = fz_scale(s, s);
-  // Clip in page space (points); pixmap is only the tile in pixel space.
-  fz_rect clip;
-  clip.x0 = static_cast<float>(px) / s;
-  clip.y0 = static_cast<float>(py) / s;
-  clip.x1 = static_cast<float>(px + pw) / s;
-  clip.y1 = static_cast<float>(py + ph) / s;
-
-  // Pixmap origin at (px,py) in device space so identity ctm maps the clip.
+  // Pixmap origin at (px,py) in *device* space (pixels after ctm). Identity
+  // draw-device transform maps device coords onto this pixmap.
   fz_irect bbox;
   bbox.x0 = px;
   bbox.y0 = py;
   bbox.x1 = px + pw;
   bbox.y1 = py + ph;
+  // fz_run_display_list scissor is in *device* space (same as pixmap), not
+  // page points. Passing page-space (px/s) made bottom tiles miss the
+  // pixmap entirely → solid white cells at scales where s != 1.
+  fz_rect clip = fz_rect_from_irect(bbox);
 
   // fz_var: used inside fz_try; GCC -Wclobbered otherwise (even when set
   // before the try — address escape forces memory backing).
