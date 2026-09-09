@@ -1,4 +1,126 @@
 
+## Plan / work (2026-09-09) — bundle `thumtoo-112-pixel-filters-design`
+
+### Change
+Document future **pixel filters** vs **layout/container pipes** (design only).
+
+### Done criteria
+- [x] Design notes in TODO.md; next **113**
+
+---
+
+## Design notes — pixel filters (future)
+
+Not implemented. Captures the 2026-09-09 brainstorm so URI/cache work does not
+paint us into a corner.
+
+### Two layers (keep separate)
+
+| Layer | Role | Examples |
+|-------|------|----------|
+| **Container / layout** | How a document becomes pages / members | `//epub:w,h,fs,…`, `//page:N`, `//archive:…`, PDF backend pipes |
+| **Pixel filter** | Appearance of **one** decoded raster | crop, invert, grey, rotate, flip |
+
+`//epub:` is **not** a pixel filter: it changes pagination and text flow.
+Pixel filters hang off the **leaf** (the session path that is one image), not
+the bare container file alone (unless expand-time inheritance is explicit).
+
+### Suggested pipe order (outer → inner)
+
+```text
+file → //archive:…? → //epub:…? → //page:N? → //pixel-filters*
+```
+
+Canonical formatting should emit filters in a fixed order so cache keys are
+stable (same lesson as `//epub:` key order).
+
+### Candidate filters (first cut)
+
+Geometry / framing:
+- `//crop:x,y,w,h` — pixels, origin top-left of full raster (normalized 0–1 later?)
+- `//rotate:0|90|180|270`
+- `//flip:h|v|hv`
+
+Tone / colour:
+- `//invert`
+- `//grey` (alias `//gray`)
+- optional later: `//bright:`, `//contrast:`, `//gamma:`
+
+Out of scope for path language (viewer chrome): slideshow, HUD, matte UI.
+
+### Containers (zip / PDF / EPUB) producing many images
+
+**Rule:** a pixel filter applies to **one raster identity**.
+
+1. **Filter on a leaf** (clear, preferred for shareable paths):
+   ```text
+   archive.zip//archive:scans/001.png//crop:10,10,800,1200//invert
+   book.pdf//page:3//grey
+   book.epub//epub:w=900,h=1350,fs=15//page:3//invert
+   ```
+   Expand does not need to understand invert; cache key is the full locator.
+
+2. **Filter on the container** (ambiguous — pick a policy):
+   ```text
+   archive.zip//invert
+   book.pdf//grey
+   ```
+   - **A. Expand-time inherit** — every produced leaf gets the filter suffix  
+     (“open this CBZ inverted”). Preferred for location-bar / Open semantics.
+   - **B. Reject** — invalid until expanded.
+   - **C. Viewer-only** — session display modifier, not part of the path  
+     (global “Invert all” without rewriting paths).
+
+   Recommendation: **A for open/expand and shareable URIs**; **C for
+   ephemeral UI toggles** (optional “materialize into path” later).
+
+3. **EPUB** — layout pipe stays document policy; pixel filters only on
+   `…//page:N` (or inherited onto each page at expand). Do not interleave
+   `//invert` before `//epub:`.
+
+### Identity and cache
+
+- **Content id** = hash of source file bytes (unchanged by filters).
+- **Size / tile / ladder rows** must key off the **full locator** including
+  pixel filters (otherwise invert and plain share tiles).
+- Apply filters in a defined pipeline relative to the scale ladder:
+  - **crop / rotate / flip** before ladder identity (geometry changes pixels);
+  - pure tone filters (`invert`, `grey`) may run at decode or as a cheap
+    post-step on displayed tiles — document the choice when implementing so
+    LQIP/thumbs match the filmstrip.
+
+### Relation to biltoo session transforms
+
+Biltoo already has interactive rotate/flip/crop. Long-term options:
+
+1. URI filters are the **durable / shareable export** of those transforms; or
+2. URI filters are **load-time** (thumtoo) and session transforms stay
+   biltoo-only until “Copy path” materializes them.
+
+Prefer (1) when paths are shown in the location bar so strip/copy/round-trip
+match what is on screen.
+
+### Open questions
+
+- [ ] Crop in pixels vs normalized 0–1 (normalized survives scale better)
+- [ ] Filter before vs after ladder decode for tone-only ops
+- [ ] LQIP / thumbs always follow full filtered path?
+- [ ] Multi-frame / animated sources: whole file vs current frame
+- [ ] Strict unknown-filter rejection vs ignore
+- [ ] Full param normalization when formatting filter lists
+
+### Implementation checklist (when started)
+
+- [ ] Parse/format helpers for pixel-filter pipes (canonical order)
+- [ ] Client decode path applies filters; cache keys include them
+- [ ] Expand-time inherit when filter suffix is on a container path
+- [ ] Docs page (e.g. `docs/FILTERS.md`) + URI examples
+- [ ] biltoo: location bar / session path rewrite for crop-invert; optional
+      global viewer modifiers (policy C)
+
+---
+
+
 ## Plan / work (2026-09-09) — bundle `thumtoo-109-pdf-nopoppler-build`
 
 ### Change
