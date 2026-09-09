@@ -9,6 +9,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+include(GNUInstallDirs)
+
 option(THUMTOO_BUILD_TESTS "Build unit tests" ON)
 option(THUMTOO_BUILD_TOOLS "Build CLI tools" ON)
 
@@ -152,11 +154,29 @@ if(THUMTOO_BUILD_TESTS)
   add_test(NAME pdf_tiles COMMAND thumtoo-test-pdf-tiles)
 endif()
 
-install(TARGETS thumtoo ARCHIVE DESTINATION lib LIBRARY DESTINATION lib)
-install(DIRECTORY include/thumtoo DESTINATION include)
+install(TARGETS thumtoo
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(DIRECTORY include/thumtoo DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 if(THUMTOO_BUILD_TOOLS)
-  install(TARGETS thumtoo-tile thumtoo-status thumtoo-prepare thumtoo-bench thumtoo-gc thumtoo-microbench-decode RUNTIME DESTINATION bin)
+  install(TARGETS thumtoo-tile thumtoo-status thumtoo-prepare thumtoo-bench
+                  thumtoo-gc thumtoo-microbench-decode
+          RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
+
+# Packaging environments (Nix cmake setup, etc.) pass the full GNUInstallDirs
+# set and CMAKE_EXPORT_NO_PACKAGE_REGISTRY. Reference them so configure does
+# not warn about unused -D variables for dirs we do not install into yet.
+set(_thumtoo_pkg_vars_used
+  "${CMAKE_INSTALL_SBINDIR}"
+  "${CMAKE_INSTALL_LIBEXECDIR}"
+  "${CMAKE_INSTALL_LOCALEDIR}"
+  "${CMAKE_INSTALL_INFODIR}"
+  "${CMAKE_INSTALL_DOCDIR}"
+  "${CMAKE_INSTALL_MANDIR}"
+  "${CMAKE_EXPORT_NO_PACKAGE_REGISTRY}")
+unset(_thumtoo_pkg_vars_used)
 
 # ---------------------------------------------------------------------------
 # Feature summary (configure-time)
