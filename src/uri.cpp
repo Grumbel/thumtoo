@@ -14,6 +14,8 @@ constexpr std::string_view kEpubPipe = "//epub:";
 constexpr std::string_view kPagePipe = "//page:";
 constexpr std::string_view kPopplerPagePipe = "//poppler-page:";
 constexpr std::string_view kMupdfPagePipe = "//mupdf-page:";
+constexpr std::string_view kPdfImagePipe = "//pdfimage:";
+constexpr std::string_view kPdfImagesPipe = "//pdfimages";
 
 enum class PipeHit {
   Archive,
@@ -21,6 +23,8 @@ enum class PipeHit {
   PdfPage,
   PdfPagePoppler,
   PdfPageMupdf,
+  PdfImage,
+  PdfImages,
 };
 
 [[nodiscard]] std::size_t find_first_pipe(std::string_view rest, std::size_t from,
@@ -30,6 +34,8 @@ enum class PipeHit {
   const auto page = rest.find(kPagePipe, from);
   const auto pop = rest.find(kPopplerPagePipe, from);
   const auto mu = rest.find(kMupdfPagePipe, from);
+  const auto pimgs = rest.find(kPdfImagesPipe, from);
+  const auto pimg = rest.find(kPdfImagePipe, from);
   std::size_t next = std::string_view::npos;
   auto consider = [&](std::size_t pos, PipeHit kind) {
     if (pos == std::string_view::npos) return;
@@ -43,6 +49,9 @@ enum class PipeHit {
   consider(page, PipeHit::PdfPage);
   consider(pop, PipeHit::PdfPagePoppler);
   consider(mu, PipeHit::PdfPageMupdf);
+  // //pdfimages before //pdfimage: (distinct strings; order is explicit).
+  consider(pimgs, PipeHit::PdfImages);
+  consider(pimg, PipeHit::PdfImage);
   return next;
 }
 
