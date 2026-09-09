@@ -496,6 +496,18 @@ Output: machine-readable JSON + markdown table in this doc.
 | Galapix frame tile budget | 128 | `begin_frame_request_budget` |
 | Galapix GL uploads/image/frame | 64 | `kMaxUploadsPerFrame` |
 
+## 7c. Sleeping USB / GUI thread policy
+
+Source media may take **10–30 seconds** to spin up. Rules:
+
+1. **No source filesystem I/O on the GUI thread** — not even `is_regular_file`,
+   `pdf_page_count`, or archive TOC (Galapix `open_paths` does these on a worker).
+2. `get_*` APIs are SQLite/blob only (local cache). Keep the thumtoo cache on
+   a fast volume, not the sleeping USB that holds the library.
+3. `request_*` / `ensure_lqip` / probe / extract run on Client workers only.
+4. Galapix must never call `ThumtooTileProvider::create` (blocking `drain`) from
+   the GUI; use `create_from_size` after `get_size` or SizeProbeSession.
+
 ## 8. Proposed fixes (not implemented — discuss before code)
 
 ### 8.1 Interactive JPEG shrink on the hot path
