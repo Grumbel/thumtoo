@@ -313,6 +313,46 @@ std::optional<Size> epub_page_layout_size(const std::filesystem::path& path,
 #endif
 }
 
+
+std::optional<PdfRaster> epub_rasterize_page(const std::filesystem::path& path,
+                                             int page_1based,
+                                             const EpubLayout& layout,
+                                             int max_edge) {
+#if !defined(THUMTOO_HAVE_MUPDF)
+  (void)path;
+  (void)page_1based;
+  (void)layout;
+  (void)max_edge;
+  return std::nullopt;
+#else
+  if (max_edge < 1 || page_1based < 1) return std::nullopt;
+  fz_context* ctx = tls_ctx();
+  fz_page* page = tls_page(path, layout, page_1based);
+  if (!ctx || !page) return std::nullopt;
+
+  fz_rect box = fz_empty_rect;
+  fz_var(box);
+  int ok = 0;
+  fz_var(ok);
+  fz_try(ctx) {
+    box = fz_bound_page(ctx, page);
+    ok = 1;
+  }
+  fz_catch(ctx) { ok = 0; }
+  if (!ok) return std::nullopt;
+  const double pw = std::max(1.0, static_cast<double>(box.x1 - box.x0));
+  const double ph = std::max(1.0, static_cast<double>(box.y1 - box.y0));
+  const double long_pt = std::max(pw, ph);
+  const double scale = static_cast<double>(max_edge) / long_pt;
+  const int out_w = std::max(1, static_cast<int>(std::lround(pw * scale)));
+  const int out_h = std::max(1, static_cast<int>(std::lround(ph * scale)));
+  // dpi such that page maps to out_w x out_h
+  const double dpi = 72.0 * scale;
+  return epub_rasterize_page_region(path, page_1based, layout, dpi, 0, 0, out_w,
+                                    out_h);
+#endif
+}
+
 std::optional<PdfRaster> epub_rasterize_page_region(
     const std::filesystem::path& path, int page_1based, const EpubLayout& layout,
     double dpi, int px, int py, int pw, int ph) {

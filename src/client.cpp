@@ -1696,6 +1696,38 @@ void Client::handle_ensure_pixels(
                               raster->width, raster->height);
       }
     }
+  } else if (auto ep = parse_epub_uri(job.uri)) {
+    auto raster = epub_rasterize_page(ep->epub_path, ep->page, ep->layout,
+                                      edge_limit);
+    if (raster && !raster->rgb.empty()) {
+      auto levels = build_ladder_rgb(raster->rgb.data(), raster->width,
+                                     raster->height, row.content_id,
+                                     kDefaultJxlQuality, edge_limit);
+      for (const auto& lvl : levels) {
+        blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
+                          lvl.width, lvl.height, lvl.codec, lvl.quality,
+                          lvl.bytes.data(), lvl.bytes.size());
+        Database::LevelRow lr;
+        lr.content_id = row.content_id;
+        lr.max_edge = lvl.max_edge;
+        lr.frame_idx = lvl.frame_idx;
+        lr.width = lvl.width;
+        lr.height = lvl.height;
+        lr.codec = lvl.codec;
+        lr.quality = lvl.quality;
+        lr.path = "blobs.sqlite";
+        db_->upsert_level(lr);
+      }
+      row.status =
+          levels.empty() ? ContentStatus::Incomplete : ContentStatus::Ready;
+      if (levels.empty()) row.error_code = "ladder_encode_failed";
+      else row.error_code = std::nullopt;
+      db_->upsert_content(row);
+      if (!levels.empty() && raster) {
+        store_lqip_if_missing(*db_, row.content_id, nullptr, raster->rgb.data(),
+                              raster->width, raster->height);
+      }
+    }
   } else if (auto arch = parse_archive_uri(job.uri)) {
 
     if (!arch->member_path.empty()) {
@@ -2181,6 +2213,38 @@ void Client::handle_ensure_tiles(
             if (auto cell = djvu_build_tile_cell(dj->djvu_path, dj->page, scale,
                                                  tx, ty, kDefaultTileQuality)) {
               tiles.push_back(std::move(*cell));
+            }
+          }
+        }
+      }
+    }
+  } else if (auto ep = parse_epub_uri(job.uri)) {
+    auto layout = epub_page_layout_size(ep->epub_path, ep->page, ep->layout);
+    if (layout && layout->width > 0 && layout->height > 0) {
+      int hi = max_scale;
+      if (hi < 0) {
+        hi = 0;
+        int w = layout->width, h = layout->height;
+        while (w > kTileSize || h > kTileSize) {
+          w = (w + 1) / 2;
+          h = (h + 1) / 2;
+          ++hi;
+        }
+      }
+      for (int scale = min_scale; scale <= hi; ++scale) {
+        const Size full = pdf_page_size_at_scale(*layout, scale);
+        const int nx = (full.width + kTileSize - 1) / kTileSize;
+        const int ny = (full.height + kTileSize - 1) / kTileSize;
+        for (int ty = 0; ty < ny; ++ty) {
+          for (int tx = 0; tx < nx; ++tx) {
+            if (auto raster = epub_render_tile_cell(
+                    ep->epub_path, ep->page, ep->layout, scale, tx, ty)) {
+              if (auto cell = encode_tile_cell_rgb(
+                      raster->rgb.data(), raster->width, raster->height, scale,
+                      tx, ty, kPdfTileQuality)) {
+                cell->source = TileSource::PdfRegion;
+                tiles.push_back(std::move(*cell));
+              }
             }
           }
         }

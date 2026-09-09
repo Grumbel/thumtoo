@@ -43,6 +43,11 @@ struct ParsedEpubUri {
     const std::filesystem::path& path, int page_1based,
     const EpubLayout& layout = default_epub_layout());
 
+/// Full-page raster; long edge ≤ max_edge (overview / ladder).
+[[nodiscard]] std::optional<PdfRaster> epub_rasterize_page(
+    const std::filesystem::path& path, int page_1based, const EpubLayout& layout,
+    int max_edge);
+
 [[nodiscard]] std::optional<PdfRaster> epub_rasterize_page_region(
     const std::filesystem::path& path, int page_1based, const EpubLayout& layout,
     double dpi, int px, int py, int pw, int ph);
