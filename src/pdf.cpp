@@ -19,6 +19,9 @@
 #include <poppler-document.h>
 #include <poppler-page.h>
 #include <poppler-page-renderer.h>
+#if defined(THUMTOO_HAVE_POPPLER_GLIB)
+#include <poppler.h>
+#endif
 #endif
 
 namespace thumtoo {

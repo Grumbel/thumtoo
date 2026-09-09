@@ -218,8 +218,8 @@ PdfPageContentStats mupdf_page_content_stats(const std::filesystem::path& path,
   fz_rect box;
   fz_try(ctx) { box = fz_bound_page(ctx, page); }
   fz_catch(ctx) { return st; }
-  const double page_w = std::max(1.0, box.x1 - box.x0);
-  const double page_h = std::max(1.0, box.y1 - box.y0);
+  const double page_w = std::max(1.0, static_cast<double>(box.x1 - box.x0));
+  const double page_h = std::max(1.0, static_cast<double>(box.y1 - box.y0));
   const double page_area = page_w * page_h;
 
   // One structured-text pass: characters + image blocks (with bboxes).
@@ -286,8 +286,8 @@ std::optional<PdfRaster> mupdf_rasterize_page(const std::filesystem::path& path,
   fz_rect box;
   fz_try(ctx) { box = fz_bound_page(ctx, page); }
   fz_catch(ctx) { return std::nullopt; }
-  const double pw = std::max(1.0, box.x1 - box.x0);
-  const double ph = std::max(1.0, box.y1 - box.y0);
+  const double pw = std::max(1.0, static_cast<double>(box.x1 - box.x0));
+  const double ph = std::max(1.0, static_cast<double>(box.y1 - box.y0));
   const double long_pt = std::max(pw, ph);
   const double scale = static_cast<double>(max_edge) / long_pt;
   fz_matrix ctm = fz_scale(scale, scale);
@@ -331,23 +331,20 @@ std::optional<PdfRaster> mupdf_rasterize_page_region(
   clip.x1 = static_cast<float>(px + pw) / s;
   clip.y1 = static_cast<float>(py + ph) / s;
 
+  // Pixmap origin at (px,py) in device space so identity ctm maps the clip.
   fz_irect bbox;
-  bbox.x0 = 0;
-  bbox.y0 = 0;
-  bbox.x1 = pw;
-  bbox.y1 = ph;
-
-  // page_pt * scale → pixels, then shift so (px,py) maps to pixmap origin.
-  fz_matrix draw =
-      fz_concat(fz_translate(-static_cast<float>(px), -static_cast<float>(py)), ctm);
+  bbox.x0 = px;
+  bbox.y0 = py;
+  bbox.x1 = px + pw;
+  bbox.y1 = py + ph;
 
   fz_pixmap* pix = nullptr;
   fz_device* dev = nullptr;
   fz_try(ctx) {
     pix = fz_new_pixmap_with_bbox(ctx, fz_device_rgb(ctx), bbox, nullptr, 0);
     fz_clear_pixmap_with_value(ctx, pix, 0xff);
-    dev = fz_new_draw_device_with_bbox(ctx, nullptr, pix, nullptr, bbox);
-    fz_run_display_list(ctx, list, dev, draw, clip, nullptr);
+    dev = fz_new_draw_device(ctx, pix);
+    fz_run_display_list(ctx, list, dev, ctm, clip, nullptr);
     fz_close_device(ctx, dev);
   }
   fz_always(ctx) {

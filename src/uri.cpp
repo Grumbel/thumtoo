@@ -261,6 +261,14 @@ std::string format_location(const Location& loc) {
         out += "//page:";
         out += pipe.value;
         break;
+      case LocationPipeKind::PdfPagePoppler:
+        out += "//poppler-page:";
+        out += pipe.value;
+        break;
+      case LocationPipeKind::PdfPageMupdf:
+        out += "//mupdf-page:";
+        out += pipe.value;
+        break;
     }
   }
   return out;
