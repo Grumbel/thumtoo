@@ -136,6 +136,7 @@ CREATE TABLE IF NOT EXISTS tiles (
   height INTEGER,
   codec TEXT,
   quality INTEGER,
+  source INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (content_id, scale, x, y)
 );
 CREATE INDEX IF NOT EXISTS idx_locators_content_id ON locators(content_id);
@@ -234,6 +235,23 @@ void Database::migrate_or_init() {
     }
     meta_set(kSchemaMetaVersionKey, std::to_string(kSchemaVersion));
     schema_version_ = kSchemaVersion;
+  }
+  // Additive tile decode path (TileSource). Safe on every open for old caches.
+  {
+    bool has_source = false;
+    sqlite3_stmt* info = nullptr;
+    if (sqlite3_prepare_v2(db_, "PRAGMA table_info(tiles);", -1, &info,
+                           nullptr) == SQLITE_OK) {
+      while (sqlite3_step(info) == SQLITE_ROW) {
+        const char* name =
+            reinterpret_cast<const char*>(sqlite3_column_text(info, 1));
+        if (name && std::string(name) == "source") has_source = true;
+      }
+      sqlite3_finalize(info);
+    }
+    if (!has_source) {
+      exec("ALTER TABLE tiles ADD COLUMN source INTEGER NOT NULL DEFAULT 0;");
+    }
   }
 }
 
@@ -1028,11 +1046,11 @@ void Database::upsert_tile(const TileRow& row) {
   std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
-      "INSERT INTO tiles(content_id, scale, x, y, width, height, codec, quality) "
-      "VALUES(?1,?2,?3,?4,?5,?6,?7,?8) "
+      "INSERT INTO tiles(content_id, scale, x, y, width, height, codec, quality, "
+      "source) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9) "
       "ON CONFLICT(content_id, scale, x, y) DO UPDATE SET "
       "width=excluded.width, height=excluded.height, codec=excluded.codec, "
-      "quality=excluded.quality;";
+      "quality=excluded.quality, source=excluded.source;";
   if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     throw std::runtime_error(sqlite3_errmsg(db_));
   }
@@ -1050,6 +1068,7 @@ void Database::upsert_tile(const TileRow& row) {
     sqlite3_bind_null(stmt, 7);
   if (row.quality) sqlite3_bind_int(stmt, 8, *row.quality);
   else sqlite3_bind_null(stmt, 8);
+  sqlite3_bind_int(stmt, 9, row.source);
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     throw std::runtime_error(sqlite3_errmsg(db_));
@@ -1063,7 +1082,7 @@ std::optional<Database::TileRow> Database::find_tile(std::string_view content_id
   std::lock_guard<std::recursive_mutex> lock(mu_);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
-      "SELECT content_id, scale, x, y, width, height, codec, quality FROM tiles "
+      "SELECT content_id, scale, x, y, width, height, codec, quality, source FROM tiles "
       "WHERE content_id = ?1 AND scale = ?2 AND x = ?3 AND y = ?4;";
   if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     throw std::runtime_error(sqlite3_errmsg(db_));
@@ -1088,6 +1107,8 @@ std::optional<Database::TileRow> Database::find_tile(std::string_view content_id
       r.codec = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
     if (sqlite3_column_type(stmt, 7) != SQLITE_NULL)
       r.quality = sqlite3_column_int(stmt, 7);
+    if (sqlite3_column_type(stmt, 8) != SQLITE_NULL)
+      r.source = sqlite3_column_int(stmt, 8);
     out = std::move(r);
   }
   sqlite3_finalize(stmt);
@@ -1137,7 +1158,7 @@ std::vector<Database::TileRow> Database::list_tiles(std::string_view content_id,
   std::vector<TileRow> rows;
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
-      "SELECT content_id, scale, x, y, width, height, codec, quality FROM tiles "
+      "SELECT content_id, scale, x, y, width, height, codec, quality, source FROM tiles "
       "WHERE content_id = ?1 ORDER BY scale, y, x LIMIT ?2;";
   if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     throw std::runtime_error(sqlite3_errmsg(db_));
@@ -1159,6 +1180,8 @@ std::vector<Database::TileRow> Database::list_tiles(std::string_view content_id,
       r.codec = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
     if (sqlite3_column_type(stmt, 7) != SQLITE_NULL)
       r.quality = sqlite3_column_int(stmt, 7);
+    if (sqlite3_column_type(stmt, 8) != SQLITE_NULL)
+      r.source = sqlite3_column_int(stmt, 8);
     rows.push_back(std::move(r));
   }
   sqlite3_finalize(stmt);

@@ -516,17 +516,38 @@ void Client::extract_cache_put(const std::filesystem::path& archive,
   std::lock_guard lock(extract_cache_mu_);
   const std::string key = extract_cache_key(archive, member);
   if (auto it = extract_cache_.find(key); it != extract_cache_.end()) {
-    extract_cache_bytes_ -= it->second.size();
+    extract_cache_bytes_ -= it->second.bytes.size();
     extract_cache_bytes_ += bytes.size();
-    it->second = std::move(bytes);
+    it->second.bytes = std::move(bytes);
+    // Move to front (most recently used).
+    extract_cache_lru_.erase(it->second.lru_it);
+    extract_cache_lru_.push_front(key);
+    it->second.lru_it = extract_cache_lru_.begin();
     return;
   }
-  if (extract_cache_bytes_ + bytes.size() > kExtractCacheMaxBytes) {
+  // Evict least-recently used until the new entry fits (or cache empty).
+  while (!extract_cache_.empty() &&
+         extract_cache_bytes_ + bytes.size() > kExtractCacheMaxBytes) {
+    const std::string& victim = extract_cache_lru_.back();
+    auto vit = extract_cache_.find(victim);
+    if (vit != extract_cache_.end()) {
+      extract_cache_bytes_ -= vit->second.bytes.size();
+      extract_cache_.erase(vit);
+    }
+    extract_cache_lru_.pop_back();
+  }
+  // Single entry larger than budget: store it alone (still useful once).
+  if (bytes.size() > kExtractCacheMaxBytes) {
     extract_cache_.clear();
+    extract_cache_lru_.clear();
     extract_cache_bytes_ = 0;
   }
-  extract_cache_bytes_ += bytes.size();
-  extract_cache_.emplace(key, std::move(bytes));
+  extract_cache_lru_.push_front(key);
+  ExtractCacheEntry ent;
+  ent.bytes = std::move(bytes);
+  ent.lru_it = extract_cache_lru_.begin();
+  extract_cache_bytes_ += ent.bytes.size();
+  extract_cache_.emplace(key, std::move(ent));
 }
 
 std::optional<std::vector<std::uint8_t>> Client::extract_cache_get(
@@ -534,7 +555,12 @@ std::optional<std::vector<std::uint8_t>> Client::extract_cache_get(
   std::lock_guard lock(extract_cache_mu_);
   auto it = extract_cache_.find(extract_cache_key(archive, member));
   if (it == extract_cache_.end()) return std::nullopt;
-  return it->second;
+  // Touch LRU (const method, but cache is mutable for LRU bookkeeping).
+  auto& self = const_cast<Client&>(*this);
+  self.extract_cache_lru_.erase(it->second.lru_it);
+  self.extract_cache_lru_.push_front(it->first);
+  it->second.lru_it = self.extract_cache_lru_.begin();
+  return it->second.bytes;
 }
 
 std::optional<std::vector<std::uint8_t>> Client::member_bytes(
@@ -1096,13 +1122,7 @@ void Client::handle_probe_size(
       && (row.status == ContentStatus::Ready
           || row.status == ContentStatus::Incomplete)) {
     size_out = Size{*row.width, *row.height};
-    if (!db_->get_lqip(row.content_id)) {
-      if (auto path = path_from_file_uri(job.uri)) {
-        if (std::filesystem::is_regular_file(*path)) {
-          store_lqip_if_missing(*db_, row.content_id, &*path, nullptr, 0, 0);
-        }
-      }
-    }
+    // LQIP is not generated on size probe (decoupled — ensure_lqip / EnsurePixels).
     if (job.size_cb) {
       auto cb = std::move(job.size_cb);
       auto uri = job.uri;
@@ -1333,8 +1353,7 @@ void Client::handle_probe_size(
           row.error_code = std::nullopt;
           size_out = probe->size;
           row.status = ContentStatus::Incomplete;
-          store_lqip_if_missing(*db_, row.content_id, nullptr, nullptr, 0, 0,
-                                bytes->data(), bytes->size());
+          // LQIP deferred (ensure_lqip / EnsurePixels).
         }
       }
     }
@@ -1345,19 +1364,8 @@ void Client::handle_probe_size(
 
   db_->upsert_content(row);
 
-  // LQIP during size probe for plain images only. PDF/DjVu pages are
-  // dimensions-only here (no per-page raster) — LQIP comes from EnsurePixels /
-  // ensure_lqip later. Avoids N full-page decodes on open.
-  if (size_out && !row.content_id.empty()) {
-    if (parse_pdf_uri(job.uri) || parse_djvu_uri(job.uri)) {
-      // size only
-    } else if (auto path = path_from_file_uri(job.uri)) {
-      if (std::filesystem::is_regular_file(*path) && !is_pdf_page_uri(job.uri) &&
-          !is_archive_uri(job.uri)) {
-        store_lqip_if_missing(*db_, row.content_id, &*path, nullptr, 0, 0);
-      }
-    }
-  }
+  // LQIP is not generated during size probe. Callers that need a soft
+  // underlay use ensure_lqip / EnsurePixels (Galapix polls get_lqip).
 
   if (job.size_cb) {
     auto cb = std::move(job.size_cb);
@@ -1659,6 +1667,7 @@ void Client::store_tiles(const std::string& content_id,
     tr.height = t.height;
     tr.codec = t.codec;
     tr.quality = kDefaultTileQuality;
+    tr.source = static_cast<int>(t.source);
     db_->upsert_tile(tr);
   }
 }
@@ -1828,6 +1837,7 @@ void Client::handle_ensure_tiles(
         if (auto jpeg = encode_tile_cell_rgb(
                 raster->rgb.data(), raster->width, raster->height,
                 job.tile_scale, job.tile_x, job.tile_y, kPdfTileQuality)) {
+          jpeg->source = TileSource::PdfRegion;
           store_tiles(content_id, std::vector<TileBlob>{*jpeg});
         }
       }
@@ -1838,6 +1848,7 @@ void Client::handle_ensure_tiles(
       live.width = raster->width;
       live.height = raster->height;
       live.codec = kTileCodecRgb888;
+      live.source = TileSource::PdfRegion;
       live.bytes = std::move(raster->rgb);
       reply_one(std::move(live));
       return;
@@ -1852,6 +1863,7 @@ void Client::handle_ensure_tiles(
         if (auto jpeg = encode_tile_cell_rgb(
                 raster->rgb.data(), raster->width, raster->height,
                 job.tile_scale, job.tile_x, job.tile_y, kPdfTileQuality)) {
+          jpeg->source = TileSource::DjvuRegion;
           store_tiles(content_id, std::vector<TileBlob>{*jpeg});
         }
       }
@@ -1862,6 +1874,7 @@ void Client::handle_ensure_tiles(
       live.width = raster->width;
       live.height = raster->height;
       live.codec = kTileCodecRgb888;
+      live.source = TileSource::DjvuRegion;
       live.bytes = std::move(raster->rgb);
       reply_one(std::move(live));
       return;

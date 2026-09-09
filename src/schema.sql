@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS tiles (
   height INTEGER,
   codec TEXT,
   quality INTEGER,
+  source INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (content_id, scale, x, y)
 );
 

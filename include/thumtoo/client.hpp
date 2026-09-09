@@ -20,6 +20,7 @@
 #include <thread>
 #include <unordered_map>
 #include <deque>
+#include <list>
 #include <vector>
 
 namespace thumtoo {
@@ -273,7 +274,13 @@ class Client {
   std::vector<std::thread> workers_;
 
   mutable std::mutex extract_cache_mu_;
-  std::unordered_map<std::string, std::vector<std::uint8_t>> extract_cache_;
+  /// LRU: front = most recently used. Values hold bytes + list iterator.
+  struct ExtractCacheEntry {
+    std::vector<std::uint8_t> bytes;
+    std::list<std::string>::iterator lru_it;
+  };
+  std::list<std::string> extract_cache_lru_;
+  std::unordered_map<std::string, ExtractCacheEntry> extract_cache_;
   std::size_t extract_cache_bytes_ = 0;
 
   mutable std::mutex http_cache_mu_;

@@ -181,6 +181,7 @@ class Database {
     std::optional<int> height;
     std::optional<std::string> codec;
     std::optional<int> quality;
+    int source = 0;  ///< TileSource (0 = full)
   };
 
   void upsert_tile(const TileRow& row);
