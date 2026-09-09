@@ -872,4 +872,7 @@ Goal: exhaustive audit of thumbnail / ladder / tile generation in thumtoo
 - [x] Schema + BlobStore tile path documented
 - [x] ZIP stored/deflate extract numbers in MICROBENCH_RESULTS
 
-Tip: **thumtoo-080**.
+- [x] prepare CLI / BuildStats / expand documented
+- [x] Executive summary in THUMBNAIL_AUDIT.md
+
+Tip: **thumtoo-081**.

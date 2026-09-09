@@ -5,11 +5,33 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # Thumbnail / ladder / tile generation audit
 
-Status: **in progress** (2026-09-09). Companion to TODO.md section
+Status: **substantial coverage** (2026-09-09). Companion to TODO.md
 “Thumbnail generation audit + microbenchmarks”.
 
 Audience: agents continuing the work; goal is zero open questions about
 what is slow, what is fast, what is measured, and what is still missing.
+
+## 0. Executive summary
+
+**Time to first pixel (cold)** is dominated by: (1) archive extract when
+applicable, (2) size probe which still runs LQIP/Handsum for plain images on
+the same worker, (3) first tile generation which does a **full-resolution
+JPEG decode** despite existing `vips_jpegload(shrink=N)` code, because Client
+always passes a non-empty `decode_cache_key` or uses the file path that never
+shrinks.
+
+**Time to first pixel (warm)** should be: SQLite meta + blob get of ≤256²
+JPEG + decode + RGBA + GL upload — low tens of ms if workers/GL keep up;
+Galapix limits new requests to 128/frame and uploads to 64/image/frame.
+
+**Fast:** header size probe (JPEG SOF via sequential Vips), EXIF embedded
+thumb for ladder, cached get_*, ZIP non-solid random member.
+
+**Slow:** full decode, pyramid prepare, PDF/DjVu page raster, solid RAR
+walk, LQIP-on-probe (throughput), DjVu under process-wide mutex.
+
+**Highest-impact fixes (spec §8):** interactive JPEG shrink (Option A);
+decouple LQIP from size probe; extract-cache LRU; optional tile source flag.
 
 ## 1. Scope
 
@@ -335,6 +357,44 @@ JPEG decode 256² + RGBA + GL.
 8. Store original SOF dimensions without opening pixels for more formats
    (PNG IHDR, etc. — Vips sequential usually already cheap).
 
+## 6b. Offline prepare & instrumentation
+
+### `thumtoo-prepare`
+
+Phases: `prepare_paths` (expand archive/PDF/DjVu ≤512 pages → `request_size`)
+→ optional `--ladder EDGE` (`request_pixels`, single JXL edge not multi-rung)
+→ optional `--tiles` (`request_tile_pyramid`, full scales in range).
+
+- `--jobs N`: Client worker pool (default HW concurrency, max 32).
+- `--stats` / `--stats-line`: print `BuildStats` after run.
+- PDF/DjVu page expansion capped at **512** pages per document in prepare.
+
+### `BuildStats` (`build_stats.hpp`)
+
+Accumulates **thread CPU-ish time** (overlapping workers → sum can exceed
+wall): `archive_extract_ns`, `image_load_ns`, `shrink_ns`, `jpeg_encode_ns`,
+`thumb_ns`, `jxl_encode_ns`, plus counters levels/tiles/probes/`exif_thumb_hits`.
+
+`summary_pretty` reports wall since `reset()` and approx parallel factor
+`cpu-sum/wall`. Use this to see whether load vs jpeg encode dominates prepare
+— not a substitute for microbench_decode.
+
+### `expand_media_uris` / `prepare_paths`
+
+- Archives → image member URIs via TOC refresh.
+- PDF/DjVu → `//page:N` URIs.
+- Skips Ready locators on re-prepare when size already known.
+
+### Interactive vs prepare tile cost
+
+| Mode | Scales generated | JPEG shrink | Full load |
+|------|------------------|-------------|-----------|
+| `request_tile` | one cell one scale | dead on hot path | yes today |
+| `request_tile_pyramid` / prepare `--tiles` | scale range full grid | no | yes always |
+
+Prepare is intentionally expensive offline; interactive should not share that
+cost model — hence §8.1.
+
 ## 7. Benchmark plan (to implement)
 
 Corpus: synthetic JPEGs at 4K, 8K, 16K; PNG; JXL; ZIP/RAR of many JPEGs;
@@ -439,6 +499,8 @@ thrash the entire 512 MiB map after one oversized member.
   end-to-end cold ZIP open diagram (§5.5–5.7).
 - 2026-09-09: Archive coalesce + warm extract skip; schema/blob_store;
   ZIP stored/deflate microbench numbers.
+- 2026-09-09: Executive summary; prepare/BuildStats/expand; interactive vs
+  prepare cost table.
 - Next: implement Option A under discussion; vips numbers under nix;
-  RAR/solid when tools available.
+  RAR/solid when tools available; optional galapix OverviewLoadJob (non-thumtoo).
 
