@@ -845,6 +845,41 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
       continue;
     }
 
+
+    if (is_likely_epub_path(abs)) {
+      const auto layout = default_epub_layout();
+      auto count = epub_page_count(abs, layout);
+      if (count && *count > 0) {
+        constexpr int kMaxPreparePages = 512;
+        const int n = std::min(*count, kMaxPreparePages);
+        for (int page = 1; page <= n; ++page) {
+          const auto uri = epub_page_uri(abs, page, layout);
+          if (auto existing = db_->find_locator(uri)) {
+            if (auto meta = db_->meta_for_uri(uri)) {
+              if (meta->status == ContentStatus::Ready && meta->size) continue;
+            }
+            Pending item;
+            item.uri = uri;
+            pending.push_back(std::move(item));
+            continue;
+          }
+          Pending item;
+          item.uri = uri;
+          item.need_register = true;
+          item.loc.uri = uri;
+          item.loc.content_id = make_provisional_id();
+          item.loc.outer_path = abs.string();
+          item.loc.member_path = std::to_string(page);
+          item.loc.size = file_size_bytes(abs);
+          item.loc.mtime_ns = file_mtime_ns(abs);
+          item.content.content_id = *item.loc.content_id;
+          item.content.status = ContentStatus::Pending;
+          pending.push_back(std::move(item));
+        }
+      }
+      continue;
+    }
+
     enqueue_plain(abs);
   }
 
@@ -1385,7 +1420,7 @@ void Client::handle_probe_size(
     if (!std::filesystem::is_regular_file(*path)) {
       row.status = ContentStatus::Failed;
       row.error_code = "not_a_file";
-    } else if (is_likely_djvu_path(*path) || is_likely_pdf_path(*path)) {
+    } else if (is_likely_djvu_path(*path) || is_likely_pdf_path(*path) || is_likely_epub_path(*path)) {
       // Bare container URI without //page:N — refuse Magick probe.
       row.status = ContentStatus::Failed;
       row.error_code = "page_uri_required";
@@ -1722,7 +1757,7 @@ void Client::handle_ensure_pixels(
     if (std::filesystem::is_regular_file(*path)) {
       // path_from_file_uri strips //page:N — a bare .djvu/.pdf must never go
       // through Vips/Magick (full multipage decode, multi-GB). Use page APIs.
-      if (is_likely_djvu_path(*path) || is_likely_pdf_path(*path)) {
+      if (is_likely_djvu_path(*path) || is_likely_pdf_path(*path) || is_likely_epub_path(*path)) {
         row.status = ContentStatus::Failed;
         row.error_code = "page_uri_required";
         db_->upsert_content(row);

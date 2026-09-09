@@ -24,6 +24,9 @@ struct ParsedEpubUri {
 /// True when THUMTOO_HAVE_MUPDF and path looks like .epub.
 [[nodiscard]] bool epub_available();
 
+/// Extension heuristic (.epub), independent of MuPDF build.
+[[nodiscard]] bool is_likely_epub_path(const std::filesystem::path& path);
+
 [[nodiscard]] std::optional<ParsedEpubUri> parse_epub_uri(std::string_view uri);
 
 /// file:///…//epub:w=…,h=…,em=…//page:N

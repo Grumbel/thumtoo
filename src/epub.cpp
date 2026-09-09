@@ -217,6 +217,10 @@ bool epub_available() {
 #endif
 }
 
+bool is_likely_epub_path(const std::filesystem::path& path) {
+  return is_epub_path(path);
+}
+
 std::optional<ParsedEpubUri> parse_epub_uri(std::string_view uri) {
   auto loc = parse_location(uri);
   if (!loc || loc->scheme != UriScheme::File) return std::nullopt;

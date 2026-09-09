@@ -5,7 +5,8 @@
 - [x] `epub.cpp`: layout, page count, layout size, region/tile raster (MuPDF)
 - [x] `expand_media_uris` default profile pages
 - [x] Client size probe + live tiles + LQIP
-- [ ] Galapix open/expand integration
+- [x] prepare_paths + is_likely_epub_path; bare .epub refuses Vips
+- [x] Galapix open/expand via expand_media_uris; tile min_scale for EPUB
 - [ ] User CSS / presets beyond defaults
 
 ---
@@ -25,7 +26,7 @@
 - [x] test_pdf_tiles: denser fixture text (avoid sparse-text image_heavy gate)
 - [x] MuPDF region scissor is device-space (fix white bottom tiles)
 
-Tip: **thumtoo-103**.
+Tip: **thumtoo-104**.
 
 ---
 
