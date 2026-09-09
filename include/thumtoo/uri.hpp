@@ -96,28 +96,46 @@ struct Location {
 [[nodiscard]] std::string with_pdf_page_mupdf(std::string_view base_uri,
                                               int page_1based);
 
-/// EPUB layout profile for //epub: URIs.
-/// w/h are pixels at kEpubLayoutDpi; fs is MuPDF default font size in points.
-/// Optional per-side margins (mt/mr/mb/ml) are pixels at the same DPI and are
-/// applied via MuPDF user CSS (converted to points). Defaults match kEpubDefault*.
+/// Font family preset for //epub: ff=
+enum class EpubFontFamily {
+  Publisher = 0,  // do not force family (book fonts)
+  Serif,
+  Sans,
+  Mono,
+};
+
+/// Colour theme preset for //epub: theme=
+enum class EpubTheme {
+  Day = 0,
+  Sepia,
+  Night,
+};
+
+/// EPUB layout profile for //epub: URIs (reader policy; not part of the EPUB format).
+/// w/h are pixels at kEpubLayoutDpi; fs is font size in points; margins in pixels.
+/// lh / ff / theme / pubcss are applied via MuPDF user CSS (+ use_document_css).
 struct EpubLayout {
   int width_px = 0;
   int height_px = 0;
   int fs_pt = 0;
-  int mt_px = 0;  // top margin
-  int mr_px = 0;  // right
-  int mb_px = 0;  // bottom
-  int ml_px = 0;  // left
+  int mt_px = 0;
+  int mr_px = 0;
+  int mb_px = 0;
+  int ml_px = 0;
+  /// Line height as percent (140 = 1.4). 0 = engine/book default (omit from CSS).
+  int lh_percent = 0;
+  EpubFontFamily font = EpubFontFamily::Publisher;
+  EpubTheme theme = EpubTheme::Day;
+  /// When false, MuPDF ignores publication CSS (pubcss=0).
+  bool use_document_css = true;
 };
 
 [[nodiscard]] EpubLayout default_epub_layout();
 
-/// Encode layout as the //epub: payload in canonical key order:
-/// w=,h=,fs=[,mt=,mr=,mb=,ml= when any margin is non-zero].
+/// Canonical //epub: payload: w,h,fs then optional non-default keys.
 [[nodiscard]] std::string format_epub_layout_params(const EpubLayout& layout);
 
-/// Parse w=/h=/fs=/mt=/mr=/mb=/ml= from an //epub: value (missing keys keep defaults).
-/// Unknown keys ignored.
+/// Parse layout keys from an //epub: value (missing keys keep defaults).
 [[nodiscard]] EpubLayout parse_epub_layout_params(std::string_view params);
 
 /// Append //epub:… layout payload onto a base URI.

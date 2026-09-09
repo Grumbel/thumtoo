@@ -90,6 +90,19 @@ int main() {
     expect(parsed_m.mt_px == 24 && parsed_m.mr_px == 16 && parsed_m.mb_px == 24 &&
                parsed_m.ml_px == 16,
            "epub margin params roundtrip");
+    EpubLayout rich = layout;
+    rich.lh_percent = 140;
+    rich.font = EpubFontFamily::Serif;
+    rich.theme = EpubTheme::Night;
+    rich.use_document_css = false;
+    auto fr = format_epub_layout_params(rich);
+    expect(fr.find("lh=140") != std::string::npos && fr.find("ff=serif") != std::string::npos &&
+               fr.find("theme=night") != std::string::npos && fr.find("pubcss=0") != std::string::npos,
+           "epub reader keys in format");
+    auto pr = parse_epub_layout_params(fr);
+    expect(pr.lh_percent == 140 && pr.font == EpubFontFamily::Serif &&
+               pr.theme == EpubTheme::Night && !pr.use_document_css,
+           "epub reader keys roundtrip");
   }
 
   // PDF inside archive

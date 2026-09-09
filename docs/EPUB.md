@@ -23,21 +23,19 @@ Unlike PDF, page index and pixel size depend on:
 | `h` | **pixels** at `kEpubLayoutDpi` | Virtual page height |
 | `fs` | points | MuPDF default font size (`fz_layout_document` em arg) |
 | `mt`/`mr`/`mb`/`ml` | **pixels** at `kEpubLayoutDpi` | Top/right/bottom/left margin (optional) |
+| `lh` | int percent | Line height ×100 (`140` → 1.4); omit for book default |
+| `ff` | token | `publisher` (default) / `serif` / `sans` / `mono` |
+| `theme` | token | `day` (default) / `sepia` / `night` |
+| `pubcss` | 0 or 1 | `1` (default) use publication CSS; `0` ignore it |
 
 `w`/`h`/margins are converted to points when calling MuPDF:
 `pt = px * 72 / kEpubLayoutDpi`.
 
-User CSS is always installed before layout: font-size from `fs`, optional
-margins when `mt`/`mr`/`mb`/`ml` are non-zero (else `margin: 0` on body so
-UA em-margins do not dominate).
+Reader policy (not part of the EPUB format) is applied via MuPDF user CSS and
+`fz_set_use_document_css` before layout: forced `fs`, optional margins /
+line-height / font-family / theme colours. The old `em` URI key was dropped.
 
-`fs` is the layout font size. It is passed to `fz_layout_document` **and**
-forced through user CSS (`html`/`body` font-size with `!important`, body-text
-elements inherit) so books that hard-code absolute sizes still respond.
-(The old `em` URI key was dropped: UA/CSS margins sized in `em` made font-size
-changes look like margin control.)
-
-Optional later: user CSS blob (`css=sha256:…`), `pubcss=0`, disable document CSS.
+Optional later: custom CSS blob (`css=sha256:…`).
 
 **Content id** stays `sha256` of the `.epub` file bytes.  
 **Tile / size rows** key off the full locator URI including the layout pipe.

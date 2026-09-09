@@ -31,6 +31,10 @@ struct TlsEpub {
   int mr_px = 0;
   int mb_px = 0;
   int ml_px = 0;
+  int lh_percent = 0;
+  int font = 0;
+  int theme = 0;
+  bool use_document_css = true;
   fz_document* doc = nullptr;
   bool laid_out = false;
   int page_index = -1;
@@ -68,6 +72,10 @@ void tls_drop_doc() {
   g_tls.mr_px = 0;
   g_tls.mb_px = 0;
   g_tls.ml_px = 0;
+  g_tls.lh_percent = 0;
+  g_tls.font = 0;
+  g_tls.theme = 0;
+  g_tls.use_document_css = true;
 }
 
 fz_context* tls_ctx() {
@@ -101,10 +109,15 @@ fz_document* tls_document(const std::filesystem::path& path,
   std::error_code ec;
   const auto mtime = std::filesystem::last_write_time(path, ec);
   const std::string key = path.lexically_normal().string();
+  const int font_i = static_cast<int>(L.font);
+  const int theme_i = static_cast<int>(L.theme);
   if (g_tls.doc && g_tls.path_key == key && !ec && g_tls.mtime == mtime &&
       g_tls.width_px == L.width_px && g_tls.height_px == L.height_px &&
       g_tls.fs_pt == L.fs_pt && g_tls.mt_px == L.mt_px && g_tls.mr_px == L.mr_px &&
-      g_tls.mb_px == L.mb_px && g_tls.ml_px == L.ml_px && g_tls.laid_out) {
+      g_tls.mb_px == L.mb_px && g_tls.ml_px == L.ml_px &&
+      g_tls.lh_percent == L.lh_percent && g_tls.font == font_i &&
+      g_tls.theme == theme_i && g_tls.use_document_css == L.use_document_css &&
+      g_tls.laid_out) {
     return g_tls.doc;
   }
 
@@ -124,33 +137,71 @@ fz_document* tls_document(const std::filesystem::path& path,
   const float mb_pt = static_cast<float>(L.mb_px) * 72.f / dpi;
   const float ml_pt = static_cast<float>(L.ml_px) * 72.f / dpi;
 
-  // User CSS is last in MuPDF's cascade. Always force a body/html font size
-  // from fs so books that hard-code text size still respond to the layout
-  // profile; fz_layout_document's em alone is not enough when document CSS
-  // sets absolute sizes (margins in the UA sheet still scale with em, which
-  // is why fs looked like a margin control).
-  // Optional per-side margins (pixels → points) on body when non-zero.
+  fz_set_use_document_css(ctx, L.use_document_css ? 1 : 0);
+
+  // Reader policy CSS (last in cascade). Font size always forced; optional
+  // margins, line-height, family, theme colours.
   {
-    char css[384];
+    std::string css;
+    css.reserve(512);
+    css += "html { font-size: ";
+    css += std::to_string(L.fs_pt);
+    css += "pt !important; }";
+    css += "body { font-size: ";
+    css += std::to_string(L.fs_pt);
+    css += "pt !important; ";
     if (L.mt_px > 0 || L.mr_px > 0 || L.mb_px > 0 || L.ml_px > 0) {
-      std::snprintf(
-          css, sizeof(css),
-          "html { font-size: %dpt !important; }"
-          "body { font-size: %dpt !important; "
-          "margin: %gpt %gpt %gpt %gpt !important; }"
-          "p, li, td, th, div, span { font-size: inherit !important; }",
-          L.fs_pt, L.fs_pt, static_cast<double>(mt_pt),
-          static_cast<double>(mr_pt), static_cast<double>(mb_pt),
-          static_cast<double>(ml_pt));
+      css += "margin: ";
+      css += std::to_string(mt_pt);
+      css += "pt ";
+      css += std::to_string(mr_pt);
+      css += "pt ";
+      css += std::to_string(mb_pt);
+      css += "pt ";
+      css += std::to_string(ml_pt);
+      css += "pt !important; ";
     } else {
-      std::snprintf(
-          css, sizeof(css),
-          "html { font-size: %dpt !important; }"
-          "body { font-size: %dpt !important; margin: 0 !important; }"
-          "p, li, td, th, div, span { font-size: inherit !important; }",
-          L.fs_pt, L.fs_pt);
+      css += "margin: 0 !important; ";
     }
-    fz_set_user_css(ctx, css);
+    if (L.lh_percent > 0) {
+      css += "line-height: ";
+      css += std::to_string(L.lh_percent / 100.0);
+      css += " !important; ";
+    }
+    if (L.font == EpubFontFamily::Serif) {
+      css += "font-family: serif !important; ";
+    } else if (L.font == EpubFontFamily::Sans) {
+      css += "font-family: sans-serif !important; ";
+    } else if (L.font == EpubFontFamily::Mono) {
+      css += "font-family: monospace !important; ";
+    }
+    if (L.theme == EpubTheme::Sepia) {
+      css += "color: #5b4636 !important; background-color: #f4ecd8 !important; ";
+    } else if (L.theme == EpubTheme::Night) {
+      css += "color: #ddd !important; background-color: #1a1a1a !important; ";
+    } else {
+      css += "color: #111 !important; background-color: #fff !important; ";
+    }
+    css += "}";
+    css += "p, li, td, th, div, span { font-size: inherit !important; ";
+    if (L.lh_percent > 0) {
+      css += "line-height: inherit !important; ";
+    }
+    if (L.font != EpubFontFamily::Publisher) {
+      css += "font-family: inherit !important; ";
+    }
+    if (L.theme == EpubTheme::Sepia) {
+      css += "color: inherit !important; background-color: transparent !important; ";
+    } else if (L.theme == EpubTheme::Night) {
+      css += "color: inherit !important; background-color: transparent !important; ";
+    }
+    css += "}";
+    if (L.theme == EpubTheme::Night) {
+      css += "a { color: #6af !important; }";
+    } else if (L.theme == EpubTheme::Sepia) {
+      css += "a { color: #396 !important; }";
+    }
+    fz_set_user_css(ctx, css.c_str());
   }
 
   int ok = 0;
@@ -175,6 +226,10 @@ fz_document* tls_document(const std::filesystem::path& path,
   g_tls.mr_px = L.mr_px;
   g_tls.mb_px = L.mb_px;
   g_tls.ml_px = L.ml_px;
+  g_tls.lh_percent = L.lh_percent;
+  g_tls.font = font_i;
+  g_tls.theme = theme_i;
+  g_tls.use_document_css = L.use_document_css;
   g_tls.doc = doc;
   g_tls.laid_out = true;
   return doc;

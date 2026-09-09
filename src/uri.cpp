@@ -335,12 +335,51 @@ std::string with_pdf_page_mupdf(std::string_view base_uri, int page_1based) {
 }
 
 EpubLayout default_epub_layout() {
-  return EpubLayout{kEpubDefaultPageWidthPx, kEpubDefaultPageHeightPx,
-                    kEpubDefaultFontSizePt, 0, 0, 0, 0};
+  EpubLayout L;
+  L.width_px = kEpubDefaultPageWidthPx;
+  L.height_px = kEpubDefaultPageHeightPx;
+  L.fs_pt = kEpubDefaultFontSizePt;
+  return L;
 }
 
+namespace {
+
+const char* font_family_token(EpubFontFamily f) {
+  switch (f) {
+    case EpubFontFamily::Serif: return "serif";
+    case EpubFontFamily::Sans: return "sans";
+    case EpubFontFamily::Mono: return "mono";
+    case EpubFontFamily::Publisher:
+    default: return "publisher";
+  }
+}
+
+const char* theme_token(EpubTheme t) {
+  switch (t) {
+    case EpubTheme::Sepia: return "sepia";
+    case EpubTheme::Night: return "night";
+    case EpubTheme::Day:
+    default: return "day";
+  }
+}
+
+EpubFontFamily parse_font_family(std::string_view v) {
+  if (v == "serif") return EpubFontFamily::Serif;
+  if (v == "sans" || v == "sans-serif") return EpubFontFamily::Sans;
+  if (v == "mono" || v == "monospace") return EpubFontFamily::Mono;
+  return EpubFontFamily::Publisher;
+}
+
+EpubTheme parse_theme(std::string_view v) {
+  if (v == "sepia") return EpubTheme::Sepia;
+  if (v == "night" || v == "dark") return EpubTheme::Night;
+  return EpubTheme::Day;
+}
+
+}  // namespace
+
 std::string format_epub_layout_params(const EpubLayout& layout) {
-  // Canonical key order: w,h,fs[,mt,mr,mb,ml when any margin non-zero].
+  // Canonical order: w,h,fs[,mt,mr,mb,ml][,lh][,ff][,theme][,pubcss]
   EpubLayout L = layout;
   if (L.width_px < 1) L.width_px = kEpubDefaultPageWidthPx;
   if (L.height_px < 1) L.height_px = kEpubDefaultPageHeightPx;
@@ -349,6 +388,7 @@ std::string format_epub_layout_params(const EpubLayout& layout) {
   if (L.mr_px < 0) L.mr_px = 0;
   if (L.mb_px < 0) L.mb_px = 0;
   if (L.ml_px < 0) L.ml_px = 0;
+  if (L.lh_percent < 0) L.lh_percent = 0;
   std::string out = "w=";
   out += std::to_string(L.width_px);
   out += ",h=";
@@ -365,29 +405,26 @@ std::string format_epub_layout_params(const EpubLayout& layout) {
     out += ",ml=";
     out += std::to_string(L.ml_px);
   }
+  if (L.lh_percent > 0) {
+    out += ",lh=";
+    out += std::to_string(L.lh_percent);
+  }
+  if (L.font != EpubFontFamily::Publisher) {
+    out += ",ff=";
+    out += font_family_token(L.font);
+  }
+  if (L.theme != EpubTheme::Day) {
+    out += ",theme=";
+    out += theme_token(L.theme);
+  }
+  if (!L.use_document_css) {
+    out += ",pubcss=0";
+  }
   return out;
 }
 
 EpubLayout parse_epub_layout_params(std::string_view params) {
   EpubLayout L = default_epub_layout();
-  auto apply = [&](std::string_view key, int v, bool any_digit) {
-    if (!any_digit) return;
-    if (key == "w") {
-      if (v >= 1) L.width_px = v;
-    } else if (key == "h") {
-      if (v >= 1) L.height_px = v;
-    } else if (key == "fs") {
-      if (v >= 1) L.fs_pt = v;
-    } else if (key == "mt") {
-      if (v >= 0) L.mt_px = v;
-    } else if (key == "mr") {
-      if (v >= 0) L.mr_px = v;
-    } else if (key == "mb") {
-      if (v >= 0) L.mb_px = v;
-    } else if (key == "ml") {
-      if (v >= 0) L.ml_px = v;
-    }
-  };
   std::size_t i = 0;
   while (i < params.size()) {
     while (i < params.size() && (params[i] == ',' || params[i] == ' ')) ++i;
@@ -398,15 +435,47 @@ EpubLayout parse_epub_layout_params(std::string_view params) {
     std::size_t vstart = eq + 1;
     std::size_t vend = params.find(',', vstart);
     if (vend == std::string_view::npos) vend = params.size();
-    int val = 0;
-    bool any = false;
-    for (std::size_t j = vstart; j < vend; ++j) {
-      if (params[j] >= '0' && params[j] <= '9') {
-        any = true;
-        val = val * 10 + (params[j] - '0');
+    std::string_view val = params.substr(vstart, vend - vstart);
+    // Trim spaces in value
+    while (!val.empty() && val.front() == ' ') val.remove_prefix(1);
+    while (!val.empty() && val.back() == ' ') val.remove_suffix(1);
+
+    auto as_int = [&](int* out) -> bool {
+      if (val.empty()) return false;
+      int n = 0;
+      for (char c : val) {
+        if (c < '0' || c > '9') return false;
+        n = n * 10 + (c - '0');
       }
+      *out = n;
+      return true;
+    };
+
+    int n = 0;
+    if (key == "w" && as_int(&n) && n >= 1) {
+      L.width_px = n;
+    } else if (key == "h" && as_int(&n) && n >= 1) {
+      L.height_px = n;
+    } else if (key == "fs" && as_int(&n) && n >= 1) {
+      L.fs_pt = n;
+    } else if (key == "mt" && as_int(&n) && n >= 0) {
+      L.mt_px = n;
+    } else if (key == "mr" && as_int(&n) && n >= 0) {
+      L.mr_px = n;
+    } else if (key == "mb" && as_int(&n) && n >= 0) {
+      L.mb_px = n;
+    } else if (key == "ml" && as_int(&n) && n >= 0) {
+      L.ml_px = n;
+    } else if (key == "lh" && as_int(&n) && n >= 50 && n <= 400) {
+      // Accept 140 (=1.4) or legacy-style 140% integers only.
+      L.lh_percent = n;
+    } else if (key == "ff") {
+      L.font = parse_font_family(val);
+    } else if (key == "theme") {
+      L.theme = parse_theme(val);
+    } else if (key == "pubcss" && as_int(&n)) {
+      L.use_document_css = (n != 0);
     }
-    apply(key, val, any);
     i = vend;
   }
   return L;
