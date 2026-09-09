@@ -2,9 +2,13 @@
 
 ## Status (2026-09-09)
 
-**Tip: thumtoo-124-pdfimage-xref-scan.**
+**Tip: thumtoo-125-with-pdf-image-defs.**
 
-### 124 (this tip)
+### 125 (this tip)
+- Define missing `with_pdf_image` / `with_pdf_images` in `src/uri.cpp` (declared in
+  uri.hpp, used by test_uri; link failed with undefined reference).
+
+### Prior 124
 - Document-wide xref scan for Image XObjects (mutool-style); skip ImageMask
 - Load via `pdf_new_indirect` + `pdf_load_image`
 - biltoo: soft-miss await ladder for pdfimage; tooltip on permanent fail

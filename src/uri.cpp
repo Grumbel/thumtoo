@@ -377,6 +377,20 @@ std::string with_pdf_page_mupdf(std::string_view base_uri, int page_1based) {
   return out;
 }
 
+std::string with_pdf_image(std::string_view base_uri, int image_1based) {
+  if (image_1based < 1) image_1based = 1;
+  std::string out(base_uri);
+  out += "//pdfimage:";
+  out += std::to_string(image_1based);
+  return out;
+}
+
+std::string with_pdf_images(std::string_view base_uri) {
+  std::string out(base_uri);
+  out += "//pdfimages";
+  return out;
+}
+
 EpubLayout default_epub_layout() {
   EpubLayout L;
   L.width_px = kEpubDefaultPageWidthPx;
