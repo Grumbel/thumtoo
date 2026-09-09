@@ -78,7 +78,8 @@ fz_document* tls_document(const std::filesystem::path& path) {
   }
 
   tls_drop_doc();
-  fz_document* doc = nullptr;
+  // volatile: assigned inside fz_try; MuPDF may longjmp out of the try body
+  fz_document* volatile doc = nullptr;
   fz_try(ctx) { doc = fz_open_document(ctx, path.string().c_str()); }
   fz_catch(ctx) { doc = nullptr; }
   if (!doc) return nullptr;
@@ -102,7 +103,7 @@ fz_page* tls_page(const std::filesystem::path& path, int page_1based) {
   const int n = fz_count_pages(ctx, doc);
   if (idx < 0 || idx >= n) return nullptr;
 
-  fz_page* page = nullptr;
+  fz_page* volatile page = nullptr;
   fz_try(ctx) { page = fz_load_page(ctx, doc, idx); }
   fz_catch(ctx) { page = nullptr; }
   if (!page) return nullptr;
@@ -120,7 +121,7 @@ fz_display_list* tls_display_list(const std::filesystem::path& path,
   if (!ctx || !page) return nullptr;
   if (g_tls.list) return g_tls.list;
 
-  fz_display_list* list = nullptr;
+  fz_display_list* volatile list = nullptr;
   fz_try(ctx) { list = fz_new_display_list_from_page(ctx, page); }
   fz_catch(ctx) { list = nullptr; }
   g_tls.list = list;
@@ -176,9 +177,9 @@ std::optional<int> mupdf_page_count(const std::filesystem::path& path) {
   fz_context* ctx = tls_ctx();
   fz_document* doc = tls_document(path);
   if (!ctx || !doc) return std::nullopt;
-  int n = 0;
+  volatile int n = 0;
   fz_try(ctx) { n = fz_count_pages(ctx, doc); }
-  fz_catch(ctx) { return std::nullopt; }
+  fz_catch(ctx) { n = 0; }
   if (n <= 0) return std::nullopt;
   return n;
 #endif
@@ -194,7 +195,7 @@ std::optional<Size> mupdf_page_size_72dpi(const std::filesystem::path& path,
   fz_context* ctx = tls_ctx();
   fz_page* page = tls_page(path, page_1based);
   if (!ctx || !page) return std::nullopt;
-  fz_rect box;
+  volatile fz_rect box = fz_empty_rect;
   fz_try(ctx) { box = fz_bound_page(ctx, page); }
   fz_catch(ctx) { return std::nullopt; }
   const int w = std::max(1, static_cast<int>(std::lround(box.x1 - box.x0)));
@@ -215,7 +216,7 @@ PdfPageContentStats mupdf_page_content_stats(const std::filesystem::path& path,
   fz_page* page = tls_page(path, page_1based);
   if (!ctx || !page) return st;
 
-  fz_rect box;
+  volatile fz_rect box = fz_empty_rect;
   fz_try(ctx) { box = fz_bound_page(ctx, page); }
   fz_catch(ctx) { return st; }
   const double page_w = std::max(1.0, static_cast<double>(box.x1 - box.x0));
@@ -225,7 +226,7 @@ PdfPageContentStats mupdf_page_content_stats(const std::filesystem::path& path,
   // One structured-text pass: characters + image blocks (with bboxes).
   fz_stext_options opts{};
   opts.flags = 0;
-  fz_stext_page* stext = nullptr;
+  fz_stext_page* volatile stext = nullptr;
   fz_try(ctx) {
     stext = fz_new_stext_page_from_page(ctx, page, &opts);
   }
@@ -283,7 +284,7 @@ std::optional<PdfRaster> mupdf_rasterize_page(const std::filesystem::path& path,
   fz_page* page = tls_page(path, page_1based);
   if (!ctx || !page) return std::nullopt;
 
-  fz_rect box;
+  volatile fz_rect box = fz_empty_rect;
   fz_try(ctx) { box = fz_bound_page(ctx, page); }
   fz_catch(ctx) { return std::nullopt; }
   const double pw = std::max(1.0, static_cast<double>(box.x1 - box.x0));
@@ -292,7 +293,7 @@ std::optional<PdfRaster> mupdf_rasterize_page(const std::filesystem::path& path,
   const double scale = static_cast<double>(max_edge) / long_pt;
   fz_matrix ctm = fz_scale(scale, scale);
 
-  fz_pixmap* pix = nullptr;
+  fz_pixmap* volatile pix = nullptr;
   fz_try(ctx) {
     pix = fz_new_pixmap_from_page(ctx, page, ctm, fz_device_rgb(ctx), 0);
   }
@@ -332,16 +333,19 @@ std::optional<PdfRaster> mupdf_rasterize_page_region(
   clip.y1 = static_cast<float>(py + ph) / s;
 
   // Pixmap origin at (px,py) in device space so identity ctm maps the clip.
-  fz_irect bbox;
+  // volatile: may be live across fz_try / longjmp
+  volatile fz_irect bbox;
   bbox.x0 = px;
   bbox.y0 = py;
   bbox.x1 = px + pw;
   bbox.y1 = py + ph;
 
-  fz_pixmap* pix = nullptr;
-  fz_device* dev = nullptr;
+  fz_pixmap* volatile pix = nullptr;
+  fz_device* volatile dev = nullptr;
   fz_try(ctx) {
-    pix = fz_new_pixmap_with_bbox(ctx, fz_device_rgb(ctx), bbox, nullptr, 0);
+    // Copy volatile bbox for the API (takes fz_irect by value/const ref).
+    fz_irect bbox_local = bbox;
+    pix = fz_new_pixmap_with_bbox(ctx, fz_device_rgb(ctx), bbox_local, nullptr, 0);
     fz_clear_pixmap_with_value(ctx, pix, 0xff);
     // MuPDF: fz_new_draw_device(ctx, transform, dest) — transform maps
     // device calls into pixmap space; list run supplies page→pixel ctm.

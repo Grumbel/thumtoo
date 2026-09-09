@@ -8,8 +8,9 @@
 - [x] Galapix min_scale + URI backend (galapix-165)
 - [x] MuPDF image coverage via fz_stext image blocks
 - [x] Implement `with_pdf_page_poppler` / `with_pdf_page_mupdf` (link fix for test_uri)
+- [x] Silence `-Wclobbered` in `pdf_mupdf.cpp` (volatile across `fz_try` / longjmp)
 
-Tip: **thumtoo-097**.
+Tip: **thumtoo-098**.
 
 ---
 
