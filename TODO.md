@@ -10,7 +10,7 @@
 - [x] Implement `with_pdf_page_poppler` / `with_pdf_page_mupdf` (link fix for test_uri)
 - [x] Silence `-Wclobbered` in `pdf_mupdf.cpp` via MuPDF `fz_var` (not C++ `volatile` on structs)
 
-Tip: **thumtoo-099**.
+Tip: **thumtoo-100**.
 
 ---
 

@@ -365,6 +365,12 @@ std::optional<PdfRaster> mupdf_rasterize_page_region(
   bbox.x1 = px + pw;
   bbox.y1 = py + ph;
 
+  // fz_var: used inside fz_try; GCC -Wclobbered otherwise (even when set
+  // before the try — address escape forces memory backing).
+  fz_var(ctm);
+  fz_var(clip);
+  fz_var(bbox);
+
   fz_pixmap* pix = nullptr;
   fz_device* dev = nullptr;
   fz_var(pix);
