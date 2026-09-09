@@ -1,3 +1,12 @@
+## PDF page/raster TLS cache — **thumtoo-092**
+
+- [x] TLS `poppler::page` cache (avoid create_page per cell)
+- [x] Full-page RGB cache ≤4096 long edge for scanned multi-tile pages
+- [x] Document: no PDF “scanned” metadata; region re-decode cost
+- [x] Bundle thumtoo-092
+
+---
+
 ## Archive batch parallel encode — **thumtoo-090**
 
 `thumtoo-bench --tiles foo.rar` looked "stuck" with low CPU: coalesce ran

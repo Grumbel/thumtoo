@@ -501,6 +501,24 @@ Output: machine-readable JSON + markdown table in this doc.
 | Galapix frame tile budget | 128 | `begin_frame_request_budget` |
 | Galapix GL uploads/image/frame | 64 | `kMaxUploadsPerFrame` |
 
+## 6f. Scanned PDFs and Poppler handle lifetime
+
+**Document** is already TLS-cached per Client worker (`cached_pdf_document`).
+**Page** was re-`create_page`d on every region render — now TLS-cached too.
+
+**Region vs full page:** `render_page(..., px,py,pw,ph)` still walks page
+content. For scanned pages (one large image XObject) Splash often **re-decodes
+the full JPEG** for each crop. That is Poppler behaviour, not Galapix throwing
+away handles.
+
+**thumtoo-092:** when page long edge ≤ 4096 at the tile scale, rasterize the
+**full page once** into a TLS cache and `memcpy` crops. Above that, keep region
+render (memory bound).
+
+**Metadata “scanned vs vector”:** PDF has no standard flag. Heuristics only
+(Producer/Creator “Scanner”, empty text + large image XObjects). poppler-cpp
+does not expose a simple image-count API; not implemented yet.
+
 ## 7c. Sleeping USB / GUI thread policy
 
 Source media may take **10–30 seconds** to spin up. Rules:

@@ -45,6 +45,48 @@ struct TlsPdfLayout {
 
 thread_local TlsPdfLayout g_tls_pdf_layout;
 
+/// Keep the last open page object (create_page is not free).
+struct TlsPdfPage {
+  std::string path_key;
+  int page = 0;  // 1-based
+  std::unique_ptr<poppler::page> page_obj;
+};
+thread_local TlsPdfPage g_tls_pdf_page;
+
+/// Full-page RGB at a given DPI for crop-based cells. Scanned PDFs often
+/// re-decode the same large image XObject per region render; one full raster
+/// + memcpy crops is much cheaper when the page fits in memory.
+struct TlsPdfPageRaster {
+  std::string path_key;
+  int page = 0;
+  double dpi = 0;
+  PdfRaster raster;
+};
+thread_local TlsPdfPageRaster g_tls_pdf_page_raster;
+
+/// Cap cached full-page raster long edge (pixels). Above this, use region render.
+constexpr int kPdfPageRasterCacheMaxEdge = 4096;
+
+[[nodiscard]] poppler::page* cached_pdf_page(poppler::document* doc,
+                                            const std::string& path_key,
+                                            int page_1based) {
+  if (!doc || page_1based < 1) return nullptr;
+  if (g_tls_pdf_page.page_obj && g_tls_pdf_page.path_key == path_key &&
+      g_tls_pdf_page.page == page_1based) {
+    return g_tls_pdf_page.page_obj.get();
+  }
+  if (page_1based > doc->pages()) return nullptr;
+  auto loaded = std::unique_ptr<poppler::page>(doc->create_page(page_1based - 1));
+  if (!loaded) {
+    g_tls_pdf_page = {};
+    return nullptr;
+  }
+  g_tls_pdf_page.path_key = path_key;
+  g_tls_pdf_page.page = page_1based;
+  g_tls_pdf_page.page_obj = std::move(loaded);
+  return g_tls_pdf_page.page_obj.get();
+}
+
 [[nodiscard]] poppler::document* cached_pdf_document(
     const std::filesystem::path& path) {
   std::error_code ec;
@@ -64,10 +106,12 @@ thread_local TlsPdfLayout g_tls_pdf_layout;
   g_tls_pdf_doc.mtime =
       ec ? std::filesystem::file_time_type{} : mtime;
   g_tls_pdf_doc.doc = std::move(loaded);
-  // Path change invalidates layout cache for a different file.
+  // Path change invalidates layout/page/raster caches.
   if (g_tls_pdf_layout.path_key != key) {
     g_tls_pdf_layout = {};
   }
+  g_tls_pdf_page = {};
+  g_tls_pdf_page_raster = {};
   return g_tls_pdf_doc.doc.get();
 }
 #endif
@@ -138,8 +182,7 @@ std::optional<Size> pdf_page_size_72dpi(const std::filesystem::path& path,
   }
   poppler::document* doc = cached_pdf_document(path);
   if (!doc) return std::nullopt;
-  if (page_1based > doc->pages()) return std::nullopt;
-  std::unique_ptr<poppler::page> page(doc->create_page(page_1based - 1));
+  poppler::page* page = cached_pdf_page(doc, key, page_1based);
   if (!page) return std::nullopt;
   const poppler::rectf box = page->page_rect(poppler::media_box);
   const int w = std::max(1, static_cast<int>(std::lround(box.width())));
@@ -174,7 +217,8 @@ std::optional<PdfRaster> pdf_rasterize_page(const std::filesystem::path& path,
   poppler::document* doc = cached_pdf_document(path);
   if (!doc) return std::nullopt;
   if (page_1based > doc->pages()) return std::nullopt;
-  std::unique_ptr<poppler::page> page(doc->create_page(page_1based - 1));
+  const std::string path_key = path.lexically_normal().string();
+  poppler::page* page = cached_pdf_page(doc, path_key, page_1based);
   if (!page) return std::nullopt;
 
   const poppler::rectf box = page->page_rect(poppler::media_box);
@@ -192,7 +236,7 @@ std::optional<PdfRaster> pdf_rasterize_page(const std::filesystem::path& path,
   poppler::page_renderer renderer;
   renderer.set_render_hint(poppler::page_renderer::antialiasing, true);
   renderer.set_render_hint(poppler::page_renderer::text_antialiasing, true);
-  poppler::image img = renderer.render_page(page.get(), dpi, dpi);
+  poppler::image img = renderer.render_page(page, dpi, dpi);
   if (!img.is_valid()) return std::nullopt;
 
   const int w = img.width();
@@ -352,8 +396,8 @@ std::optional<PdfRaster> pdf_rasterize_page_region(
   if (page_1based < 1 || pw <= 0 || ph <= 0 || dpi <= 0.0) return std::nullopt;
   poppler::document* doc = cached_pdf_document(path);
   if (!doc) return std::nullopt;
-  if (page_1based > doc->pages()) return std::nullopt;
-  std::unique_ptr<poppler::page> page(doc->create_page(page_1based - 1));
+  const std::string key = path.lexically_normal().string();
+  poppler::page* page = cached_pdf_page(doc, key, page_1based);
   if (!page) return std::nullopt;
 
   poppler::page_renderer renderer;
@@ -361,7 +405,7 @@ std::optional<PdfRaster> pdf_rasterize_page_region(
   renderer.set_render_hint(poppler::page_renderer::text_antialiasing, true);
   // x,y,w,h are pixel crop on the full page at the given DPI.
   poppler::image img =
-      renderer.render_page(page.get(), dpi, dpi, px, py, pw, ph);
+      renderer.render_page(page, dpi, dpi, px, py, pw, ph);
   return image_to_rgb(img);
 #endif
 }
@@ -384,8 +428,56 @@ std::optional<PdfRaster> pdf_render_tile_cell(const std::filesystem::path& path,
   const double dpi = pdf_dpi_for_scale(scale);
   const int full_edge = std::max(full.width, full.height);
 
-  std::optional<PdfRaster> cell_raster =
-      pdf_rasterize_page_region(path, page_1based, dpi, left, top, tw, th);
+  // Prefer a full-page raster cache when the page is not enormous. Scanned
+  // PDFs re-decode the same image XObject on every region render otherwise.
+  std::optional<PdfRaster> cell_raster;
+  const std::string path_key = path.lexically_normal().string();
+  if (full_edge > 0 && full_edge <= kPdfPageRasterCacheMaxEdge) {
+    bool cache_hit =
+        g_tls_pdf_page_raster.path_key == path_key &&
+        g_tls_pdf_page_raster.page == page_1based &&
+        std::abs(g_tls_pdf_page_raster.dpi - dpi) < 0.01 &&
+        g_tls_pdf_page_raster.raster.width == full.width &&
+        g_tls_pdf_page_raster.raster.height == full.height &&
+        !g_tls_pdf_page_raster.raster.rgb.empty();
+    if (!cache_hit) {
+      auto page_raster = pdf_rasterize_page(path, page_1based, full_edge);
+      if (page_raster && page_raster->width == full.width &&
+          page_raster->height == full.height && !page_raster->rgb.empty()) {
+        g_tls_pdf_page_raster.path_key = path_key;
+        g_tls_pdf_page_raster.page = page_1based;
+        g_tls_pdf_page_raster.dpi = dpi;
+        g_tls_pdf_page_raster.raster = *page_raster;
+        cache_hit = true;
+      }
+    }
+    if (cache_hit) {
+      auto const& page_raster = g_tls_pdf_page_raster.raster;
+      PdfRaster cropped;
+      cropped.width = tw;
+      cropped.height = th;
+      cropped.rgb.resize(static_cast<std::size_t>(tw) *
+                         static_cast<std::size_t>(th) * 3u);
+      for (int row = 0; row < th; ++row) {
+        const auto* src =
+            page_raster.rgb.data() +
+            (static_cast<std::size_t>(top + row) *
+                 static_cast<std::size_t>(page_raster.width) +
+             static_cast<std::size_t>(left)) *
+                3u;
+        auto* dst = cropped.rgb.data() +
+                    static_cast<std::size_t>(row) *
+                        static_cast<std::size_t>(tw) * 3u;
+        std::memcpy(dst, src, static_cast<std::size_t>(tw) * 3u);
+      }
+      cell_raster = std::move(cropped);
+    }
+  }
+
+  if (!cell_raster) {
+    cell_raster =
+        pdf_rasterize_page_region(path, page_1based, dpi, left, top, tw, th);
+  }
 
   if (cell_raster && cell_raster->width > 0 && cell_raster->height > 0) {
     const int tol = 2;
