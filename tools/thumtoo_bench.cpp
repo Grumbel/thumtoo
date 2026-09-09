@@ -53,7 +53,14 @@ void usage(const char* argv0) {
       << "  1. size probe\n"
       << "  2. preview JXL (--ladder EDGE)\n"
       << "  3. single tile cell (--tile-cell)\n"
-      << "  4. tile pyramid (--tiles, limited by --min-scale/--max-scale)\n";
+      << "  4. tile pyramid (--tiles, limited by --min-scale/--max-scale)\n"
+      << "\n"
+      << "Notes:\n"
+      << "  Archives (especially solid RAR/CBR): one sequential libarchive pass\n"
+      << "  extracts members; encode then parallelizes across --jobs. Solid RAR\n"
+      << "  cannot seek — wall time tracks decompress+disk more than CPU.\n"
+      << "  --tiles builds full pyramids (scale 0..) for every image member.\n"
+      << "  Prefer --tile-cell or --min-scale 2 for a faster smoke test.\n";
 }
 
 struct PhaseResult {

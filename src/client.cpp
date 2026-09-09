@@ -15,6 +15,7 @@
 #include "thumtoo/blob_store.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <deque>
 #include <unordered_map>
 #include <cctype>
@@ -1024,43 +1025,89 @@ void Client::worker_main() {
         }
       }
 
+      // Prefer in-process extract cache (filled by a prior pass) so we do not
+      // open a solid RAR twice and so post-extract encode can run in parallel.
+      std::unordered_map<std::string, std::vector<std::uint8_t>> extracted;
       std::vector<std::string> extract_members;
       extract_members.reserve(batch.size());
       for (size_t i = 0; i < batch.size(); ++i) {
         if (!need_extract[i]) continue;
-        if (i < members.size() && !members[i].empty())
+        if (i >= members.size() || members[i].empty()) continue;
+        if (auto cached = extract_cache_get(archive_path, members[i])) {
+          extracted.emplace(members[i], std::move(*cached));
+        } else {
           extract_members.push_back(members[i]);
-      }
-
-      std::unordered_map<std::string, std::vector<std::uint8_t>> extracted;
-      if (!extract_members.empty()) {
-        extracted = extract_archive_members(archive_path, extract_members);
-        for (const auto& kv : extracted) {
-          extract_cache_put(archive_path, kv.first, kv.second);
         }
       }
 
+      if (!extract_members.empty()) {
+        auto from_disk = extract_archive_members(archive_path, extract_members);
+        for (auto& kv : from_disk) {
+          extract_cache_put(archive_path, kv.first, kv.second);
+          extracted[kv.first] = std::move(kv.second);
+        }
+      }
+
+      // Build work list: one entry per remaining job with optional preextracted.
+      struct BatchItem {
+        size_t index = 0;
+        std::optional<std::vector<std::uint8_t>> pre;
+      };
+      std::vector<BatchItem> items;
+      items.reserve(batch.size());
       for (size_t i = 0; i < batch.size(); ++i) {
         if (!need_extract[i]) continue;
-        try {
-          std::optional<std::vector<std::uint8_t>> pre;
-          if (i < members.size() && !members[i].empty()) {
-            if (auto it = extracted.find(members[i]); it != extracted.end()) {
-              pre = std::move(it->second);
-            }
+        BatchItem it;
+        it.index = i;
+        if (i < members.size() && !members[i].empty()) {
+          if (auto found = extracted.find(members[i]); found != extracted.end()) {
+            it.pre = found->second;  // copy: parallel workers may share source
           }
+        }
+        items.push_back(std::move(it));
+      }
+
+      // One archive batch used to run every pyramid on *this* worker after the
+      // sequential extract — other pool threads sat idle (low CPU, long wall).
+      // Parallelize encode/probe work; extract stays single-threaded above.
+      auto run_one = [&](BatchItem& it) {
+        try {
+          Job& j = batch[it.index];
           if (batch_kind == JobKind::ProbeSize)
-            handle_probe_size(batch[i], pre);
+            handle_probe_size(j, it.pre);
           else if (batch_kind == JobKind::EnsureTiles)
-            handle_ensure_tiles(batch[i], pre);
+            handle_ensure_tiles(j, it.pre);
           else if (batch_kind == JobKind::EnsurePixels)
-            handle_ensure_pixels(batch[i], pre);
+            handle_ensure_pixels(j, it.pre);
+          else if (batch_kind == JobKind::EnsureLqip)
+            handle_ensure_lqip(j);
         } catch (...) {
         }
         {
           std::lock_guard lock(mu_);
           --inflight_;
         }
+      };
+
+      if (items.size() <= 1) {
+        for (auto& it : items) run_one(it);
+      } else {
+        std::atomic<std::size_t> next{0};
+        const unsigned helpers = std::min(
+            static_cast<unsigned>(items.size()),
+            std::max(1u, workers_.size()));
+        std::vector<std::thread> pool;
+        pool.reserve(helpers);
+        for (unsigned t = 0; t < helpers; ++t) {
+          pool.emplace_back([&] {
+            for (;;) {
+              const std::size_t k = next.fetch_add(1, std::memory_order_relaxed);
+              if (k >= items.size()) return;
+              run_one(items[k]);
+            }
+          });
+        }
+        for (auto& th : pool) th.join();
       }
       continue;
     }

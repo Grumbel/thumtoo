@@ -1,3 +1,15 @@
+## Archive batch parallel encode — **thumtoo-090**
+
+`thumtoo-bench --tiles foo.rar` looked "stuck" with low CPU: coalesce ran
+one sequential RAR extract then every pyramid on a single worker.
+
+- [x] Hit extract_cache before opening the archive again
+- [x] Parallelize post-extract probe/tile/pixel work across pool threads
+- [x] Bench help notes solid RAR / --tiles cost
+- [x] Bundle thumtoo-090
+
+---
+
 ## Fix: LQIP must not starve tile workers — **thumtoo-088**
 
 Inline Handsum after the first tile blocked the same worker from encoding
