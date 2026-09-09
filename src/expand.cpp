@@ -123,3 +123,17 @@ std::vector<std::string> expand_pdf_image_uris(const std::filesystem::path& path
   }
   return out;
 }
+
+std::vector<std::string> expand_pdf_images_collection_uri(std::string_view uri,
+                                                          int max_images) {
+  if (!is_pdf_images_collection_uri(uri)) return {};
+  // Strip //pdfimages (and any trailing junk) to get file base.
+  auto path = path_from_file_uri(uri);
+  if (!path) {
+    // Plain path + //pdfimages
+    auto pos = uri.find("//pdfimages");
+    if (pos == std::string_view::npos) return {};
+    path = std::filesystem::path(std::string(uri.substr(0, pos)));
+  }
+  return expand_pdf_image_uris(*path, max_images);
+}

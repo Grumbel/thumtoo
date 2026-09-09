@@ -1,3 +1,9 @@
+## Plan / work — bundle `thumtoo-118-pdfimages-collection`
+
+`//pdfimages` collection expand to `//pdfimage:1..N`.
+
+---
+
 
 ## Plan / work (2026-09-09) — bundle `thumtoo-112-pixel-filters-design`
 

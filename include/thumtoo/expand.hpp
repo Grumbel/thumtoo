@@ -32,4 +32,10 @@ namespace thumtoo {
 [[nodiscard]] std::vector<std::string> expand_pdf_image_uris(
     const std::filesystem::path& path, int max_images = 4096);
 
+/// If @p uri is a //pdfimages collection (or bare PDF path policy), expand to
+/// leaf locators. For `…//pdfimages` returns //pdfimage:1..N; otherwise empty
+/// (caller should use expand_media_uris on the filesystem path).
+[[nodiscard]] std::vector<std::string> expand_pdf_images_collection_uri(
+    std::string_view uri, int max_images = 4096);
+
 }  // namespace thumtoo

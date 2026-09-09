@@ -30,6 +30,9 @@ namespace thumtoo {
 /// True if uri contains //pdfimage:N (embedded image extract, 1-based).
 [[nodiscard]] bool is_pdf_image_uri(std::string_view uri);
 
+/// True if uri ends a collection expand directive //pdfimages (no index).
+[[nodiscard]] bool is_pdf_images_collection_uri(std::string_view uri);
+
 /// True if scheme is http: or https: (fetch not implemented yet).
 [[nodiscard]] bool is_http_uri(std::string_view uri);
 
@@ -64,6 +67,7 @@ enum class LocationPipeKind {
   PdfPagePoppler,  // …//poppler-page:N
   PdfPageMupdf,    // …//mupdf-page:N
   PdfImage,        // …//pdfimage:N (1-based embedded image, native res)
+  PdfImages,       // …//pdfimages (expand to all embedded images)
 };
 
 struct LocationPipe {
@@ -96,6 +100,9 @@ struct Location {
 
 /// Append //pdfimage:N (1-based document-order embedded image).
 [[nodiscard]] std::string with_pdf_image(std::string_view base_uri, int image_1based);
+
+/// Append //pdfimages collection directive (expand via expand_pdf_image_uris).
+[[nodiscard]] std::string with_pdf_images(std::string_view base_uri);
 
 /// Append //poppler-page:N or //mupdf-page:N for explicit backend comparison.
 [[nodiscard]] std::string with_pdf_page_poppler(std::string_view base_uri,

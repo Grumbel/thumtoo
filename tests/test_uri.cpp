@@ -69,6 +69,12 @@ int main() {
                loc->pipes.back().kind == LocationPipeKind::PdfImage &&
                loc->pipes.back().value == "3",
            "pdfimage pipe");
+    auto coll = with_pdf_images(file_uri_from_path("/tmp/scan.pdf"));
+    expect(is_pdf_images_collection_uri(coll), "pdfimages collection");
+    auto cloc = parse_location(coll);
+    expect(cloc && !cloc->pipes.empty() &&
+               cloc->pipes.back().kind == LocationPipeKind::PdfImages,
+           "pdfimages pipe kind");
   }
 
   {

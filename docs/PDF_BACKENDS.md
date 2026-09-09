@@ -56,3 +56,12 @@ file:///book.pdf//pdfimage:1
   (includes one-level Form XObject nesting).
 - Expand helper: `expand_pdf_image_uris(path)` → `//pdfimage:1..N`.
 - Default `expand_media_uris` for PDFs still uses `//page:N` (rendered pages).
+
+### Collection expand: `//pdfimages`
+
+```
+file:///book.pdf//pdfimages
+```
+
+Expands to `//pdfimage:1` … `//pdfimage:N` via `expand_pdf_images_collection_uri`
+/ `expand_pdf_image_uris`. Bare `file.pdf` still expands to rendered `//page:N`.

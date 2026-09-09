@@ -104,6 +104,13 @@ bool parse_pipes(std::string_view rest, std::vector<LocationPipe>& out) {
       pipe.value = std::string(after.substr(0, n));
       out.push_back(std::move(pipe));
       i = next + tag.size() + n;
+    } else if (hit == PipeHit::PdfImages) {
+      // Collection directive — no index; value empty.
+      LocationPipe pipe;
+      pipe.kind = LocationPipeKind::PdfImages;
+      pipe.value.clear();
+      out.push_back(std::move(pipe));
+      i = next + kPdfImagesPipe.size();
     } else if (hit == PipeHit::PdfImage) {
       std::string_view after = rest.substr(next + kPdfImagePipe.size());
       std::size_t n = 0;
@@ -190,6 +197,10 @@ bool is_pdf_page_uri(std::string_view uri) {
 
 bool is_pdf_image_uri(std::string_view uri) {
   return uri.find(kPdfImagePipe) != std::string_view::npos;
+}
+
+bool is_pdf_images_collection_uri(std::string_view uri) {
+  return uri.find(kPdfImagesPipe) != std::string_view::npos;
 }
 
 bool is_http_uri(std::string_view uri) {
@@ -313,6 +324,9 @@ std::string format_location(const Location& loc) {
       case LocationPipeKind::PdfImage:
         out += "//pdfimage:";
         out += pipe.value;
+        break;
+      case LocationPipeKind::PdfImages:
+        out += "//pdfimages";
         break;
     }
   }
