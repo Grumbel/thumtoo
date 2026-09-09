@@ -30,12 +30,12 @@ file:///data/doc.pdf//mupdf-page:1
 
 - Per-worker TLS: `fz_context`, document, page, **display list**
 - Region tiles: `fz_run_display_list` with page-space clip (list built once per page)
-- Image-heavy gate: text-density heuristic for now (real image coverage later)
+- Image-heavy gate: `fz_stext` image blocks (coverage) + sparse-text fallback
 
 ## Status
 
 - [x] URI pipes + `PdfBackend`
 - [x] MuPDF module + cmake/flake
 - [x] Dispatch count / size / raster / tiles by backend
-- [ ] Galapix min_scale uses backend from URI
-- [ ] Richer MuPDF image coverage
+- [x] Galapix min_scale uses backend from URI
+- [x] MuPDF image coverage via structured-text image blocks

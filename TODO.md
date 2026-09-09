@@ -5,10 +5,10 @@
 - [x] MuPDF module + cmake/flake (`THUMTOO_HAVE_MUPDF`)
 - [x] Dispatch render/count/stats by backend
 - [x] Default `//page:` → MuPDF when available (`pdf_resolve_backend`)
-- [ ] Galapix min_scale + URI backend
-- [ ] MuPDF image coverage (display-list filter)
+- [x] Galapix min_scale + URI backend (galapix-165)
+- [x] MuPDF image coverage via fz_stext image blocks
 
-Tip: **thumtoo-095**.
+Tip: **thumtoo-096**.
 
 ---
 

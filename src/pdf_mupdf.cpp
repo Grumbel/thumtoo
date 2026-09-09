@@ -222,30 +222,50 @@ PdfPageContentStats mupdf_page_content_stats(const std::filesystem::path& path,
   const double page_h = std::max(1.0, box.y1 - box.y0);
   const double page_area = page_w * page_h;
 
-  // Text density via structured text (cheap vs full render).
+  // One structured-text pass: characters + image blocks (with bboxes).
+  fz_stext_options opts{};
+  opts.flags = 0;
   fz_stext_page* stext = nullptr;
   fz_try(ctx) {
-    stext = fz_new_stext_page_from_page(ctx, page, nullptr);
+    stext = fz_new_stext_page_from_page(ctx, page, &opts);
   }
   fz_catch(ctx) { stext = nullptr; }
   if (stext) {
     for (fz_stext_block* block = stext->first_block; block; block = block->next) {
-      if (block->type != FZ_STEXT_BLOCK_TEXT) continue;
-      for (fz_stext_line* line = block->u.t.first_line; line; line = line->next) {
-        for (fz_stext_char* ch = line->first_char; ch; ch = ch->next) {
-          if (ch->c > 32) ++st.text_chars;
+      if (block->type == FZ_STEXT_BLOCK_TEXT) {
+        for (fz_stext_line* line = block->u.t.first_line; line; line = line->next) {
+          for (fz_stext_char* ch = line->first_char; ch; ch = ch->next) {
+            if (ch->c > 32) ++st.text_chars;
+          }
+        }
+      } else if (block->type == FZ_STEXT_BLOCK_IMAGE) {
+        ++st.image_count;
+        const double w = std::abs(static_cast<double>(block->bbox.x1 - block->bbox.x0));
+        const double h = std::abs(static_cast<double>(block->bbox.y1 - block->bbox.y0));
+        if (w > 0 && h > 0) {
+          st.image_coverage = (st.image_coverage < 0 ? 0 : st.image_coverage) +
+                              (w * h) / page_area;
         }
       }
     }
     fz_drop_stext_page(ctx, stext);
   }
 
-  // Image coverage: walk display list with a thin device is heavy; for now
-  // approximate image-heavy as sparse text (same threshold as Poppler fallback).
-  // TODO: fz_bound_display_list image filter for real coverage.
-  st.image_coverage = -1.0;
-  const double text_density = static_cast<double>(st.text_chars) / page_area;
-  st.image_heavy = text_density < kPdfSparseTextPerPoint2;
+  if (st.image_coverage < 0) {
+    st.image_coverage = 0;
+  }
+  st.image_coverage = std::min(1.0, st.image_coverage);
+
+  st.image_heavy = st.image_coverage >= kPdfImageHeavyCoverage;
+  if (st.image_count == 1 && st.image_coverage >= 0.35) {
+    st.image_heavy = true;
+  }
+  if (st.image_count == 0) {
+    const double text_density = static_cast<double>(st.text_chars) / page_area;
+    if (text_density < kPdfSparseTextPerPoint2) {
+      st.image_heavy = true;
+    }
+  }
   return st;
 #endif
 }
