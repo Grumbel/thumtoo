@@ -555,11 +555,10 @@ std::optional<std::vector<std::uint8_t>> Client::extract_cache_get(
   std::lock_guard lock(extract_cache_mu_);
   auto it = extract_cache_.find(extract_cache_key(archive, member));
   if (it == extract_cache_.end()) return std::nullopt;
-  // Touch LRU (const method, but cache is mutable for LRU bookkeeping).
-  auto& self = const_cast<Client&>(*this);
-  self.extract_cache_lru_.erase(it->second.lru_it);
-  self.extract_cache_lru_.push_front(it->first);
-  it->second.lru_it = self.extract_cache_lru_.begin();
+  // Touch LRU (maps are mutable).
+  extract_cache_lru_.erase(it->second.lru_it);
+  extract_cache_lru_.push_front(it->first);
+  it->second.lru_it = extract_cache_lru_.begin();
   return it->second.bytes;
 }
 

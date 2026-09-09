@@ -275,13 +275,14 @@ class Client {
 
   mutable std::mutex extract_cache_mu_;
   /// LRU: front = most recently used. Values hold bytes + list iterator.
+  /// Cache maps are mutable so const get() can touch the LRU order.
   struct ExtractCacheEntry {
     std::vector<std::uint8_t> bytes;
     std::list<std::string>::iterator lru_it;
   };
-  std::list<std::string> extract_cache_lru_;
-  std::unordered_map<std::string, ExtractCacheEntry> extract_cache_;
-  std::size_t extract_cache_bytes_ = 0;
+  mutable std::list<std::string> extract_cache_lru_;
+  mutable std::unordered_map<std::string, ExtractCacheEntry> extract_cache_;
+  mutable std::size_t extract_cache_bytes_ = 0;
 
   mutable std::mutex http_cache_mu_;
   std::unordered_map<std::string, std::vector<std::uint8_t>> http_cache_;
