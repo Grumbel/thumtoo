@@ -27,7 +27,7 @@
 - [x] test_pdf_tiles: denser fixture text (avoid sparse-text image_heavy gate)
 - [x] MuPDF region scissor is device-space (fix white bottom tiles)
 
-Tip: **thumtoo-105**.
+Tip: **thumtoo-106**.
 
 ---
 

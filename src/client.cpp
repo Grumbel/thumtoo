@@ -11,6 +11,7 @@
 #include "thumtoo/archive.hpp"
 #include "thumtoo/pdf.hpp"
 #include "thumtoo/djvu.hpp"
+#include "thumtoo/epub.hpp"
 #include "thumtoo/format.hpp"
 #include "thumtoo/blob_store.hpp"
 
