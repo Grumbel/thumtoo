@@ -23,7 +23,10 @@ Unlike PDF, page index and pixel size depend on:
 | `h` | **pixels** at `kEpubLayoutDpi` | Virtual page height |
 | `fs` | points | MuPDF default font size (`fz_layout_document` em arg) |
 | `mt`/`mr`/`mb`/`ml` | **pixels** at `kEpubLayoutDpi` | Top/right/bottom/left margin (optional) |
-| `lh` | int percent | Line height ×100 (`140` → 1.4); omit for book default |
+| `lh` | int percent | Line height ×100 (`140` → 1.4); default **140** |
+| `cols` | int 1–6 | CSS `column-count` (omit when 1) |
+| `cgap` | pixels @ layout DPI | CSS `column-gap` when `cols` > 1 |
+| `align` | token | `publisher` / `left` / `right` / `center` / `justify` |
 | `ff` | token | `publisher` (default) / `serif` / `sans` / `mono` |
 | `theme` | token | `day` (default) / `sepia` / `night` |
 | `pubcss` | 0 or 1 | `1` (default) use publication CSS; `0` ignore it |

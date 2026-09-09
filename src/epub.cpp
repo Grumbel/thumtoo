@@ -32,6 +32,9 @@ struct TlsEpub {
   int mb_px = 0;
   int ml_px = 0;
   int lh_percent = 0;
+  int cols = 1;
+  int cgap_px = 0;
+  int align = 0;
   int font = 0;
   int theme = 0;
   bool use_document_css = true;
@@ -73,6 +76,9 @@ void tls_drop_doc() {
   g_tls.mb_px = 0;
   g_tls.ml_px = 0;
   g_tls.lh_percent = 0;
+  g_tls.cols = 1;
+  g_tls.cgap_px = 0;
+  g_tls.align = 0;
   g_tls.font = 0;
   g_tls.theme = 0;
   g_tls.use_document_css = true;
@@ -105,17 +111,23 @@ fz_document* tls_document(const std::filesystem::path& path,
   if (L.mr_px < 0) L.mr_px = 0;
   if (L.mb_px < 0) L.mb_px = 0;
   if (L.ml_px < 0) L.ml_px = 0;
+  if (L.lh_percent < 0) L.lh_percent = 0;
+  if (L.cols < 1) L.cols = 1;
+  if (L.cols > 6) L.cols = 6;
+  if (L.cgap_px < 0) L.cgap_px = 0;
 
   std::error_code ec;
   const auto mtime = std::filesystem::last_write_time(path, ec);
   const std::string key = path.lexically_normal().string();
   const int font_i = static_cast<int>(L.font);
   const int theme_i = static_cast<int>(L.theme);
+  const int align_i = static_cast<int>(L.align);
   if (g_tls.doc && g_tls.path_key == key && !ec && g_tls.mtime == mtime &&
       g_tls.width_px == L.width_px && g_tls.height_px == L.height_px &&
       g_tls.fs_pt == L.fs_pt && g_tls.mt_px == L.mt_px && g_tls.mr_px == L.mr_px &&
       g_tls.mb_px == L.mb_px && g_tls.ml_px == L.ml_px &&
-      g_tls.lh_percent == L.lh_percent && g_tls.font == font_i &&
+      g_tls.lh_percent == L.lh_percent && g_tls.cols == L.cols &&
+      g_tls.cgap_px == L.cgap_px && g_tls.align == align_i && g_tls.font == font_i &&
       g_tls.theme == theme_i && g_tls.use_document_css == L.use_document_css &&
       g_tls.laid_out) {
     return g_tls.doc;
@@ -167,6 +179,26 @@ fz_document* tls_document(const std::filesystem::path& path,
       css += "line-height: ";
       css += std::to_string(L.lh_percent / 100.0);
       css += " !important; ";
+    }
+    if (L.cols > 1) {
+      css += "column-count: ";
+      css += std::to_string(L.cols);
+      css += " !important; column-fill: auto !important; ";
+      if (L.cgap_px > 0) {
+        const float gap_pt = static_cast<float>(L.cgap_px) * 72.f / dpi;
+        css += "column-gap: ";
+        css += std::to_string(gap_pt);
+        css += "pt !important; ";
+      }
+    }
+    if (L.align == EpubAlign::Left) {
+      css += "text-align: left !important; ";
+    } else if (L.align == EpubAlign::Right) {
+      css += "text-align: right !important; ";
+    } else if (L.align == EpubAlign::Center) {
+      css += "text-align: center !important; ";
+    } else if (L.align == EpubAlign::Justify) {
+      css += "text-align: justify !important; ";
     }
     if (L.font == EpubFontFamily::Serif) {
       css += "font-family: serif !important; ";
@@ -227,6 +259,9 @@ fz_document* tls_document(const std::filesystem::path& path,
   g_tls.mb_px = L.mb_px;
   g_tls.ml_px = L.ml_px;
   g_tls.lh_percent = L.lh_percent;
+  g_tls.cols = L.cols;
+  g_tls.cgap_px = L.cgap_px;
+  g_tls.align = align_i;
   g_tls.font = font_i;
   g_tls.theme = theme_i;
   g_tls.use_document_css = L.use_document_css;

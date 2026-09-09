@@ -339,6 +339,8 @@ EpubLayout default_epub_layout() {
   L.width_px = kEpubDefaultPageWidthPx;
   L.height_px = kEpubDefaultPageHeightPx;
   L.fs_pt = kEpubDefaultFontSizePt;
+  L.lh_percent = kEpubDefaultLineHeightPercent;
+  L.cols = 1;
   return L;
 }
 
@@ -376,6 +378,25 @@ EpubTheme parse_theme(std::string_view v) {
   return EpubTheme::Day;
 }
 
+const char* align_token(EpubAlign a) {
+  switch (a) {
+    case EpubAlign::Left: return "left";
+    case EpubAlign::Right: return "right";
+    case EpubAlign::Center: return "center";
+    case EpubAlign::Justify: return "justify";
+    case EpubAlign::Publisher:
+    default: return "publisher";
+  }
+}
+
+EpubAlign parse_align(std::string_view v) {
+  if (v == "left") return EpubAlign::Left;
+  if (v == "right") return EpubAlign::Right;
+  if (v == "center" || v == "centre") return EpubAlign::Center;
+  if (v == "justify") return EpubAlign::Justify;
+  return EpubAlign::Publisher;
+}
+
 }  // namespace
 
 std::string format_epub_layout_params(const EpubLayout& layout) {
@@ -389,6 +410,8 @@ std::string format_epub_layout_params(const EpubLayout& layout) {
   if (L.mb_px < 0) L.mb_px = 0;
   if (L.ml_px < 0) L.ml_px = 0;
   if (L.lh_percent < 0) L.lh_percent = 0;
+  if (L.cols < 1) L.cols = 1;
+  if (L.cgap_px < 0) L.cgap_px = 0;
   std::string out = "w=";
   out += std::to_string(L.width_px);
   out += ",h=";
@@ -405,9 +428,22 @@ std::string format_epub_layout_params(const EpubLayout& layout) {
     out += ",ml=";
     out += std::to_string(L.ml_px);
   }
+  // Always emit lh when non-zero (default profile includes 140).
   if (L.lh_percent > 0) {
     out += ",lh=";
     out += std::to_string(L.lh_percent);
+  }
+  if (L.cols > 1) {
+    out += ",cols=";
+    out += std::to_string(L.cols);
+    if (L.cgap_px > 0) {
+      out += ",cgap=";
+      out += std::to_string(L.cgap_px);
+    }
+  }
+  if (L.align != EpubAlign::Publisher) {
+    out += ",align=";
+    out += align_token(L.align);
   }
   if (L.font != EpubFontFamily::Publisher) {
     out += ",ff=";
@@ -467,8 +503,13 @@ EpubLayout parse_epub_layout_params(std::string_view params) {
     } else if (key == "ml" && as_int(&n) && n >= 0) {
       L.ml_px = n;
     } else if (key == "lh" && as_int(&n) && n >= 50 && n <= 400) {
-      // Accept 140 (=1.4) or legacy-style 140% integers only.
       L.lh_percent = n;
+    } else if ((key == "cols" || key == "columns") && as_int(&n) && n >= 1 && n <= 6) {
+      L.cols = n;
+    } else if ((key == "cgap" || key == "colgap") && as_int(&n) && n >= 0) {
+      L.cgap_px = n;
+    } else if (key == "align") {
+      L.align = parse_align(val);
     } else if (key == "ff") {
       L.font = parse_font_family(val);
     } else if (key == "theme") {

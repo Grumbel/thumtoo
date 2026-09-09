@@ -91,18 +91,27 @@ int main() {
                parsed_m.ml_px == 16,
            "epub margin params roundtrip");
     EpubLayout rich = layout;
-    rich.lh_percent = 140;
+    rich.lh_percent = 150;
+    rich.cols = 2;
+    rich.cgap_px = 48;
+    rich.align = EpubAlign::Justify;
     rich.font = EpubFontFamily::Serif;
     rich.theme = EpubTheme::Night;
     rich.use_document_css = false;
     auto fr = format_epub_layout_params(rich);
-    expect(fr.find("lh=140") != std::string::npos && fr.find("ff=serif") != std::string::npos &&
-               fr.find("theme=night") != std::string::npos && fr.find("pubcss=0") != std::string::npos,
+    expect(fr.find("lh=150") != std::string::npos && fr.find("cols=2") != std::string::npos &&
+               fr.find("cgap=48") != std::string::npos && fr.find("align=justify") != std::string::npos &&
+               fr.find("ff=serif") != std::string::npos && fr.find("theme=night") != std::string::npos &&
+               fr.find("pubcss=0") != std::string::npos,
            "epub reader keys in format");
     auto pr = parse_epub_layout_params(fr);
-    expect(pr.lh_percent == 140 && pr.font == EpubFontFamily::Serif &&
+    expect(pr.lh_percent == 150 && pr.cols == 2 && pr.cgap_px == 48 &&
+               pr.align == EpubAlign::Justify && pr.font == EpubFontFamily::Serif &&
                pr.theme == EpubTheme::Night && !pr.use_document_css,
            "epub reader keys roundtrip");
+    // Default layout includes lh=140
+    auto def = format_epub_layout_params(default_epub_layout());
+    expect(def.find("lh=140") != std::string::npos, "default emits lh");
   }
 
   // PDF inside archive

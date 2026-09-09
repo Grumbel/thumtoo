@@ -67,6 +67,8 @@ inline constexpr int kEpubDefaultPageWidthPx = 900;
 inline constexpr int kEpubDefaultPageHeightPx = 1350;
 /// Body text size; also forced via user CSS so document styles cannot ignore it.
 inline constexpr int kEpubDefaultFontSizePt = 15;
+/// Default line-height ×100 (140 → 1.4).
+inline constexpr int kEpubDefaultLineHeightPercent = 140;
 /// Layout pixel density for EPUB pages (same convention as PDF layout DPI).
 inline constexpr int kEpubLayoutDpi = 144;
 

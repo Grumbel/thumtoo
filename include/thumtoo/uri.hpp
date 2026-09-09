@@ -111,9 +111,18 @@ enum class EpubTheme {
   Night,
 };
 
+/// Body text alignment for //epub: align=
+enum class EpubAlign {
+  Publisher = 0,  // do not force
+  Left,
+  Right,
+  Center,
+  Justify,
+};
+
 /// EPUB layout profile for //epub: URIs (reader policy; not part of the EPUB format).
 /// w/h are pixels at kEpubLayoutDpi; fs is font size in points; margins in pixels.
-/// lh / ff / theme / pubcss are applied via MuPDF user CSS (+ use_document_css).
+/// lh / cols / cgap / align / ff / theme / pubcss → MuPDF user CSS (+ use_document_css).
 struct EpubLayout {
   int width_px = 0;
   int height_px = 0;
@@ -122,8 +131,13 @@ struct EpubLayout {
   int mr_px = 0;
   int mb_px = 0;
   int ml_px = 0;
-  /// Line height as percent (140 = 1.4). 0 = engine/book default (omit from CSS).
+  /// Line height as percent (140 = 1.4). Default 140; 0 = omit from CSS.
   int lh_percent = 0;
+  /// CSS column-count (1 = single column / omit).
+  int cols = 1;
+  /// Column gap in pixels at kEpubLayoutDpi (0 = CSS default when cols > 1).
+  int cgap_px = 0;
+  EpubAlign align = EpubAlign::Publisher;
   EpubFontFamily font = EpubFontFamily::Publisher;
   EpubTheme theme = EpubTheme::Day;
   /// When false, MuPDF ignores publication CSS (pubcss=0).
