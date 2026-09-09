@@ -130,54 +130,103 @@ handle_ensure_tiles (non-pyramid):
 
 Reply-before-durable-store is already implemented (live paint first).
 
-### 4.3 `src/client.cpp` — orchestration (partial)
+### 4.3 `src/client.cpp` — orchestration
 
-- `get_size`: cache only.
-- `request_size` / probe handlers: hash caching (thumtoo-070); PDF/DjVu
-  size without LQIP raster on probe (fixed); LQIP backfill separate.
-- `ensure_lqip`: page-aware for PDF/DjVu after thumtoo-069.
-- `request_tile` / pyramid: routes to `build_tile_cell*` or PDF/DjVu
-  builders; archive bytes via extract cache.
-- Multi-worker queue; interactive FIFO (thumtoo-062 era).
-- Same-archive coalesce for probe and tiles.
+**Cache-only reads (GUI-safe)**
+- `get_size` / `get_meta` / `get_lqip` / `get_tile` / `get_pixels`: SQLite +
+  blob only. Warm path has no source I/O.
 
-**Open questions for deeper pass**
-- Exact condition when `decode_cache_key` is passed into
-  `build_tile_cell_buffer` (does interactive single cell pass empty key?).
-- Whether warm `get_tile` avoids all decode (expected yes).
+**Size probe (`handle_probe_size`)**
+- If width/height already Ready/Incomplete: return immediately; optional
+  LQIP *backfill* if missing (`store_lqip_if_missing` on file path).
+- PDF/DjVu: layout size only (72dpi media box / ddjvu); status Incomplete;
+  **no** LQIP on probe (thumtoo-070).
+- Archive member: `member_bytes` (extract cache) → `probe_image_buffer` →
+  status Incomplete. Probe itself is sequential Vips open (header-class for
+  JPEG). **Does not** call LQIP in the archive branch of the final
+  size_out block (only plain file://).
+- HTTP: fetch → probe buffer → **does** `store_lqip_if_missing` on bytes.
+- Plain file://: probe → Incomplete → **`store_lqip_if_missing` on path**
+  (LQIP still coupled to first size probe for local images).
+
+**LQIP (`store_lqip_if_missing` / `ensure_lqip`)**
+- Prefer Handsum (magic `FE D6`); replace legacy ThumbHash.
+- Raster sources:
+  - RGB888 → encode
+  - path → `lqip_thumbhash_from_file` → `vips_thumbnail(..., 32)`
+  - buffer → `vips_thumbnail_buffer(..., 32)`
+- PDF/DjVu in `ensure_lqip`: dedicated page raster at edge 64 (not Vips).
+- Archive in `ensure_lqip`: full member extract then thumbnail_buffer 32.
+- **Bug/design smell:** cold size probe for plain files still pays
+  thumbnail-32 + Handsum on the same worker job as dimensions. Galapix
+  only *reads* `get_lqip` on the UI thread (good), but first open still
+  generates LQIP before size callback returns for that URI.
+
+**Tiles**
+- Warm: `get_tile` then reply; no decode of source.
+- Cold interactive: see §4.2 (no JPEG shrink on hot path).
+- Reply-before-durable-JPEG-store for live paint (good for TTFB).
+- Extract cache 512 MiB; on overflow **clears entire map** (not LRU).
+
+**Workers**
+- Shared SQLite WAL; recursive_mutex on DB/BlobStore (thumtoo-051).
+- Interactive tile queue FIFO (starve fixes in galapix history).
 
 ### 4.4 `src/archive.cpp`
 
-- Sequential libarchive walk for TOC.
-- Member extract; Client holds process-RAM extract cache (512 MiB).
-- No comparison yet vs `unzip -p` / `unrar p` random access (benchmark).
+- `read_archive_toc`: sequential libarchive headers only (skip data).
+- `extract_archive_members`: single sequential pass; collect wanted members.
+- No random-access API; RAR/solid archives are inherently sequential.
+- Client `member_bytes`: preextracted → RAM cache → extract one member
+  (which still walks the archive until that header).
+- Benchmark needed: N random members via libarchive vs `unzip -p` vs
+  (if present) `unrar p`.
 
-### 4.5 `src/lqip.cpp` / `src/handsum.cpp`
+### 4.5 LQIP encode (`lqip.cpp` / `handsum.cpp` / `image.cpp` helpers)
 
-- Pure encode from RGBA; cost is dominated by obtaining the small raster
-  upstream, not the hash math.
-- Historical bug: LQIP tied to size probe → full decode; mitigated for
-  multipage docs.
+- Encode cost is small vs obtaining RGBA.
+- `vips_thumbnail` edge 32 is **medium** (JPEG shrink-on-load), not full-res
+  for JPEG — but still non-trivial I/O + decode, and runs on size probe.
+- Does **not** try EXIF embedded thumb first (ladder does; LQIP does not).
 
 ### 4.6 `src/pdf.cpp` / `src/djvu.cpp`
 
 - Region/page raster at needed resolution for tiles; blank DjVu → white
   (thumtoo-075).
 - Must never go through Vips/Magick (thumtoo-073).
+- Live interactive tiles: rgb888; durable JPEG only above scale threshold.
 
 ### 4.7 Schema / blobs
 
 - Tiles: `(content_id, scale, x, y, width, height, codec, quality)`.
-- No column for `source_path` quality class (HQ full-decode vs shrink=8).
+- No column for decode path / quality class (HQ full vs shrink=N vs embedded).
 - Ladder levels in `blobs.sqlite` separately from tiles.
+- LQIP on content row (kind + blob).
 
-## 5. Galapix consumption (outline)
+## 5. Galapix consumption
 
-- `ThumtooTileProvider` + async size probe (`SizeProbeSession`).
-- Overview LQIP path (`ImageOverview`) — must not block UI (galapix-082).
-- Time to first pixel: warm cache should be SQLite get + decode JPEG tile
-  + GL upload; cold = probe + extract + generate.
-- Existing benches: `open_phase_bench`, `GALAPIX_OPEN_TIMING`, `thumtoo-bench`.
+### 5.1 Time-to-first-pixel paths
+
+| Stage | Cold cache | Warm cache |
+|-------|------------|------------|
+| Size | `request_size` + worker probe (+ LQIP for plain files) | `get_size` ~instant |
+| Soft underlay | `get_lqip` miss until probe/EnsurePixels fills; UI never `ensure_lqip` | `get_lqip` + Handsum decode on main thread |
+| Coarse tile | extract + **full** decode + shrink ladder + JPEG | `get_tile` + JPEG decode + GL |
+| Overview levels | `request_pixels` / tile max_scale after budget | cache hit |
+
+### 5.2 `ImageOverview` (galapix)
+
+- thumtoo path: **only** `get_lqip` on GUI; retry each frame; never
+  `ensure_lqip` (galapix-082).
+- Non-thumtoo: `OverviewLoadJob` + libjpeg DCT scale (historical path).
+- `ensure_levels` after grid budget; postage-stamp ≤128 stays LQIP-only.
+
+### 5.3 Existing measurement tools
+
+- `thumtoo-bench`, `open_phase_bench`, `GALAPIX_OPEN_TIMING` (see
+  galapix `BENCHMARKS.md`).
+- Gap: no microbench isolating JPEG shrink vs full, archive extract
+  strategies, or quality metrics — addressed in §7.
 
 ## 6. Things we could do but do not (yet)
 
@@ -218,6 +267,13 @@ Output: machine-readable JSON + markdown table in this doc.
 ## 8. Progress log
 
 - 2026-09-09: Initial taxonomy and image.cpp findings written.
-- Next: finish client.cpp call graph for decode_cache_key; implement
-  microbench tool; run numbers.
+- 2026-09-09: Client/LQIP/archive/galapix paths documented; JPEG shrink
+  dead on interactive hot path confirmed.
+- 2026-09-09: Pillow microbench corpus + results in
+  `docs/MICROBENCH_RESULTS.md` (size_only ~0.03ms; draft scale only
+  1.3–2.3× vs full on large JPEG; PIL thumb32 on 8K ~207ms).
+- 2026-09-09: `tools/microbench_decode.cpp` + CMake target
+  `thumtoo-microbench-decode` (needs vips build).
+- Next: run vips microbench under nix; RAR corpus; fix interactive
+  JPEG shrink (design discussion); optional `tile_quality` schema.
 

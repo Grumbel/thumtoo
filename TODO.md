@@ -851,14 +851,16 @@ Goal: exhaustive audit of thumbnail / ladder / tile generation in thumtoo
 
 ### Progress
 - [x] Read DESIGN.md, TILES.md, image.cpp probe/ladder/tile paths
-- [ ] Deep pass: image.cpp (complete)
-- [ ] Deep pass: client.cpp request_size / ensure_pixels / request_tile
-- [ ] Deep pass: archive.cpp extract paths
-- [ ] Deep pass: lqip.cpp + handsum
-- [ ] Deep pass: pdf.cpp / djvu.cpp raster costs
-- [ ] Deep pass: galapix ThumtooTileProvider + ImageOverview
-- [ ] Design microbench harness + sample corpus
-- [ ] Run numbers, write THUMBNAIL_AUDIT.md
-- [ ] Bundle when section complete
+- [x] Deep pass: image.cpp
+- [x] Deep pass: client.cpp request_size / ensure_lqip / request_tile
+- [x] Deep pass: archive.cpp extract paths (TOC + sequential extract)
+- [x] Deep pass: lqip/handsum obtain path (vips_thumbnail 32)
+- [ ] Deep pass: pdf.cpp / djvu.cpp raster costs (spot-checked only)
+- [x] Deep pass: galapix ImageOverview LQIP policy
+- [x] Microbench harness (Pillow results + C++ vips tool wired)
+- [x] Initial numbers in docs/MICROBENCH_RESULTS.md
+- [ ] Vips/libjpeg numbers under nix develop
+- [ ] RAR / solid archive extract comparison
+- [ ] Propose code fix for interactive JPEG shrink (discussion)
 
-Tip will become **thumtoo-076** (or next free) once first audit doc lands.
+Tip: **thumtoo-076** (this work).

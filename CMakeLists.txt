@@ -92,6 +92,8 @@ if(THUMTOO_BUILD_TOOLS)
   target_link_libraries(thumtoo-gc PRIVATE thumtoo)
   target_link_libraries(thumtoo-tile PRIVATE thumtoo)
   target_link_libraries(thumtoo-bench PRIVATE thumtoo)
+  add_executable(thumtoo-microbench-decode tools/microbench_decode.cpp)
+  target_link_libraries(thumtoo-microbench-decode PRIVATE PkgConfig::VIPS)
 endif()
 
 if(THUMTOO_BUILD_TESTS)
@@ -121,7 +123,7 @@ endif()
 install(TARGETS thumtoo ARCHIVE DESTINATION lib LIBRARY DESTINATION lib)
 install(DIRECTORY include/thumtoo DESTINATION include)
 if(THUMTOO_BUILD_TOOLS)
-  install(TARGETS thumtoo-tile thumtoo-status thumtoo-prepare thumtoo-bench thumtoo-gc RUNTIME DESTINATION bin)
+  install(TARGETS thumtoo-tile thumtoo-status thumtoo-prepare thumtoo-bench thumtoo-gc thumtoo-microbench-decode RUNTIME DESTINATION bin)
 endif()
 
 # ---------------------------------------------------------------------------
