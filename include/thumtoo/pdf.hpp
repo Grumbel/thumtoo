@@ -46,7 +46,8 @@ struct ParsedPdfUri {
 [[nodiscard]] bool is_likely_pdf_path(const std::filesystem::path& path);
 
 /// Page count, or nullopt if the file cannot be opened / is not a PDF.
-[[nodiscard]] std::optional<int> pdf_page_count(const std::filesystem::path& path);
+[[nodiscard]] std::optional<int> pdf_page_count(
+    const std::filesystem::path& path, PdfBackend backend = PdfBackend::Default);
 
 struct PdfRaster {
   int width = 0;
@@ -66,26 +67,31 @@ struct PdfPageContentStats {
 };
 
 [[nodiscard]] PdfPageContentStats pdf_page_content_stats(
-    const std::filesystem::path& path, int page_1based);
+    const std::filesystem::path& path, int page_1based,
+    PdfBackend backend = PdfBackend::Default);
 
 /// Live tiles finer than layout (scale < 0) only when the page is not image-heavy.
-[[nodiscard]] bool pdf_page_allows_live_tiles(const std::filesystem::path& path,
-                                              int page_1based);
+[[nodiscard]] bool pdf_page_allows_live_tiles(
+    const std::filesystem::path& path, int page_1based,
+    PdfBackend backend = PdfBackend::Default);
 
 /**
  * Rasterize one page so the long edge is about max_edge pixels (at least the
  * natural 72 dpi size when max_edge is large). Page is 1-based.
  */
 [[nodiscard]] std::optional<PdfRaster> pdf_rasterize_page(
-    const std::filesystem::path& path, int page_1based, int max_edge);
+    const std::filesystem::path& path, int page_1based, int max_edge,
+    PdfBackend backend = PdfBackend::Default);
 
 /// Intrinsic size at 72 dpi (media box), page 1-based.
 [[nodiscard]] std::optional<Size> pdf_page_size_72dpi(
-    const std::filesystem::path& path, int page_1based);
+    const std::filesystem::path& path, int page_1based,
+    PdfBackend backend = PdfBackend::Default);
 
 /// Layout size for Galapix-style tiles: media box scaled to kPdfLayoutDpi.
 [[nodiscard]] std::optional<Size> pdf_page_layout_size(
-    const std::filesystem::path& path, int page_1based);
+    const std::filesystem::path& path, int page_1based,
+    PdfBackend backend = PdfBackend::Default);
 
 /**
  * Effective page pixel size at tile scale s relative to layout (kPdfLayoutDpi).
@@ -106,14 +112,14 @@ struct PdfPageContentStats {
  */
 [[nodiscard]] std::optional<PdfRaster> pdf_rasterize_page_region(
     const std::filesystem::path& path, int page_1based, double dpi, int px,
-    int py, int pw, int ph);
+    int py, int pw, int ph, PdfBackend backend = PdfBackend::Default);
 
 /**
  * Rasterize one tile cell to RGB888 (no encode). Live path for Galapix.
  */
 [[nodiscard]] std::optional<PdfRaster> pdf_render_tile_cell(
     const std::filesystem::path& path, int page_1based, int scale, int x,
-    int y);
+    int y, PdfBackend backend = PdfBackend::Default);
 
 /**
  * Rasterize cell then JPEG-encode (durable cache only). Prefer
@@ -121,6 +127,7 @@ struct PdfPageContentStats {
  */
 [[nodiscard]] std::optional<TileBlob> pdf_build_tile_cell(
     const std::filesystem::path& path, int page_1based, int scale, int x,
-    int y, int jpeg_quality = kDefaultTileQuality);
+    int y, int jpeg_quality = kDefaultTileQuality,
+    PdfBackend backend = PdfBackend::Default);
 
 }  // namespace thumtoo

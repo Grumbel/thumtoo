@@ -2,11 +2,13 @@
 
 - [x] Design [docs/PDF_BACKENDS.md](docs/PDF_BACKENDS.md)
 - [x] URI: `//page:`, `//poppler-page:`, `//mupdf-page:` + `PdfBackend`
-- [ ] MuPDF module + cmake/flake
-- [ ] Dispatch render/count/stats by backend
-- [ ] Default `//page:` → MuPDF when available
+- [x] MuPDF module + cmake/flake (`THUMTOO_HAVE_MUPDF`)
+- [x] Dispatch render/count/stats by backend
+- [x] Default `//page:` → MuPDF when available (`pdf_resolve_backend`)
+- [ ] Galapix min_scale + URI backend
+- [ ] MuPDF image coverage (display-list filter)
 
-Tip: **thumtoo-094** (URI + backend enum only).
+Tip: **thumtoo-095**.
 
 ---
 

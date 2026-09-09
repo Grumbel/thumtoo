@@ -35,6 +35,7 @@
         # libarchive Requires.private
         libarchive
         poppler
+        mupdf
         djvulibre
         djvulibre.dev
         curl

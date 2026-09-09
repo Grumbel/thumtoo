@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "thumtoo/pdf.hpp"
+#include "thumtoo/pdf_mupdf.hpp"
 #include "thumtoo/constants.hpp"
 #include "thumtoo/format.hpp"
 #include "thumtoo/uri.hpp"
@@ -233,7 +234,11 @@ std::optional<ParsedPdfUri> parse_pdf_uri(std::string_view uri) {
   return out;
 }
 
-std::optional<int> pdf_page_count(const std::filesystem::path& path) {
+std::optional<int> pdf_page_count(const std::filesystem::path& path,
+                                  PdfBackend backend) {
+  if (pdf_resolve_backend(backend) == PdfBackend::MuPDF) {
+    return mupdf_page_count(path);
+  }
 #if !defined(THUMTOO_HAVE_POPPLER)
   (void)path;
   return std::nullopt;
@@ -247,7 +252,10 @@ std::optional<int> pdf_page_count(const std::filesystem::path& path) {
 }
 
 std::optional<Size> pdf_page_size_72dpi(const std::filesystem::path& path,
-                                        int page_1based) {
+                                        int page_1based, PdfBackend backend) {
+  if (pdf_resolve_backend(backend) == PdfBackend::MuPDF) {
+    return mupdf_page_size_72dpi(path, page_1based);
+  }
 #if !defined(THUMTOO_HAVE_POPPLER)
   (void)path;
   (void)page_1based;
@@ -274,8 +282,8 @@ std::optional<Size> pdf_page_size_72dpi(const std::filesystem::path& path,
 }
 
 std::optional<Size> pdf_page_layout_size(const std::filesystem::path& path,
-                                         int page_1based) {
-  auto s72 = pdf_page_size_72dpi(path, page_1based);
+                                         int page_1based, PdfBackend backend) {
+  auto s72 = pdf_page_size_72dpi(path, page_1based, backend);
   if (!s72) return std::nullopt;
   // Scale media-box points to layout DPI (default 144 = 2× 72).
   const double scale = static_cast<double>(kPdfLayoutDpi) / 72.0;
@@ -285,7 +293,11 @@ std::optional<Size> pdf_page_layout_size(const std::filesystem::path& path,
 }
 
 std::optional<PdfRaster> pdf_rasterize_page(const std::filesystem::path& path,
-                                            int page_1based, int max_edge) {
+                                            int page_1based, int max_edge,
+                                            PdfBackend backend) {
+  if (pdf_resolve_backend(backend) == PdfBackend::MuPDF) {
+    return mupdf_rasterize_page(path, page_1based, max_edge);
+  }
 #if !defined(THUMTOO_HAVE_POPPLER)
   (void)path;
   (void)page_1based;
@@ -461,7 +473,10 @@ std::optional<PdfRaster> image_to_rgb(const poppler::image& img) {
 
 
 PdfPageContentStats pdf_page_content_stats(const std::filesystem::path& path,
-                                           int page_1based) {
+                                           int page_1based, PdfBackend backend) {
+  if (pdf_resolve_backend(backend) == PdfBackend::MuPDF) {
+    return mupdf_page_content_stats(path, page_1based);
+  }
   PdfPageContentStats st;
 #if !defined(THUMTOO_HAVE_POPPLER)
   (void)path;
@@ -572,13 +587,16 @@ PdfPageContentStats pdf_page_content_stats(const std::filesystem::path& path,
 }
 
 bool pdf_page_allows_live_tiles(const std::filesystem::path& path,
-                                int page_1based) {
-  return !pdf_page_content_stats(path, page_1based).image_heavy;
+                                int page_1based, PdfBackend backend) {
+  return !pdf_page_content_stats(path, page_1based, backend).image_heavy;
 }
 
 std::optional<PdfRaster> pdf_rasterize_page_region(
     const std::filesystem::path& path, int page_1based, double dpi, int px,
-    int py, int pw, int ph) {
+    int py, int pw, int ph, PdfBackend backend) {
+  if (pdf_resolve_backend(backend) == PdfBackend::MuPDF) {
+    return mupdf_rasterize_page_region(path, page_1based, dpi, px, py, pw, ph);
+  }
 #if !defined(THUMTOO_HAVE_POPPLER)
   (void)path;
   (void)page_1based;
@@ -608,15 +626,18 @@ std::optional<PdfRaster> pdf_rasterize_page_region(
 
 std::optional<PdfRaster> pdf_render_tile_cell(const std::filesystem::path& path,
                                                int page_1based, int scale, int x,
-                                               int y) {
+                                               int y, PdfBackend backend) {
+  if (pdf_resolve_backend(backend) == PdfBackend::MuPDF) {
+    return mupdf_render_tile_cell(path, page_1based, scale, x, y);
+  }
   if (x < 0 || y < 0) return std::nullopt;
   // Image-heavy (scanned) pages: refuse live finer-than-layout tiles. Region
   // render re-decodes large JPEG XObjects per cell; vector pages stay live.
   if (scale < kPdfMinLiveTileScaleImageHeavy &&
-      !pdf_page_allows_live_tiles(path, page_1based)) {
+      !pdf_page_allows_live_tiles(path, page_1based, backend)) {
     return std::nullopt;
   }
-  auto layout = pdf_page_layout_size(path, page_1based);
+  auto layout = pdf_page_layout_size(path, page_1based, backend);
   if (!layout || layout->width <= 0 || layout->height <= 0) return std::nullopt;
 
   const Size full = pdf_page_size_at_scale(*layout, scale);
@@ -734,8 +755,9 @@ std::optional<PdfRaster> pdf_render_tile_cell(const std::filesystem::path& path,
 
 std::optional<TileBlob> pdf_build_tile_cell(const std::filesystem::path& path,
                                             int page_1based, int scale, int x,
-                                            int y, int jpeg_quality) {
-  auto raster = pdf_render_tile_cell(path, page_1based, scale, x, y);
+                                            int y, int jpeg_quality,
+                                            PdfBackend backend) {
+  auto raster = pdf_render_tile_cell(path, page_1based, scale, x, y, backend);
   if (!raster || raster->rgb.empty()) return std::nullopt;
   return encode_tile_cell_rgb(raster->rgb.data(), raster->width, raster->height,
                               scale, x, y, jpeg_quality);

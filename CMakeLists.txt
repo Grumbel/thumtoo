@@ -32,6 +32,7 @@ add_library(thumtoo
   src/image.cpp
   src/archive.cpp
   src/pdf.cpp
+  src/pdf_mupdf.cpp
   src/djvu.cpp
   src/expand.cpp
   src/format.cpp
@@ -69,6 +70,29 @@ if(POPPLERCPP_FOUND)
 else()
   message(STATUS "thumtoo: Poppler-cpp not found — PDF page support disabled")
 endif()
+
+# MuPDF (optional PDF backend; default for //page: when available).
+pkg_check_modules(MUPDF IMPORTED_TARGET mupdf)
+if(NOT MUPDF_FOUND)
+  find_path(MUPDF_INCLUDE_DIR mupdf/fitz.h)
+  find_library(MUPDF_LIBRARY NAMES mupdf)
+  if(MUPDF_INCLUDE_DIR AND MUPDF_LIBRARY)
+    set(MUPDF_FOUND TRUE)
+  endif()
+endif()
+if(MUPDF_FOUND)
+  if(TARGET PkgConfig::MUPDF)
+    target_link_libraries(thumtoo PRIVATE PkgConfig::MUPDF)
+  else()
+    target_include_directories(thumtoo PRIVATE ${MUPDF_INCLUDE_DIR})
+    target_link_libraries(thumtoo PRIVATE ${MUPDF_LIBRARY})
+  endif()
+  target_compile_definitions(thumtoo PUBLIC THUMTOO_HAVE_MUPDF=1)
+  message(STATUS "thumtoo: MuPDF enabled (default PDF backend when present)")
+else()
+  message(STATUS "thumtoo: MuPDF not found — default PDF backend is Poppler if available")
+endif()
+
 if(DJVULIBRE_FOUND)
   # PRIVATE: headers do not expose ddjvuapi types; consumers only need thumtoo.
   target_link_libraries(thumtoo PRIVATE PkgConfig::DJVULIBRE)

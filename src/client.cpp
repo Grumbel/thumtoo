@@ -284,7 +284,8 @@ std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
   constexpr int kLqipPageEdge = 64;
   if (auto pdf = parse_pdf_uri(std::string(uri))) {
     if (auto raster =
-            pdf_rasterize_page(pdf->pdf_path, pdf->page, kLqipPageEdge)) {
+            pdf_rasterize_page(pdf->pdf_path, pdf->page, kLqipPageEdge,
+                                pdf->backend)) {
       if (!raster->rgb.empty()) {
         store_lqip_if_missing(*db_, cid, nullptr, raster->rgb.data(),
                               raster->width, raster->height);
@@ -1206,7 +1207,7 @@ void Client::handle_probe_size(
       row.status = ContentStatus::Failed;
       row.error_code = "not_a_file";
     } else {
-      auto layout = pdf_page_layout_size(pdf->pdf_path, pdf->page);
+      auto layout = pdf_page_layout_size(pdf->pdf_path, pdf->page, pdf->backend);
       if (!layout) {
         row.status = ContentStatus::Failed;
         row.error_code = "pdf_page_failed";
@@ -1549,7 +1550,8 @@ void Client::handle_ensure_pixels(
   }
 
   if (auto pdf = parse_pdf_uri(job.uri)) {
-    auto raster = pdf_rasterize_page(pdf->pdf_path, pdf->page, edge_limit);
+    auto raster = pdf_rasterize_page(pdf->pdf_path, pdf->page, edge_limit,
+                                      pdf->backend);
     if (raster && !raster->rgb.empty()) {
       auto levels = build_ladder_rgb(raster->rgb.data(), raster->width,
                                      raster->height, row.content_id,
@@ -1894,7 +1896,7 @@ void Client::handle_ensure_tiles(
       // Live path: rasterize to RGB888 and hand raw pixels to the client.
       // JPEG is only for durable cache (scale >= kPdfMinDurableTileScale).
       auto raster = pdf_render_tile_cell(pdf->pdf_path, pdf->page, job.tile_scale,
-                                         job.tile_x, job.tile_y);
+                                         job.tile_x, job.tile_y, pdf->backend);
       if (!raster || raster->rgb.empty()) {
         reply_one(std::nullopt);
         return;
@@ -2021,7 +2023,7 @@ void Client::handle_ensure_tiles(
       }
     }
   } else if (auto pdf = parse_pdf_uri(job.uri)) {
-    auto layout = pdf_page_layout_size(pdf->pdf_path, pdf->page);
+    auto layout = pdf_page_layout_size(pdf->pdf_path, pdf->page, pdf->backend);
     if (layout && layout->width > 0 && layout->height > 0) {
       int hi = max_scale;
       if (hi < 0) {
