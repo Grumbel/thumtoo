@@ -27,14 +27,17 @@ Unlike PDF, page index and pixel size depend on:
 `w`/`h`/margins are converted to points when calling MuPDF:
 `pt = px * 72 / kEpubLayoutDpi`.
 
-Margins are applied with MuPDF user CSS  
-(`body { margin: Tpt Rpt Bpt Lpt !important; }`) before layout. Omitted or
-zero margins leave the user stylesheet empty (MuPDF + document CSS only).
+User CSS is always installed before layout: font-size from `fs`, optional
+margins when `mt`/`mr`/`mb`/`ml` are non-zero (else `margin: 0` on body so
+UA em-margins do not dominate).
 
-`fs` is font size only. (The old `em` name was dropped: many EPUB/CSS rules
-size margins in `em`, so changing the base font size also scaled margins.)
+`fs` is the layout font size. It is passed to `fz_layout_document` **and**
+forced through user CSS (`html`/`body` font-size with `!important`, body-text
+elements inherit) so books that hard-code absolute sizes still respond.
+(The old `em` URI key was dropped: UA/CSS margins sized in `em` made font-size
+changes look like margin control.)
 
-Optional later: user CSS blob (`css=sha256:…`), `pubcss=0`.
+Optional later: user CSS blob (`css=sha256:…`), `pubcss=0`, disable document CSS.
 
 **Content id** stays `sha256` of the `.epub` file bytes.  
 **Tile / size rows** key off the full locator URI including the layout pipe.
@@ -42,7 +45,7 @@ Optional later: user CSS blob (`css=sha256:…`), `pubcss=0`.
 ## URI
 
 ```
-file:///books/foo.epub//epub:w=1200,h=1800,fs=12//page:3
+file:///books/foo.epub//epub:w=900,h=1350,fs=15//page:3
 ```
 
 | Pipe | Meaning |
@@ -56,9 +59,9 @@ Helpers: `with_epub_layout(base, layout)`, `epub_page_uri(path, page, layout)`.
 
 | Constant | Value |
 |----------|-------|
-| `kEpubDefaultPageWidthPx` | 1200 |
-| `kEpubDefaultPageHeightPx` | 1800 |
-| `kEpubDefaultFontSizePt` | 12 |
+| `kEpubDefaultPageWidthPx` | 900 |
+| `kEpubDefaultPageHeightPx` | 1350 |
+| `kEpubDefaultFontSizePt` | 15 |
 | `kEpubLayoutDpi` | 144 |
 
 `expand_media_uris` emits pages under the default profile only.

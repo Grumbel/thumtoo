@@ -124,19 +124,33 @@ fz_document* tls_document(const std::filesystem::path& path,
   const float mb_pt = static_cast<float>(L.mb_px) * 72.f / dpi;
   const float ml_pt = static_cast<float>(L.ml_px) * 72.f / dpi;
 
-  // Per-side margins via user CSS (last in cascade). Clear when all zero so
-  // a prior book with margins does not leak into the next open on this TLS ctx.
+  // User CSS is last in MuPDF's cascade. Always force a body/html font size
+  // from fs so books that hard-code text size still respond to the layout
+  // profile; fz_layout_document's em alone is not enough when document CSS
+  // sets absolute sizes (margins in the UA sheet still scale with em, which
+  // is why fs looked like a margin control).
+  // Optional per-side margins (pixels → points) on body when non-zero.
   {
-    char css[192];
+    char css[384];
     if (L.mt_px > 0 || L.mr_px > 0 || L.mb_px > 0 || L.ml_px > 0) {
-      std::snprintf(css, sizeof(css),
-                    "body { margin: %gpt %gpt %gpt %gpt !important; }",
-                    static_cast<double>(mt_pt), static_cast<double>(mr_pt),
-                    static_cast<double>(mb_pt), static_cast<double>(ml_pt));
-      fz_set_user_css(ctx, css);
+      std::snprintf(
+          css, sizeof(css),
+          "html { font-size: %dpt !important; }"
+          "body { font-size: %dpt !important; "
+          "margin: %gpt %gpt %gpt %gpt !important; }"
+          "p, li, td, th, div, span { font-size: inherit !important; }",
+          L.fs_pt, L.fs_pt, static_cast<double>(mt_pt),
+          static_cast<double>(mr_pt), static_cast<double>(mb_pt),
+          static_cast<double>(ml_pt));
     } else {
-      fz_set_user_css(ctx, "");
+      std::snprintf(
+          css, sizeof(css),
+          "html { font-size: %dpt !important; }"
+          "body { font-size: %dpt !important; margin: 0 !important; }"
+          "p, li, td, th, div, span { font-size: inherit !important; }",
+          L.fs_pt, L.fs_pt);
     }
+    fz_set_user_css(ctx, css);
   }
 
   int ok = 0;

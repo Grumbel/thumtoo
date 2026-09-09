@@ -62,9 +62,11 @@ inline constexpr double kPdfSparseTextPerPoint2 = 0.002;
 /// size in points for fz_layout_document. Changing these invalidates default
 /// expand URIs and cached tiles for that profile.
 /// (Legacy used points; URI now carries pixels so image-viewer math stays simple.)
-inline constexpr int kEpubDefaultPageWidthPx = 1200;
-inline constexpr int kEpubDefaultPageHeightPx = 1800;
-inline constexpr int kEpubDefaultFontSizePt = 12;
+/// ~6.25×9.4 in at 144 dpi — closer to a trade page than a large tablet sheet.
+inline constexpr int kEpubDefaultPageWidthPx = 900;
+inline constexpr int kEpubDefaultPageHeightPx = 1350;
+/// Body text size; also forced via user CSS so document styles cannot ignore it.
+inline constexpr int kEpubDefaultFontSizePt = 15;
 /// Layout pixel density for EPUB pages (same convention as PDF layout DPI).
 inline constexpr int kEpubLayoutDpi = 144;
 
