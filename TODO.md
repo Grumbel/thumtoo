@@ -1,3 +1,33 @@
+# TODO / agent handoff
+
+## Status (2026-09-09, session end)
+
+**Tip: thumtoo-121-uri-pdfimage-consts.**
+
+### Shipped this session (high level)
+
+- EPUB layout URI: pixels for w/h; `fs`; per-side margins; `lh`, `cols`/`cgap`,
+  `align`, font/theme/pubcss; aggressive user CSS; **canonical format on parse**.
+- **//pdfimage:N** — MuPDF Image XObject extract at native resolution; client
+  size/LQIP/pixels; content-id `:pdfimage:N`.
+- **//pdfimages** collection pipe → `expand_pdf_images_collection_uri` /
+  `expand_pdf_image_uris` (default bare-PDF expand remains `//page:N`).
+- Build-fix series: decl order (`PdfRaster`), namespace for expand helpers,
+  pipe constants in uri.cpp anonymous namespace, `fz_var` clobber fixes.
+
+### Open / later
+
+- URL normalization beyond format-on-parse (documented earlier).
+- Pixel filters (`//crop:`, invert, …) — see design notes below in this file.
+- Deeper Form XObject / inline image extraction if scans miss images.
+- biltoo menu affordance for `//pdfimages` (biltoo already expands the pipe).
+
+### biltoo pairing
+
+Human should stack **biltoo-353** on a tree that uses this thumtoo tip (or newer).
+
+---
+
 ## Plan / work — bundle `thumtoo-118-pdfimages-collection`
 
 `//pdfimages` collection expand to `//pdfimage:1..N`.

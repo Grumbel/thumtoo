@@ -32,7 +32,7 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 
 ## Status (2026-09-09)
 
-**Tip: thumtoo-118.** Full session notes: top of [TODO.md](TODO.md).
+**Tip: thumtoo-121.** Full session notes: top of [TODO.md](TODO.md).
 PDF dual backend (MuPDF + Poppler) with `//page:` / `//poppler-page:` / `//mupdf-page:`.
 Live PDF tiles return `rgb888` (tests + Galapix codec branch required).
 Retrieval stack: Location URIs → content-id → read_source_bytes → PDF@144dpi → HTTP(S)+session cache.
@@ -60,6 +60,34 @@ Galapix uses thumtoo as a flake input (source `THUMTOO_DIR`); interactive
 **Later:** cache eviction / `thumtoo-gc`; optional D-Bus; video animated preview.
 
 Ladder blobs: `blobs.sqlite`. Tile blobs will share that file under `tile_blobs`.
+
+
+
+## Bundle handovers (agents)
+
+Agents often lack push access to the human’s remotes. Deliver work as sequential
+**git bundles** (`thumtoo-NNN-slug.bundle` from `HEAD`), copy to a downloadable
+artifacts path when available, and state the path in the chat reply.
+
+```bash
+git pull /path/to/thumtoo-NNN-slug.bundle HEAD
+```
+
+Always emit a bundle for tips the human must integrate — a hash alone is not
+enough if the commit never left the sandbox.
+
+Standing rules live in this file and DESIGN/docs; the human’s first message can
+be a short task + tip pointer. Refresh AGENTS.md / TODO.md at session end.
+
+## Agent sandbox notes
+
+- Full `nix build` of consumers (biltoo) may fail until **this** tip is pulled.
+- No assumption of local MuPDF/Poppler beyond what the flake provides.
+- `make -k` is not the Nix default; use `cmake --build . -- -k` to collect
+  many compile errors in one derivation.
+- Keep declarations that use a type **after** that type is defined
+  (`PdfRaster` before `std::optional<PdfRaster> …` in headers).
+- Helpers appended after `} // namespace thumtoo` are a recurring footgun.
 
 ## Commits
 
