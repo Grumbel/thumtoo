@@ -252,6 +252,19 @@ std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
                                              int frame_idx) const {
   auto meta = db_->meta_for_uri(uri);
   if (!meta) return std::nullopt;
+  // //pdfimage: is a native-resolution extract — prefer the largest stored level
+  // over a soft-preview edge. Soft max_edge is for photo filmstrips; scan embeds
+  // should not stay stuck on 256 after size probe reports the real dimensions.
+  if (is_pdf_image_uri(uri)) {
+    auto levels = db_->list_levels(meta->content_id, 64);
+    const Database::LevelRow* best = nullptr;
+    for (const auto& lr : levels) {
+      if (lr.frame_idx != frame_idx) continue;
+      if (!best || lr.max_edge > best->max_edge) best = &lr;
+    }
+    if (best) return load_level(*best);
+    return std::nullopt;
+  }
   auto row = db_->find_best_level(meta->content_id, max_edge, frame_idx);
   if (!row) return std::nullopt;
   return load_level(*row);
@@ -1645,18 +1658,51 @@ void Client::handle_probe_size(
 void Client::handle_ensure_pixels(
     Job& job, const std::optional<std::vector<std::uint8_t>>& preextracted) {
   global_build_stats().pixel_jobs.fetch_add(1, std::memory_order_relaxed);
-  // Fast path: ladder already present.
-  if (auto px = get_pixels(job.uri, job.max_edge, job.frame_idx)) {
-    if (job.pixels_cb) {
-      auto cb = std::move(job.pixels_cb);
-      auto uri = job.uri;
-      const int edge = job.max_edge;
-      executor_.post([cb = std::move(cb), uri = std::move(uri), edge,
-                      px = std::move(px)]() mutable {
-        cb(std::move(uri), edge, std::move(px));
-      });
+
+  // Cached level is enough only if it covers the requested preview edge (or is
+  // already full-native). A 256 level must not satisfy a later 1024 request.
+  auto level_adequate = [&](const PixelLevel& px) -> bool {
+    if (is_pdf_image_uri(job.uri)) {
+      // Native embed: require full-resolution level (width/height match meta).
+      if (auto m = db_->meta_for_uri(job.uri)) {
+        if (m->size && m->size->width > 0 && m->size->height > 0) {
+          return px.width >= m->size->width && px.height >= m->size->height;
+        }
+      }
+      return false;
     }
-    return;
+    const int want = job.max_edge > 0 ? job.max_edge : kLadderEdges.back();
+    if (px.max_edge >= want) return true;
+    if (auto m = db_->meta_for_uri(job.uri)) {
+      if (m->size) {
+        const int native = std::max(m->size->width, m->size->height);
+        if (native > 0 && px.max_edge >= native) return true;
+        if (native > 0 && px.width >= m->size->width &&
+            px.height >= m->size->height) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  auto reply_pixels = [&](std::optional<PixelLevel> px) {
+    if (!job.pixels_cb) return;
+    auto cb = std::move(job.pixels_cb);
+    auto uri = job.uri;
+    const int edge = job.max_edge;
+    executor_.post([cb = std::move(cb), uri = std::move(uri), edge,
+                    px = std::move(px)]() mutable {
+      cb(std::move(uri), edge, std::move(px));
+    });
+  };
+
+  // Fast path: adequate ladder already present.
+  if (auto px = get_pixels(job.uri, job.max_edge, job.frame_idx)) {
+    if (level_adequate(*px)) {
+      reply_pixels(std::move(px));
+      return;
+    }
   }
 
   // Ensure native size is known (size-only; does not encode ladder).
@@ -1668,16 +1714,10 @@ void Client::handle_ensure_pixels(
   }
 
   if (auto px = get_pixels(job.uri, job.max_edge, job.frame_idx)) {
-    if (job.pixels_cb) {
-      auto cb = std::move(job.pixels_cb);
-      auto uri = job.uri;
-      const int edge = job.max_edge;
-      executor_.post([cb = std::move(cb), uri = std::move(uri), edge,
-                      px = std::move(px)]() mutable {
-        cb(std::move(uri), edge, std::move(px));
-      });
+    if (level_adequate(*px)) {
+      reply_pixels(std::move(px));
+      return;
     }
-    return;
   }
 
   // Encode display ladder now that size/content_id are settled.
@@ -1779,15 +1819,26 @@ void Client::handle_ensure_pixels(
       }
     }
   } else if (auto pimg = parse_pdf_image_uri(job.uri)) {
-    // Native Image XObject pixels; ladder may downscale for soft preview only.
-    // Do not pre-scale in the MuPDF path — that discarded detail before encode.
+    // Native Image XObject pixels. Always store a full-resolution level so
+    // //pdfimage: is usable as an image extract (not stuck on soft 256).
+    // Soft ladder edge is still written when the request is smaller.
     if (auto raster_opt = thumtoo::pdf_rasterize_embedded_image(
             pimg->pdf_path, pimg->image, /*max_edge=*/0)) {
       const PdfRaster& raster = *raster_opt;
       if (!raster.rgb.empty()) {
-        auto levels = build_ladder_rgb(raster.rgb.data(), raster.width,
+        std::vector<LevelBlob> levels;
+        const int native_long = std::max(raster.width, raster.height);
+        if (auto native = build_level_rgb_at_edge(
+                raster.rgb.data(), raster.width, raster.height, row.content_id,
+                kDefaultJxlQuality, native_long)) {
+          levels.push_back(std::move(*native));
+        }
+        if (edge_limit > 0 && edge_limit < native_long) {
+          auto soft = build_ladder_rgb(raster.rgb.data(), raster.width,
                                        raster.height, row.content_id,
                                        kDefaultJxlQuality, edge_limit);
+          for (auto& s : soft) levels.push_back(std::move(s));
+        }
         for (const auto& lvl : levels) {
           blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
                             lvl.width, lvl.height, lvl.codec, lvl.quality,

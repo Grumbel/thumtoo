@@ -75,6 +75,12 @@ void image_library_init();
     const std::uint8_t* rgb, int width, int height, const std::string& content_id,
     int jxl_quality, int max_edge_limit = 0);
 
+/// Encode one JXL level at an exact long-edge target (clamped to source).
+/// Used for //pdfimage native storage keyed by source long edge.
+[[nodiscard]] std::optional<LevelBlob> build_level_rgb_at_edge(
+    const std::uint8_t* rgb, int width, int height, const std::string& content_id,
+    int jxl_quality, int target_edge);
+
 /// Downscale an already-cached JXL preview to a smaller policy edge (no source I/O).
 [[nodiscard]] std::optional<LevelBlob> downscale_preview_jxl(
     const std::uint8_t* jxl_data, std::size_t jxl_size,

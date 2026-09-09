@@ -2,9 +2,19 @@
 
 ## Status (2026-09-09)
 
-**Tip: thumtoo-126-pdfimage-native-tiles.**
+**Tip: thumtoo-127-pdfimage-native-level.**
 
-### 126 (this tip)
+### 127 (this tip)
+- Gallery showed correct **size** (e.g. 1908×2246) but **pixels** were soft
+  ladder 214×256: first `request_pixels(256)` stored only 256, and any smaller
+  level satisfied larger requests (no upgrade).
+- `//pdfimage:` always stores a **native** JXL level (`max_edge` = source long
+  edge) plus soft edge when requested smaller.
+- `get_pixels` for `//pdfimage:` returns the **largest** stored level (native).
+- `handle_ensure_pixels` only short-circuits when the cached level is adequate
+  (covers request edge / full native for pdfimage).
+
+### Prior 126
 - **Bug:** `//pdfimage:` tile requests fell through to `path_from_file_uri` (strips
   pipes) → Vips opened the **PDF file** at ~72 dpi page 1 — not the embedded
   Image XObject → extremely low-res “pages”.
