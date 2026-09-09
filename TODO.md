@@ -875,4 +875,21 @@ Goal: exhaustive audit of thumbnail / ladder / tile generation in thumtoo
 - [x] prepare CLI / BuildStats / expand documented
 - [x] Executive summary in THUMBNAIL_AUDIT.md
 
-Tip: **thumtoo-081**.
+- [x] gc / status / format / hashing / non-thumtoo DCT contrast
+- [x] Coverage checklist; audit marked complete for handoff
+
+### Audit complete (docs)
+Canonical: [docs/THUMBNAIL_AUDIT.md](docs/THUMBNAIL_AUDIT.md),
+[docs/MICROBENCH_RESULTS.md](docs/MICROBENCH_RESULTS.md).
+
+**Code follow-ups (need explicit go-ahead):**
+- [ ] Interactive JPEG shrink Option A (§8.1)
+- [ ] Decouple LQIP from size probe (§8.2)
+- [ ] Extract-cache LRU (§8.4)
+- [ ] Optional tile `source` column (§8.3)
+
+**Numbers follow-ups:**
+- [ ] `thumtoo-microbench-decode` under nix+vips
+- [ ] Solid RAR extract comparison
+
+Tip: **thumtoo-082**.

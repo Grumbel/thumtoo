@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # Thumbnail / ladder / tile generation audit
 
-Status: **substantial coverage** (2026-09-09). Companion to TODO.md
+Status: **complete for handoff** (2026-09-09). Remaining: code fixes + vips/RAR numbers. Companion to TODO.md
 “Thumbnail generation audit + microbenchmarks”.
 
 Audience: agents continuing the work; goal is zero open questions about
@@ -356,6 +356,11 @@ JPEG decode 256² + RGBA + GL.
    tools for random member extract latency.
 8. Store original SOF dimensions without opening pixels for more formats
    (PNG IHDR, etc. — Vips sequential usually already cheap).
+9. Match historical Galapix `TileGenerator` DCT scale behaviour for
+   interactive thumtoo JPEG cells (§6d / §8.1).
+10. Automatic cache size budget (gc is manual only today).
+11. Magic-byte format sniff for extensionless / wrong-extension members.
+12. Statement cache on Database/BlobStore hot gets.
 
 ## 6b. Offline prepare & instrumentation
 
@@ -394,6 +399,65 @@ wall): `archive_extract_ns`, `image_load_ns`, `shrink_ns`, `jpeg_encode_ns`,
 
 Prepare is intentionally expensive offline; interactive should not share that
 cost model — hence §8.1.
+
+
+## 6c. Cache maintenance & format classification
+
+### `thumtoo-gc`
+
+Manual only — **no automatic eviction** / size budget on blobs.
+
+| Flag | Effect |
+|------|--------|
+| `--min-scale N` | DELETE tiles/tile_blobs with `scale < N` (keeps coarser) |
+| `--orphans` | Content with no locators (+ blobs) |
+| `--dead-paths` | Locators whose `outer_path` missing on disk; then orphans |
+| `--dry-run` | Report only |
+
+LQIP stays on content until the content row is purged. Fine-scale tile
+drop is the main disk reclaim lever for zoom caches.
+
+### `thumtoo-status`
+
+Read-only inspect: summary / locators / content / levels / tiles / archives.
+
+### `format.hpp` / `format.cpp`
+
+Extension-based `PathKind`: Image / Pdf / Djvu / Archive / Unsupported.
+
+Image exts include jpeg/png/gif/bmp/webp/jxl/tiff/heic/heif/avif. Archives
+include zip/cbz/cbr/rar/7z/tar variants. MIME list for desktop integration.
+
+**Not** magic-byte sniffing for path classification (buffer tile path does
+use JPEG SOI magic). Misnamed files may take wrong open path.
+
+## 6d. Historical Galapix path (non-thumtoo) — contrast
+
+When `HAVE_THUMTOO` is off or `--no-thumtoo`, overview uses
+`OverviewLoadJob` → `TileGenerator::load_surface`:
+
+```cpp
+// JPEG only: jpeg_scale = min(pow2(min_scale), 8)
+jpeg::load_from_file(path, jpeg_scale, &size);  // libjpeg DCT scale
+```
+
+That **does** the fast coarse load thumtoo’s interactive path was meant to
+mirror (`vips_jpegload` shrink). Non-JPEG falls back to full
+`surface_factory().from_file`.
+
+Implication: a gallery of JPEGs on the **old** Galapix path can show soft
+overviews cheaper than thumtoo today for cold coarse tiles — until §8.1
+lands. Thumtoo still wins on durable cache, archives, PDF/DjVu, and warm
+hits.
+
+## 6e. Content hashing
+
+- Size probe upgrades provisional ids to `sha256:…` after hashing file or
+  member bytes (PDF/DjVu: hash file + `:page:N`).
+- `sha256_file_hex` path+mtime cache (thumtoo-070) avoids re-hash on every
+  probe for multipage docs.
+- Same bytes → same content_id → shared ladder/tiles across renames when
+  locators are updated.
 
 ## 7. Benchmark plan (to implement)
 
@@ -501,6 +565,30 @@ thrash the entire 512 MiB map after one oversized member.
   ZIP stored/deflate microbench numbers.
 - 2026-09-09: Executive summary; prepare/BuildStats/expand; interactive vs
   prepare cost table.
-- Next: implement Option A under discussion; vips numbers under nix;
-  RAR/solid when tools available; optional galapix OverviewLoadJob (non-thumtoo).
+- 2026-09-09: gc/status/format; non-thumtoo TileGenerator DCT contrast;
+  hashing notes; audit marked complete for handoff.
+- Code next (when approved): Option A JPEG shrink; LQIP decoupling;
+  extract LRU. Numbers next: vips microbench under nix; RAR samples.
+
+## 10. Coverage checklist
+
+| Topic | Documented |
+|-------|------------|
+| Fast vs slow taxonomy | §3 |
+| image.cpp probe/ladder/tiles/JPEG shrink dead path | §4.1–4.2 |
+| client size/LQIP/tiles/queue/coalesce | §4.3–4.4 |
+| archive extract + warm skip | §4.4 |
+| LQIP/Handsum obtain | §4.5 |
+| PDF/DjVu raster | §4.6–4.7 |
+| Schema/blobs | §4.8 |
+| Galapix provider/overview/SizeProbe/ImageTileCache | §5 |
+| Prepare/BuildStats/expand | §6b |
+| gc/status/format/hashing | §6c–6e |
+| Non-thumtoo DCT overview | §6d |
+| Benchmark plan + Pillow/ZIP numbers | §7, MICROBENCH_RESULTS |
+| Fix proposals | §8 |
+| Policy constants | §7b |
+| Vips in-tree numbers | pending toolchain |
+| RAR solid numbers | pending samples |
+| Code fixes | not started |
 
