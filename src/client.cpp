@@ -1095,7 +1095,7 @@ void Client::worker_main() {
         std::atomic<std::size_t> next{0};
         const unsigned helpers = std::min(
             static_cast<unsigned>(items.size()),
-            std::max(1u, workers_.size()));
+            std::max(1u, static_cast<unsigned>(workers_.size())));
         std::vector<std::thread> pool;
         pool.reserve(helpers);
         for (unsigned t = 0; t < helpers; ++t) {
