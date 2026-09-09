@@ -107,6 +107,10 @@ class Client {
   /// Returns get_lqip afterward. No-op when already present.
   std::optional<std::vector<std::uint8_t>> ensure_lqip(std::string_view uri);
 
+  /// Queue background LQIP fill (worker only). Used after a durable thumbnail
+  /// so successive opens get a soft underlay — never blocks tile replies.
+  void request_lqip(std::string uri);
+
   void request_size(std::string uri, SizeCallback cb);
 
   /// Ensure ladder exists (probe if needed), then return pixels via callback.
