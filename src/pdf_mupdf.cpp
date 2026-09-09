@@ -343,7 +343,9 @@ std::optional<PdfRaster> mupdf_rasterize_page_region(
   fz_try(ctx) {
     pix = fz_new_pixmap_with_bbox(ctx, fz_device_rgb(ctx), bbox, nullptr, 0);
     fz_clear_pixmap_with_value(ctx, pix, 0xff);
-    dev = fz_new_draw_device(ctx, pix);
+    // MuPDF: fz_new_draw_device(ctx, transform, dest) — transform maps
+    // device calls into pixmap space; list run supplies page→pixel ctm.
+    dev = fz_new_draw_device(ctx, fz_identity, pix);
     fz_run_display_list(ctx, list, dev, ctm, clip, nullptr);
     fz_close_device(ctx, dev);
   }
