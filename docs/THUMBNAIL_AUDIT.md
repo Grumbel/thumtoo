@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # Thumbnail / ladder / tile generation audit
 
-Status: **complete for handoff** (2026-09-09). Remaining: code fixes + vips/RAR numbers. Companion to TODO.md
+Status: **complete for handoff** (2026-09-09). Code fixes landed in thumtoo-083; vips/RAR numbers still pending. Companion to TODO.md
 “Thumbnail generation audit + microbenchmarks”.
 
 Audience: agents continuing the work; goal is zero open questions about
@@ -30,8 +30,8 @@ thumb for ladder, cached get_*, ZIP non-solid random member.
 **Slow:** full decode, pyramid prepare, PDF/DjVu page raster, solid RAR
 walk, LQIP-on-probe (throughput), DjVu under process-wide mutex.
 
-**Highest-impact fixes (spec §8):** interactive JPEG shrink (Option A);
-decouple LQIP from size probe; extract-cache LRU; optional tile source flag.
+**Highest-impact fixes (spec §8):** implemented in thumtoo-083 (JPEG shrink
+Option A, LQIP decoupled from size probe, extract-cache LRU, `tiles.source`).
 
 ## 1. Scope
 

@@ -1,3 +1,13 @@
+## Code: Option A + LQIP + LRU + tile source (2026-09-09) — **thumtoo-083**
+
+- [x] `build_tile_cell` / `_buffer`: JPEG `scale > 0` → `vips_jpegload(shrink=N)`
+- [x] Size probe no longer generates LQIP (ensure_lqip / EnsurePixels only)
+- [x] Extract cache size-based LRU (no clear-all)
+- [x] `tiles.source` + `TileSource` enum; migrate via PRAGMA table_info
+- [x] Bundle thumtoo-083
+
+---
+
 ## DjVu blank pages → white tiles (2026-09-09) — **thumtoo-075**
 
 Some intentional blank pages fail `ddjvu_page_render` (returns 0). That became
@@ -882,11 +892,11 @@ Goal: exhaustive audit of thumbnail / ladder / tile generation in thumtoo
 Canonical: [docs/THUMBNAIL_AUDIT.md](docs/THUMBNAIL_AUDIT.md),
 [docs/MICROBENCH_RESULTS.md](docs/MICROBENCH_RESULTS.md).
 
-**Code follow-ups (need explicit go-ahead):**
-- [ ] Interactive JPEG shrink Option A (§8.1)
-- [ ] Decouple LQIP from size probe (§8.2)
-- [ ] Extract-cache LRU (§8.4)
-- [ ] Optional tile `source` column (§8.3)
+**Code follow-ups:**
+- [x] Interactive JPEG shrink Option A (§8.1) — thumtoo-083
+- [x] Decouple LQIP from size probe (§8.2) — thumtoo-083
+- [x] Extract-cache LRU (§8.4) — thumtoo-083
+- [x] Optional tile `source` column (§8.3) — thumtoo-083
 
 **Numbers follow-ups:**
 - [ ] `thumtoo-microbench-decode` under nix+vips
