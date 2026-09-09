@@ -805,3 +805,60 @@ Flow: `pdf_page_size_72dpi` → `pdf_rasterize_page` at that long edge →
 
 Known limit: layout size remains 72 dpi media box; higher-dpi native size
 for readable scale-0 is a follow-up.
+
+---
+
+## Thumbnail generation audit + microbenchmarks (2026-09-09) — **in progress**
+
+Goal: exhaustive audit of thumbnail / ladder / tile generation in thumtoo
+(and galapix consumption), with measured numbers — not guesses.
+
+### Deliverables
+- [ ] `docs/THUMBNAIL_AUDIT.md` — file-by-file, slow vs fast ops, bugs, gaps
+- [ ] Extended `thumtoo-bench` (or new `tools/microbench_*`) covering:
+  - JPEG full decode vs shrink=2/4/8 vs header-only size
+  - Quality comparison (PSNR/SSIM or visual samples) of shrink path
+  - EXIF embedded thumb vs full `vips_thumbnail`
+  - Archive extract: libarchive random member vs `unzip`/`unrar` CLI
+  - Cold vs warm cache time-to-first-pixel paths
+  - LQIP generation cost vs size-only probe
+  - PNG/JXL/WebP vs JPEG decode costs
+- [ ] Document every place that still does full-resolution work when a
+  cheaper path exists
+- [ ] Propose schema flag for "tile is high-quality vs fast-path" if useful
+
+### Fast vs slow taxonomy (working)
+
+| Operation | Expected class | Current implementation |
+|-----------|----------------|------------------------|
+| Image dimensions only | Fast (header) | `probe_image_*` via VIPS_ACCESS_SEQUENTIAL |
+| EXIF embedded JPEG thumb | Fast | Used in `build_ladder` for JPEG when large enough |
+| `vips_jpegload(..., shrink=N)` | Medium | Used in `build_tile_cell_buffer` for scale>0 JPEG |
+| `vips_thumbnail` / full decode | Slow | Ladder fallback; pyramid path loads full |
+| Archive TOC | Medium | libarchive sequential |
+| Archive member extract | Slow | libarchive; in-process extract cache 512 MiB |
+| LQIP/ThumbHash encode | Medium | Needs small RGBA raster |
+| Tile JPEG encode | Medium | Parallel per scale in prepare |
+| PDF/DjVu page raster | Slow | Poppler / ddjvu at requested DPI/region |
+
+### Known design issues to verify in audit
+- LQIP generated alongside size probe historically (partially fixed thumtoo-070)
+- `build_tile_cell` for file path (non-buffer) may not use jpeg shrink
+- Pyramid still full-loads non-JPEG
+- No durable flag distinguishing fast-path vs HQ tiles
+- Embedded thumbs used for ladder but not systematically for tiles/LQIP
+- Galapix overview / size probe interaction with LQIP
+
+### Progress
+- [x] Read DESIGN.md, TILES.md, image.cpp probe/ladder/tile paths
+- [ ] Deep pass: image.cpp (complete)
+- [ ] Deep pass: client.cpp request_size / ensure_pixels / request_tile
+- [ ] Deep pass: archive.cpp extract paths
+- [ ] Deep pass: lqip.cpp + handsum
+- [ ] Deep pass: pdf.cpp / djvu.cpp raster costs
+- [ ] Deep pass: galapix ThumtooTileProvider + ImageOverview
+- [ ] Design microbench harness + sample corpus
+- [ ] Run numbers, write THUMBNAIL_AUDIT.md
+- [ ] Bundle when section complete
+
+Tip will become **thumtoo-076** (or next free) once first audit doc lands.
