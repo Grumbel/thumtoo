@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace thumtoo {
@@ -72,8 +73,6 @@ struct DocumentOutline {
   std::vector<OutlineItem> items;
 };
 
-}  // namespace thumtoo
-
 /// Serialize page text layer to a compact durable payload (always-cache).
 [[nodiscard]] std::vector<std::uint8_t> serialize_page_text_layer(
     const PageTextLayer& layer);
@@ -96,3 +95,5 @@ struct DocumentOutline {
 
 [[nodiscard]] std::optional<DocumentOutline> extract_document_outline(
     std::string_view uri);
+
+}  // namespace thumtoo

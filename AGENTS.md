@@ -32,7 +32,7 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 
 ## Status (2026-09-10)
 
-**Tip: thumtoo-131-text-layer-cache.** Text layer SQLite cache (schema v3). Next: biltoo consumer.
+**Tip: thumtoo-132-text-hpp-namespace.** text.hpp namespace fix. Next: biltoo consumer / host verify.
 Full session notes: top of [TODO.md](TODO.md).
 Prior: `//pdfimage:N` keep_obj fix; PDF dual backend; live PDF tiles rgb888.
 
