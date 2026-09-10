@@ -2,7 +2,7 @@
 
 ## Status (2026-09-09)
 
-**Tip: thumtoo-129-djvu-text-layer.** DjVu text/link regions + outline. Prior: 128 PDF text layer. PDF text/link regions + outline via MuPDF (types + extract + test).
+**Tip: thumtoo-130-epub-text-layer.** EPUB text/link + outline (layout_key). Prior: 129 DjVu. DjVu text/link regions + outline. Prior: 128 PDF text layer. PDF text/link regions + outline via MuPDF (types + extract + test).
 
 ### 127 (this tip)
 - Gallery showed correct **size** (e.g. 1908×2246) but **pixels** were soft
@@ -96,6 +96,27 @@ hyperlink mapareas, and document outline (bookmarks) when present.
 - Empty text layer is valid (image-only DjVu).
 
 ---
+
+## Plan / work — bundle `thumtoo-130-epub-text-layer`
+
+### Goal
+EPUB side of the semantic text layer: line regions + links after MuPDF layout,
+with `layout_key` from `format_epub_layout_params`. Outline via `fz_load_outline`.
+
+### Done criteria
+- [x] `epub_page_text_layer` (layout-bound geometry + layout_key)
+- [x] `epub_document_outline`
+- [x] Smoke test `test_epub_text` (`THUMTOO_TEST_EPUB` optional)
+- [ ] Host verify on a real EPUB
+- [ ] next **131** — SQLite always-cache of text layers
+
+### Notes
+- Invalidate / regenerate when EPUB Layout changes (biltoo already rewrites
+  `//epub:` params).
+- Bboxes: page space points after layout (Y up); scale by dpi/72 for pixels.
+
+---
+
 
 
 ## Plan / work — bundle `thumtoo-122-pdfimage-keep-obj`

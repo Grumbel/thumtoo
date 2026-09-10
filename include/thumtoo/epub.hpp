@@ -7,6 +7,7 @@
 #include "thumtoo/pdf.hpp"
 #include "thumtoo/types.hpp"
 #include "thumtoo/uri.hpp"
+#include "thumtoo/text.hpp"
 
 #include <filesystem>
 #include <optional>
@@ -55,5 +56,20 @@ struct ParsedEpubUri {
 [[nodiscard]] std::optional<PdfRaster> epub_render_tile_cell(
     const std::filesystem::path& path, int page_1based, const EpubLayout& layout,
     int scale, int x, int y);
+
+/**
+ * Text + link regions for one laid-out EPUB page (MuPDF).
+ * layout_key is format_epub_layout_params(layout). Geometry is invalid when
+ * layout changes — regenerate. Bboxes in page space (points, Y up),
+ * same as fz_bound_page after layout.
+ */
+[[nodiscard]] std::optional<PageTextLayer> epub_page_text_layer(
+    const std::filesystem::path& path, int page_1based,
+    const EpubLayout& layout = default_epub_layout());
+
+/// NAV / spine outline when MuPDF exposes one after open+layout.
+[[nodiscard]] std::optional<DocumentOutline> epub_document_outline(
+    const std::filesystem::path& path,
+    const EpubLayout& layout = default_epub_layout());
 
 }  // namespace thumtoo

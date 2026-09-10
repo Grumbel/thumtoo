@@ -159,6 +159,9 @@ if(THUMTOO_BUILD_TESTS)
   add_executable(thumtoo-test-djvu-text tests/test_djvu_text.cpp)
   target_link_libraries(thumtoo-test-djvu-text PRIVATE thumtoo)
   add_test(NAME djvu_text COMMAND thumtoo-test-djvu-text)
+  add_executable(thumtoo-test-epub-text tests/test_epub_text.cpp)
+  target_link_libraries(thumtoo-test-epub-text PRIVATE thumtoo)
+  add_test(NAME epub_text COMMAND thumtoo-test-epub-text)
 endif()
 
 install(TARGETS thumtoo
