@@ -843,5 +843,22 @@ std::optional<TileBlob> pdf_build_tile_cell(const std::filesystem::path& path,
                               scale, x, y, jpeg_quality);
 }
 
+std::optional<PageTextLayer> pdf_page_text_layer(const std::filesystem::path& path,
+                                                 int page_1based,
+                                                 PdfBackend backend) {
+  if (pdf_resolve_backend(backend) == PdfBackend::MuPDF) {
+    return mupdf_page_text_layer(path, page_1based);
+  }
+  // Poppler text+bbox path can be added later; MuPDF is the primary extractor.
+  return std::nullopt;
+}
+
+std::optional<DocumentOutline> pdf_document_outline(const std::filesystem::path& path,
+                                                    PdfBackend backend) {
+  if (pdf_resolve_backend(backend) == PdfBackend::MuPDF) {
+    return mupdf_document_outline(path);
+  }
+  return std::nullopt;
+}
 
 }  // namespace thumtoo

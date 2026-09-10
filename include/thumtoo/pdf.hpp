@@ -5,6 +5,7 @@
 
 #include "thumtoo/constants.hpp"
 #include "thumtoo/types.hpp"
+#include "thumtoo/text.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -152,6 +153,21 @@ struct PdfPageContentStats {
 [[nodiscard]] std::optional<TileBlob> pdf_build_tile_cell(
     const std::filesystem::path& path, int page_1based, int scale, int x,
     int y, int jpeg_quality = kDefaultTileQuality,
+    PdfBackend backend = PdfBackend::Default);
+
+/**
+ * Text and link regions for one page.
+ * Currently implemented for the MuPDF backend only; Poppler returns nullopt.
+ * Bboxes are page-space points (media box); Y up. Scale by dpi/72 to map to
+ * raster pixels at a given DPI (layout uses kPdfLayoutDpi).
+ */
+[[nodiscard]] std::optional<PageTextLayer> pdf_page_text_layer(
+    const std::filesystem::path& path, int page_1based,
+    PdfBackend backend = PdfBackend::Default);
+
+/// Flattened document outline. MuPDF only for now.
+[[nodiscard]] std::optional<DocumentOutline> pdf_document_outline(
+    const std::filesystem::path& path,
     PdfBackend backend = PdfBackend::Default);
 
 }  // namespace thumtoo

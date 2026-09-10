@@ -2,7 +2,7 @@
 
 ## Status (2026-09-09)
 
-**Tip: thumtoo-127-pdfimage-native-level.**
+**Tip: thumtoo-128-pdf-text-layer.** PDF text/link regions + outline via MuPDF (types + extract + test).
 
 ### 127 (this tip)
 - Gallery showed correct **size** (e.g. 1908×2246) but **pixels** were soft
@@ -45,6 +45,34 @@
 
 ### biltoo pairing
 Stack **biltoo-354** with this tip.
+
+---
+
+## Plan / work — bundle `thumtoo-128-pdf-text-layer`
+
+### Goal
+First slice of the semantic text layer (paired with biltoo-357 plan):
+
+- Extract **text regions** (line-level strings + axis-aligned bboxes in page
+  space / 72 dpi points) and **link regions** from PDF via MuPDF `fz_stext` +
+  `fz_load_links`.
+- Extract **document outline** via `fz_load_outline`.
+- Public types in `thumtoo/text.hpp`; MuPDF implementation; thin `pdf_*`
+  facade. No SQLite cache yet (always-cache comes once the extract API is
+  solid). Coordinates = same page space as `fz_bound_page` / media box points.
+
+### Done criteria
+- [x] `TextRegion` / `PageTextLayer` / `DocumentOutline` types (`text.hpp`)
+- [x] `mupdf_page_text_layer` + `mupdf_document_outline`
+- [x] `pdf_page_text_layer` / `pdf_document_outline` (MuPDF path; Poppler later)
+- [x] Unit test `test_pdf_text` with embedded mutool fixture (Hello)
+- [ ] Build/run verification on host with MuPDF (sandbox lacked lib)
+- [ ] TODO/AGENTS handoff; next **129** (DjVu text or cache)
+
+### Non-goals this bundle
+- DjVu / EPUB extract
+- Durable SQLite cache of text layers
+- biltoo consumer UI
 
 ---
 

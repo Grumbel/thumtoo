@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <cstdio>
 #include <string>
 
 #if defined(THUMTOO_HAVE_MUPDF)
@@ -664,3 +665,196 @@ std::optional<Size> mupdf_embedded_image_size(const std::filesystem::path& path,
 
 
 }  // namespace thumtoo
+
+std::optional<PageTextLayer> mupdf_page_text_layer(const std::filesystem::path& path,
+                                                   int page_1based) {
+#if !defined(THUMTOO_HAVE_MUPDF)
+  (void)path;
+  (void)page_1based;
+  return std::nullopt;
+#else
+  if (page_1based < 1) return std::nullopt;
+  fz_context* ctx = tls_ctx();
+  fz_page* page = tls_page(path, page_1based);
+  if (!ctx || !page) return std::nullopt;
+
+  PageTextLayer layer;
+  layer.page_1based = page_1based;
+
+  fz_rect box = fz_empty_rect;
+  fz_var(box);
+  int ok = 0;
+  fz_var(ok);
+  fz_try(ctx) {
+    box = fz_bound_page(ctx, page);
+    ok = 1;
+  }
+  fz_catch(ctx) { ok = 0; }
+  if (!ok) return std::nullopt;
+  layer.page_bounds = TextRect{box.x0, box.y0, box.x1, box.y1};
+
+  // Text: one structured-text pass → line-level regions (good for search/select).
+  fz_stext_options opts{};
+  opts.flags = 0;
+  fz_stext_page* stext = nullptr;
+  fz_var(stext);
+  fz_try(ctx) { stext = fz_new_stext_page_from_page(ctx, page, &opts); }
+  fz_catch(ctx) { stext = nullptr; }
+  if (stext) {
+    for (fz_stext_block* block = stext->first_block; block; block = block->next) {
+      if (block->type != FZ_STEXT_BLOCK_TEXT) continue;
+      for (fz_stext_line* line = block->u.t.first_line; line; line = line->next) {
+        std::string line_text;
+        line_text.reserve(64);
+        for (fz_stext_char* ch = line->first_char; ch; ch = ch->next) {
+          if (ch->c == 0) continue;
+          // Encode Unicode codepoint as UTF-8.
+          const int c = ch->c;
+          if (c < 0x80) {
+            line_text.push_back(static_cast<char>(c));
+          } else if (c < 0x800) {
+            line_text.push_back(static_cast<char>(0xC0 | (c >> 6)));
+            line_text.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+          } else if (c < 0x10000) {
+            line_text.push_back(static_cast<char>(0xE0 | (c >> 12)));
+            line_text.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
+            line_text.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+          } else {
+            line_text.push_back(static_cast<char>(0xF0 | (c >> 18)));
+            line_text.push_back(static_cast<char>(0x80 | ((c >> 12) & 0x3F)));
+            line_text.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
+            line_text.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+          }
+        }
+        // Trim trailing whitespace-only lines.
+        while (!line_text.empty() &&
+               (line_text.back() == ' ' || line_text.back() == '\t' ||
+                line_text.back() == '\r' || line_text.back() == '\n')) {
+          line_text.pop_back();
+        }
+        if (line_text.empty()) continue;
+
+        TextRegion reg;
+        reg.role = TextRegionRole::Text;
+        reg.text = std::move(line_text);
+        reg.bbox = TextRect{line->bbox.x0, line->bbox.y0, line->bbox.x1, line->bbox.y1};
+        if (!reg.bbox.empty()) layer.regions.push_back(std::move(reg));
+      }
+    }
+    fz_drop_stext_page(ctx, stext);
+  }
+
+  // Links: separate pass (annots / link list).
+  fz_link* links = nullptr;
+  fz_var(links);
+  fz_try(ctx) { links = fz_load_links(ctx, page); }
+  fz_catch(ctx) { links = nullptr; }
+  for (fz_link* link = links; link; link = link->next) {
+    TextRegion reg;
+    reg.role = TextRegionRole::Link;
+    reg.bbox = TextRect{link->rect.x0, link->rect.y0, link->rect.x1, link->rect.y1};
+    if (reg.bbox.empty()) continue;
+
+    const char* uri = link->uri ? link->uri : "";
+    // MuPDF internal links: "#page=N" or similar; external: http(s):…
+    if (uri[0] == '#') {
+      // Parse #page=N (1-based in MuPDF uri form often).
+      int page = 0;
+      double x = 0, y = 0;
+      // fz_resolve_link_dest is preferred when available.
+      fz_location loc{};
+      float lx = 0, ly = 0;
+      int resolved = 0;
+      fz_try(ctx) {
+        loc = fz_resolve_link(ctx, tls_document(path), uri, &lx, &ly);
+        resolved = 1;
+      }
+      fz_catch(ctx) { resolved = 0; }
+      if (resolved && loc.page >= 0) {
+        reg.target.kind = TextLinkTargetKind::InternalPage;
+        reg.target.page_1based = loc.page + 1;
+        reg.target.x = static_cast<double>(lx);
+        reg.target.y = static_cast<double>(ly);
+      } else if (sscanf(uri, "#page=%d", &page) == 1 && page >= 1) {
+        reg.target.kind = TextLinkTargetKind::InternalPage;
+        reg.target.page_1based = page;
+        (void)x;
+        (void)y;
+      } else {
+        reg.target.kind = TextLinkTargetKind::Uri;
+        reg.target.uri = uri;
+      }
+    } else if (uri[0] != '\0') {
+      reg.target.kind = TextLinkTargetKind::Uri;
+      reg.target.uri = uri;
+    }
+    layer.regions.push_back(std::move(reg));
+  }
+  if (links) fz_drop_link(ctx, links);
+
+  return layer;
+#endif
+}
+
+namespace {
+
+#if defined(THUMTOO_HAVE_MUPDF)
+void append_outline(fz_context* ctx, fz_document* doc, fz_outline* node, int level,
+                    DocumentOutline& out) {
+  for (; node; node = node->next) {
+    OutlineItem item;
+    item.level = level;
+    if (node->title) item.title = node->title;
+
+    if (node->uri && node->uri[0] != '\0') {
+      if (node->uri[0] == '#') {
+        fz_location loc{};
+        float lx = 0, ly = 0;
+        int resolved = 0;
+        fz_try(ctx) {
+          loc = fz_resolve_link(ctx, doc, node->uri, &lx, &ly);
+          resolved = 1;
+        }
+        fz_catch(ctx) { resolved = 0; }
+        if (resolved && loc.page >= 0) {
+          item.page_1based = loc.page + 1;
+        } else {
+          item.uri = node->uri;
+        }
+      } else {
+        item.uri = node->uri;
+      }
+    }
+    // page index on fz_outline varies across MuPDF versions; URI resolve is enough.
+
+    out.items.push_back(std::move(item));
+    if (node->down) append_outline(ctx, doc, node->down, level + 1, out);
+  }
+}
+#endif
+
+std::optional<DocumentOutline> mupdf_document_outline(
+    const std::filesystem::path& path) {
+#if !defined(THUMTOO_HAVE_MUPDF)
+  (void)path;
+  return std::nullopt;
+#else
+  fz_context* ctx = tls_ctx();
+  fz_document* doc = tls_document(path);
+  if (!ctx || !doc) return std::nullopt;
+
+  fz_outline* root = nullptr;
+  fz_var(root);
+  fz_try(ctx) { root = fz_load_outline(ctx, doc); }
+  fz_catch(ctx) { root = nullptr; }
+  if (!root) {
+    // Empty outline is valid (document has none).
+    return DocumentOutline{};
+  }
+  DocumentOutline out;
+  append_outline(ctx, doc, root, 1, out);
+  fz_drop_outline(ctx, root);
+  return out;
+#endif
+}
+

@@ -30,13 +30,11 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 
 ## Handoff
 
-## Status (2026-09-09)
+## Status (2026-09-10)
 
-**Tip: thumtoo-127.** Full session notes: top of [TODO.md](TODO.md).
-`//pdfimage:N` keep_obj fix (size/raster after page drop). Prior: PDF dual backend
-(MuPDF + Poppler) with `//page:` / `//poppler-page:` / `//mupdf-page:`.
-Live PDF tiles return `rgb888` (tests + Galapix codec branch required).
-Retrieval stack: Location URIs → content-id → read_source_bytes → PDF@144dpi → HTTP(S)+session cache.
+**Tip: thumtoo-128-pdf-text-layer.** PDF text/link regions + outline (MuPDF). Next: DjVu text or SQLite cache.
+Full session notes: top of [TODO.md](TODO.md).
+Prior: `//pdfimage:N` keep_obj fix; PDF dual backend; live PDF tiles rgb888.
 
 
 **Phase 1–2 done:** Client, prepare/status CLIs, system SQLite, libvips+JXL ladder,

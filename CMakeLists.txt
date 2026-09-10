@@ -153,6 +153,9 @@ if(THUMTOO_BUILD_TESTS)
   add_executable(thumtoo-test-pdf-tiles tests/test_pdf_tiles.cpp)
   target_link_libraries(thumtoo-test-pdf-tiles PRIVATE thumtoo)
   add_test(NAME pdf_tiles COMMAND thumtoo-test-pdf-tiles)
+  add_executable(thumtoo-test-pdf-text tests/test_pdf_text.cpp)
+  target_link_libraries(thumtoo-test-pdf-text PRIVATE thumtoo)
+  add_test(NAME pdf_text COMMAND thumtoo-test-pdf-text)
 endif()
 
 install(TARGETS thumtoo

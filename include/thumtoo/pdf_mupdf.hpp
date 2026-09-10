@@ -4,6 +4,7 @@
 #pragma once
 
 #include "thumtoo/pdf.hpp"
+#include "thumtoo/text.hpp"
 
 #include <filesystem>
 #include <optional>
@@ -40,5 +41,15 @@ namespace thumtoo {
 
 [[nodiscard]] std::optional<Size> mupdf_embedded_image_size(
     const std::filesystem::path& path, int image_1based);
+
+/// Structured text + link regions for one page (MuPDF).
+/// Bboxes are in page space (points, same as fz_bound_page / media box).
+/// Y increases upward (PDF user space). Reading order is preserved.
+[[nodiscard]] std::optional<PageTextLayer> mupdf_page_text_layer(
+    const std::filesystem::path& path, int page_1based);
+
+/// Document outline / bookmarks (flattened with level).
+[[nodiscard]] std::optional<DocumentOutline> mupdf_document_outline(
+    const std::filesystem::path& path);
 
 }  // namespace thumtoo
