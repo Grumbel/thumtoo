@@ -664,8 +664,6 @@ std::optional<Size> mupdf_embedded_image_size(const std::filesystem::path& path,
 }
 
 
-}  // namespace thumtoo
-
 std::optional<PageTextLayer> mupdf_page_text_layer(const std::filesystem::path& path,
                                                    int page_1based) {
 #if !defined(THUMTOO_HAVE_MUPDF)
@@ -833,6 +831,8 @@ void append_outline(fz_context* ctx, fz_document* doc, fz_outline* node, int lev
 }
 #endif
 
+}  // namespace
+
 std::optional<DocumentOutline> mupdf_document_outline(
     const std::filesystem::path& path) {
 #if !defined(THUMTOO_HAVE_MUPDF)
@@ -858,3 +858,4 @@ std::optional<DocumentOutline> mupdf_document_outline(
 #endif
 }
 
+}  // namespace thumtoo

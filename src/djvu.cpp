@@ -416,7 +416,9 @@ std::optional<TileBlob> djvu_build_tile_cell(const std::filesystem::path& path,
   auto raster = djvu_render_tile_cell(path, page_1based, scale, x, y);
   if (!raster) return std::nullopt;
   return encode_tile_cell_rgb(raster->rgb.data(), raster->width, raster->height,
-                              scale, x, y, 
+                              scale, x, y, jpeg_quality);
+}
+
 #if defined(THUMTOO_HAVE_DJVU)
 
 // DjVu text zones are nested miniexps:
