@@ -142,11 +142,15 @@ int main() {
   if (!pdf) return 1;
 
   const fs::path cache = tmp / "cache";
-  thumtoo::Client client(cache);
+  auto client = thumtoo::Client::open(cache);
+  if (!client) {
+    std::cerr << "FAIL: Client::open\n";
+    return 1;
+  }
   const std::string uri = thumtoo::pdf_page_uri(*pdf, 1);
 
   // 1) First soft step (256).
-  auto px256 = wait_pixels(client, uri, 256);
+  auto px256 = wait_pixels(*client, uri, 256);
   expect(px256.has_value() && !px256->bytes.empty(), "pixels@256 non-empty");
   if (px256) {
     expect_le(std::max(px256->width, px256->height), 256, "256 long edge ≤ 256");
@@ -154,7 +158,7 @@ int main() {
   }
 
   // 2) Upgrade must not stick on 256 when asking for 512.
-  auto px512 = wait_pixels(client, uri, 512);
+  auto px512 = wait_pixels(*client, uri, 512);
   expect(px512.has_value() && !px512->bytes.empty(), "pixels@512 non-empty");
   if (px512) {
     const int long_px = std::max(px512->width, px512->height);
@@ -163,7 +167,7 @@ int main() {
   }
 
   // 3) Request above soft max → still only soft (≤ kMaxSoftLadderEdge).
-  auto px2k = wait_pixels(client, uri, 2048);
+  auto px2k = wait_pixels(*client, uri, 2048);
   expect(px2k.has_value() && !px2k->bytes.empty(), "pixels@2048 non-empty");
   if (px2k) {
     const int long_px = std::max(px2k->width, px2k->height);
@@ -174,7 +178,7 @@ int main() {
   }
 
   // 4) Cache-only get_pixels must not invent larger-than-soft levels.
-  if (auto cached = client.get_pixels(uri, 2048)) {
+  if (auto cached = client->get_pixels(uri, 2048)) {
     expect_le(std::max(cached->width, cached->height),
               thumtoo::kMaxSoftLadderEdge, "get_pixels(2048) soft-capped");
   } else {
@@ -186,7 +190,7 @@ int main() {
     std::mutex mu;
     bool done = false;
     std::optional<thumtoo::TileBlob> tile;
-    client.request_tile(uri, /*scale=*/0, 0, 0,
+    client->request_tile(uri, /*scale=*/0, 0, 0,
                         [&](std::string, int, int, int,
                             std::optional<thumtoo::TileBlob> t) {
                           std::lock_guard lock(mu);
