@@ -611,6 +611,16 @@ void append_utf8(std::string& out, int c) {
 }
 
 
+void flatten_epub_outline(fz_outline* node, int level,
+                          std::vector<std::tuple<int, std::string, std::string>>& out) {
+  for (; node; node = node->next) {
+    std::string title = node->title ? node->title : "";
+    std::string uri = node->uri ? node->uri : "";
+    out.emplace_back(level, std::move(title), std::move(uri));
+    if (node->down) flatten_epub_outline(node->down, level + 1, out);
+  }
+}
+
 [[nodiscard]] bool resolve_hash_link_page(fz_context* ctx, fz_document* doc,
                                           const char* uri, int* page_0based,
                                           float* x_out, float* y_out) {
@@ -633,16 +643,6 @@ void append_utf8(std::string& out, int c) {
   if (x_out) *x_out = lx;
   if (y_out) *y_out = ly;
   return true;
-}
-
-void flatten_epub_outline(fz_outline* node, int level,
-                          std::vector<std::tuple<int, std::string, std::string>>& out) {
-  for (; node; node = node->next) {
-    std::string title = node->title ? node->title : "";
-    std::string uri = node->uri ? node->uri : "";
-    out.emplace_back(level, std::move(title), std::move(uri));
-    if (node->down) flatten_epub_outline(node->down, level + 1, out);
-  }
 }
 
 void append_epub_outline(fz_context* ctx, fz_document* doc, fz_outline* root,

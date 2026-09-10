@@ -666,6 +666,30 @@ std::optional<Size> mupdf_embedded_image_size(const std::filesystem::path& path,
 }
 
 
+[[nodiscard]] bool resolve_hash_link_page(fz_context* ctx, fz_document* doc,
+                                          const char* uri, int* page_0based,
+                                          float* x_out, float* y_out) {
+  if (!ctx || !doc || !uri || uri[0] != '#') return false;
+  int page = -1;
+  float lx = 0, ly = 0;
+  int ok = 0;
+  fz_var(page);
+  fz_var(lx);
+  fz_var(ly);
+  fz_var(ok);
+  fz_try(ctx) {
+    fz_location loc = fz_resolve_link(ctx, doc, uri, &lx, &ly);
+    page = loc.page;
+    ok = 1;
+  }
+  fz_catch(ctx) { ok = 0; }
+  if (!ok || page < 0) return false;
+  if (page_0based) *page_0based = page;
+  if (x_out) *x_out = lx;
+  if (y_out) *y_out = ly;
+  return true;
+}
+
 std::optional<PageTextLayer> mupdf_page_text_layer(const std::filesystem::path& path,
                                                    int page_1based) {
 #if !defined(THUMTOO_HAVE_MUPDF)
@@ -805,30 +829,6 @@ std::optional<PageTextLayer> mupdf_page_text_layer(const std::filesystem::path& 
 namespace {
 
 #if defined(THUMTOO_HAVE_MUPDF)
-
-[[nodiscard]] bool resolve_hash_link_page(fz_context* ctx, fz_document* doc,
-                                          const char* uri, int* page_0based,
-                                          float* x_out, float* y_out) {
-  if (!ctx || !doc || !uri || uri[0] != '#') return false;
-  int page = -1;
-  float lx = 0, ly = 0;
-  int ok = 0;
-  fz_var(page);
-  fz_var(lx);
-  fz_var(ly);
-  fz_var(ok);
-  fz_try(ctx) {
-    fz_location loc = fz_resolve_link(ctx, doc, uri, &lx, &ly);
-    page = loc.page;
-    ok = 1;
-  }
-  fz_catch(ctx) { ok = 0; }
-  if (!ok || page < 0) return false;
-  if (page_0based) *page_0based = page;
-  if (x_out) *x_out = lx;
-  if (y_out) *y_out = ly;
-  return true;
-}
 
 void flatten_outline(fz_outline* node, int level,
                      std::vector<std::tuple<int, std::string, std::string>>& out) {
