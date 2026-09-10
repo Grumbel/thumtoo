@@ -173,16 +173,19 @@
       apps = forAllSystems ({ pkgs, system, ... }:
         let
           pkg = self.packages.${system}.default;
-          app = exe: {
+          app = exe: description: {
             type = "app";
             program = "${pkg}/bin/${exe}";
+            meta = {
+              description = description;
+            };
           };
         in {
-          default = app "thumtoo-status";
-          status = app "thumtoo-status";
-          prepare = app "thumtoo-prepare";
-          bench = app "thumtoo-bench";
-          gc = app "thumtoo-gc";
+          default = app "thumtoo-status" "Show thumtoo cache status";
+          status = app "thumtoo-status" "Show thumtoo cache status";
+          prepare = app "thumtoo-prepare" "Prewarm size probe and soft ladder for paths";
+          bench = app "thumtoo-bench" "Benchmark ladder / tile paths";
+          gc = app "thumtoo-gc" "Garbage-collect unreferenced cache blobs";
         });
 
       devShells = forAllSystems ({ pkgs, ... }: {
