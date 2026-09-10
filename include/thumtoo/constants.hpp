@@ -10,7 +10,7 @@
 namespace thumtoo {
 
 /// schema_meta / schema_version = 1 (DESIGN §6b). Bump only with incompatible layout.
-inline constexpr int kSchemaVersion = 2;
+inline constexpr int kSchemaVersion = 3;
 
 /// Fixed long-edge ladder (pixels).
 inline constexpr std::array<int, 5> kLadderEdges = {128, 256, 512, 1024, 2048};

@@ -209,6 +209,22 @@ class Database {
   /// Drop content row and related levels/tiles/tags metadata (not blob store).
   void purge_content_metadata(std::string_view content_id);
 
+  // --- text layers (semantic overlay cache) ---
+  void upsert_text_layer(std::string_view content_id, int page_1based,
+                         std::string_view layout_key,
+                         double page_x0, double page_y0, double page_x1, double page_y1,
+                         const std::vector<std::uint8_t>& payload);
+  [[nodiscard]] std::optional<std::vector<std::uint8_t>> find_text_layer(
+      std::string_view content_id, int page_1based,
+      std::string_view layout_key) const;
+  void delete_text_layers(std::string_view content_id);
+
+  void upsert_document_outline(std::string_view content_id,
+                               std::string_view layout_key,
+                               const std::vector<std::uint8_t>& payload);
+  [[nodiscard]] std::optional<std::vector<std::uint8_t>> find_document_outline(
+      std::string_view content_id, std::string_view layout_key) const;
+
  private:
   explicit Database(sqlite3* db, std::filesystem::path cache_root,
                     std::filesystem::path db_path, int schema_version);

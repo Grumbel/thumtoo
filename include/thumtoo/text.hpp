@@ -73,3 +73,26 @@ struct DocumentOutline {
 };
 
 }  // namespace thumtoo
+
+/// Serialize page text layer to a compact durable payload (always-cache).
+[[nodiscard]] std::vector<std::uint8_t> serialize_page_text_layer(
+    const PageTextLayer& layer);
+
+[[nodiscard]] std::optional<PageTextLayer> deserialize_page_text_layer(
+    const std::vector<std::uint8_t>& bytes);
+
+[[nodiscard]] std::vector<std::uint8_t> serialize_document_outline(
+    const DocumentOutline& outline);
+
+[[nodiscard]] std::optional<DocumentOutline> deserialize_document_outline(
+    const std::vector<std::uint8_t>& bytes);
+
+/**
+ * Extract text layer for a location URI (//page: / //epub: / DjVu //page:).
+ * Does not touch the cache — pure source extract.
+ */
+[[nodiscard]] std::optional<PageTextLayer> extract_page_text_layer(
+    std::string_view uri);
+
+[[nodiscard]] std::optional<DocumentOutline> extract_document_outline(
+    std::string_view uri);

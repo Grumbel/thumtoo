@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "thumtoo/client.hpp"
+#include "thumtoo/text.hpp"
 #include "thumtoo/build_stats.hpp"
 #include "thumtoo/constants.hpp"
 #include "thumtoo/uri.hpp"
@@ -2508,5 +2509,124 @@ bool Client::remove_tag(std::string_view uri, std::string_view tag) {
   if (!loc || !loc->content_id) return false;
   return db_->remove_tag(*loc->content_id, tag);
 }
+
+
+namespace {
+
+std::string layout_key_for_uri(std::string_view uri) {
+  if (auto epub = thumtoo::parse_epub_uri(uri)) {
+    return thumtoo::format_epub_layout_params(epub->layout);
+  }
+  return {};
+}
+
+int page_for_uri(std::string_view uri) {
+  if (auto epub = thumtoo::parse_epub_uri(uri)) return epub->page;
+  if (auto djvu = thumtoo::parse_djvu_uri(uri)) return djvu->page;
+  if (auto pdf = thumtoo::parse_pdf_uri(uri)) return pdf->page;
+  return 0;
+}
+
+/// Prefer locator content_id; fall back to document file locator without page pipe.
+std::optional<std::string> content_id_for_text_uri(thumtoo::Client& client,
+                                                   std::string_view uri) {
+  if (auto id = client.resolve_content_id(uri)) return id;
+  // Try bare file path locator (page URIs may not be hashed yet).
+  if (auto pdf = thumtoo::parse_pdf_uri(uri)) {
+    const auto base = thumtoo::file_uri_from_path(pdf->pdf_path);
+    return client.resolve_content_id(base);
+  }
+  if (auto djvu = thumtoo::parse_djvu_uri(uri)) {
+    const auto base = thumtoo::file_uri_from_path(djvu->djvu_path);
+    return client.resolve_content_id(base);
+  }
+  if (auto epub = thumtoo::parse_epub_uri(uri)) {
+    const auto base = thumtoo::file_uri_from_path(epub->epub_path);
+    return client.resolve_content_id(base);
+  }
+  return std::nullopt;
+}
+
+}  // namespace
+
+std::optional<PageTextLayer> Client::get_page_text_layer(
+    std::string_view uri) const {
+  const int page = page_for_uri(uri);
+  if (page < 1) return std::nullopt;
+  std::optional<std::string> id;
+  auto try_loc = [&](std::string_view u) {
+    if (auto loc = db_->find_locator(u)) {
+      if (loc->content_id) id = *loc->content_id;
+    }
+  };
+  try_loc(uri);
+  if (!id) {
+    if (auto pdf = parse_pdf_uri(uri))
+      try_loc(file_uri_from_path(pdf->pdf_path));
+    else if (auto djvu = parse_djvu_uri(uri))
+      try_loc(file_uri_from_path(djvu->djvu_path));
+    else if (auto epub = parse_epub_uri(uri))
+      try_loc(file_uri_from_path(epub->epub_path));
+  }
+  if (!id) return std::nullopt;
+  const auto key = layout_key_for_uri(uri);
+  auto blob = db_->find_text_layer(*id, page, key);
+  if (!blob) return std::nullopt;
+  return deserialize_page_text_layer(*blob);
+}
+
+std::optional<PageTextLayer> Client::ensure_page_text_layer(
+    std::string_view uri) {
+  if (auto hit = get_page_text_layer(uri)) return hit;
+  auto layer = extract_page_text_layer(uri);
+  if (!layer) return std::nullopt;
+  const int page = page_for_uri(uri);
+  auto id = content_id_for_text_uri(*this, uri);
+  if (id && page >= 1) {
+    auto payload = serialize_page_text_layer(*layer);
+    db_->upsert_text_layer(*id, page, layer->layout_key, layer->page_bounds.x0,
+                           layer->page_bounds.y0, layer->page_bounds.x1,
+                           layer->page_bounds.y1, payload);
+  }
+  return layer;
+}
+
+std::optional<DocumentOutline> Client::get_document_outline(
+    std::string_view uri) const {
+  std::optional<std::string> id;
+  auto try_loc = [&](std::string_view u) {
+    if (auto loc = db_->find_locator(u)) {
+      if (loc->content_id) id = *loc->content_id;
+    }
+  };
+  try_loc(uri);
+  if (!id) {
+    if (auto pdf = parse_pdf_uri(uri))
+      try_loc(file_uri_from_path(pdf->pdf_path));
+    else if (auto djvu = parse_djvu_uri(uri))
+      try_loc(file_uri_from_path(djvu->djvu_path));
+    else if (auto epub = parse_epub_uri(uri))
+      try_loc(file_uri_from_path(epub->epub_path));
+  }
+  if (!id) return std::nullopt;
+  const auto key = layout_key_for_uri(uri);
+  auto blob = db_->find_document_outline(*id, key);
+  if (!blob) return std::nullopt;
+  return deserialize_document_outline(*blob);
+}
+
+std::optional<DocumentOutline> Client::ensure_document_outline(
+    std::string_view uri) {
+  if (auto hit = get_document_outline(uri)) return hit;
+  auto outline = extract_document_outline(uri);
+  if (!outline) return std::nullopt;
+  auto id = content_id_for_text_uri(*this, uri);
+  if (id) {
+    auto payload = serialize_document_outline(*outline);
+    db_->upsert_document_outline(*id, layout_key_for_uri(uri), payload);
+  }
+  return outline;
+}
+
 
 }  // namespace thumtoo

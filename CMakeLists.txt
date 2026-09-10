@@ -45,6 +45,7 @@ add_library(thumtoo
   src/handsum.cpp
   external/basic_handsum_decode_impl.c
   src/network.cpp
+  src/text.cpp
 )
 add_library(thumtoo::thumtoo ALIAS thumtoo)
 target_include_directories(thumtoo
@@ -162,6 +163,9 @@ if(THUMTOO_BUILD_TESTS)
   add_executable(thumtoo-test-epub-text tests/test_epub_text.cpp)
   target_link_libraries(thumtoo-test-epub-text PRIVATE thumtoo)
   add_test(NAME epub_text COMMAND thumtoo-test-epub-text)
+  add_executable(thumtoo-test-text-layer-cache tests/test_text_layer_cache.cpp)
+  target_link_libraries(thumtoo-test-text-layer-cache PRIVATE thumtoo)
+  add_test(NAME text_layer_cache COMMAND thumtoo-test-text-layer-cache)
 endif()
 
 install(TARGETS thumtoo

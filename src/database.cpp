@@ -142,6 +142,26 @@ CREATE TABLE IF NOT EXISTS tiles (
 CREATE INDEX IF NOT EXISTS idx_locators_content_id ON locators(content_id);
 CREATE INDEX IF NOT EXISTS idx_levels_content_id ON levels(content_id);
 CREATE INDEX IF NOT EXISTS idx_tiles_content_id ON tiles(content_id);
+CREATE TABLE IF NOT EXISTS text_layers (
+  content_id TEXT NOT NULL,
+  page_1based INTEGER NOT NULL,
+  layout_key TEXT NOT NULL DEFAULT '',
+  page_x0 REAL,
+  page_y0 REAL,
+  page_x1 REAL,
+  page_y1 REAL,
+  payload BLOB NOT NULL,
+  updated_at INTEGER,
+  PRIMARY KEY (content_id, page_1based, layout_key)
+);
+CREATE TABLE IF NOT EXISTS document_outlines (
+  content_id TEXT NOT NULL,
+  layout_key TEXT NOT NULL DEFAULT '',
+  payload BLOB NOT NULL,
+  updated_at INTEGER,
+  PRIMARY KEY (content_id, layout_key)
+);
+CREATE INDEX IF NOT EXISTS idx_text_layers_content_id ON text_layers(content_id);
 )SQL";
 
 }  // namespace
@@ -233,6 +253,7 @@ void Database::migrate_or_init() {
       exec("ALTER TABLE content ADD COLUMN lqip BLOB;");
       exec("ALTER TABLE content ADD COLUMN lqip_kind INTEGER NOT NULL DEFAULT 0;");
     }
+    // v3: text_layers + document_outlines created by kSchemaSql IF NOT EXISTS.
     meta_set(kSchemaMetaVersionKey, std::to_string(kSchemaVersion));
     schema_version_ = kSchemaVersion;
   }
@@ -1324,8 +1345,149 @@ void Database::purge_content_metadata(std::string_view content_id) {
   };
   run("DELETE FROM tiles WHERE content_id = ?1;");
   run("DELETE FROM levels WHERE content_id = ?1;");
+  run("DELETE FROM text_layers WHERE content_id = ?1;");
+  run("DELETE FROM document_outlines WHERE content_id = ?1;");
   run("DELETE FROM tags WHERE content_id = ?1;");
   run("DELETE FROM content WHERE content_id = ?1;");
 }
+
+
+void Database::upsert_text_layer(std::string_view content_id, int page_1based,
+                                 std::string_view layout_key, double page_x0,
+                                 double page_y0, double page_x1, double page_y1,
+                                 const std::vector<std::uint8_t>& payload) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "INSERT INTO text_layers(content_id, page_1based, layout_key, "
+      "page_x0, page_y0, page_x1, page_y1, payload, updated_at) "
+      "VALUES(?1,?2,?3,?4,?5,?6,?7,?8,strftime('%s','now')) "
+      "ON CONFLICT(content_id, page_1based, layout_key) DO UPDATE SET "
+      "page_x0=excluded.page_x0, page_y0=excluded.page_y0, "
+      "page_x1=excluded.page_x1, page_y1=excluded.page_y1, "
+      "payload=excluded.payload, updated_at=excluded.updated_at;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(), static_cast<int>(content_id.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, page_1based);
+  sqlite3_bind_text(stmt, 3, layout_key.data(), static_cast<int>(layout_key.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_double(stmt, 4, page_x0);
+  sqlite3_bind_double(stmt, 5, page_y0);
+  sqlite3_bind_double(stmt, 6, page_x1);
+  sqlite3_bind_double(stmt, 7, page_y1);
+  sqlite3_bind_blob(stmt, 8, payload.data(), static_cast<int>(payload.size()),
+                    SQLITE_STATIC);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_finalize(stmt);
+}
+
+std::optional<std::vector<std::uint8_t>> Database::find_text_layer(
+    std::string_view content_id, int page_1based,
+    std::string_view layout_key) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT payload FROM text_layers WHERE content_id=?1 AND page_1based=?2 "
+      "AND layout_key=?3;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return std::nullopt;
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(), static_cast<int>(content_id.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, page_1based);
+  sqlite3_bind_text(stmt, 3, layout_key.data(), static_cast<int>(layout_key.size()),
+                    SQLITE_STATIC);
+  std::optional<std::vector<std::uint8_t>> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    const void* blob = sqlite3_column_blob(stmt, 0);
+    const int n = sqlite3_column_bytes(stmt, 0);
+    if (blob && n > 0) {
+      const auto* b = static_cast<const std::uint8_t*>(blob);
+      out = std::vector<std::uint8_t>(b, b + n);
+    }
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+void Database::delete_text_layers(std::string_view content_id) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "DELETE FROM text_layers WHERE content_id=?1;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(), static_cast<int>(content_id.size()),
+                    SQLITE_STATIC);
+  sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+  const char* sql2 = "DELETE FROM document_outlines WHERE content_id=?1;";
+  if (sqlite3_prepare_v2(db_, sql2, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(), static_cast<int>(content_id.size()),
+                    SQLITE_STATIC);
+  sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+}
+
+void Database::upsert_document_outline(std::string_view content_id,
+                                       std::string_view layout_key,
+                                       const std::vector<std::uint8_t>& payload) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "INSERT INTO document_outlines(content_id, layout_key, payload, updated_at) "
+      "VALUES(?1,?2,?3,strftime('%s','now')) "
+      "ON CONFLICT(content_id, layout_key) DO UPDATE SET "
+      "payload=excluded.payload, updated_at=excluded.updated_at;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(), static_cast<int>(content_id.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 2, layout_key.data(), static_cast<int>(layout_key.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_blob(stmt, 3, payload.data(), static_cast<int>(payload.size()),
+                    SQLITE_STATIC);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_finalize(stmt);
+}
+
+std::optional<std::vector<std::uint8_t>> Database::find_document_outline(
+    std::string_view content_id, std::string_view layout_key) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT payload FROM document_outlines WHERE content_id=?1 AND layout_key=?2;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return std::nullopt;
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(), static_cast<int>(content_id.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 2, layout_key.data(), static_cast<int>(layout_key.size()),
+                    SQLITE_STATIC);
+  std::optional<std::vector<std::uint8_t>> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    const void* blob = sqlite3_column_blob(stmt, 0);
+    const int n = sqlite3_column_bytes(stmt, 0);
+    if (blob && n > 0) {
+      const auto* b = static_cast<const std::uint8_t*>(blob);
+      out = std::vector<std::uint8_t>(b, b + n);
+    }
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
 
 }  // namespace thumtoo

@@ -7,6 +7,7 @@
 #include "thumtoo/blob_store.hpp"
 #include "thumtoo/executor.hpp"
 #include "thumtoo/types.hpp"
+#include "thumtoo/text.hpp"
 #include "thumtoo/pdf.hpp"
 
 #include <cstdint>
@@ -198,6 +199,21 @@ class Client {
 
   /// Tags attach to content_id (sha256:… preferred). URI resolves via locator.
   [[nodiscard]] std::vector<std::string> get_tags(std::string_view uri) const;
+
+  /// Cache-only text layer (nullopt if not stored).
+  [[nodiscard]] std::optional<PageTextLayer> get_page_text_layer(
+      std::string_view uri) const;
+
+  /// Extract if missing, always store when content_id is known. Source I/O.
+  std::optional<PageTextLayer> ensure_page_text_layer(std::string_view uri);
+
+  /// Cache-only outline.
+  [[nodiscard]] std::optional<DocumentOutline> get_document_outline(
+      std::string_view uri) const;
+
+  /// Extract + cache outline when content_id known.
+  std::optional<DocumentOutline> ensure_document_outline(std::string_view uri);
+
   /// Returns false if uri has no content_id yet.
   bool add_tag(std::string_view uri, std::string_view tag,
                std::string_view source = "user");

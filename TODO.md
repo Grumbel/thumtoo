@@ -2,7 +2,7 @@
 
 ## Status (2026-09-09)
 
-**Tip: thumtoo-130-epub-text-layer.** EPUB text/link + outline (layout_key). Prior: 129 DjVu. DjVu text/link regions + outline. Prior: 128 PDF text layer. PDF text/link regions + outline via MuPDF (types + extract + test).
+**Tip: thumtoo-131-text-layer-cache.** SQLite text layer cache (schema v3). Prior: 130 EPUB. EPUB text/link + outline (layout_key). Prior: 129 DjVu. DjVu text/link regions + outline. Prior: 128 PDF text layer. PDF text/link regions + outline via MuPDF (types + extract + test).
 
 ### 127 (this tip)
 - Gallery showed correct **size** (e.g. 1908×2246) but **pixels** were soft
@@ -116,6 +116,29 @@ with `layout_key` from `format_epub_layout_params`. Outline via `fz_load_outline
 - Bboxes: page space points after layout (Y up); scale by dpi/72 for pixels.
 
 ---
+
+## Plan / work — bundle `thumtoo-131-text-layer-cache`
+
+### Goal
+Always-cache text layers + outlines in SQLite (schema v3).
+
+### Done criteria
+- [x] schema_version 3: `text_layers`, `document_outlines`
+- [x] binary serialize/deserialize for PageTextLayer + DocumentOutline
+- [x] `extract_page_text_layer` / `extract_document_outline` URI dispatch
+- [x] Database upsert/find; purge drops text rows
+- [x] Client `get_*` (cache-only) + `ensure_*` (extract + store when content_id known)
+- [x] Unit test serialize + DB round-trip
+- [ ] Host build verify
+- [ ] next **132** — biltoo consumer / async request API
+
+### Notes
+- Cache key: `(content_id, page_1based, layout_key)`; EPUB layout_key from
+  `format_epub_layout_params`. Empty layout_key for PDF/DjVu.
+- Without content_id, extract still works but is not stored.
+
+---
+
 
 
 

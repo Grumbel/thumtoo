@@ -1,6 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 -- SPDX-License-Identifier: GPL-3.0-or-later
--- thumtoo schema_version 2
+-- thumtoo schema_version 3
 
 CREATE TABLE IF NOT EXISTS schema_meta (
   key TEXT PRIMARY KEY,
@@ -94,3 +94,26 @@ CREATE INDEX IF NOT EXISTS idx_locators_content_id ON locators(content_id);
 CREATE INDEX IF NOT EXISTS idx_locators_outer_path ON locators(outer_path);
 CREATE INDEX IF NOT EXISTS idx_levels_content_id ON levels(content_id);
 CREATE INDEX IF NOT EXISTS idx_tiles_content_id ON tiles(content_id);
+
+CREATE TABLE IF NOT EXISTS text_layers (
+  content_id TEXT NOT NULL,
+  page_1based INTEGER NOT NULL,
+  layout_key TEXT NOT NULL DEFAULT '',
+  page_x0 REAL,
+  page_y0 REAL,
+  page_x1 REAL,
+  page_y1 REAL,
+  payload BLOB NOT NULL,
+  updated_at INTEGER,
+  PRIMARY KEY (content_id, page_1based, layout_key)
+);
+
+CREATE TABLE IF NOT EXISTS document_outlines (
+  content_id TEXT NOT NULL,
+  layout_key TEXT NOT NULL DEFAULT '',
+  payload BLOB NOT NULL,
+  updated_at INTEGER,
+  PRIMARY KEY (content_id, layout_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_text_layers_content_id ON text_layers(content_id);
