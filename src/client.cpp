@@ -23,6 +23,9 @@
 #include <unordered_map>
 #include <cctype>
 #include <chrono>
+#include <cstdlib>
+#include <cstdarg>
+#include <cstdio>
 #include <condition_variable>
 #include <random>
 #include <fstream>
@@ -63,6 +66,26 @@ void store_lqip_if_missing(Database& db, const std::string& content_id,
 }  // namespace
 
 namespace {
+
+/** Set THUMTOO_DEBUG=1 (or non-empty non-0) for stderr task traces. */
+bool debug_enabled() {
+  static const int on = [] {
+    const char* e = std::getenv("THUMTOO_DEBUG");
+    return (e && e[0] != '\0' && e[0] != '0') ? 1 : 0;
+  }();
+  return on != 0;
+}
+
+void dbg(const char* fmt, ...) {
+  if (!debug_enabled()) return;
+  std::fputs("thumtoo: ", stderr);
+  va_list ap;
+  va_start(ap, fmt);
+  std::vfprintf(stderr, fmt, ap);
+  va_end(ap);
+  std::fputc('\n', stderr);
+  std::fflush(stderr);
+}
 
 std::string format_from_member(std::string_view member) {
   const auto slash = member.find_last_of("/\\");

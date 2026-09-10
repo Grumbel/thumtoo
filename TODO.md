@@ -2,7 +2,7 @@
 
 ## Status (2026-09-09)
 
-**Tip: thumtoo-138-debug-task-trace.** THUMTOO_DEBUG=1 stderr traces for ladder/tile jobs. Prior: 137.
+**Tip: thumtoo-139-debug-helpers-scope.** Define debug_enabled/dbg for EnsureTiles build. Prior: 138.
 
 ### 127 (this tip)
 - Gallery showed correct **size** (e.g. 1908×2246) but **pixels** were soft
