@@ -425,15 +425,34 @@ std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
   return get_lqip(uri);
 }
 
+namespace {
+/// Soft ladder is adequate only when decoded long edge covers the request
+/// (clamped to kMaxSoftLadderEdge). A 256 level must not satisfy 512.
+bool soft_level_covers(const PixelLevel& px, int max_edge) {
+  const int want = max_edge > 0 ? max_edge : kMaxSoftLadderEdge;
+  const int need = std::min(want, kMaxSoftLadderEdge);
+  const int long_px = std::max(px.width, px.height);
+  return long_px >= (need * 9) / 10;
+}
+}  // namespace
+
 void Client::request_pixels(std::string uri, int max_edge, PixelsCallback cb,
                             int frame_idx) {
+  // Cap soft ladder requests — deeper zoom is tiles, not full-page JXL.
+  if (max_edge > kMaxSoftLadderEdge) {
+    max_edge = kMaxSoftLadderEdge;
+  }
   if (auto px = get_pixels(uri, max_edge, frame_idx)) {
-    if (cb) {
-      executor_.post([cb = std::move(cb), uri, max_edge, px = std::move(*px)]() mutable {
-        cb(std::move(uri), max_edge, std::move(px));
-      });
+    if (soft_level_covers(*px, max_edge)) {
+      if (cb) {
+        executor_.post([cb = std::move(cb), uri, max_edge,
+                        px = std::move(*px)]() mutable {
+          cb(std::move(uri), max_edge, std::move(px));
+        });
+      }
+      return;
     }
-    return;
+    // Inadequate soft level — fall through to EnsurePixels to grow ladder.
   }
   // Ensure locator exists (same as request_size) so EnsurePixels → ProbeSize
   // can resolve //pdfimage: / //page: without a prior scheduleProbe race.
@@ -1743,8 +1762,9 @@ void Client::handle_ensure_pixels(
       }
       return false;
     }
-    const int want = job.max_edge > 0 ? job.max_edge : kLadderEdges.back();
-    // Require ~90% of the requested long edge in actual pixels.
+    const int want = std::min(
+        job.max_edge > 0 ? job.max_edge : kMaxSoftLadderEdge, kMaxSoftLadderEdge);
+    // Require ~90% of the (soft-capped) requested long edge in actual pixels.
     if (long_px >= (want * 9) / 10) return true;
     if (auto m = db_->meta_for_uri(job.uri)) {
       if (m->size) {
@@ -1815,9 +1835,10 @@ void Client::handle_ensure_pixels(
     row.status = ContentStatus::Pending;
   }
 
-  // Single durable preview ≤ job.max_edge (not a full multi-edge ladder).
-  // Larger / other sizes: another request_pixels, downscale from cache, or tiles.
-  const int edge_limit = job.max_edge > 0 ? job.max_edge : kLadderEdges.back();
+  // Single durable soft preview ≤ min(request, kMaxSoftLadderEdge).
+  // Larger display is tiles (see TILES.md), not a full-page JXL ladder step.
+  const int edge_limit = std::min(
+      job.max_edge > 0 ? job.max_edge : kMaxSoftLadderEdge, kMaxSoftLadderEdge);
 
   if (auto loc_early = db_->find_locator(job.uri);
       loc_early && loc_early->content_id) {

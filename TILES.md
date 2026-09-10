@@ -6,8 +6,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 # Grid tiles (Phase 4)
 
 Optional **galapix-compatible** tile pyramid on top of the fixed long-edge
-ladder. Ladder remains the primary biltoo path; tiles serve deep zoom and the
-Galapix collection viewer.
+ladder. Ladder remains the primary biltoo **soft preview** path (durable long-edge
+≤ `kMaxSoftLadderEdge` = 512). Tiles serve deep zoom and anything larger;
+`request_pixels(2048)` does **not** store a 2048 full-page level.
 
 ## Model (Galapix-aligned)
 

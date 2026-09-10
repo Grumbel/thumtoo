@@ -14,6 +14,8 @@ inline constexpr int kSchemaVersion = 3;
 
 /// Fixed long-edge ladder (pixels).
 inline constexpr std::array<int, 5> kLadderEdges = {128, 256, 512, 1024, 2048};
+/// Durable soft-preview ladder max (long edge). Larger display uses tiles.
+inline constexpr int kMaxSoftLadderEdge = 512;
 
 /// Ladder codec is JPEG-XL via libvips (required dependency; see flake.nix).
 inline constexpr int kDefaultJxlQuality = 80;
