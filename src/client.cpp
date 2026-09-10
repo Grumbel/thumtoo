@@ -30,6 +30,7 @@
 #include <random>
 #include <fstream>
 #include <sstream>
+#include <string>
 #include <string_view>
 
 namespace thumtoo {
@@ -81,15 +82,44 @@ bool debug_enabled() {
   return env_flag_on("THUMTOO_DEBUG") || env_flag_on("BILTOO_THUMTOO_DEBUG");
 }
 
+std::FILE* debug_file() {
+  static std::FILE* fp = []() -> std::FILE* {
+    const char* xdg = std::getenv("XDG_CACHE_HOME");
+    const char* home = std::getenv("HOME");
+    std::string dir;
+    if (xdg && xdg[0]) dir = std::string(xdg) + "/thumtoo";
+    else if (home && home[0]) dir = std::string(home) + "/.cache/thumtoo";
+    else dir = "/tmp/thumtoo-debug";
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    const std::string path = dir + "/debug.log";
+    std::FILE* f = std::fopen(path.c_str(), "a");
+    if (f) {
+      std::fprintf(f, "---- thumtoo debug session ----\n");
+      std::fflush(f);
+    }
+    return f;
+  }();
+  return fp;
+}
+
 void dbg(const char* fmt, ...) {
   if (!debug_enabled()) return;
-  std::fputs("thumtoo: ", stderr);
+  char buf[2048];
   va_list ap;
   va_start(ap, fmt);
-  std::vfprintf(stderr, fmt, ap);
+  std::vsnprintf(buf, sizeof(buf), fmt, ap);
   va_end(ap);
+  std::fputs("thumtoo: ", stderr);
+  std::fputs(buf, stderr);
   std::fputc('\n', stderr);
   std::fflush(stderr);
+  if (std::FILE* f = debug_file()) {
+    std::fputs("thumtoo: ", f);
+    std::fputs(buf, f);
+    std::fputc('\n', f);
+    std::fflush(f);
+  }
 }
 
 std::string format_from_member(std::string_view member) {

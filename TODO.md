@@ -2,7 +2,7 @@
 
 ## Status (2026-09-09)
 
-**Tip: thumtoo-141-debug-visible.** Re-read env; startup banner when THUMTOO_DEBUG on. Prior: 140.
+**Tip: thumtoo-142-debug-log-file.** Also append traces to ~/.cache/thumtoo/debug.log. Prior: 141.
 
 ### 127 (this tip)
 - Gallery showed correct **size** (e.g. 1908×2246) but **pixels** were soft
