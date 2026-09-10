@@ -96,7 +96,10 @@ class Client {
   [[nodiscard]] std::optional<std::vector<std::uint8_t>> read_source_bytes(
       std::string_view uri_or_content_id);
 
-  /// Cache-only: load best stored preview with edge <= max_edge (frame 0 default).
+  /// Cache-only: best stored **soft** preview with long-edge ≤ max_edge
+  /// (frame 0 default). Does not build levels. Soft storage is capped at
+  /// kMaxSoftLadderEdge (512); a 256-level is returned for larger max_edge
+  /// until a higher soft level has been ensured.
   [[nodiscard]] std::optional<PixelLevel> get_pixels(std::string_view uri,
                                                      int max_edge,
                                                      int frame_idx = 0) const;
@@ -115,7 +118,17 @@ class Client {
 
   void request_size(std::string uri, SizeCallback cb);
 
-  /// Ensure ladder exists (probe if needed), then return pixels via callback.
+  /// Ensure a soft ladder level exists (probe if needed), then invoke  cb.
+  ///
+  /// Contract:
+  /// -  max_edge is clamped to kMaxSoftLadderEdge (512). Larger values do not
+  ///   create full-page 1024/2048 JXL levels — use request_tile or a consumer
+  ///   full decode for high resolution.
+  /// - If a cached level already **covers** the (clamped) request (~90% of
+  ///   long edge in actual pixels), the callback runs immediately.
+  /// - A smaller cached level (e.g. 256 when asking for 512) does **not**
+  ///   short-circuit; EnsurePixels upgrades the soft ladder.
+  /// - Callback may still deliver only the best soft level if encode fails.
   void request_pixels(std::string uri, int max_edge, PixelsCallback cb,
                       int frame_idx = 0);
 

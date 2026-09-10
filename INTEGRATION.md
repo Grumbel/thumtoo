@@ -14,7 +14,9 @@ must not key durable pixels or tags.
 | biltoo need | thumtoo API |
 |-------------|-------------|
 | Replace provisional layout size (`imageSizeForPath` / probe) | `get_size(uri)` then `request_size(uri, cb)` |
-| Soft preview (Gallery / filmstrip / Image mode) | `get_pixels(uri, max_edge)` / `request_pixels(uri, max_edge, cb)` |
+| Soft preview (Gallery overview / filmstrip / Image underlay) | `get_pixels` / `request_pixels` with max_edge ≤ **512** (`kMaxSoftLadderEdge`) |
+| High-res on zoom (Gallery) | Consumer **full decode** or `request_tile` — not `request_pixels(1024+)` |
+| Deep zoom / region | `get_tile` / `request_tile` ([TILES.md](TILES.md)) |
 | Known-good meta without I/O | `get_meta(uri)` (status, format, still_count, …) |
 | Prewarm session paths | `prepare_paths` or CLI `thumtoo-prepare` |
 | Archive open without re-walk | `refresh_archive_toc` / `get_archive_entries` |
@@ -22,14 +24,15 @@ must not key durable pixels or tags.
 
 Suggested `max_edge` starting points (tunable in biltoo):
 
-| Mode | max_edge |
-|------|----------|
-| Filmstrip / grid cell | 128 or 256 |
-| Gallery soft tile | 256 or 512 |
-| Image-mode soft preview | 512 or 1024 |
+| Mode | max_edge | Notes |
+|------|----------|--------|
+| Filmstrip / grid cell | 128 or 256 | Soft only |
+| Gallery soft overview | 256 or 512 | Cap at `kMaxSoftLadderEdge` |
+| Image-mode soft underlay | 512 | Cap at soft max; full decode for native |
+| Anything larger on screen | — | `request_tile` or app full decode |
 
-Prefer **largest cached level ≤ request**; do not upscale in the client if a
-smaller level is all that exists yet.
+`request_pixels` clamps to 512. Prefer **largest cached soft level ≤ request**;
+do not treat a 256 reply as success for a 512 request — ensure must upgrade.
 
 ## Threading (Qt)
 

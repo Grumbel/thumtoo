@@ -12,9 +12,13 @@ namespace thumtoo {
 /// schema_meta / schema_version = 1 (DESIGN §6b). Bump only with incompatible layout.
 inline constexpr int kSchemaVersion = 3;
 
-/// Fixed long-edge ladder (pixels).
+/// Policy long-edge steps (pixels). Soft durable storage only uses steps
+/// ≤ kMaxSoftLadderEdge; larger values exist for API compatibility / future use.
 inline constexpr std::array<int, 5> kLadderEdges = {128, 256, 512, 1024, 2048};
-/// Durable soft-preview ladder max (long edge). Larger display uses tiles.
+/// Maximum long edge stored by request_pixels / EnsurePixels (soft preview).
+/// Requests above this are clamped. Deep zoom and native display use tiles
+/// (request_tile) or a full source decode in the consumer — not a larger JXL level.
+/// See TILES.md and tests/test_soft_ladder.cpp.
 inline constexpr int kMaxSoftLadderEdge = 512;
 
 /// Ladder codec is JPEG-XL via libvips (required dependency; see flake.nix).

@@ -3,12 +3,37 @@ SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
-# Grid tiles (Phase 4)
+# Display pixels: soft ladder vs grid tiles
 
-Optional **galapix-compatible** tile pyramid on top of the fixed long-edge
-ladder. Ladder remains the primary biltoo **soft preview** path (durable long-edge
-≤ `kMaxSoftLadderEdge` = 512). Tiles serve deep zoom and anything larger;
-`request_pixels(2048)` does **not** store a 2048 full-page level.
+thumtoo exposes **two** durable pixel paths. They are not interchangeable.
+
+| Path | API | Durable max | Typical use |
+|------|-----|-------------|-------------|
+| **Soft ladder** | `get_pixels` / `request_pixels` | long edge ≤ **512** (`kMaxSoftLadderEdge`) | Filmstrip, Gallery overview, Image-mode underlay |
+| **Grid tiles** | `get_tile` / `request_tile` | native / scale pyramid | Deep zoom, Galapix, region hi-res for PDF/DjVu/ePub |
+
+## Soft ladder rules
+
+1. **Only small levels are stored.** `request_pixels(uri, 2048)` is clamped to
+   512; it does **not** write a 2048 full-page JXL into `blobs.sqlite`.
+2. **Upgrade is real.** If only a 256 level exists, `request_pixels(uri, 512)`
+   must run EnsurePixels and grow the ladder — not return 256 and stop
+   (regression fixed in soft_ladder tests).
+3. **Adequacy is pixel-based.** Coverage uses decoded width/height (~90% of the
+   clamped request), not only the `max_edge` column tag.
+4. **Tests:** `tests/test_soft_ladder.cpp` (256 → 512 upgrade; 2048 stays
+   soft-capped; `request_tile` still works).
+
+Consumers that need more than 512 on screen should either:
+
+- call **`request_tile`** for the visible cells, or
+- perform a **full source decode** in the app (biltoo Gallery does this when a
+  visible tile’s on-screen size exceeds 512 — same path as Image mode).
+
+## Grid tiles (Phase 4)
+
+Optional **galapix-compatible** tile pyramid on top of the soft ladder.
+Tiles serve deep zoom and anything larger than the soft preview.
 
 ## Model (Galapix-aligned)
 

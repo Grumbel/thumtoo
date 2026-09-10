@@ -518,7 +518,8 @@ regenerate vs serve-as-is.
 | Pain | thumtoo |
 |------|---------|
 | Provisional 1000×1000 layout | Durable `get_size` after first probe |
-| Gallery / filmstrip soft tiles | `get_pixels(uri, 256\|512)` |
+| Gallery / filmstrip soft tiles | `get_pixels(uri, 256\|512)` — durable soft max **512** (`kMaxSoftLadderEdge`) |
+| Gallery zoomed / Image native | consumer full decode or `request_tile` — **not** a larger soft ladder |
 | Image-mode soft preview | `get_pixels(uri, 512\|1024)` |
 | Archive re-list | Cached TOC |
 | Slideshow warm | `prepare(session_paths, {512,1024})` |
