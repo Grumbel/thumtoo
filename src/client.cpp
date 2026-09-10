@@ -494,6 +494,10 @@ void Client::invalidate_tile(std::string_view uri, int scale, int x, int y) {
 
 void Client::request_tile(std::string uri, int scale, int x, int y,
                           TileCallback cb) {
+  if (debug_enabled()) {
+    dbg("request_tile QUEUE uri=%s scale=%d cell=%d,%d", uri.c_str(), scale, x,
+        y);
+  }
   // Always enqueue. A synchronous get_tile() here ran on the *caller* thread
   // (often the GUI during draw): SQLite + blob I/O, and with the default
   // inline Executor the completion callback (JPEG/rgb decode) also ran there.
@@ -1788,8 +1792,25 @@ void Client::handle_ensure_pixels(
   }
 
   if (auto pdf = parse_pdf_uri(job.uri)) {
+    if (debug_enabled()) {
+      dbg("EnsurePixels PATH=pdf_page RASTER+LADDER page=%d edge_limit=%d backend=%d",
+          pdf->page, edge_limit, static_cast<int>(pdf->backend));
+    }
+    const auto tr = std::chrono::steady_clock::now();
     auto raster = pdf_rasterize_page(pdf->pdf_path, pdf->page, edge_limit,
                                       pdf->backend);
+    if (debug_enabled()) {
+      const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          std::chrono::steady_clock::now() - tr)
+                          .count();
+      if (raster && !raster->rgb.empty()) {
+        dbg("EnsurePixels pdf_rasterize DONE %dx%d (%lld ms) then build_ladder_rgb",
+            raster->width, raster->height, static_cast<long long>(ms));
+      } else {
+        dbg("EnsurePixels pdf_rasterize FAILED/empty (%lld ms)",
+            static_cast<long long>(ms));
+      }
+    }
     if (raster && !raster->rgb.empty()) {
       auto levels = build_ladder_rgb(raster->rgb.data(), raster->width,
                                      raster->height, row.content_id,
@@ -2025,6 +2046,21 @@ void Client::handle_ensure_pixels(
   }
 
   auto px = get_pixels(job.uri, job.max_edge, job.frame_idx);
+  if (debug_enabled()) {
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - t0)
+                        .count();
+    if (px) {
+      dbg("EnsurePixels DONE uri=%s reply %dx%d level_edge=%d total %lld ms | %s",
+          job.uri.c_str(), px->width, px->height, px->max_edge,
+          static_cast<long long>(ms),
+          global_build_stats().summary_line().c_str());
+    } else {
+      dbg("EnsurePixels DONE uri=%s reply EMPTY total %lld ms | %s",
+          job.uri.c_str(), static_cast<long long>(ms),
+          global_build_stats().summary_line().c_str());
+    }
+  }
   if (job.pixels_cb) {
     auto cb = std::move(job.pixels_cb);
     auto uri = job.uri;
@@ -2068,6 +2104,11 @@ thread_local std::vector<DeferredTileStore> g_deferred_tile_stores;
 void Client::handle_ensure_tiles(
     Job& job, const std::optional<std::vector<std::uint8_t>>& preextracted) {
   global_build_stats().tile_jobs.fetch_add(1, std::memory_order_relaxed);
+  if (debug_enabled()) {
+    dbg("EnsureTiles START uri=%s scale=%d cell=%d,%d pyramid=%d",
+        job.uri.c_str(), job.tile_scale, job.tile_x, job.tile_y,
+        job.tile_pyramid ? 1 : 0);
+  }
   auto reply_one = [&](std::optional<TileBlob> t) {
     if (!job.tile_cb) return;
     auto cb = std::move(job.tile_cb);

@@ -2,7 +2,7 @@
 
 ## Status (2026-09-09)
 
-**Tip: thumtoo-137-pkg-config.** Install thumtoo.pc for consumers. Prior: 136. Flatten before fz_try + POD resolve helper. Prior: 134. Silence MuPDF fz_try -Wclobbered. Prior: 133. Fix djvu_build_tile_cell truncate + pdf_mupdf namespace. Prior: 132. Fix text.hpp decls inside namespace thumtoo. Prior: 131 cache. SQLite text layer cache (schema v3). Prior: 130 EPUB. EPUB text/link + outline (layout_key). Prior: 129 DjVu. DjVu text/link regions + outline. Prior: 128 PDF text layer. PDF text/link regions + outline via MuPDF (types + extract + test).
+**Tip: thumtoo-138-debug-task-trace.** THUMTOO_DEBUG=1 stderr traces for ladder/tile jobs. Prior: 137.
 
 ### 127 (this tip)
 - Gallery showed correct **size** (e.g. 1908×2246) but **pixels** were soft
