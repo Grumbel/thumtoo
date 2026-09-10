@@ -179,6 +179,14 @@ if(THUMTOO_BUILD_TOOLS)
           RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
+# pkg-config for consumers (biltoo, etc.). Static lib: Requires.private lists public deps.
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/thumtoo.pc.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/thumtoo.pc"
+  @ONLY)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/thumtoo.pc"
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
+
 # Packaging environments (Nix cmake setup, etc.) pass the full GNUInstallDirs
 # set and CMAKE_EXPORT_NO_PACKAGE_REGISTRY. Reference them so configure does
 # not warn about unused -D variables for dirs we do not install into yet.
