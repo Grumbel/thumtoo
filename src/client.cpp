@@ -68,12 +68,17 @@ void store_lqip_if_missing(Database& db, const std::string& content_id,
 namespace {
 
 /** Set THUMTOO_DEBUG=1 (or non-empty non-0) for stderr task traces. */
+bool env_flag_on(const char* name) {
+  const char* e = std::getenv(name);
+  if (!e || !e[0] || e[0] == '0') return false;
+  // explicit off spellings
+  if (e[0] == 'f' || e[0] == 'F' || e[0] == 'n' || e[0] == 'N') return false;
+  return true;
+}
+
 bool debug_enabled() {
-  static const int on = [] {
-    const char* e = std::getenv("THUMTOO_DEBUG");
-    return (e && e[0] != '\0' && e[0] != '0') ? 1 : 0;
-  }();
-  return on != 0;
+  // Re-check each call so late export THUMTOO_DEBUG=1 still works in a shell.
+  return env_flag_on("THUMTOO_DEBUG") || env_flag_on("BILTOO_THUMTOO_DEBUG");
 }
 
 void dbg(const char* fmt, ...) {
@@ -138,6 +143,9 @@ std::optional<std::int64_t> file_mtime_ns(const std::filesystem::path& p) {
 Client::Client(std::unique_ptr<Database> db, std::unique_ptr<BlobStore> blobs,
                Executor executor, unsigned worker_threads)
     : db_(std::move(db)), blobs_(std::move(blobs)), executor_(std::move(executor)) {
+  if (debug_enabled()) {
+    dbg("Client constructed — THUMTOO_DEBUG active (stderr task traces on)");
+  }
   unsigned n = worker_threads;
   if (n == 0) {
     n = std::thread::hardware_concurrency();
