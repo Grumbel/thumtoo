@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #if defined(THUMTOO_HAVE_MUPDF)
 #include <mupdf/fitz.h>
@@ -610,31 +611,40 @@ void append_utf8(std::string& out, int c) {
 
 void append_epub_outline(fz_context* ctx, fz_document* doc, fz_outline* node,
                         int level, DocumentOutline& out) {
-  for (; node; node = node->next) {
+  while (node) {
     OutlineItem item;
     item.level = level;
     if (node->title) item.title = node->title;
-    if (node->uri && node->uri[0] != '\0') {
-      if (node->uri[0] == '#') {
-        fz_location loc{};
-        float lx = 0, ly = 0;
-        int resolved = 0;
-        fz_try(ctx) {
-          loc = fz_resolve_link(ctx, doc, node->uri, &lx, &ly);
-          resolved = 1;
-        }
-        fz_catch(ctx) { resolved = 0; }
-        if (resolved && loc.page >= 0) {
-          item.page_1based = loc.page + 1;
-        } else {
-          item.uri = node->uri;
-        }
-      } else {
-        item.uri = node->uri;
+    const std::string uri = (node->uri && node->uri[0] != '\0') ? node->uri : std::string{};
+    fz_outline* down = node->down;
+    fz_outline* next = node->next;
+    node = next;
+
+    if (!uri.empty() && uri[0] == '#') {
+      int dest_page = -1;
+      float lx = 0, ly = 0;
+      int resolved = 0;
+      fz_var(dest_page);
+      fz_var(lx);
+      fz_var(ly);
+      fz_var(resolved);
+      fz_try(ctx) {
+        fz_location loc = fz_resolve_link(ctx, doc, uri.c_str(), &lx, &ly);
+        dest_page = loc.page;
+        resolved = 1;
       }
+      fz_catch(ctx) { resolved = 0; }
+      if (resolved && dest_page >= 0) {
+        item.page_1based = dest_page + 1;
+      } else {
+        item.uri = uri;
+      }
+    } else if (!uri.empty()) {
+      item.uri = uri;
     }
+
     out.items.push_back(std::move(item));
-    if (node->down) append_epub_outline(ctx, doc, node->down, level + 1, out);
+    if (down) append_epub_outline(ctx, doc, down, level + 1, out);
   }
 }
 #endif
@@ -707,37 +717,56 @@ std::optional<PageTextLayer> epub_page_text_layer(const std::filesystem::path& p
   fz_var(links);
   fz_try(ctx) { links = fz_load_links(ctx, page); }
   fz_catch(ctx) { links = nullptr; }
+  struct LinkSnap {
+    TextRect bbox;
+    std::string uri;
+  };
+  std::vector<LinkSnap> snaps;
   for (fz_link* link = links; link; link = link->next) {
+    LinkSnap s;
+    s.bbox = TextRect{link->rect.x0, link->rect.y0, link->rect.x1, link->rect.y1};
+    if (s.bbox.empty()) continue;
+    if (link->uri) s.uri = link->uri;
+    snaps.push_back(std::move(s));
+  }
+  if (links) {
+    fz_drop_link(ctx, links);
+    links = nullptr;
+  }
+  for (const LinkSnap& snap : snaps) {
     TextRegion reg;
     reg.role = TextRegionRole::Link;
-    reg.bbox = TextRect{link->rect.x0, link->rect.y0, link->rect.x1, link->rect.y1};
-    if (reg.bbox.empty()) continue;
-    const char* uri = link->uri ? link->uri : "";
+    reg.bbox = snap.bbox;
+    const char* uri = snap.uri.c_str();
     if (uri[0] == '#') {
-      fz_location loc{};
+      int dest_page = -1;
       float lx = 0, ly = 0;
       int resolved = 0;
+      fz_var(dest_page);
+      fz_var(lx);
+      fz_var(ly);
+      fz_var(resolved);
       fz_try(ctx) {
-        loc = fz_resolve_link(ctx, tls_document(path, layout), uri, &lx, &ly);
+        fz_location loc = fz_resolve_link(ctx, tls_document(path, layout), uri, &lx, &ly);
+        dest_page = loc.page;
         resolved = 1;
       }
       fz_catch(ctx) { resolved = 0; }
-      if (resolved && loc.page >= 0) {
+      if (resolved && dest_page >= 0) {
         reg.target.kind = TextLinkTargetKind::InternalPage;
-        reg.target.page_1based = loc.page + 1;
+        reg.target.page_1based = dest_page + 1;
         reg.target.x = static_cast<double>(lx);
         reg.target.y = static_cast<double>(ly);
       } else {
         reg.target.kind = TextLinkTargetKind::Uri;
-        reg.target.uri = uri;
+        reg.target.uri = snap.uri;
       }
     } else if (uri[0] != '\0') {
       reg.target.kind = TextLinkTargetKind::Uri;
-      reg.target.uri = uri;
+      reg.target.uri = snap.uri;
     }
     layer.regions.push_back(std::move(reg));
   }
-  if (links) fz_drop_link(ctx, links);
 
   return layer;
 #endif

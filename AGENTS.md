@@ -32,7 +32,7 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 
 ## Status (2026-09-10)
 
-**Tip: thumtoo-133-brace-namespace-fix.** djvu/pdf_mupdf brace fixes. Next: host verify.
+**Tip: thumtoo-134-fz-clobber-warnings.** MuPDF -Wclobbered cleanups. Next: host verify.
 Full session notes: top of [TODO.md](TODO.md).
 Prior: `//pdfimage:N` keep_obj fix; PDF dual backend; live PDF tiles rgb888.
 

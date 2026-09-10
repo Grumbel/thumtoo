@@ -9,6 +9,7 @@
 #include <cstring>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 #if defined(THUMTOO_HAVE_MUPDF)
 #include <mupdf/fitz.h>
@@ -743,52 +744,70 @@ std::optional<PageTextLayer> mupdf_page_text_layer(const std::filesystem::path& 
   }
 
   // Links: separate pass (annots / link list).
+  // Snapshot link list first so fz_try/longjmp cannot clobber the iterator.
   fz_link* links = nullptr;
   fz_var(links);
   fz_try(ctx) { links = fz_load_links(ctx, page); }
   fz_catch(ctx) { links = nullptr; }
+  struct LinkSnap {
+    TextRect bbox;
+    std::string uri;
+  };
+  std::vector<LinkSnap> snaps;
   for (fz_link* link = links; link; link = link->next) {
+    LinkSnap s;
+    s.bbox = TextRect{link->rect.x0, link->rect.y0, link->rect.x1, link->rect.y1};
+    if (s.bbox.empty()) continue;
+    if (link->uri) s.uri = link->uri;
+    snaps.push_back(std::move(s));
+  }
+  if (links) {
+    fz_drop_link(ctx, links);
+    links = nullptr;
+  }
+  fz_document* doc = tls_document(path);
+  for (const LinkSnap& snap : snaps) {
     TextRegion reg;
     reg.role = TextRegionRole::Link;
-    reg.bbox = TextRect{link->rect.x0, link->rect.y0, link->rect.x1, link->rect.y1};
-    if (reg.bbox.empty()) continue;
-
-    const char* uri = link->uri ? link->uri : "";
-    // MuPDF internal links: "#page=N" or similar; external: http(s):…
+    reg.bbox = snap.bbox;
+    const char* uri = snap.uri.c_str();
     if (uri[0] == '#') {
-      // Parse #page=N (1-based in MuPDF uri form often).
-      int page = 0;
-      double x = 0, y = 0;
-      // fz_resolve_link_dest is preferred when available.
-      fz_location loc{};
+      int dest_page = -1;
       float lx = 0, ly = 0;
       int resolved = 0;
-      fz_try(ctx) {
-        loc = fz_resolve_link(ctx, tls_document(path), uri, &lx, &ly);
-        resolved = 1;
+      fz_var(dest_page);
+      fz_var(lx);
+      fz_var(ly);
+      fz_var(resolved);
+      if (doc) {
+        fz_try(ctx) {
+          fz_location loc = fz_resolve_link(ctx, doc, uri, &lx, &ly);
+          dest_page = loc.page;
+          resolved = 1;
+        }
+        fz_catch(ctx) { resolved = 0; }
       }
-      fz_catch(ctx) { resolved = 0; }
-      if (resolved && loc.page >= 0) {
+      if (resolved && dest_page >= 0) {
         reg.target.kind = TextLinkTargetKind::InternalPage;
-        reg.target.page_1based = loc.page + 1;
+        reg.target.page_1based = dest_page + 1;
         reg.target.x = static_cast<double>(lx);
         reg.target.y = static_cast<double>(ly);
-      } else if (sscanf(uri, "#page=%d", &page) == 1 && page >= 1) {
-        reg.target.kind = TextLinkTargetKind::InternalPage;
-        reg.target.page_1based = page;
-        (void)x;
-        (void)y;
       } else {
-        reg.target.kind = TextLinkTargetKind::Uri;
-        reg.target.uri = uri;
+        int page_num = 0;
+        if (std::sscanf(uri, "#page=%d", &page_num) == 1 && page_num >= 1) {
+          reg.target.kind = TextLinkTargetKind::InternalPage;
+          reg.target.page_1based = page_num;
+        } else {
+          reg.target.kind = TextLinkTargetKind::Uri;
+          reg.target.uri = snap.uri;
+        }
       }
     } else if (uri[0] != '\0') {
       reg.target.kind = TextLinkTargetKind::Uri;
-      reg.target.uri = uri;
+      reg.target.uri = snap.uri;
     }
     layer.regions.push_back(std::move(reg));
   }
-  if (links) fz_drop_link(ctx, links);
 
   return layer;
 #endif
@@ -799,34 +818,41 @@ namespace {
 #if defined(THUMTOO_HAVE_MUPDF)
 void append_outline(fz_context* ctx, fz_document* doc, fz_outline* node, int level,
                     DocumentOutline& out) {
-  for (; node; node = node->next) {
+  // Walk without holding fz_outline* across fz_try (node can be clobbered).
+  while (node) {
     OutlineItem item;
     item.level = level;
     if (node->title) item.title = node->title;
+    const std::string uri = (node->uri && node->uri[0] != '\0') ? node->uri : std::string{};
+    fz_outline* down = node->down;
+    fz_outline* next = node->next;
+    node = next;  // advance before any fz_try
 
-    if (node->uri && node->uri[0] != '\0') {
-      if (node->uri[0] == '#') {
-        fz_location loc{};
-        float lx = 0, ly = 0;
-        int resolved = 0;
-        fz_try(ctx) {
-          loc = fz_resolve_link(ctx, doc, node->uri, &lx, &ly);
-          resolved = 1;
-        }
-        fz_catch(ctx) { resolved = 0; }
-        if (resolved && loc.page >= 0) {
-          item.page_1based = loc.page + 1;
-        } else {
-          item.uri = node->uri;
-        }
-      } else {
-        item.uri = node->uri;
+    if (!uri.empty() && uri[0] == '#') {
+      int dest_page = -1;
+      float lx = 0, ly = 0;
+      int resolved = 0;
+      fz_var(dest_page);
+      fz_var(lx);
+      fz_var(ly);
+      fz_var(resolved);
+      fz_try(ctx) {
+        fz_location loc = fz_resolve_link(ctx, doc, uri.c_str(), &lx, &ly);
+        dest_page = loc.page;
+        resolved = 1;
       }
+      fz_catch(ctx) { resolved = 0; }
+      if (resolved && dest_page >= 0) {
+        item.page_1based = dest_page + 1;
+      } else {
+        item.uri = uri;
+      }
+    } else if (!uri.empty()) {
+      item.uri = uri;
     }
-    // page index on fz_outline varies across MuPDF versions; URI resolve is enough.
 
     out.items.push_back(std::move(item));
-    if (node->down) append_outline(ctx, doc, node->down, level + 1, out);
+    if (down) append_outline(ctx, doc, down, level + 1, out);
   }
 }
 #endif
