@@ -1686,6 +1686,11 @@ void Client::handle_probe_size(
 void Client::handle_ensure_pixels(
     Job& job, const std::optional<std::vector<std::uint8_t>>& preextracted) {
   global_build_stats().pixel_jobs.fetch_add(1, std::memory_order_relaxed);
+  const auto t0 = std::chrono::steady_clock::now();
+  if (debug_enabled()) {
+    dbg("EnsurePixels START uri=%s max_edge=%d frame=%d", job.uri.c_str(),
+        job.max_edge, job.frame_idx);
+  }
 
   // Cached level is enough only if it covers the requested preview edge (or is
   // already full-native). A 256 level must not satisfy a later 1024 request.

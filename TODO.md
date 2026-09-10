@@ -2,7 +2,7 @@
 
 ## Status (2026-09-09)
 
-**Tip: thumtoo-139-debug-helpers-scope.** Define debug_enabled/dbg for EnsureTiles build. Prior: 138.
+**Tip: thumtoo-140-ensure-pixels-t0.** Declare t0 for EnsurePixels DONE timing log. Prior: 139.
 
 ### 127 (this tip)
 - Gallery showed correct **size** (e.g. 1908×2246) but **pixels** were soft
