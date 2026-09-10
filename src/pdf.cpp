@@ -284,6 +284,12 @@ std::optional<ParsedPdfUri> parse_pdf_uri(std::string_view uri) {
 
   const auto outer = uri.substr(0, pos);
   auto path = path_from_file_uri(outer);
+  if (!path) {
+    // Accept plain absolute paths (session-style …/doc.pdf//page:N).
+    if (!outer.empty() && outer.front() == '/') {
+      path = std::filesystem::path(std::string(outer));
+    }
+  }
   if (!path) return std::nullopt;
   if (!is_pdf_path(*path)) return std::nullopt;
 

@@ -1872,17 +1872,39 @@ void Client::handle_ensure_pixels(
                           std::chrono::steady_clock::now() - tr)
                           .count();
       if (raster && !raster->rgb.empty()) {
-        dbg("EnsurePixels pdf_rasterize DONE %dx%d (%lld ms) then build_ladder_rgb",
-            raster->width, raster->height, static_cast<long long>(ms));
+        dbg("EnsurePixels pdf_rasterize DONE %dx%d (%lld ms) target_edge=%d",
+            raster->width, raster->height, static_cast<long long>(ms),
+            edge_limit);
       } else {
-        dbg("EnsurePixels pdf_rasterize FAILED/empty (%lld ms)",
-            static_cast<long long>(ms));
+        dbg("EnsurePixels pdf_rasterize FAILED/empty (%lld ms) target_edge=%d",
+            static_cast<long long>(ms), edge_limit);
       }
     }
     if (raster && !raster->rgb.empty()) {
-      auto levels = build_ladder_rgb(raster->rgb.data(), raster->width,
-                                     raster->height, row.content_id,
-                                     kDefaultJxlQuality, edge_limit);
+      // Encode *at* the requested edge (not only pick_preview of source).
+      // build_ladder_rgb alone can store a single level keyed below the request
+      // when the raster is already a soft size; higher requests then keep
+      // returning the same 256-level payload (level=198x256 for edge=1024).
+      std::vector<LevelBlob> levels;
+      if (auto exact = build_level_rgb_at_edge(
+              raster->rgb.data(), raster->width, raster->height, row.content_id,
+              kDefaultJxlQuality, edge_limit)) {
+        levels.push_back(std::move(*exact));
+      }
+      // Also store policy steps ≤ raster for filmstrip reuse.
+      auto soft = build_ladder_rgb(raster->rgb.data(), raster->width,
+                                   raster->height, row.content_id,
+                                   kDefaultJxlQuality, edge_limit);
+      for (auto& s : soft) {
+        bool dup = false;
+        for (const auto& e : levels) {
+          if (e.max_edge == s.max_edge) {
+            dup = true;
+            break;
+          }
+        }
+        if (!dup) levels.push_back(std::move(s));
+      }
       for (const auto& lvl : levels) {
         blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
                           lvl.width, lvl.height, lvl.codec, lvl.quality,
