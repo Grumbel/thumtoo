@@ -32,7 +32,7 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 
 ## Status (2026-09-10)
 
-**Tip: thumtoo-128-pdf-text-layer.** PDF text/link regions + outline (MuPDF). Next: DjVu text or SQLite cache.
+**Tip: thumtoo-129-djvu-text-layer.** DjVu text/link + outline. Next: EPUB text or SQLite cache.
 Full session notes: top of [TODO.md](TODO.md).
 Prior: `//pdfimage:N` keep_obj fix; PDF dual backend; live PDF tiles rgb888.
 

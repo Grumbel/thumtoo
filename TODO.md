@@ -2,7 +2,7 @@
 
 ## Status (2026-09-09)
 
-**Tip: thumtoo-128-pdf-text-layer.** PDF text/link regions + outline via MuPDF (types + extract + test).
+**Tip: thumtoo-129-djvu-text-layer.** DjVu text/link regions + outline. Prior: 128 PDF text layer. PDF text/link regions + outline via MuPDF (types + extract + test).
 
 ### 127 (this tip)
 - Gallery showed correct **size** (e.g. 1908×2246) but **pixels** were soft
@@ -75,6 +75,28 @@ First slice of the semantic text layer (paired with biltoo-357 plan):
 - biltoo consumer UI
 
 ---
+
+## Plan / work — bundle `thumtoo-129-djvu-text-layer`
+
+### Goal
+DjVu side of the semantic text layer: word zones from the hidden text layer,
+hyperlink mapareas, and document outline (bookmarks) when present.
+
+### Done criteria
+- [x] `djvu_page_text_layer` — word regions + maparea links
+- [x] `djvu_document_outline` via `ddjvu_document_get_outline`
+- [x] Bboxes in native page pixels, origin bottom-left (documented)
+- [x] Smoke test `test_djvu_text` (optional fixture via `THUMTOO_TEST_DJVU`)
+- [ ] Host verify with a real OCR'd DjVu
+- [ ] next **130** (EPUB text or SQLite cache)
+
+### Notes
+- Coordinates differ from PDF (pixels vs points; both Y-up / bottom-left).
+  Consumers must use `page_bounds` + format-specific scale rules.
+- Empty text layer is valid (image-only DjVu).
+
+---
+
 
 ## Plan / work — bundle `thumtoo-122-pdfimage-keep-obj`
 

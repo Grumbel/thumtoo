@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <cstdio>
 #include <string>
 #include <mutex>
 
@@ -415,7 +416,272 @@ std::optional<TileBlob> djvu_build_tile_cell(const std::filesystem::path& path,
   auto raster = djvu_render_tile_cell(path, page_1based, scale, x, y);
   if (!raster) return std::nullopt;
   return encode_tile_cell_rgb(raster->rgb.data(), raster->width, raster->height,
-                              scale, x, y, jpeg_quality);
+                              scale, x, y, 
+#if defined(THUMTOO_HAVE_DJVU)
+
+// DjVu text zones are nested miniexps:
+//   (word|line|para|... xmin ymin xmax ymax "text" | child…)
+// Coordinates are page pixels, origin bottom-left.
+void walk_text_sexpr(miniexp_t expr, std::vector<TextRegion>& regions,
+                     int page_h) {
+  if (!miniexp_consp(expr)) return;
+  miniexp_t head = miniexp_car(expr);
+  if (!miniexp_symbolp(head)) return;
+
+  const char* sym = miniexp_to_name(head);
+  if (!sym) return;
+
+  // Expect at least type + 4 numbers.
+  miniexp_t rest = miniexp_cdr(expr);
+  if (!miniexp_consp(rest)) return;
+  miniexp_t x0e = miniexp_car(rest); rest = miniexp_cdr(rest);
+  if (!miniexp_consp(rest)) return;
+  miniexp_t y0e = miniexp_car(rest); rest = miniexp_cdr(rest);
+  if (!miniexp_consp(rest)) return;
+  miniexp_t x1e = miniexp_car(rest); rest = miniexp_cdr(rest);
+  if (!miniexp_consp(rest)) return;
+  miniexp_t y1e = miniexp_car(rest); rest = miniexp_cdr(rest);
+
+  if (!miniexp_numberp(x0e) || !miniexp_numberp(y0e) ||
+      !miniexp_numberp(x1e) || !miniexp_numberp(y1e)) {
+    return;
+  }
+  const double x0 = static_cast<double>(miniexp_to_int(x0e));
+  const double y0 = static_cast<double>(miniexp_to_int(y0e));
+  const double x1 = static_cast<double>(miniexp_to_int(x1e));
+  const double y1 = static_cast<double>(miniexp_to_int(y1e));
+
+  const bool is_word = std::strcmp(sym, "word") == 0;
+  const bool is_line = std::strcmp(sym, "line") == 0;
+  // Prefer word-level; fall back to line if children are only a string.
+  if (is_word || is_line) {
+    // Collect trailing string leaves as the text for this zone.
+    std::string text;
+    for (miniexp_t p = rest; miniexp_consp(p); p = miniexp_cdr(p)) {
+      miniexp_t el = miniexp_car(p);
+      if (miniexp_stringp(el)) {
+        const char* s = miniexp_to_str(el);
+        if (s && s[0]) {
+          if (!text.empty()) text.push_back(' ');
+          text += s;
+        }
+      } else if (miniexp_consp(el)) {
+        walk_text_sexpr(el, regions, page_h);
+      }
+    }
+    if (is_word && !text.empty()) {
+      TextRegion reg;
+      reg.role = TextRegionRole::Text;
+      reg.text = std::move(text);
+      // Keep native bottom-left origin; document for consumers.
+      reg.bbox = TextRect{x0, y0, x1, y1};
+      if (!reg.bbox.empty()) regions.push_back(std::move(reg));
+      return;
+    }
+    if (is_line && !text.empty()) {
+      // Line with only a string (no word children).
+      TextRegion reg;
+      reg.role = TextRegionRole::Text;
+      reg.text = std::move(text);
+      reg.bbox = TextRect{x0, y0, x1, y1};
+      if (!reg.bbox.empty()) regions.push_back(std::move(reg));
+      return;
+    }
+  }
+
+  // Recurse into children for page/column/region/para containers.
+  for (miniexp_t p = rest; miniexp_consp(p); p = miniexp_cdr(p)) {
+    miniexp_t el = miniexp_car(p);
+    if (miniexp_consp(el)) walk_text_sexpr(el, regions, page_h);
+  }
+  (void)page_h;
 }
+
+void walk_anno_sexpr(miniexp_t expr, std::vector<TextRegion>& regions) {
+  if (!miniexp_consp(expr)) return;
+  miniexp_t head = miniexp_car(expr);
+  if (miniexp_symbolp(head) &&
+      std::strcmp(miniexp_to_name(head), "maparea") == 0) {
+    // (maparea url_or_(url ... ) (rect x y w h) …) or (oval) (poly)
+    std::string uri;
+    TextRect bbox;
+    bool have_bbox = false;
+    for (miniexp_t p = miniexp_cdr(expr); miniexp_consp(p); p = miniexp_cdr(p)) {
+      miniexp_t el = miniexp_car(p);
+      if (miniexp_stringp(el)) {
+        const char* s = miniexp_to_str(el);
+        if (s) uri = s;
+      } else if (miniexp_consp(el)) {
+        miniexp_t eh = miniexp_car(el);
+        if (!miniexp_symbolp(eh)) continue;
+        const char* es = miniexp_to_name(eh);
+        if (!es) continue;
+        if (std::strcmp(es, "url") == 0) {
+          miniexp_t u = miniexp_car(miniexp_cdr(el));
+          if (miniexp_stringp(u)) {
+            const char* s = miniexp_to_str(u);
+            if (s) uri = s;
+          }
+        } else if (std::strcmp(es, "rect") == 0) {
+          // (rect x y w h) — bottom-left origin
+          miniexp_t a = miniexp_cdr(el);
+          if (!miniexp_consp(a)) continue;
+          int x = miniexp_numberp(miniexp_car(a)) ? miniexp_to_int(miniexp_car(a)) : 0;
+          a = miniexp_cdr(a);
+          if (!miniexp_consp(a)) continue;
+          int y = miniexp_numberp(miniexp_car(a)) ? miniexp_to_int(miniexp_car(a)) : 0;
+          a = miniexp_cdr(a);
+          if (!miniexp_consp(a)) continue;
+          int w = miniexp_numberp(miniexp_car(a)) ? miniexp_to_int(miniexp_car(a)) : 0;
+          a = miniexp_cdr(a);
+          if (!miniexp_consp(a)) continue;
+          int h = miniexp_numberp(miniexp_car(a)) ? miniexp_to_int(miniexp_car(a)) : 0;
+          if (w > 0 && h > 0) {
+            bbox = TextRect{static_cast<double>(x), static_cast<double>(y),
+                            static_cast<double>(x + w), static_cast<double>(y + h)};
+            have_bbox = true;
+          }
+        }
+      }
+    }
+    if (have_bbox && !uri.empty()) {
+      TextRegion reg;
+      reg.role = TextRegionRole::Link;
+      reg.bbox = bbox;
+      reg.target.kind = TextLinkTargetKind::Uri;
+      reg.target.uri = std::move(uri);
+      regions.push_back(std::move(reg));
+    }
+    return;
+  }
+  // Recurse lists of annotations.
+  for (miniexp_t p = expr; miniexp_consp(p); p = miniexp_cdr(p)) {
+    walk_anno_sexpr(miniexp_car(p), regions);
+  }
+}
+
+void walk_outline_sexpr(miniexp_t expr, int level, DocumentOutline& out) {
+  // Bookmarks: (bookmarks (title url …) (title url (children…)) …)
+  // or nested lists of (title dest [children])
+  if (!miniexp_consp(expr)) return;
+  miniexp_t head = miniexp_car(expr);
+  if (miniexp_symbolp(head) &&
+      std::strcmp(miniexp_to_name(head), "bookmarks") == 0) {
+    for (miniexp_t p = miniexp_cdr(expr); miniexp_consp(p); p = miniexp_cdr(p)) {
+      walk_outline_sexpr(miniexp_car(p), level, out);
+    }
+    return;
+  }
+  // Entry: (title dest child…) where title and dest are strings.
+  if (miniexp_stringp(head)) {
+    OutlineItem item;
+    item.level = level;
+    const char* title = miniexp_to_str(head);
+    if (title) item.title = title;
+    miniexp_t rest = miniexp_cdr(expr);
+    if (miniexp_consp(rest) && miniexp_stringp(miniexp_car(rest))) {
+      const char* dest = miniexp_to_str(miniexp_car(rest));
+      if (dest && dest[0]) {
+        // "#N" page dest or URL
+        if (dest[0] == '#') {
+          int page = 0;
+          if (std::sscanf(dest + 1, "%d", &page) == 1 && page >= 1) {
+            item.page_1based = page;
+          } else {
+            item.uri = dest;
+          }
+        } else {
+          item.uri = dest;
+        }
+      }
+      rest = miniexp_cdr(rest);
+    }
+    out.items.push_back(std::move(item));
+    for (; miniexp_consp(rest); rest = miniexp_cdr(rest)) {
+      walk_outline_sexpr(miniexp_car(rest), level + 1, out);
+    }
+    return;
+  }
+  for (miniexp_t p = expr; miniexp_consp(p); p = miniexp_cdr(p)) {
+    walk_outline_sexpr(miniexp_car(p), level, out);
+  }
+}
+
+#endif  // THUMTOO_HAVE_DJVU
+
+std::optional<PageTextLayer> djvu_page_text_layer(const std::filesystem::path& path,
+                                                  int page_1based) {
+#if !defined(THUMTOO_HAVE_DJVU)
+  (void)path;
+  (void)page_1based;
+  return std::nullopt;
+#else
+  if (page_1based < 1) return std::nullopt;
+  std::lock_guard lock(g_djvu.mu);
+  ddjvu_document_t* doc = cached_djvu_document_unlocked(path);
+  if (!doc || !g_djvu.ctx) return std::nullopt;
+
+  auto sz = page_native_size_unlocked(g_djvu.ctx, doc, page_1based);
+  if (!sz) return std::nullopt;
+
+  PageTextLayer layer;
+  layer.page_1based = page_1based;
+  layer.page_bounds = TextRect{0, 0, static_cast<double>(sz->width),
+                               static_cast<double>(sz->height)};
+
+  // Wait for page text (may need to fetch page data).
+  miniexp_t text = miniexp_dummy;
+  while ((text = ddjvu_document_get_pagetext(doc, page_1based - 1, "word")) ==
+         miniexp_dummy) {
+    ddjvu_message_wait(g_djvu.ctx);
+    pump_messages(g_djvu.ctx);
+  }
+  if (text && text != miniexp_nil && !miniexp_symbolp(text)) {
+    walk_text_sexpr(text, layer.regions, sz->height);
+    ddjvu_miniexp_release(doc, text);
+  }
+
+  miniexp_t anno = miniexp_dummy;
+  while ((anno = ddjvu_document_get_pageanno(doc, page_1based - 1)) ==
+         miniexp_dummy) {
+    ddjvu_message_wait(g_djvu.ctx);
+    pump_messages(g_djvu.ctx);
+  }
+  if (anno && anno != miniexp_nil && !miniexp_symbolp(anno)) {
+    walk_anno_sexpr(anno, layer.regions);
+    ddjvu_miniexp_release(doc, anno);
+  }
+
+  return layer;
+#endif
+}
+
+std::optional<DocumentOutline> djvu_document_outline(
+    const std::filesystem::path& path) {
+#if !defined(THUMTOO_HAVE_DJVU)
+  (void)path;
+  return std::nullopt;
+#else
+  std::lock_guard lock(g_djvu.mu);
+  ddjvu_document_t* doc = cached_djvu_document_unlocked(path);
+  if (!doc || !g_djvu.ctx) return std::nullopt;
+
+  // Outline is document-level; try get_outline if available via anno/bookmarks.
+  // ddjvu_document_get_outline exists in modern djvulibre (returns miniexp).
+  miniexp_t root = miniexp_dummy;
+  // ddjvu_document_get_outline is part of modern ddjvuapi (bookmarks / NAVM).
+  while ((root = ddjvu_document_get_outline(doc)) == miniexp_dummy) {
+    ddjvu_message_wait(g_djvu.ctx);
+    pump_messages(g_djvu.ctx);
+  }
+  DocumentOutline out;
+  if (root && root != miniexp_nil && !miniexp_symbolp(root)) {
+    walk_outline_sexpr(root, 1, out);
+    ddjvu_miniexp_release(doc, root);
+  }
+  return out;
+#endif
+}
+
 
 }  // namespace thumtoo

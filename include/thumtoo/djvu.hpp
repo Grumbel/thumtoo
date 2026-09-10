@@ -5,6 +5,7 @@
 
 #include "thumtoo/constants.hpp"
 #include "thumtoo/types.hpp"
+#include "thumtoo/text.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -64,5 +65,17 @@ struct DjvuRaster {
 [[nodiscard]] std::optional<TileBlob> djvu_build_tile_cell(
     const std::filesystem::path& path, int page_1based, int scale, int x,
     int y, int jpeg_quality = kDefaultTileQuality);
+
+/**
+ * Hidden text layer + hyperlink mapareas for one DjVu page.
+ * Bboxes are in native page pixels, origin bottom-left (DjVu default),
+ * same space as djvu_page_size_native. Empty regions if no OCR layer.
+ */
+[[nodiscard]] std::optional<PageTextLayer> djvu_page_text_layer(
+    const std::filesystem::path& path, int page_1based);
+
+/// Document outline / bookmarks when present (NAVM); empty list if none.
+[[nodiscard]] std::optional<DocumentOutline> djvu_document_outline(
+    const std::filesystem::path& path);
 
 }  // namespace thumtoo

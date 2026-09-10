@@ -156,6 +156,9 @@ if(THUMTOO_BUILD_TESTS)
   add_executable(thumtoo-test-pdf-text tests/test_pdf_text.cpp)
   target_link_libraries(thumtoo-test-pdf-text PRIVATE thumtoo)
   add_test(NAME pdf_text COMMAND thumtoo-test-pdf-text)
+  add_executable(thumtoo-test-djvu-text tests/test_djvu_text.cpp)
+  target_link_libraries(thumtoo-test-djvu-text PRIVATE thumtoo)
+  add_test(NAME djvu_text COMMAND thumtoo-test-djvu-text)
 endif()
 
 install(TARGETS thumtoo
