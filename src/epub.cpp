@@ -11,6 +11,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <tuple>
 
 #if defined(THUMTOO_HAVE_MUPDF)
 #include <mupdf/fitz.h>
@@ -609,42 +610,41 @@ void append_utf8(std::string& out, int c) {
   }
 }
 
-void append_epub_outline(fz_context* ctx, fz_document* doc, fz_outline* node,
-                        int level, DocumentOutline& out) {
-  while (node) {
+void flatten_epub_outline(fz_outline* node, int level,
+                          std::vector<std::tuple<int, std::string, std::string>>& out) {
+  for (; node; node = node->next) {
+    std::string title = node->title ? node->title : "";
+    std::string uri = node->uri ? node->uri : "";
+    out.emplace_back(level, std::move(title), std::move(uri));
+    if (node->down) flatten_epub_outline(node->down, level + 1, out);
+  }
+}
+
+void append_epub_outline(fz_context* ctx, fz_document* doc, fz_outline* root,
+                        int /*level*/, DocumentOutline& out) {
+  std::vector<std::tuple<int, std::string, std::string>> snaps;
+  flatten_epub_outline(root, 1, snaps);
+  for (std::size_t i = 0; i < snaps.size(); ++i) {
+    const int level = std::get<0>(snaps[i]);
+    const std::string title = std::get<1>(snaps[i]);
+    const std::string uri = std::get<2>(snaps[i]);
     OutlineItem item;
     item.level = level;
-    if (node->title) item.title = node->title;
-    const std::string uri = (node->uri && node->uri[0] != '\0') ? node->uri : std::string{};
-    fz_outline* down = node->down;
-    fz_outline* next = node->next;
-    node = next;
-
+    item.title = title;
     if (!uri.empty() && uri[0] == '#') {
       int dest_page = -1;
       float lx = 0, ly = 0;
-      int resolved = 0;
-      fz_var(dest_page);
-      fz_var(lx);
-      fz_var(ly);
-      fz_var(resolved);
-      fz_try(ctx) {
-        fz_location loc = fz_resolve_link(ctx, doc, uri.c_str(), &lx, &ly);
-        dest_page = loc.page;
-        resolved = 1;
-      }
-      fz_catch(ctx) { resolved = 0; }
-      if (resolved && dest_page >= 0) {
+      if (resolve_hash_link_page(ctx, doc, uri.c_str(), &dest_page, &lx, &ly)) {
         item.page_1based = dest_page + 1;
       } else {
         item.uri = uri;
       }
+      (void)lx;
+      (void)ly;
     } else if (!uri.empty()) {
       item.uri = uri;
     }
-
     out.items.push_back(std::move(item));
-    if (down) append_epub_outline(ctx, doc, down, level + 1, out);
   }
 }
 #endif
@@ -733,37 +733,28 @@ std::optional<PageTextLayer> epub_page_text_layer(const std::filesystem::path& p
     fz_drop_link(ctx, links);
     links = nullptr;
   }
-  for (const LinkSnap& snap : snaps) {
+  fz_document* doc_for_links = tls_document(path, layout);
+  for (std::size_t i = 0; i < snaps.size(); ++i) {
+    const TextRect bbox = snaps[i].bbox;
+    const std::string uri = snaps[i].uri;
     TextRegion reg;
     reg.role = TextRegionRole::Link;
-    reg.bbox = snap.bbox;
-    const char* uri = snap.uri.c_str();
-    if (uri[0] == '#') {
+    reg.bbox = bbox;
+    if (!uri.empty() && uri[0] == '#') {
       int dest_page = -1;
       float lx = 0, ly = 0;
-      int resolved = 0;
-      fz_var(dest_page);
-      fz_var(lx);
-      fz_var(ly);
-      fz_var(resolved);
-      fz_try(ctx) {
-        fz_location loc = fz_resolve_link(ctx, tls_document(path, layout), uri, &lx, &ly);
-        dest_page = loc.page;
-        resolved = 1;
-      }
-      fz_catch(ctx) { resolved = 0; }
-      if (resolved && dest_page >= 0) {
+      if (resolve_hash_link_page(ctx, doc_for_links, uri.c_str(), &dest_page, &lx, &ly)) {
         reg.target.kind = TextLinkTargetKind::InternalPage;
         reg.target.page_1based = dest_page + 1;
         reg.target.x = static_cast<double>(lx);
         reg.target.y = static_cast<double>(ly);
       } else {
         reg.target.kind = TextLinkTargetKind::Uri;
-        reg.target.uri = snap.uri;
+        reg.target.uri = uri;
       }
-    } else if (uri[0] != '\0') {
+    } else if (!uri.empty()) {
       reg.target.kind = TextLinkTargetKind::Uri;
-      reg.target.uri = snap.uri;
+      reg.target.uri = uri;
     }
     layer.regions.push_back(std::move(reg));
   }
