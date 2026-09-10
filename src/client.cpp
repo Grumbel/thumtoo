@@ -1730,11 +1730,12 @@ void Client::handle_ensure_pixels(
         job.max_edge, job.frame_idx);
   }
 
-  // Cached level is enough only if it covers the requested preview edge (or is
-  // already full-native). A 256 level must not satisfy a later 1024 request.
+  // Cached level is enough only if *decoded pixels* cover the request (or are
+  // full-native). max_edge alone is not enough — a mis-tagged or partial level
+  // must not satisfy a higher request (biltoo then settles and never upgrades).
   auto level_adequate = [&](const PixelLevel& px) -> bool {
+    const int long_px = std::max(px.width, px.height);
     if (is_pdf_image_uri(job.uri)) {
-      // Native embed: require full-resolution level (width/height match meta).
       if (auto m = db_->meta_for_uri(job.uri)) {
         if (m->size && m->size->width > 0 && m->size->height > 0) {
           return px.width >= m->size->width && px.height >= m->size->height;
@@ -1743,11 +1744,12 @@ void Client::handle_ensure_pixels(
       return false;
     }
     const int want = job.max_edge > 0 ? job.max_edge : kLadderEdges.back();
-    if (px.max_edge >= want) return true;
+    // Require ~90% of the requested long edge in actual pixels.
+    if (long_px >= (want * 9) / 10) return true;
     if (auto m = db_->meta_for_uri(job.uri)) {
       if (m->size) {
         const int native = std::max(m->size->width, m->size->height);
-        if (native > 0 && px.max_edge >= native) return true;
+        if (native > 0 && long_px >= (native * 9) / 10) return true;
         if (native > 0 && px.width >= m->size->width &&
             px.height >= m->size->height) {
           return true;
