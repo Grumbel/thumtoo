@@ -2,6 +2,22 @@
 
 ## Status (2026-09-11)
 
+**Tip: thumtoo-145-appearance-test-verify.** Unit test expanded + verified
+against system libsqlite3 (amalgamation headers). Prior: **144**.
+
+### Verified
+- [x] put / get / identity-delete / reopen durable
+- [x] bare hex + uppercase normalize
+- [x] invalid content_id is a no-op
+- [x] open() non-throwing path compiles
+
+### Done criteria
+- [x] Bundle **145**
+
+---
+
+## Status (2026-09-11)
+
 **Tip: thumtoo-144-appearance-open-nothrow.** AppearanceStore::open never throws;
 invalid store on I/O failure. Prior: **143**.
 

@@ -73,6 +73,25 @@ int main()
     expect(g3.has_value() && g3->has_crop && g3->crop_w == 100, "crop stored");
   }
 
+  // normalize_content_id
+  expect(thumtoo::normalize_content_id("not-hex").empty(), "reject short");
+  expect(thumtoo::normalize_content_id("").empty(), "reject empty");
+  const std::string full =
+      "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  expect(thumtoo::normalize_content_id(
+             "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF")
+             == full,
+         "uppercase hex normalized");
+
+  // Invalid id is a no-op
+  {
+    auto store = thumtoo::AppearanceStore::open(root);
+    thumtoo::ContentAppearance bad;
+    bad.content_h_flip = true;
+    store.put("nope", bad);
+    expect(!store.get("nope").has_value(), "invalid id not stored");
+  }
+
   // Re-open durable.
   {
     auto store = thumtoo::AppearanceStore::open(root);
