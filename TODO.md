@@ -2,6 +2,25 @@
 
 ## Status (2026-09-11)
 
+**Tip: thumtoo-159-text-utf8.** Valid UTF-8 for MuPDF text extract; TTL3 cache.
+Prior: **158**.
+
+### Change
+- `utf8_append_codepoint` skips surrogates / out-of-range
+- Text layer magic **TTL3** (re-extract; drop bad cached layers)
+
+### Note
+PDFs without a working ToUnicode map still yield wrong *codepoints* from MuPDF
+(boxes/CIDs). Encoding is fixed; content may still be unusable for those files.
+
+### Done criteria
+- [x] UTF-8 encode hardened
+- [ ] Bundle **159**
+
+---
+
+## Status (2026-09-11)
+
 **Tip: thumtoo-158-poppler-alias-cleanup.** Normalize remaining Poppler surface.
 Prior: **157**.
 

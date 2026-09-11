@@ -62,7 +62,7 @@ bool read_str(const std::uint8_t*& p, const std::uint8_t* end, std::string& s) {
   return true;
 }
 
-constexpr std::uint32_t kLayerMagic = 0x324C5454;  // "TTL2" — internal link resolve
+constexpr std::uint32_t kLayerMagic = 0x334C5454;  // "TTL3" — valid UTF-8 text extract
 constexpr std::uint32_t kOutlineMagic = 0x324F5454; // "TTO2" — spine path → page
 
 }  // namespace

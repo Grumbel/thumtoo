@@ -18,6 +18,31 @@
 #endif
 
 namespace thumtoo {
+
+
+/// Encode a Unicode code point as UTF-8. Skips surrogates and out-of-range
+/// values (illegal in UTF-8) so QString::fromUtf8 never sees broken sequences.
+void utf8_append_codepoint(std::string& out, int c) {
+  if (c <= 0) return;
+  if (c > 0x10FFFF) return;
+  if (c >= 0xD800 && c <= 0xDFFF) return;  // UTF-16 surrogates — invalid in UTF-8
+  if (c < 0x80) {
+    out.push_back(static_cast<char>(c));
+  } else if (c < 0x800) {
+    out.push_back(static_cast<char>(0xC0 | (c >> 6)));
+    out.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+  } else if (c < 0x10000) {
+    out.push_back(static_cast<char>(0xE0 | (c >> 12)));
+    out.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
+    out.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+  } else {
+    out.push_back(static_cast<char>(0xF0 | (c >> 18)));
+    out.push_back(static_cast<char>(0x80 | ((c >> 12) & 0x3F)));
+    out.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
+    out.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+  }
+}
+
 namespace {
 
 #if defined(THUMTOO_HAVE_MUPDF)
@@ -759,23 +784,7 @@ std::optional<PageTextLayer> mupdf_page_text_layer(const std::filesystem::path& 
         line_text.reserve(64);
         for (fz_stext_char* ch = line->first_char; ch; ch = ch->next) {
           if (ch->c == 0) continue;
-          // Encode Unicode codepoint as UTF-8.
-          const int c = ch->c;
-          if (c < 0x80) {
-            line_text.push_back(static_cast<char>(c));
-          } else if (c < 0x800) {
-            line_text.push_back(static_cast<char>(0xC0 | (c >> 6)));
-            line_text.push_back(static_cast<char>(0x80 | (c & 0x3F)));
-          } else if (c < 0x10000) {
-            line_text.push_back(static_cast<char>(0xE0 | (c >> 12)));
-            line_text.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
-            line_text.push_back(static_cast<char>(0x80 | (c & 0x3F)));
-          } else {
-            line_text.push_back(static_cast<char>(0xF0 | (c >> 18)));
-            line_text.push_back(static_cast<char>(0x80 | ((c >> 12) & 0x3F)));
-            line_text.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
-            line_text.push_back(static_cast<char>(0x80 | (c & 0x3F)));
-          }
+          utf8_append_codepoint(line_text, ch->c);
         }
         // Trim trailing whitespace-only lines.
         while (!line_text.empty() &&
