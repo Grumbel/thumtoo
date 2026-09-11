@@ -53,6 +53,7 @@ class AppearanceStore {
   ~AppearanceStore();
 
   /// Open or create appearance.sqlite3 under @p state_root.
+  /// On failure returns an invalid store (valid() == false); does not throw.
   [[nodiscard]] static AppearanceStore open(
       const std::filesystem::path& state_root = default_state_root());
 

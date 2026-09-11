@@ -30,16 +30,6 @@ bool is_hex(char c)
   return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
 }
 
-void exec_or_throw(sqlite3* db, const char* sql)
-{
-  char* err = nullptr;
-  if (sqlite3_exec(db, sql, nullptr, nullptr, &err) != SQLITE_OK) {
-    std::string msg = err ? err : "sqlite3_exec failed";
-    sqlite3_free(err);
-    throw std::runtime_error(msg);
-  }
-}
-
 }  // namespace
 
 bool ContentAppearance::is_identity() const
@@ -131,17 +121,28 @@ AppearanceStore AppearanceStore::open(const std::filesystem::path& state_root)
     if (db) {
       sqlite3_close(db);
     }
-    throw std::runtime_error("AppearanceStore: cannot open " + path.string());
+    return AppearanceStore{};
   }
-  exec_or_throw(db, "PRAGMA journal_mode=WAL;");
-  exec_or_throw(db, "PRAGMA busy_timeout=5000;");
-  exec_or_throw(db,
-                "CREATE TABLE IF NOT EXISTS schema_meta ("
+  auto try_exec = [&](const char* sql) -> bool {
+    char* err = nullptr;
+    if (sqlite3_exec(db, sql, nullptr, nullptr, &err) != SQLITE_OK) {
+      sqlite3_free(err);
+      return false;
+    }
+    return true;
+  };
+  if (!try_exec("PRAGMA journal_mode=WAL;") || !try_exec("PRAGMA busy_timeout=5000;")) {
+    sqlite3_close(db);
+    return AppearanceStore{};
+  }
+  if (!try_exec("CREATE TABLE IF NOT EXISTS schema_meta ("
                 "  key TEXT PRIMARY KEY,"
                 "  value TEXT NOT NULL"
-                ");");
-  exec_or_throw(db,
-                "CREATE TABLE IF NOT EXISTS content_appearance ("
+                ");")) {
+    sqlite3_close(db);
+    return AppearanceStore{};
+  }
+  if (!try_exec("CREATE TABLE IF NOT EXISTS content_appearance ("
                 "  content_id TEXT PRIMARY KEY,"
                 "  version INTEGER NOT NULL DEFAULT 1,"
                 "  updated_unix INTEGER NOT NULL,"
@@ -161,7 +162,10 @@ AppearanceStore AppearanceStore::open(const std::filesystem::path& state_root)
                 "  grade_saturation INTEGER,"
                 "  grade_hue INTEGER,"
                 "  grade_gamma INTEGER"
-                ");");
+                ");")) {
+    sqlite3_close(db);
+    return AppearanceStore{};
+  }
 
   // Record schema version (insert if missing).
   {

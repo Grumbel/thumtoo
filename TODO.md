@@ -2,6 +2,17 @@
 
 ## Status (2026-09-11)
 
+**Tip: thumtoo-144-appearance-open-nothrow.** AppearanceStore::open never throws;
+invalid store on I/O failure. Prior: **143**.
+
+### Done criteria
+- [x] open() returns invalid store instead of throwing
+- [ ] Bundle **144**
+
+---
+
+## Status (2026-09-11)
+
 **Tip: thumtoo-143-content-appearance-state.** Durable flip/rotate/crop under
 `$XDG_STATE_HOME/thumtoo` (not cache, not source tree). Prior: **142**.
 
