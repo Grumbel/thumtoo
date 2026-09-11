@@ -13,7 +13,7 @@ Prior: **157**.
 
 ### Done criteria
 - [x] No Poppler re-emit / normalize parse
-- [ ] Bundle **158**
+- [x] Bundle **158**
 
 ---
 
