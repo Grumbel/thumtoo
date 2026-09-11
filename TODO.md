@@ -15,7 +15,7 @@ backend. Prior: **155**.
 ### Done criteria
 - [x] No Poppler link/deps
 - [x] PDF API still works via MuPDF
-- [ ] Bundle **156**
+- [x] Bundle **156**
 
 ---
 
