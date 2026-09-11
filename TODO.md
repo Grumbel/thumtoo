@@ -11,7 +11,7 @@ Poppler-default page URIs had no Find/Export Text even with MuPDF linked.
 
 ### Done criteria
 - [x] Text + outline prefer MuPDF when available
-- [ ] Bundle **154**
+- [x] Bundle **154**
 
 ---
 
