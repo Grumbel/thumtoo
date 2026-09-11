@@ -14,7 +14,7 @@ spine paths and non-# internal links (outline + page link regions). Prior: **151
 ### Done criteria
 - [x] Outline spine paths → page_1based
 - [x] In-page links resolve when MuPDF can
-- [ ] Bundle **152**
+- [x] Bundle **152**
 
 ---
 
