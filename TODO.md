@@ -2,6 +2,22 @@
 
 ## Status (2026-09-11)
 
+**Tip: thumtoo-146-appearance-normalize-verify.** Normalize quarter-turns on put;
+integration-style cycle + XDG_STATE_HOME test. Prior: **145**.
+
+### Verified (unit)
+- [x] Rotate cycle 1→2→3; turns=4 deletes (identity)
+- [x] Flip+turn round-trip
+- [x] `default_state_root()` uses `XDG_STATE_HOME/thumtoo`
+- [x] All prior appearance tests still pass
+
+### Done criteria
+- [x] Bundle **146**
+
+---
+
+## Status (2026-09-11)
+
 **Tip: thumtoo-145-appearance-test-verify.** Unit test expanded + verified
 against system libsqlite3 (amalgamation headers). Prior: **144**.
 

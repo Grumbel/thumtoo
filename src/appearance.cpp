@@ -257,6 +257,20 @@ void AppearanceStore::put(std::string_view content_id, const ContentAppearance& 
     return;
   }
 
+  ContentAppearance normalized = app;
+  {
+    int turns = normalized.content_quarter_turns % 4;
+    if (turns < 0) {
+      turns += 4;
+    }
+    normalized.content_quarter_turns = turns;
+  }
+  // Re-check after normalizing turns (e.g. 4 → 0).
+  if (normalized.is_identity()) {
+    remove(id);
+    return;
+  }
+
   const char* sql =
       "INSERT INTO content_appearance("
       " content_id, version, updated_unix,"
@@ -295,23 +309,23 @@ void AppearanceStore::put(std::string_view content_id, const ContentAppearance& 
   sqlite3_bind_text(st, i++, id.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int(st, i++, kAppearanceSchemaVersion);
   sqlite3_bind_int64(st, i++, unix_now());
-  sqlite3_bind_int(st, i++, app.content_h_flip ? 1 : 0);
-  sqlite3_bind_int(st, i++, app.content_v_flip ? 1 : 0);
-  sqlite3_bind_int(st, i++, app.content_quarter_turns);
-  sqlite3_bind_int(st, i++, app.has_crop ? 1 : 0);
-  if (app.has_crop) {
-    sqlite3_bind_int(st, i++, app.crop_x);
-    sqlite3_bind_int(st, i++, app.crop_y);
-    sqlite3_bind_int(st, i++, app.crop_w);
-    sqlite3_bind_int(st, i++, app.crop_h);
-    sqlite3_bind_int(st, i++, app.crop_source_w);
-    sqlite3_bind_int(st, i++, app.crop_source_h);
+  sqlite3_bind_int(st, i++, normalized.content_h_flip ? 1 : 0);
+  sqlite3_bind_int(st, i++, normalized.content_v_flip ? 1 : 0);
+  sqlite3_bind_int(st, i++, normalized.content_quarter_turns);
+  sqlite3_bind_int(st, i++, normalized.has_crop ? 1 : 0);
+  if (normalized.has_crop) {
+    sqlite3_bind_int(st, i++, normalized.crop_x);
+    sqlite3_bind_int(st, i++, normalized.crop_y);
+    sqlite3_bind_int(st, i++, normalized.crop_w);
+    sqlite3_bind_int(st, i++, normalized.crop_h);
+    sqlite3_bind_int(st, i++, normalized.crop_source_w);
+    sqlite3_bind_int(st, i++, normalized.crop_source_h);
   } else {
     for (int n = 0; n < 6; ++n) {
       sqlite3_bind_null(st, i++);
     }
   }
-  sqlite3_bind_double(st, i++, app.crop_rotation);
+  sqlite3_bind_double(st, i++, normalized.crop_rotation);
   auto bind_opt = [&](const std::optional<int>& v) {
     if (v) {
       sqlite3_bind_int(st, i++, *v);
@@ -319,11 +333,11 @@ void AppearanceStore::put(std::string_view content_id, const ContentAppearance& 
       sqlite3_bind_null(st, i++);
     }
   };
-  bind_opt(app.grade_brightness);
-  bind_opt(app.grade_contrast);
-  bind_opt(app.grade_saturation);
-  bind_opt(app.grade_hue);
-  bind_opt(app.grade_gamma);
+  bind_opt(normalized.grade_brightness);
+  bind_opt(normalized.grade_contrast);
+  bind_opt(normalized.grade_saturation);
+  bind_opt(normalized.grade_hue);
+  bind_opt(normalized.grade_gamma);
   sqlite3_step(st);
   sqlite3_finalize(st);
 }

@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <unistd.h>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
@@ -99,6 +100,49 @@ int main()
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     auto got = store.get(id);
     expect(got.has_value() && got->has_crop, "durable reopen");
+  }
+
+  // biltoo-like cycle: rotate 90 three times → turns=3; fourth clears
+  {
+    auto store = thumtoo::AppearanceStore::open(root);
+    const std::string id2 =
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    thumtoo::ContentAppearance cycle;
+    for (int step = 1; step <= 3; ++step) {
+      cycle.content_quarter_turns = step;
+      store.put(id2, cycle);
+      auto g = store.get(id2);
+      expect(g.has_value() && g->content_quarter_turns == step, "cycle step");
+    }
+    cycle.content_quarter_turns = 4;  // must normalize to 0 → identity delete
+    store.put(id2, cycle);
+    expect(!store.get(id2).has_value(), "turns 4 clears row");
+
+    // Flip + turns round-trip (simulates commitItemSessionEdit payload)
+    thumtoo::ContentAppearance edit;
+    edit.content_h_flip = true;
+    edit.content_quarter_turns = 1;
+    store.put(id2, edit);
+    auto round = store.get(id2);
+    expect(round.has_value() && round->content_h_flip
+               && round->content_quarter_turns == 1,
+           "flip+turn round-trip");
+    // Reset to identity
+    store.put(id2, thumtoo::ContentAppearance{});
+    expect(!store.get(id2).has_value(), "reset clears");
+  }
+
+  // default_state_root respects XDG_STATE_HOME
+  {
+    const fs::path custom = fs::temp_directory_path() / ("thumtoo-state-" + std::to_string(::getpid()));
+    fs::remove_all(custom);
+    ::setenv("XDG_STATE_HOME", custom.string().c_str(), 1);
+    const auto root2 = thumtoo::default_state_root();
+    expect(root2 == custom / "thumtoo", "XDG_STATE_HOME/thumtoo");
+    auto store = thumtoo::AppearanceStore::open();
+    expect(store.valid(), "open default under XDG_STATE_HOME");
+    expect(store.db_path().parent_path() == custom / "thumtoo", "db under state");
+    fs::remove_all(custom);
   }
 
   fs::remove_all(root);
