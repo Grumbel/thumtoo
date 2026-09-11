@@ -18,8 +18,8 @@ namespace thumtoo {
 
 /// Which PDF engine handles a page URI.
 enum class PdfBackend {
-  Default,  ///< Resolves to MuPDF when built with it, else Poppler
-  Poppler,
+  Default,  ///< Resolves to MuPDF when built with it
+  Poppler,  ///< Legacy; resolves to MuPDF (//poppler-page: still parsed)
   MuPDF,
 };
 
@@ -132,7 +132,7 @@ struct PdfPageContentStats {
 
 /**
  * Rasterize a pixel rectangle of the page at the given DPI.
- * (px,py,pw,ph) are in the full-page pixel grid at that DPI (Poppler crop).
+ * (px,py,pw,ph) are in the full-page pixel grid at that DPI.
  * Page is 1-based. Does not allocate a full-page buffer beyond the crop.
  */
 [[nodiscard]] std::optional<PdfRaster> pdf_rasterize_page_region(
@@ -157,7 +157,7 @@ struct PdfPageContentStats {
 
 /**
  * Text and link regions for one page.
- * Currently implemented for the MuPDF backend only; Poppler returns nullopt.
+ * Requires MuPDF at build time.
  * Bboxes are page-space points (media box); Y up. Scale by dpi/72 to map to
  * raster pixels at a given DPI (layout uses kPdfLayoutDpi).
  */

@@ -39,7 +39,7 @@ constexpr std::string_view kMediaMimes[] = {
     "image/heic",
     "image/heif",
     "image/avif",
-    // Documents (page raster via Poppler / DjVuLibre when enabled)
+    // Documents (page raster via MuPDF / DjVuLibre when enabled)
     "application/pdf",
     "image/vnd.djvu",
     "image/vnd.djvu+multipage",

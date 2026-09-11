@@ -362,9 +362,11 @@ std::string with_pdf_page(std::string_view base_uri, int page_1based) {
 }
 
 std::string with_pdf_page_poppler(std::string_view base_uri, int page_1based) {
+  // Legacy API: emit neutral //page:N (MuPDF). Name kept for binary/source
+  // compatibility; //poppler-page: is no longer written for new URIs.
   if (page_1based < 1) page_1based = 1;
   std::string out(base_uri);
-  out += "//poppler-page:";
+  out += "//page:";
   out += std::to_string(page_1based);
   return out;
 }

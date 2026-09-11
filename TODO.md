@@ -2,6 +2,25 @@
 
 ## Status (2026-09-11)
 
+**Tip: thumtoo-156-remove-poppler.** Poppler removed; MuPDF is the only PDF
+backend. Prior: **155**.
+
+### Change
+- Drop poppler-cpp / poppler-glib from CMake + flake
+- Rewrite `pdf.cpp` as MuPDF dispatch only (~330 lines)
+- `//poppler-page:N` still *parsed* as legacy alias → MuPDF
+- `with_pdf_page_poppler` emits `//page:N`
+- Docs: `PDF_BACKENDS.md` rewritten
+
+### Done criteria
+- [x] No Poppler link/deps
+- [x] PDF API still works via MuPDF
+- [ ] Bundle **156**
+
+---
+
+## Status (2026-09-11)
+
 **Tip: thumtoo-155-grade-invert-macro.** `THUMTOO_APPEARANCE_GRADE_INVERT` so
 biltoo can `#if` grade_invert. Prior: **154**.
 

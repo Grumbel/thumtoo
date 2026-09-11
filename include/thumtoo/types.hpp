@@ -66,7 +66,7 @@ enum class TileSource : int {
   Full = 0,         ///< Full-resolution decode (or non-JPEG path)
   JpegShrink = 1,   ///< libjpeg/vips DCT shrink (scale > 0)
   Embedded = 2,     ///< EXIF/embedded thumbnail
-  PdfRegion = 3,    ///< Poppler region raster
+  PdfRegion = 3,    ///< PDF region raster
   DjvuRegion = 4,   ///< ddjvu region raster
 };
 

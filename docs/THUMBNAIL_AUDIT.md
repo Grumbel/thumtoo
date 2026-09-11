@@ -84,7 +84,7 @@ Cache layout: `$XDG_CACHE_HOME/thumtoo/{index,blobs}.sqlite`.
 |----|-----------|------|
 | Full `vips_image_new_from_file` without shrink | Decode all samples | `build_tile_cell` **file path**; pyramid; ladder when no EXIF and format lacks shrink-on-load |
 | `build_tile_pyramid*` | Load full → cut all scales | Always full load today |
-| PDF page raster | Poppler at chosen DPI | `pdf.cpp` |
+| PDF page raster | MuPDF at chosen DPI | `pdf_mupdf.cpp` |
 | DjVu page raster | ddjvu_page_render | `djvu.cpp` |
 | Cold archive member extract | libarchive stream to member | Sequential walk cost for RAR especially |
 | SHA-256 of whole file | CPU + I/O | size probe path (now path+mtime cached, thumtoo-070) |
@@ -227,7 +227,7 @@ max-scale tile itself, not LQIP.
 |----|------------|-------|
 | `pdf_page_size_72dpi` / layout | Fast | Media box; TLS layout cache per path+page |
 | `pdf_rasterize_page(max_edge)` | Slow | Full page at DPI scaled to long edge |
-| `pdf_rasterize_page_region` | Medium–slow | Poppler crop at target DPI; O(tile) pixels |
+| `pdf_rasterize_page_region` | Medium–slow | MuPDF crop at target DPI; O(tile) pixels |
 | `pdf_render_tile_cell` | Medium | Prefer region; **fallback full-page** if region size mismatch >2px |
 | Document open | Medium | TLS per-worker document cache (path+mtime) |
 

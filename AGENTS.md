@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-155-grade-invert-macro**. Next bundle: **156**.
+Latest agent handoff: **TODO.md → thumtoo-156-remove-poppler**. Next bundle: **157**.
 
 
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code
@@ -84,7 +84,7 @@ be a short task + tip pointer. Refresh AGENTS.md / TODO.md at session end.
 ## Agent sandbox notes
 
 - Full `nix build` of consumers (biltoo) may fail until **this** tip is pulled.
-- No assumption of local MuPDF/Poppler beyond what the flake provides.
+- No assumption of local MuPDF beyond what the flake provides (Poppler is not used).
 - `make -k` is not the Nix default; use `cmake --build . -- -k` to collect
   many compile errors in one derivation.
 - Keep declarations that use a type **after** that type is defined
