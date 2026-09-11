@@ -12,7 +12,7 @@
 
 ### Done criteria
 - [x] API + persistence
-- [ ] Bundle **153**
+- [x] Bundle **153**
 
 ---
 
