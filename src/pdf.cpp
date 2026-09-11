@@ -852,19 +852,27 @@ std::optional<TileBlob> pdf_build_tile_cell(const std::filesystem::path& path,
 std::optional<PageTextLayer> pdf_page_text_layer(const std::filesystem::path& path,
                                                  int page_1based,
                                                  PdfBackend backend) {
-  if (pdf_resolve_backend(backend) == PdfBackend::MuPDF) {
-    return mupdf_page_text_layer(path, page_1based);
-  }
-  // Poppler text+bbox path can be added later; MuPDF is the primary extractor.
+  // Text/outline always prefer MuPDF when built — even if the page *raster*
+  // URI is //poppler-page:N. Poppler has no text-layer path here yet.
+  (void)backend;
+#if defined(THUMTOO_HAVE_MUPDF)
+  return mupdf_page_text_layer(path, page_1based);
+#else
+  (void)path;
+  (void)page_1based;
   return std::nullopt;
+#endif
 }
 
 std::optional<DocumentOutline> pdf_document_outline(const std::filesystem::path& path,
                                                     PdfBackend backend) {
-  if (pdf_resolve_backend(backend) == PdfBackend::MuPDF) {
-    return mupdf_document_outline(path);
-  }
+  (void)backend;
+#if defined(THUMTOO_HAVE_MUPDF)
+  return mupdf_document_outline(path);
+#else
+  (void)path;
   return std::nullopt;
+#endif
 }
 
 }  // namespace thumtoo

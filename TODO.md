@@ -2,6 +2,21 @@
 
 ## Status (2026-09-11)
 
+**Tip: thumtoo-154-pdf-text-always-mupdf.** PDF text/outline extract always uses
+MuPDF when built, independent of page raster backend. Prior: **153**.
+
+### Cause
+`pdf_page_text_layer` returned nullopt unless resolved backend was MuPDF, so
+Poppler-default page URIs had no Find/Export Text even with MuPDF linked.
+
+### Done criteria
+- [x] Text + outline prefer MuPDF when available
+- [ ] Bundle **154**
+
+---
+
+## Status (2026-09-11)
+
 **Tip: thumtoo-153-grade-invert.** Optional `grade_invert` on ContentAppearance
 (photographic negative). Prior: **152**.
 
