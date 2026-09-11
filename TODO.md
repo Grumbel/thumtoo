@@ -2,6 +2,17 @@
 
 ## Status (2026-09-11)
 
+**Tip: thumtoo-150-fprintf-fix.** Fix broken multi-line string in put debug log.
+Prior: **149**.
+
+### Done criteria
+- [x] Compiles
+- [ ] Bundle **150**
+
+---
+
+## Status (2026-09-11)
+
 **Tip: thumtoo-149-put-normalize-log.** Log when put rejects a content id.
 Prior: **148**.
 

@@ -285,8 +285,7 @@ void AppearanceStore::put(std::string_view content_id, const ContentAppearance& 
   if (id.empty()) {
     if (std::getenv("BILTOO_DEBUG_APPEARANCE") || std::getenv("THUMTOO_DEBUG_APPEARANCE")) {
       std::fprintf(stderr,
-                   "[appearance] put SKIP: normalize_content_id rejected key (len=%zu)
-",
+                   "[appearance] put SKIP: normalize_content_id rejected key (len=%zu)\n",
                    content_id.size());
     }
     return;

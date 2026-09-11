@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-149-put-normalize-log**. Next bundle: **150**.
+Latest agent handoff: **TODO.md → thumtoo-150-fprintf-fix**. Next bundle: **151**.
 
 
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code
