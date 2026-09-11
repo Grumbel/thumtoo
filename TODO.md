@@ -15,7 +15,7 @@ PDFs without a working ToUnicode map still yield wrong *codepoints* from MuPDF
 
 ### Done criteria
 - [x] UTF-8 encode hardened
-- [ ] Bundle **159**
+- [x] Bundle **159**
 
 ---
 
