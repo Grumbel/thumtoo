@@ -14,7 +14,7 @@
 ### Done criteria
 - [x] API + persistence
 - [x] Encode paths set source
-- [ ] Bundle **151**
+- [x] Bundle **151**
 
 ---
 
