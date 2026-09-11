@@ -414,7 +414,7 @@ std::optional<PdfRaster> mupdf_render_tile_cell(const std::filesystem::path& pat
   auto s72 = mupdf_page_size_72dpi(path, page_1based);
   if (!s72 || s72->width <= 0 || s72->height <= 0) return std::nullopt;
 
-  // Match Poppler layout size: media box scaled to kPdfLayoutDpi.
+  // Layout size: media box scaled to kPdfLayoutDpi.
   const double layout_scale = static_cast<double>(kPdfLayoutDpi) / 72.0;
   Size layout{
       std::max(1, static_cast<int>(std::lround(s72->width * layout_scale))),

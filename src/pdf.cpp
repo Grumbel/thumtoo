@@ -17,8 +17,7 @@ namespace thumtoo {
 namespace {
 
 constexpr std::string_view kPagePipe = "//page:";
-/// Legacy alias from the removed Poppler backend; still parsed so old session
-/// paths open. All PDF work goes through MuPDF.
+/// Legacy //poppler-page: still accepted, treated as //page: (MuPDF).
 constexpr std::string_view kPopplerPagePipe = "//poppler-page:";
 constexpr std::string_view kMupdfPagePipe = "//mupdf-page:";
 
@@ -31,7 +30,7 @@ bool is_likely_pdf_path(const std::filesystem::path& path) {
 PdfBackend pdf_resolve_backend(PdfBackend requested) {
   (void)requested;
 #if defined(THUMTOO_HAVE_MUPDF)
-  // Default, Poppler (legacy), and MuPDF all resolve to MuPDF.
+  // All PdfBackend values resolve to MuPDF.
   return PdfBackend::MuPDF;
 #else
   return PdfBackend::Default;
@@ -125,7 +124,6 @@ std::string pdf_page_uri(const std::filesystem::path& pdf_path, int page_1based,
                          PdfBackend backend) {
   auto uri = file_uri_from_path(pdf_path.lexically_normal());
   // Prefer neutral //page:N. Explicit MuPDF only when requested.
-  // PdfBackend::Poppler is treated as Default (legacy).
   if (backend == PdfBackend::MuPDF) {
     uri += "//mupdf-page:";
   } else {
@@ -152,8 +150,8 @@ std::optional<ParsedPdfUri> parse_pdf_uri(std::string_view uri) {
     }
   };
   consider(pipe, PdfBackend::Default, kPagePipe);
-  // Legacy //poppler-page: still parses; pdf_resolve_backend maps to MuPDF.
-  consider(pop, PdfBackend::Poppler, kPopplerPagePipe);
+  // Legacy //poppler-page: same as //page: (MuPDF).
+  consider(pop, PdfBackend::Default, kPopplerPagePipe);
   consider(mu, PdfBackend::MuPDF, kMupdfPagePipe);
   if (pos == std::string_view::npos) return std::nullopt;
 

@@ -24,7 +24,7 @@ namespace thumtoo {
 /// True if uri uses the //archive: pipe form somewhere after file:///.
 [[nodiscard]] bool is_archive_uri(std::string_view uri);
 
-/// True if uri contains a PDF page pipe (//page:N, //mupdf-page:N; legacy //poppler-page:).
+/// True if uri contains a PDF page pipe (//page:N, //mupdf-page:N; //poppler-page: accepted).
 [[nodiscard]] bool is_pdf_page_uri(std::string_view uri);
 
 /// True if uri contains //pdfimage:N (embedded image extract, 1-based).
@@ -64,7 +64,7 @@ enum class LocationPipeKind {
   ArchiveMember,   // …//archive:member/path
   EpubLayout,      // …//epub:w=1200,h=1800,fs=12
   PdfPage,         // …//page:N (1-based, default PDF backend)
-  PdfPagePoppler,  // …//poppler-page:N (legacy alias)
+  PdfPagePoppler,  // deprecated; parse maps //poppler-page: → PdfPage
   PdfPageMupdf,    // …//mupdf-page:N
   PdfImage,        // …//pdfimage:N (1-based embedded image, native res)
   PdfImages,       // …//pdfimages (expand to all embedded images)
@@ -104,7 +104,7 @@ struct Location {
 /// Append //pdfimages collection directive (expand via expand_pdf_image_uris).
 [[nodiscard]] std::string with_pdf_images(std::string_view base_uri);
 
-/// Legacy: append //poppler-page:N (parsed as MuPDF). Prefer with_pdf_page_mupdf.
+/// Deprecated alias of with_pdf_page (emits //page:N).
 [[nodiscard]] std::string with_pdf_page_poppler(std::string_view base_uri,
                                                 int page_1based);
 [[nodiscard]] std::string with_pdf_page_mupdf(std::string_view base_uri,

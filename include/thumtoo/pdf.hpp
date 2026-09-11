@@ -19,7 +19,7 @@ namespace thumtoo {
 /// Which PDF engine handles a page URI.
 enum class PdfBackend {
   Default,  ///< Resolves to MuPDF when built with it
-  Poppler,  ///< Legacy; resolves to MuPDF (//poppler-page: still parsed)
+  Poppler,  ///< Deprecated alias of Default (kept for ABI)
   MuPDF,
 };
 

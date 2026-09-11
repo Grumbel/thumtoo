@@ -1,17 +1,14 @@
 # PDF backend (MuPDF)
 
-Poppler support was removed. All PDF page work goes through MuPDF when
-`THUMTOO_HAVE_MUPDF` is set at build time.
+PDF pages use **MuPDF** only (`THUMTOO_HAVE_MUPDF`). Poppler was removed.
 
 ## URI routes
 
 | Pipe | Meaning |
 |------|---------|
-| `//page:N` | Default (MuPDF) |
+| `//page:N` | Default page (MuPDF) |
 | `//mupdf-page:N` | Explicit MuPDF |
-| `//poppler-page:N` | **Legacy alias** — still *parsed* so old session paths open; resolves to MuPDF. New URIs should use `//page:N`. |
-
-Examples:
+| `//poppler-page:N` | Accepted for old paths; normalized to `PdfPage` / `//page:N` on format |
 
 ```
 file:///data/doc.pdf//page:1
@@ -24,39 +21,25 @@ file:///data/doc.pdf//mupdf-page:1
 
 | File | Role |
 |------|------|
-| `pdf.hpp` | Types, URI, scale math, public API with `PdfBackend` |
+| `pdf.hpp` | Types, URI, scale math, public API |
 | `pdf.cpp` | URI parse/build + dispatch to MuPDF |
-| `pdf_mupdf.cpp` | MuPDF implementation (`THUMTOO_HAVE_MUPDF`) |
+| `pdf_mupdf.cpp` | MuPDF implementation |
 
-`PdfBackend::Poppler` remains in the enum for ABI stability and is treated as
-`Default` (MuPDF).
+`PdfBackend::Poppler` remains as a deprecated ABI alias of `Default`.
 
-## MuPDF specifics
+## Capabilities
 
-- Per-worker TLS: `fz_context`, document, page, **display list**
-- Region tiles: `fz_run_display_list` with **device-space** scissor
-- Image-heavy gate: `fz_stext` image blocks (coverage) + sparse-text fallback
-- Text layer + outline for Find / ToC
-- Embedded images: `//pdfimage:N` via `pdf_load_image`
+- Page raster / region tiles (display list + device-space scissor)
+- Image-heavy gate via `fz_stext` image blocks
+- Text layer + outline (Find / ToC)
+- Embedded images: `//pdfimage:N`
 
-## Embedded images (`//pdfimage:N`)
-
-For scanned PDFs it is often better to extract **Image XObjects** at native
-resolution instead of rendering the page at a chosen DPI.
+## Embedded images
 
 ```
 file:///book.pdf//pdfimage:1
-```
-
-- Implemented with MuPDF (`pdf_load_image` + pixmap)
-- Index is **1-based**, document order
-- Expand helper: `expand_pdf_image_uris(path)` → `//pdfimage:1..N`
-- Default `expand_media_uris` for PDFs still uses `//page:N` (rendered pages)
-
-### Collection expand: `//pdfimages`
-
-```
 file:///book.pdf//pdfimages
 ```
 
-Expands to `//pdfimage:1` … `//pdfimage:N`.
+Expand helpers: `expand_pdf_image_uris` / `expand_pdf_images_collection_uri`.
+Default expand for PDFs uses rendered `//page:N`.

@@ -55,15 +55,17 @@ int main() {
              poploc->pipes[0].value == "2",
          "legacy poppler helper emits default page pipe");
   expect(format_location(*poploc) == page_pop, "format legacy poppler helper");
-  // Explicit //poppler-page:N still parses for old session paths.
+  // Explicit //poppler-page:N still accepted; normalized to PdfPage.
   const auto legacy_pop =
       std::string(file_uri_from_path("/tmp/doc.pdf")) + "//poppler-page:5";
   expect(is_pdf_page_uri(legacy_pop), "legacy poppler-page detect");
   auto legacyloc = parse_location(legacy_pop);
   expect(legacyloc && legacyloc->pipes.size() == 1 &&
-             legacyloc->pipes[0].kind == LocationPipeKind::PdfPagePoppler &&
+             legacyloc->pipes[0].kind == LocationPipeKind::PdfPage &&
              legacyloc->pipes[0].value == "5",
-         "legacy poppler-page pipe still parsed");
+         "legacy poppler-page normalized to PdfPage");
+  expect(format_location(*legacyloc).find("//poppler-page:") == std::string::npos,
+         "format does not re-emit poppler-page");
 
   const auto page_mu = with_pdf_page_mupdf(file_uri_from_path("/tmp/doc.pdf"), 4);
   expect(is_pdf_page_uri(page_mu), "mupdf-page detect");

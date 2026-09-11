@@ -201,7 +201,7 @@ class Client {
       const std::filesystem::path& path, int page_1based, int max_edge,
       PdfBackend backend = PdfBackend::Default);
 
-  /// file:///abs.pdf//page:N (or //mupdf-page:; legacy //poppler-page: accepted).
+  /// file:///abs.pdf//page:N (or //mupdf-page:N).
   [[nodiscard]] static std::string pdf_page_uri(
       const std::filesystem::path& path, int page_1based,
       PdfBackend backend = PdfBackend::Default);

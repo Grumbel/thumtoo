@@ -98,8 +98,9 @@ bool parse_pipes(std::string_view rest, std::vector<LocationPipe>& out) {
       std::string_view tag = kPagePipe;
       LocationPipeKind page_kind = LocationPipeKind::PdfPage;
       if (hit == PipeHit::PdfPagePoppler) {
+        // Legacy //poppler-page: — parse as default PdfPage (MuPDF).
         tag = kPopplerPagePipe;
-        page_kind = LocationPipeKind::PdfPagePoppler;
+        page_kind = LocationPipeKind::PdfPage;
       } else if (hit == PipeHit::PdfPageMupdf) {
         tag = kMupdfPagePipe;
         page_kind = LocationPipeKind::PdfPageMupdf;
@@ -319,7 +320,8 @@ std::string format_location(const Location& loc) {
         out += pipe.value;
         break;
       case LocationPipeKind::PdfPagePoppler:
-        out += "//poppler-page:";
+        // Legacy kind: never re-emit //poppler-page:.
+        out += "//page:";
         out += pipe.value;
         break;
       case LocationPipeKind::PdfPageMupdf:

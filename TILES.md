@@ -161,7 +161,7 @@ Let `L` = layout size at 144 dpi. Tile size `T = 256`.
 `full = pdf_page_size_at_scale(L, s)` → `round(L * 2^{-s})`  
 `dpi = kPdfLayoutDpi * 2^{-s}`
 
-Interactive `request_tile` for `//page:N` region-rasterizes one cell (Poppler
+Interactive `request_tile` for `//page:N` region-rasterizes one cell (MuPDF
 crop) or full-page + software crop fallback. Each cell is ≤ `T²` pixels.
 Durable cache keys `(content_id, scale, x, y)`. PDF cells finer than
 `kPdfMinDurableTileScale` (−2, 576 dpi) are generated live and **not** stored.

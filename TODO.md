@@ -2,6 +2,23 @@
 
 ## Status (2026-09-11)
 
+**Tip: thumtoo-158-poppler-alias-cleanup.** Normalize remaining Poppler surface.
+Prior: **157**.
+
+### Change
+- `//poppler-page:N` parses as `LocationPipeKind::PdfPage` (not PdfPagePoppler)
+- `format_location` never re-emits `//poppler-page:`
+- Docs (PDF_BACKENDS, TILES, DESIGN, audit note) cleaned
+- Enum/API names kept for ABI only
+
+### Done criteria
+- [x] No Poppler re-emit / normalize parse
+- [ ] Bundle **158**
+
+---
+
+## Status (2026-09-11)
+
 **Tip: thumtoo-157-uri-test-poppler.** Fix uri/pdf_tiles tests after Poppler
 removal. Prior: **156**.
 

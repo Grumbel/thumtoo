@@ -501,21 +501,21 @@ Output: machine-readable JSON + markdown table in this doc.
 | Galapix frame tile budget | 128 | `begin_frame_request_budget` |
 | Galapix GL uploads/image/frame | 64 | `kMaxUploadsPerFrame` |
 
-## 6f. Scanned PDFs and Poppler handle lifetime
+## 6f. Scanned PDFs and image-heavy pages (historical: Poppler; now MuPDF)
 
 **Document** is already TLS-cached per Client worker (`cached_pdf_document`).
 **Page** was re-`create_page`d on every region render — now TLS-cached too.
 
 **Region vs full page:** `render_page(..., px,py,pw,ph)` still walks page
 content. For scanned pages (one large image XObject) Splash often **re-decodes
-the full JPEG** for each crop. That is Poppler behaviour, not Galapix throwing
+the full JPEG** for each crop. That was Poppler behaviour (removed); MuPDF region tiles use a display list
 away handles.
 
 **Full-page RGB cache:** only for **scale ≥ 0** and long edge ≤ 4096. Never at
 deep live zoom (would be huge).
 
 **Image-heavy detection (thumtoo-093):**
-- With **poppler-glib**: `poppler_page_get_image_mapping` → image count +
+- With **MuPDF**: `fz_stext` image blocks → image count +
   coverage fraction (box area / media box). Coverage ≥ 0.45 → image_heavy.
 - Without glib: sparse text (`text_chars / page_points²` < threshold) →
   image_heavy (scanned heuristic).
