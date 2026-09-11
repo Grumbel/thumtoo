@@ -1,5 +1,27 @@
 # TODO / agent handoff
 
+## Status (2026-09-11)
+
+**Tip: thumtoo-143-content-appearance-state.** Durable flip/rotate/crop under
+`$XDG_STATE_HOME/thumtoo` (not cache, not source tree). Prior: **142**.
+
+### Design
+See [docs/APPEARANCE.md](docs/APPEARANCE.md).
+
+- Key: `content_id` = `sha256:<hex>` (source bytes; never SessionImageId)
+- DB: `appearance.sqlite3` WAL under state root
+- API: `AppearanceStore` + `ContentAppearance` in `appearance.hpp`
+- Identity rows deleted (sparse)
+- biltoo seeds/saves via ThumtooCache façade (paired tip)
+
+### Done criteria
+- [x] Design doc
+- [x] AppearanceStore + unit test
+- [ ] Human: biltoo flip survives restart without .biltoo project
+- [ ] Bundle **143**
+
+---
+
 ## Status (2026-09-09)
 
 **Tip: thumtoo-142-debug-log-file.** Also append traces to ~/.cache/thumtoo/debug.log. Prior: 141.

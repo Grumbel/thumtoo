@@ -46,6 +46,7 @@ add_library(thumtoo
   external/basic_handsum_decode_impl.c
   src/network.cpp
   src/text.cpp
+  src/appearance.cpp
 )
 add_library(thumtoo::thumtoo ALIAS thumtoo)
 target_include_directories(thumtoo
@@ -146,6 +147,9 @@ if(THUMTOO_BUILD_TESTS)
   add_test(NAME lqip COMMAND thumtoo-test-lqip)
   target_link_libraries(thumtoo-test-uri PRIVATE thumtoo)
   add_test(NAME uri COMMAND thumtoo-test-uri)
+  add_executable(thumtoo-test-appearance tests/test_appearance.cpp)
+  target_link_libraries(thumtoo-test-appearance PRIVATE thumtoo)
+  add_test(NAME appearance COMMAND thumtoo-test-appearance)
 
   add_executable(thumtoo-test-pdf-scale tests/test_pdf_scale.cpp)
   target_link_libraries(thumtoo-test-pdf-scale PRIVATE thumtoo)
