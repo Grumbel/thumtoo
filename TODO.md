@@ -2,6 +2,16 @@
 
 ## Status (2026-09-11)
 
+**Tip: thumtoo-149-put-normalize-log.** Log when put rejects a content id.
+Prior: **148**.
+
+### Done criteria
+- [x] Bundle **149**
+
+---
+
+## Status (2026-09-11)
+
 **Tip: thumtoo-148-page-content-id.** Content ids for multipage refs:
 `sha256:<filehex>:page:<n>`. Prior: **147**.
 

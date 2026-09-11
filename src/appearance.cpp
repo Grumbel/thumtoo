@@ -9,6 +9,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstdlib>
+#include <cstdio>
 #include <stdexcept>
 #include <string>
 
@@ -282,6 +283,12 @@ void AppearanceStore::put(std::string_view content_id, const ContentAppearance& 
   }
   const std::string id = normalize_content_id(content_id);
   if (id.empty()) {
+    if (std::getenv("BILTOO_DEBUG_APPEARANCE") || std::getenv("THUMTOO_DEBUG_APPEARANCE")) {
+      std::fprintf(stderr,
+                   "[appearance] put SKIP: normalize_content_id rejected key (len=%zu)
+",
+                   content_id.size());
+    }
     return;
   }
   if (app.is_identity()) {
