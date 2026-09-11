@@ -62,8 +62,8 @@ bool read_str(const std::uint8_t*& p, const std::uint8_t* end, std::string& s) {
   return true;
 }
 
-constexpr std::uint32_t kLayerMagic = 0x314C5454;  // "TTL1" little-endian tag
-constexpr std::uint32_t kOutlineMagic = 0x314F5454; // "TTO1"
+constexpr std::uint32_t kLayerMagic = 0x324C5454;  // "TTL2" — internal link resolve
+constexpr std::uint32_t kOutlineMagic = 0x324F5454; // "TTO2" — spine path → page
 
 }  // namespace
 

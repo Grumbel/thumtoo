@@ -666,10 +666,30 @@ std::optional<Size> mupdf_embedded_image_size(const std::filesystem::path& path,
 }
 
 
-[[nodiscard]] bool resolve_hash_link_page(fz_context* ctx, fz_document* doc,
-                                          const char* uri, int* page_0based,
-                                          float* x_out, float* y_out) {
-  if (!ctx || !doc || !uri || uri[0] != '#') return false;
+[[nodiscard]] bool is_external_link_uri(const char* uri) {
+  if (!uri || !uri[0]) return true;
+  auto starts_ci = [](const char* s, const char* prefix) {
+    for (; *prefix; ++prefix, ++s) {
+      if (!*s) return false;
+      const char a = (*s >= 'A' && *s <= 'Z') ? static_cast<char>(*s - 'A' + 'a') : *s;
+      const char b = (*prefix >= 'A' && *prefix <= 'Z')
+                         ? static_cast<char>(*prefix - 'A' + 'a')
+                         : *prefix;
+      if (a != b) return false;
+    }
+    return true;
+  };
+  return starts_ci(uri, "http:") || starts_ci(uri, "https:")
+         || starts_ci(uri, "mailto:") || starts_ci(uri, "ftp:")
+         || starts_ci(uri, "file:");
+}
+
+/** Resolve internal PDF/EPUB link (#dest or relative path) to 0-based page. */
+[[nodiscard]] bool resolve_internal_link_page(fz_context* ctx, fz_document* doc,
+                                              const char* uri, int* page_0based,
+                                              float* x_out, float* y_out) {
+  if (!ctx || !doc || !uri || !uri[0]) return false;
+  if (is_external_link_uri(uri)) return false;
   int page = -1;
   float lx = 0, ly = 0;
   int ok = 0;
@@ -688,6 +708,13 @@ std::optional<Size> mupdf_embedded_image_size(const std::filesystem::path& path,
   if (x_out) *x_out = lx;
   if (y_out) *y_out = ly;
   return true;
+}
+
+// Back-compat name used by older call sites in this file.
+[[nodiscard]] bool resolve_hash_link_page(fz_context* ctx, fz_document* doc,
+                                          const char* uri, int* page_0based,
+                                          float* x_out, float* y_out) {
+  return resolve_internal_link_page(ctx, doc, uri, page_0based, x_out, y_out);
 }
 
 std::optional<PageTextLayer> mupdf_page_text_layer(const std::filesystem::path& path,
@@ -797,17 +824,19 @@ std::optional<PageTextLayer> mupdf_page_text_layer(const std::filesystem::path& 
     TextRegion reg;
     reg.role = TextRegionRole::Link;
     reg.bbox = bbox;
-    if (!uri.empty() && uri[0] == '#') {
+    if (!uri.empty()) {
       int dest_page = -1;
       float lx = 0, ly = 0;
-      if (resolve_hash_link_page(ctx, doc, uri.c_str(), &dest_page, &lx, &ly)) {
+      if (resolve_internal_link_page(ctx, doc, uri.c_str(), &dest_page, &lx, &ly)) {
         reg.target.kind = TextLinkTargetKind::InternalPage;
         reg.target.page_1based = dest_page + 1;
         reg.target.x = static_cast<double>(lx);
         reg.target.y = static_cast<double>(ly);
+        reg.target.uri = uri;
       } else {
         int page_num = 0;
-        if (std::sscanf(uri.c_str(), "#page=%d", &page_num) == 1 && page_num >= 1) {
+        if (uri[0] == '#' &&
+            std::sscanf(uri.c_str(), "#page=%d", &page_num) == 1 && page_num >= 1) {
           reg.target.kind = TextLinkTargetKind::InternalPage;
           reg.target.page_1based = page_num;
         } else {
@@ -815,9 +844,6 @@ std::optional<PageTextLayer> mupdf_page_text_layer(const std::filesystem::path& 
           reg.target.uri = uri;
         }
       }
-    } else if (!uri.empty()) {
-      reg.target.kind = TextLinkTargetKind::Uri;
-      reg.target.uri = uri;
     }
     layer.regions.push_back(std::move(reg));
   }
@@ -852,18 +878,17 @@ void append_outline(fz_context* ctx, fz_document* doc, fz_outline* root, int /*l
     OutlineItem item;
     item.level = level;
     item.title = title;
-    if (!uri.empty() && uri[0] == '#') {
+    if (!uri.empty()) {
       int dest_page = -1;
       float lx = 0, ly = 0;
-      if (resolve_hash_link_page(ctx, doc, uri.c_str(), &dest_page, &lx, &ly)) {
+      if (resolve_internal_link_page(ctx, doc, uri.c_str(), &dest_page, &lx, &ly)) {
         item.page_1based = dest_page + 1;
+        item.uri = uri;
       } else {
         item.uri = uri;
       }
       (void)lx;
       (void)ly;
-    } else if (!uri.empty()) {
-      item.uri = uri;
     }
     out.items.push_back(std::move(item));
   }

@@ -2,6 +2,24 @@
 
 ## Status (2026-09-11)
 
+**Tip: thumtoo-152-resolve-internal-links.** MuPDF `fz_resolve_link` for EPUB
+spine paths and non-# internal links (outline + page link regions). Prior: **151**.
+
+### Change
+- `resolve_internal_link_page` (was hash-only `#…`) in epub.cpp and pdf_mupdf.cpp
+- Outline items and link regions: resolve relative `*.xhtml` / path#frag to page
+- Skip http(s)/mailto/ftp/file as external
+- Cache magic TTL2 / TTO2 so old unresolved blobs are re-extracted
+
+### Done criteria
+- [x] Outline spine paths → page_1based
+- [x] In-page links resolve when MuPDF can
+- [ ] Bundle **152**
+
+---
+
+## Status (2026-09-11)
+
 **Tip: thumtoo-151-pixel-source-tag.** Tag soft ladder levels with PixelSource
 (Embedded vs JpegShrink vs Full). Prior: **150**.
 
