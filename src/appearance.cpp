@@ -338,8 +338,12 @@ void AppearanceStore::put(std::string_view content_id, const ContentAppearance& 
   bind_opt(normalized.grade_saturation);
   bind_opt(normalized.grade_hue);
   bind_opt(normalized.grade_gamma);
-  sqlite3_step(st);
+  const int rc = sqlite3_step(st);
   sqlite3_finalize(st);
+  if (rc != SQLITE_DONE) {
+    // Leave the store open; caller treats missing rows as identity.
+    return;
+  }
 }
 
 void AppearanceStore::remove(std::string_view content_id)

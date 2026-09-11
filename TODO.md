@@ -2,6 +2,16 @@
 
 ## Status (2026-09-11)
 
+**Tip: thumtoo-147-put-step-check.** Check sqlite3_step result in AppearanceStore::put.
+Prior: **146**.
+
+### Done criteria
+- [x] Bundle **147**
+
+---
+
+## Status (2026-09-11)
+
 **Tip: thumtoo-146-appearance-normalize-verify.** Normalize quarter-turns on put;
 integration-style cycle + XDG_STATE_HOME test. Prior: **145**.
 
