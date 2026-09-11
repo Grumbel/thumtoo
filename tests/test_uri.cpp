@@ -46,13 +46,24 @@ int main() {
   expect(ploc->pipes[0].value == "3", "page number");
   expect(path_from_file_uri(page).value_or("") == "/tmp/doc.pdf", "path strips page");
 
+  // with_pdf_page_poppler is a legacy alias; it now emits //page:N (MuPDF).
   const auto page_pop = with_pdf_page_poppler(file_uri_from_path("/tmp/doc.pdf"), 2);
-  expect(is_pdf_page_uri(page_pop), "poppler-page detect");
+  expect(is_pdf_page_uri(page_pop), "legacy poppler helper still a page uri");
   auto poploc = parse_location(page_pop);
   expect(poploc && poploc->pipes.size() == 1 &&
-             poploc->pipes[0].kind == LocationPipeKind::PdfPagePoppler,
-         "poppler page pipe");
-  expect(format_location(*poploc) == page_pop, "format poppler-page");
+             poploc->pipes[0].kind == LocationPipeKind::PdfPage &&
+             poploc->pipes[0].value == "2",
+         "legacy poppler helper emits default page pipe");
+  expect(format_location(*poploc) == page_pop, "format legacy poppler helper");
+  // Explicit //poppler-page:N still parses for old session paths.
+  const auto legacy_pop =
+      std::string(file_uri_from_path("/tmp/doc.pdf")) + "//poppler-page:5";
+  expect(is_pdf_page_uri(legacy_pop), "legacy poppler-page detect");
+  auto legacyloc = parse_location(legacy_pop);
+  expect(legacyloc && legacyloc->pipes.size() == 1 &&
+             legacyloc->pipes[0].kind == LocationPipeKind::PdfPagePoppler &&
+             legacyloc->pipes[0].value == "5",
+         "legacy poppler-page pipe still parsed");
 
   const auto page_mu = with_pdf_page_mupdf(file_uri_from_path("/tmp/doc.pdf"), 4);
   expect(is_pdf_page_uri(page_mu), "mupdf-page detect");

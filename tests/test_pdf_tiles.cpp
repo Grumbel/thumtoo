@@ -134,8 +134,8 @@ std::optional<thumtoo::TileBlob> request_one(thumtoo::Client& client,
 }  // namespace
 
 int main() {
-#if !defined(THUMTOO_HAVE_POPPLER)
-  std::cout << "test_pdf_tiles: skip (no Poppler)\n";
+#if !defined(THUMTOO_HAVE_MUPDF)
+  std::cout << "test_pdf_tiles: skip (no MuPDF)\n";
   return 0;
 #endif
 

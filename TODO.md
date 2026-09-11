@@ -2,6 +2,22 @@
 
 ## Status (2026-09-11)
 
+**Tip: thumtoo-157-uri-test-poppler.** Fix uri/pdf_tiles tests after Poppler
+removal. Prior: **156**.
+
+### Change
+- `with_pdf_page_poppler` expects `//page:N` + PdfPage
+- Explicit `//poppler-page:` still parsed as PdfPagePoppler
+- `test_pdf_tiles` skips on missing MuPDF (not Poppler)
+
+### Done criteria
+- [x] uri test updated
+- [ ] Bundle **157**
+
+---
+
+## Status (2026-09-11)
+
 **Tip: thumtoo-156-remove-poppler.** Poppler removed; MuPDF is the only PDF
 backend. Prior: **155**.
 

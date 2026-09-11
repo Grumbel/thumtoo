@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-156-remove-poppler**. Next bundle: **157**.
+Latest agent handoff: **TODO.md → thumtoo-157-uri-test-poppler**. Next bundle: **158**.
 
 
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code
