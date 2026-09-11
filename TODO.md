@@ -2,6 +2,22 @@
 
 ## Status (2026-09-11)
 
+**Tip: thumtoo-153-grade-invert.** Optional `grade_invert` on ContentAppearance
+(photographic negative). Prior: **152**.
+
+### Change
+- `grade_invert` optional int on ContentAppearance
+- SQLite column + ALTER migration; get/put bind
+- is_identity accounts for invert
+
+### Done criteria
+- [x] API + persistence
+- [ ] Bundle **153**
+
+---
+
+## Status (2026-09-11)
+
 **Tip: thumtoo-152-resolve-internal-links.** MuPDF `fz_resolve_link` for EPUB
 spine paths and non-# internal links (outline + page link regions). Prior: **151**.
 

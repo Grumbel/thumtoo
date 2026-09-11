@@ -31,6 +31,7 @@ struct ContentAppearance {
   std::optional<int> grade_saturation;
   std::optional<int> grade_hue;
   std::optional<int> grade_gamma;
+  std::optional<int> grade_invert;  ///< 0/1 photographic negative
 
   [[nodiscard]] bool is_identity() const;
 };

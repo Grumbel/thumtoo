@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-152-resolve-internal-links**. Next bundle: **153**.
+Latest agent handoff: **TODO.md → thumtoo-153-grade-invert**. Next bundle: **154**.
 
 
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code

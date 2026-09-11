@@ -42,7 +42,7 @@ bool ContentAppearance::is_identity() const
     return false;
   }
   if (grade_brightness || grade_contrast || grade_saturation || grade_hue
-      || grade_gamma) {
+      || grade_gamma || grade_invert) {
     return false;
   }
   return true;
@@ -194,11 +194,14 @@ AppearanceStore AppearanceStore::open(const std::filesystem::path& state_root)
                 "  grade_contrast INTEGER,"
                 "  grade_saturation INTEGER,"
                 "  grade_hue INTEGER,"
-                "  grade_gamma INTEGER"
+                "  grade_gamma INTEGER,"
+                "  grade_invert INTEGER"
                 ");")) {
     sqlite3_close(db);
     return AppearanceStore{};
   }
+  // Additive migration for DBs created before grade_invert.
+  try_exec("ALTER TABLE content_appearance ADD COLUMN grade_invert INTEGER;");
 
   // Record schema version (insert if missing).
   {
@@ -234,7 +237,7 @@ std::optional<ContentAppearance> AppearanceStore::get(
       " has_crop, crop_x, crop_y, crop_w, crop_h,"
       " crop_source_w, crop_source_h, crop_rotation,"
       " grade_brightness, grade_contrast, grade_saturation,"
-      " grade_hue, grade_gamma"
+      " grade_hue, grade_gamma, grade_invert"
       " FROM content_appearance WHERE content_id = ?;";
   if (sqlite3_prepare_v2(static_cast<sqlite3*>(db_), sql, -1, &st, nullptr)
       != SQLITE_OK) {
@@ -270,6 +273,7 @@ std::optional<ContentAppearance> AppearanceStore::get(
     a.grade_saturation = opt_int(13);
     a.grade_hue = opt_int(14);
     a.grade_gamma = opt_int(15);
+    a.grade_invert = opt_int(16);
     out = a;
   }
   sqlite3_finalize(st);
@@ -316,8 +320,8 @@ void AppearanceStore::put(std::string_view content_id, const ContentAppearance& 
       " has_crop, crop_x, crop_y, crop_w, crop_h,"
       " crop_source_w, crop_source_h, crop_rotation,"
       " grade_brightness, grade_contrast, grade_saturation,"
-      " grade_hue, grade_gamma"
-      ") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+      " grade_hue, grade_gamma, grade_invert"
+      ") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
       " ON CONFLICT(content_id) DO UPDATE SET"
       " version=excluded.version,"
       " updated_unix=excluded.updated_unix,"
@@ -336,7 +340,8 @@ void AppearanceStore::put(std::string_view content_id, const ContentAppearance& 
       " grade_contrast=excluded.grade_contrast,"
       " grade_saturation=excluded.grade_saturation,"
       " grade_hue=excluded.grade_hue,"
-      " grade_gamma=excluded.grade_gamma;";
+      " grade_gamma=excluded.grade_gamma,"
+      " grade_invert=excluded.grade_invert;";
 
   sqlite3_stmt* st = nullptr;
   if (sqlite3_prepare_v2(static_cast<sqlite3*>(db_), sql, -1, &st, nullptr)
@@ -376,6 +381,7 @@ void AppearanceStore::put(std::string_view content_id, const ContentAppearance& 
   bind_opt(normalized.grade_saturation);
   bind_opt(normalized.grade_hue);
   bind_opt(normalized.grade_gamma);
+  bind_opt(normalized.grade_invert);
   const int rc = sqlite3_step(st);
   sqlite3_finalize(st);
   if (rc != SQLITE_DONE) {
