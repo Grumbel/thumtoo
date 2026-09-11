@@ -12,7 +12,7 @@ removal. Prior: **156**.
 
 ### Done criteria
 - [x] uri test updated
-- [ ] Bundle **157**
+- [x] Bundle **157**
 
 ---
 
