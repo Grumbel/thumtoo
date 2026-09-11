@@ -76,6 +76,19 @@ int main()
 
   // normalize_content_id
   expect(thumtoo::normalize_content_id("not-hex").empty(), "reject short");
+  {
+    const std::string page_id =
+        "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:page:3";
+    expect(thumtoo::normalize_content_id(page_id) == page_id, "page-qualified id");
+    expect(thumtoo::normalize_content_id(
+               "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF:page:12")
+               == "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:page:12",
+           "page id uppercase hex");
+    expect(thumtoo::normalize_content_id(
+               "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:page:0")
+               .empty(),
+           "reject page 0");
+  }
   expect(thumtoo::normalize_content_id("").empty(), "reject empty");
   const std::string full =
       "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -100,6 +113,20 @@ int main()
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     auto got = store.get(id);
     expect(got.has_value() && got->has_crop, "durable reopen");
+  }
+
+  // Page-qualified content id round-trip
+  {
+    auto store = thumtoo::AppearanceStore::open(root);
+    const std::string page_id =
+        "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd:page:2";
+    thumtoo::ContentAppearance a;
+    a.content_quarter_turns = 1;
+    store.put(page_id, a);
+    auto g = store.get(page_id);
+    expect(g.has_value() && g->content_quarter_turns == 1, "page id put/get");
+    store.put(page_id, thumtoo::ContentAppearance{});
+    expect(!store.get(page_id).has_value(), "page id clear");
   }
 
   // biltoo-like cycle: rotate 90 three times → turns=3; fourth clears

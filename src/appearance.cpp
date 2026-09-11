@@ -64,18 +64,50 @@ std::string normalize_content_id(std::string_view content_id_or_hex)
   if (in.starts_with(kContentIdSha256Prefix)) {
     in.remove_prefix(kContentIdSha256Prefix.size());
   }
-  if (in.size() != 64) {
+  // File content: 64 hex digits.
+  // Page variant: 64 hex + ":page:" + 1-based page number
+  //   (same document bytes, different page — used for PDF/EPUB/DjVu session refs).
+  std::string_view hex_part = in;
+  std::string_view page_suffix;
+  if (auto pos = in.find(":page:"); pos != std::string_view::npos) {
+    hex_part = in.substr(0, pos);
+    page_suffix = in.substr(pos); // ":page:N"
+    if (page_suffix.size() < 7) {
+      return {};
+    }
+    // ":page:" is 6 chars; rest must be digits, page >= 1
+    for (size_t i = 6; i < page_suffix.size(); ++i) {
+      if (page_suffix[i] < '0' || page_suffix[i] > '9') {
+        return {};
+      }
+    }
+    if (page_suffix.size() == 6 || page_suffix[6] == '0') {
+      // empty or leading zero / page 0
+      if (page_suffix.size() == 6) {
+        return {};
+      }
+      // allow page 10+ but reject page 0 and 01
+      if (page_suffix[6] == '0' && page_suffix.size() == 7) {
+        return {};
+      }
+    }
+  }
+  if (hex_part.size() != 64) {
     return {};
   }
   std::string hex;
   hex.reserve(64);
-  for (char c : in) {
+  for (char c : hex_part) {
     if (!is_hex(c)) {
       return {};
     }
     hex.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
   }
-  return std::string(kContentIdSha256Prefix) + hex;
+  std::string out = std::string(kContentIdSha256Prefix) + hex;
+  if (!page_suffix.empty()) {
+    out.append(page_suffix.begin(), page_suffix.end());
+  }
+  return out;
 }
 
 AppearanceStore::AppearanceStore(void* db, std::filesystem::path db_path)

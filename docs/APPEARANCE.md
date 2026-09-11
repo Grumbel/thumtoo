@@ -19,7 +19,7 @@ content identity so reopening the same bytes restores orientation.
 
 | Layer | Owner | Key |
 | ----- | ----- | --- |
-| Content bytes | disk / archive / page | `content_id` = `sha256:<hex>` |
+| Content bytes | disk / archive / page | `content_id` = `sha256:<hex>` or `sha256:<hex>:page:<n>` |
 | Session variant | biltoo | `SessionImageId` |
 | Local appearance state | thumtoo state DB | `content_id` |
 

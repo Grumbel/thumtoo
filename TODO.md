@@ -2,6 +2,18 @@
 
 ## Status (2026-09-11)
 
+**Tip: thumtoo-148-page-content-id.** Content ids for multipage refs:
+`sha256:<filehex>:page:<n>`. Prior: **147**.
+
+### Done criteria
+- [x] normalize accepts page-qualified ids
+- [x] unit tests
+- [ ] Bundle **148**
+
+---
+
+## Status (2026-09-11)
+
 **Tip: thumtoo-147-put-step-check.** Check sqlite3_step result in AppearanceStore::put.
 Prior: **146**.
 
