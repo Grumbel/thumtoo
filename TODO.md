@@ -7,7 +7,7 @@ biltoo can `#if` grade_invert. Prior: **154**.
 
 ### Done criteria
 - [x] Macro in appearance.hpp
-- [ ] Bundle **155**
+- [x] Bundle **155**
 
 ---
 
