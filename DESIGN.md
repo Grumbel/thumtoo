@@ -524,6 +524,24 @@ regenerate vs serve-as-is.
 | Archive re-list | Cached TOC |
 | Slideshow warm | `prepare(session_paths, {512,1024})` |
 
+### Ladder level provenance (`PixelSource`)
+
+Each soft ladder level records how the pixels were produced so hosts never
+confuse a tiny EXIF stand-in with a real shrink from the full source:
+
+| `PixelSource` | Meaning |
+|---------------|---------|
+| `Unknown` (0) | Legacy cache row (pre-tagging) |
+| `JpegShrink` (1) | `vips_thumbnail` / shrink-on-decode from full source |
+| `Embedded` (2) | EXIF or other embedded JPEG thumbnail (may be small / off-colour) |
+| `Full` (3) | Near-native extract stored as a level (e.g. `//pdfimage`) |
+
+Exposed on `PixelLevel::source` from `get_pixels` / `request_pixels`. Prefer
+`JpegShrink` or `Full` when choosing a display underlay; treat `Embedded` as a
+fast first paint only until a proper soft level exists.
+
+
+
 ## 9. What not to do
 
 - Store multi-megapixel full frames in SQLite BLOBs by default.

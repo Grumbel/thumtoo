@@ -453,6 +453,7 @@ std::vector<LevelBlob> build_ladder(const std::filesystem::path& path,
             LevelBlob b = encode_jxl_level(thumb, edge, id_dir, q);
             g_object_unref(thumb);
             if (!b.bytes.empty()) {
+              b.source = PixelSource::Embedded;
               global_build_stats().exif_thumb_hits.fetch_add(
                   1, std::memory_order_relaxed);
               levels.push_back(std::move(b));
@@ -526,6 +527,7 @@ std::vector<LevelBlob> build_ladder_buffer(const std::uint8_t* data,
           LevelBlob b = encode_jxl_level(thumb, edge, id_dir, q);
           g_object_unref(thumb);
           if (!b.bytes.empty()) {
+            b.source = PixelSource::Embedded;
             global_build_stats().exif_thumb_hits.fetch_add(
                 1, std::memory_order_relaxed);
             levels.push_back(std::move(b));
@@ -623,6 +625,8 @@ std::optional<LevelBlob> build_level_rgb_at_edge(const std::uint8_t* rgb, int wi
   LevelBlob b = encode_jxl_level(out_img, edge, id_dir, q);
   g_object_unref(out_img);
   if (b.bytes.empty()) return std::nullopt;
+  // Exact edge match to source → treat as full extract; otherwise shrink.
+  b.source = (edge >= long_edge) ? PixelSource::Full : PixelSource::JpegShrink;
   return b;
 }
 

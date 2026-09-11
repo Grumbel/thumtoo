@@ -2,6 +2,24 @@
 
 ## Status (2026-09-11)
 
+**Tip: thumtoo-151-pixel-source-tag.** Tag soft ladder levels with PixelSource
+(Embedded vs JpegShrink vs Full). Prior: **150**.
+
+### Change
+- `enum class PixelSource` on `PixelLevel` / `LevelBlob` / `levels.source`
+- EXIF path → `Embedded`; `vips_thumbnail` → `JpegShrink`; native edge extract → `Full`
+- Additive SQLite migration on `levels`
+- Documented in DESIGN.md
+
+### Done criteria
+- [x] API + persistence
+- [x] Encode paths set source
+- [ ] Bundle **151**
+
+---
+
+## Status (2026-09-11)
+
 **Tip: thumtoo-150-fprintf-fix.** Fix broken multi-line string in put debug log.
 Prior: **149**.
 

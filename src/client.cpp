@@ -307,6 +307,7 @@ std::optional<PixelLevel> Client::load_level(
   if (row.height) out.height = *row.height;
   if (row.codec) out.codec = *row.codec;
   out.bytes = std::move(*data);
+  out.source = static_cast<PixelSource>(row.source);
   return out;
 }
 
@@ -1861,6 +1862,7 @@ void Client::handle_ensure_pixels(
           lr.height = lvl->height;
           lr.codec = lvl->codec;
           lr.quality = lvl->quality;
+          lr.source = static_cast<int>(lvl->source);
           lr.path = "blobs.sqlite";
           db_->upsert_level(lr);
           if (auto px = get_pixels(job.uri, job.max_edge, job.frame_idx)) {
@@ -1938,6 +1940,7 @@ void Client::handle_ensure_pixels(
         lr.height = lvl.height;
         lr.codec = lvl.codec;
         lr.quality = lvl.quality;
+          lr.source = static_cast<int>(lvl.source);
         lr.path = "blobs.sqlite";
         db_->upsert_level(lr);
       }
@@ -1984,6 +1987,7 @@ void Client::handle_ensure_pixels(
           lr.height = lvl.height;
           lr.codec = lvl.codec;
           lr.quality = lvl.quality;
+          lr.source = static_cast<int>(lvl.source);
           lr.path = "blobs.sqlite";
           db_->upsert_level(lr);
         }
@@ -2016,6 +2020,7 @@ void Client::handle_ensure_pixels(
         lr.height = lvl.height;
         lr.codec = lvl.codec;
         lr.quality = lvl.quality;
+          lr.source = static_cast<int>(lvl.source);
         lr.path = "blobs.sqlite";
         db_->upsert_level(lr);
       }
@@ -2048,6 +2053,7 @@ void Client::handle_ensure_pixels(
         lr.height = lvl.height;
         lr.codec = lvl.codec;
         lr.quality = lvl.quality;
+          lr.source = static_cast<int>(lvl.source);
         lr.path = "blobs.sqlite";
         db_->upsert_level(lr);
       }
@@ -2081,6 +2087,7 @@ void Client::handle_ensure_pixels(
           lr.height = lvl.height;
           lr.codec = lvl.codec;
           lr.quality = lvl.quality;
+          lr.source = static_cast<int>(lvl.source);
           lr.path = "blobs.sqlite";
           db_->upsert_level(lr);
         }
@@ -2109,6 +2116,7 @@ void Client::handle_ensure_pixels(
         lr.height = lvl.height;
         lr.codec = lvl.codec;
         lr.quality = lvl.quality;
+          lr.source = static_cast<int>(lvl.source);
         lr.path = "blobs.sqlite";
         db_->upsert_level(lr);
       }
@@ -2141,6 +2149,7 @@ void Client::handle_ensure_pixels(
           lr.height = lvl.height;
           lr.codec = lvl.codec;
           lr.quality = lvl.quality;
+          lr.source = static_cast<int>(lvl.source);
           lr.path = "blobs.sqlite";
           db_->upsert_level(lr);
         }

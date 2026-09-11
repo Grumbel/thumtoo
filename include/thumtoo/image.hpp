@@ -29,6 +29,7 @@ struct LevelBlob {
   int quality = 0;
   std::string relative_path;
   std::vector<std::uint8_t> bytes;
+  PixelSource source = PixelSource::JpegShrink;
 };
 
 void image_library_init();

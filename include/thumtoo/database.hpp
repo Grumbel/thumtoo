@@ -122,6 +122,8 @@ class Database {
     std::optional<std::string> codec;
     std::optional<int> quality;
     std::optional<std::string> path;
+    /// PixelSource as int (0 = Unknown for legacy rows).
+    int source = 0;
   };
 
   void upsert_level(const LevelRow& row);

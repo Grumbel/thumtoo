@@ -118,6 +118,7 @@ CREATE TABLE IF NOT EXISTS levels (
   codec TEXT,
   quality INTEGER,
   path TEXT,
+  source INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (content_id, max_edge, frame_idx)
 );
 CREATE TABLE IF NOT EXISTS tags (
@@ -272,6 +273,23 @@ void Database::migrate_or_init() {
     }
     if (!has_source) {
       exec("ALTER TABLE tiles ADD COLUMN source INTEGER NOT NULL DEFAULT 0;");
+    }
+  }
+  // Ladder level provenance (PixelSource). Legacy rows stay 0 = Unknown.
+  {
+    bool has_source = false;
+    sqlite3_stmt* info = nullptr;
+    if (sqlite3_prepare_v2(db_, "PRAGMA table_info(levels);", -1, &info,
+                           nullptr) == SQLITE_OK) {
+      while (sqlite3_step(info) == SQLITE_ROW) {
+        const char* name =
+            reinterpret_cast<const char*>(sqlite3_column_text(info, 1));
+        if (name && std::string(name) == "source") has_source = true;
+      }
+      sqlite3_finalize(info);
+    }
+    if (!has_source) {
+      exec("ALTER TABLE levels ADD COLUMN source INTEGER NOT NULL DEFAULT 0;");
     }
   }
 }
@@ -724,10 +742,11 @@ void Database::upsert_level(const LevelRow& row) {
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "INSERT INTO levels(content_id, max_edge, frame_idx, pts_ms, width, height, "
-      "codec, quality, path) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9) "
+      "codec, quality, path, source) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) "
       "ON CONFLICT(content_id, max_edge, frame_idx) DO UPDATE SET "
       "pts_ms=excluded.pts_ms, width=excluded.width, height=excluded.height, "
-      "codec=excluded.codec, quality=excluded.quality, path=excluded.path;";
+      "codec=excluded.codec, quality=excluded.quality, path=excluded.path, "
+      "source=excluded.source;";
   if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     throw std::runtime_error(sqlite3_errmsg(db_));
   }
@@ -758,6 +777,7 @@ void Database::upsert_level(const LevelRow& row) {
     sqlite3_bind_text(stmt, 9, row.path->c_str(), -1, SQLITE_TRANSIENT);
   else
     sqlite3_bind_null(stmt, 9);
+  sqlite3_bind_int(stmt, 10, row.source);
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     throw std::runtime_error(sqlite3_errmsg(db_));
@@ -821,6 +841,10 @@ std::optional<Database::LevelRow> step_level_row(sqlite3_stmt* stmt) {
     r.quality = sqlite3_column_int(stmt, 7);
   if (sqlite3_column_type(stmt, 8) != SQLITE_NULL)
     r.path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
+  if (sqlite3_column_type(stmt, 9) != SQLITE_NULL)
+    r.source = sqlite3_column_int(stmt, 9);
+  else
+    r.source = 0;
   return r;
 }
 
@@ -832,7 +856,7 @@ std::optional<Database::LevelRow> Database::find_best_level(
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT content_id, max_edge, frame_idx, pts_ms, width, height, codec, "
-      "quality, path FROM levels WHERE content_id = ?1 AND frame_idx = ?2 "
+      "quality, path, source FROM levels WHERE content_id = ?1 AND frame_idx = ?2 "
       "AND max_edge <= ?3 ORDER BY max_edge DESC LIMIT 1;";
   if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     throw std::runtime_error(sqlite3_errmsg(db_));
@@ -852,7 +876,7 @@ std::optional<Database::LevelRow> Database::find_smallest_level_ge(
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT content_id, max_edge, frame_idx, pts_ms, width, height, codec, "
-      "quality, path FROM levels WHERE content_id = ?1 AND frame_idx = ?2 "
+      "quality, path, source FROM levels WHERE content_id = ?1 AND frame_idx = ?2 "
       "AND max_edge >= ?3 ORDER BY max_edge ASC LIMIT 1;";
   if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     throw std::runtime_error(sqlite3_errmsg(db_));
@@ -872,7 +896,7 @@ std::vector<Database::LevelRow> Database::list_levels(
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT content_id, max_edge, frame_idx, pts_ms, width, height, codec, "
-      "quality, path FROM levels WHERE content_id = ?1 "
+      "quality, path, source FROM levels WHERE content_id = ?1 "
       "ORDER BY frame_idx, max_edge LIMIT ?2;";
   if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     throw std::runtime_error(sqlite3_errmsg(db_));
@@ -898,6 +922,10 @@ std::vector<Database::LevelRow> Database::list_levels(
       r.quality = sqlite3_column_int(stmt, 7);
     if (sqlite3_column_type(stmt, 8) != SQLITE_NULL)
       r.path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
+    if (sqlite3_column_type(stmt, 9) != SQLITE_NULL)
+      r.source = sqlite3_column_int(stmt, 9);
+    else
+      r.source = 0;
     rows.push_back(std::move(r));
   }
   sqlite3_finalize(stmt);
