@@ -3,6 +3,9 @@
 
 #pragma once
 
+/** Set when ContentAppearance has grade_invert. */
+#define THUMTOO_APPEARANCE_GRADE_INVERT 1
+
 #include <cstdint>
 #include <filesystem>
 #include <optional>

@@ -2,6 +2,17 @@
 
 ## Status (2026-09-11)
 
+**Tip: thumtoo-155-grade-invert-macro.** `THUMTOO_APPEARANCE_GRADE_INVERT` so
+biltoo can `#if` grade_invert. Prior: **154**.
+
+### Done criteria
+- [x] Macro in appearance.hpp
+- [ ] Bundle **155**
+
+---
+
+## Status (2026-09-11)
+
 **Tip: thumtoo-154-pdf-text-always-mupdf.** PDF text/outline extract always uses
 MuPDF when built, independent of page raster backend. Prior: **153**.
 
