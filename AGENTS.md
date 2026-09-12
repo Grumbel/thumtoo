@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-175-fix-delete-level-ns**. Next bundle: **176**.
+Latest agent handoff: **TODO.md → thumtoo-176-test-queue-stats**. Next bundle: **177**.
 
 
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code

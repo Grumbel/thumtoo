@@ -2,6 +2,26 @@
 
 ## Status (2026-09-12)
 
+**Tip: thumtoo-176-test-queue-stats.** Unit test for Client::queue_stats.
+Prior: **175**.
+
+### Change
+- tests/test_queue_stats.cpp + ctest NAME queue_stats
+
+### Next
+- biltoo flake already on 175
+- Pipeline stable; only bugfixes unless new scope
+
+### Done criteria
+- [x] Test
+- [x] Bundle **176**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-12)
+
 **Tip: thumtoo-175-fix-delete-level-ns.** Move Database::delete_level into namespace thumtoo.
 Prior: **174**.
 
