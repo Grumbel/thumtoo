@@ -2,6 +2,25 @@
 
 ## Status (2026-09-12)
 
+**Tip: thumtoo-166-api-feature-macros.** THUMTOO_API_OVERVIEW_PIXELS / INTEREST_EPOCH.
+Prior: **165**.
+
+### Change
+- Feature macros in client.hpp for host #ifdef against older trees
+
+### Next
+- Hosts should rebuild against this tip for overview/interest
+
+### Done criteria
+- [x] Macros
+- [x] Bundle **166**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-12)
+
 **Tip: thumtoo-165-fix-const-mutex.** Fix interest_epoch const mutex + nodiscard.
 Prior: **164**.
 

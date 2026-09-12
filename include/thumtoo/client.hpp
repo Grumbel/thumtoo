@@ -28,6 +28,14 @@
 
 namespace thumtoo {
 
+/// Host feature probes (biltoo may #ifdef these when linking older trees).
+#ifndef THUMTOO_API_INTEREST_EPOCH
+#define THUMTOO_API_INTEREST_EPOCH 1
+#endif
+#ifndef THUMTOO_API_OVERVIEW_PIXELS
+#define THUMTOO_API_OVERVIEW_PIXELS 1
+#endif
+
 /// In-process client: cache-only get_* + async request_* (DESIGN API sketch).
 ///
 /// Threading: get_* are non-blocking SQLite reads and are intended for the GUI
