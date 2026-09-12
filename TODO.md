@@ -2,6 +2,33 @@
 
 ## Status (2026-09-12)
 
+**Tip: thumtoo-177-embedded-covers-edge.** Embedded EXIF only when it covers request.
+Prior: **176**.
+
+### Root cause
+`build_ladder_*` accepted APP1 thumbs whenever `emb_edge >= 128`, so soft
+requests for 256/512 stored Embedded ~160–320 and never ran `vips_thumbnail`
+(JpegShrink). EnsurePixels also short-circuited on stored levels keyed at
+max_edge=512 with smaller pixels.
+
+### Change
+- Embedded only if `emb_edge >= (edge * 9) / 10`
+- Early level reuse requires row pixel long-edge coverage + `level_adequate`
+
+### Next
+- biltoo-502 removes Gallery have≥128 upgrade stop
+- Optional: GC / rewrite mis-tagged Embedded rows in existing caches
+
+### Done criteria
+- [x] Soft 512 builds JpegShrink when APP1 is small
+- [x] Bundle **177**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-12)
+
 **Tip: thumtoo-176-test-queue-stats.** Unit test for Client::queue_stats.
 Prior: **175**.
 

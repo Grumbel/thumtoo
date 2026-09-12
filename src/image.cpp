@@ -427,7 +427,7 @@ std::vector<LevelBlob> build_ladder(const std::filesystem::path& path,
   const std::string id_dir = content_id_to_blob_dir(content_id);
   const std::string path_str = path.string();
 
-  // Prefer EXIF embedded JPEG thumbnail when large enough for the edge.
+  // Prefer EXIF embedded JPEG thumbnail only when it covers the request (~90%).
   if (path_looks_jpeg(path)) {
     if (auto exif_jpeg = extract_exif_jpeg_thumbnail_file(path)) {
       VipsImage* emb = nullptr;
@@ -437,7 +437,10 @@ std::vector<LevelBlob> build_ladder(const std::filesystem::path& path,
           emb) {
         const int emb_edge =
             std::max(vips_image_get_width(emb), vips_image_get_height(emb));
-        if (emb_edge >= edge || emb_edge >= kLadderEdges.front()) {
+        // Only accept EXIF embedded when it actually covers the requested edge.
+        // A 160–320 APP1 thumb must not satisfy soft 512 (that left Gallery
+        // stuck on placeholders with no JpegShrink upgrade).
+        if (emb_edge >= (edge * 9) / 10) {
           VipsImage* thumb = nullptr;
           if (emb_edge > edge) {
             if (vips_thumbnail_image(emb, &thumb, edge, "size", VIPS_SIZE_DOWN,
@@ -511,7 +514,10 @@ std::vector<LevelBlob> build_ladder_buffer(const std::uint8_t* data,
         emb) {
       const int emb_edge =
           std::max(vips_image_get_width(emb), vips_image_get_height(emb));
-      if (emb_edge >= edge || emb_edge >= kLadderEdges.front()) {
+      // Only accept EXIF embedded when it actually covers the requested edge.
+      // A 160–320 APP1 thumb must not satisfy soft 512 (that left Gallery
+      // stuck on placeholders with no JpegShrink upgrade).
+      if (emb_edge >= (edge * 9) / 10) {
         VipsImage* thumb = nullptr;
         if (emb_edge > edge) {
           if (vips_thumbnail_image(emb, &thumb, edge, "size", VIPS_SIZE_DOWN,

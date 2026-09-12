@@ -2516,37 +2516,44 @@ void Client::handle_ensure_pixels(
       loc_early && loc_early->content_id) {
     if (auto larger = db_->find_smallest_level_ge(
             *loc_early->content_id, edge_limit, job.frame_idx)) {
-      if (auto bytes = blobs_->get_level(larger->content_id, larger->max_edge,
-                                         larger->frame_idx)) {
-        if (auto lvl = downscale_preview_jxl(
-                bytes->data(), bytes->size(), *loc_early->content_id, edge_limit,
-                kDefaultJxlQuality)) {
-          const std::string& cid = *loc_early->content_id;
-          blobs_->put_level(cid, lvl->max_edge, lvl->frame_idx, lvl->width,
-                            lvl->height, lvl->codec, lvl->quality,
-                            lvl->bytes.data(), lvl->bytes.size());
-          Database::LevelRow lr;
-          lr.content_id = cid;
-          lr.max_edge = lvl->max_edge;
-          lr.frame_idx = lvl->frame_idx;
-          lr.width = lvl->width;
-          lr.height = lvl->height;
-          lr.codec = lvl->codec;
-          lr.quality = lvl->quality;
-          lr.source = static_cast<int>(lvl->source);
-          lr.path = "blobs.sqlite";
-          db_->upsert_level(lr);
-          if (auto px = get_pixels(job.uri, job.max_edge, job.frame_idx)) {
-            if (job.pixels_cb) {
-              auto cb = std::move(job.pixels_cb);
-              auto uri = job.uri;
-              const int edge = job.max_edge;
-              executor_.post([cb = std::move(cb), uri = std::move(uri), edge,
-                              px = std::move(px)]() mutable {
-                cb(std::move(uri), edge, std::move(px));
-              });
+      // Reject levels whose *pixels* do not cover the request (Embedded rows
+      // historically stored under max_edge=512 with ~256px payload).
+      const int row_long = std::max(larger->width, larger->height);
+      if (row_long >= (edge_limit * 9) / 10) {
+        if (auto bytes = blobs_->get_level(larger->content_id, larger->max_edge,
+                                           larger->frame_idx)) {
+          if (auto lvl = downscale_preview_jxl(
+                  bytes->data(), bytes->size(), *loc_early->content_id, edge_limit,
+                  kDefaultJxlQuality)) {
+            const std::string& cid = *loc_early->content_id;
+            blobs_->put_level(cid, lvl->max_edge, lvl->frame_idx, lvl->width,
+                              lvl->height, lvl->codec, lvl->quality,
+                              lvl->bytes.data(), lvl->bytes.size());
+            Database::LevelRow lr;
+            lr.content_id = cid;
+            lr.max_edge = lvl->max_edge;
+            lr.frame_idx = lvl->frame_idx;
+            lr.width = lvl->width;
+            lr.height = lvl->height;
+            lr.codec = lvl->codec;
+            lr.quality = lvl->quality;
+            lr.source = static_cast<int>(lvl->source);
+            lr.path = "blobs.sqlite";
+            db_->upsert_level(lr);
+            if (auto px = get_pixels(job.uri, job.max_edge, job.frame_idx)) {
+              if (level_adequate(*px)) {
+                if (job.pixels_cb) {
+                  auto cb = std::move(job.pixels_cb);
+                  auto uri = job.uri;
+                  const int edge = job.max_edge;
+                  executor_.post([cb = std::move(cb), uri = std::move(uri), edge,
+                                  px = std::move(px)]() mutable {
+                    cb(std::move(uri), edge, std::move(px));
+                  });
+                }
+                return;
+              }
             }
-            return;
           }
         }
       }
