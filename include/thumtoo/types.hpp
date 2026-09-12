@@ -34,6 +34,7 @@ enum class PixelSource : int {
   JpegShrink = 1,   ///< vips_thumbnail / shrink-on-decode from full source
   Embedded = 2,     ///< EXIF or other embedded JPEG thumbnail (may be tiny / off-aspect)
   Full = 3,         ///< Full-resolution or near-native extract stored as a level
+  TileSynth = 4,    ///< Full-frame raster reconstructed from grid tiles
 };
 
 inline constexpr std::string_view to_string(PixelSource s) {
@@ -46,6 +47,8 @@ inline constexpr std::string_view to_string(PixelSource s) {
       return "embedded";
     case PixelSource::Full:
       return "full";
+    case PixelSource::TileSynth:
+      return "tile_synth";
   }
   return "unknown";
 }

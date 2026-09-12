@@ -16,6 +16,8 @@
 #include "thumtoo/format.hpp"
 #include "thumtoo/blob_store.hpp"
 
+#include <vips/vips.h>
+
 #include <algorithm>
 #include <cmath>
 #include <atomic>
@@ -296,6 +298,26 @@ std::optional<std::vector<std::uint8_t>> Client::read_source_bytes(
   return std::nullopt;
 }
 
+
+namespace {
+/// Soft ladder adequacy vs request (request may exceed soft max for tile path).
+bool soft_level_covers(const PixelLevel& px, int max_edge) {
+  const int want = max_edge > 0 ? max_edge : kMaxSoftLadderEdge;
+  // Soft durable levels never exceed kMaxSoftLadderEdge; for larger wants the
+  // soft level can only "cover" if we are still in the soft band.
+  const int need = std::min(want, kMaxSoftLadderEdge);
+  const int long_px = std::max(px.width, px.height);
+  return long_px >= (need * 9) / 10;
+}
+
+/// True when decoded pixels meet the *full* requested edge (tile or soft).
+bool pixels_cover_edge(const PixelLevel& px, int max_edge) {
+  const int want = max_edge > 0 ? max_edge : kMaxSoftLadderEdge;
+  const int long_px = std::max(px.width, px.height);
+  return long_px >= (want * 9) / 10;
+}
+}  // namespace
+
 std::optional<PixelLevel> Client::load_level(
     const Database::LevelRow& row) const {
   auto data = blobs_->get_level(row.content_id, row.max_edge, row.frame_idx);
@@ -329,9 +351,161 @@ std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
     return std::nullopt;
   }
   auto row = db_->find_best_level(meta->content_id, max_edge, frame_idx);
-  if (!row) return std::nullopt;
-  return load_level(*row);
+  if (row) {
+    auto px = load_level(*row);
+    if (px && pixels_cover_edge(*px, max_edge)) {
+      return px;
+    }
+  }
+  // Soft missing or short for this edge: reconstruct from grid tiles.
+  const int want = max_edge > 0 ? max_edge : kMaxSoftLadderEdge;
+  if (auto from_tiles = get_pixels_from_tiles(uri, want)) {
+    return from_tiles;
+  }
+  if (row) return load_level(*row);
+  return std::nullopt;
 }
+
+
+std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
+                                                        int max_edge) const {
+  auto meta = db_->meta_for_uri(uri);
+  if (!meta || !meta->size) return std::nullopt;
+  const int nw = meta->size->width;
+  const int nh = meta->size->height;
+  if (nw <= 0 || nh <= 0) return std::nullopt;
+
+  int min_s = 0, max_s = 0;
+  if (!db_->tile_min_max_scale(meta->content_id, min_s, max_s)) {
+    return std::nullopt;  // no tiles stored
+  }
+
+  const int want = max_edge > 0 ? max_edge : kBatchMaxEdge;
+  // Scale s: long edge at scale is ~ native / 2^s. Prefer coarsest scale that
+  // still covers `want` (fewer tiles); fall back to min_s if all smaller.
+  int best_s = min_s;
+  for (int s = min_s; s <= max_s; ++s) {
+    const int long_at_s =
+        (std::max(nw, nh) + ((1 << s) - 1)) >> s;  // ceil div 2^s
+    if (long_at_s >= (want * 9) / 10) {
+      best_s = s;
+    }
+  }
+
+  const int sw = (nw + ((1 << best_s) - 1)) >> best_s;
+  const int sh = (nh + ((1 << best_s) - 1)) >> best_s;
+  const int nx = (sw + kTileSize - 1) / kTileSize;
+  const int ny = (sh + kTileSize - 1) / kTileSize;
+  if (nx <= 0 || ny <= 0 || nx * ny > 4096) {
+    return std::nullopt;
+  }
+
+  std::vector<std::uint8_t> canvas(static_cast<std::size_t>(sw) * sh * 3, 0);
+  TileSource worst = TileSource::Full;
+  for (int ty = 0; ty < ny; ++ty) {
+    for (int tx = 0; tx < nx; ++tx) {
+      auto tile = get_tile(uri, best_s, tx, ty);
+      if (!tile || tile->bytes.empty()) {
+        return std::nullopt;  // incomplete pyramid at this scale
+      }
+      if (static_cast<int>(tile->source) > static_cast<int>(worst)) {
+        // Prefer documenting non-Full if any cell is shrink/embedded.
+        if (tile->source != TileSource::Full) {
+          worst = tile->source;
+        }
+      }
+      VipsImage* im = nullptr;
+      if (vips_jpegload_buffer(tile->bytes.data(),
+                               static_cast<size_t>(tile->bytes.size()), &im,
+                               nullptr) != 0 ||
+          !im) {
+        return std::nullopt;
+      }
+      // Ensure 3-band 8-bit.
+      VipsImage* rgb = nullptr;
+      if (vips_colourspace(im, &rgb, VIPS_INTERPRETATION_sRGB, nullptr) != 0 ||
+          !rgb) {
+        g_object_unref(im);
+        return std::nullopt;
+      }
+      g_object_unref(im);
+      im = rgb;
+      if (im->Bands < 3 || im->BandFmt != VIPS_FORMAT_UCHAR) {
+        VipsImage* u8 = nullptr;
+        if (vips_cast_uchar(im, &u8, nullptr) != 0 || !u8) {
+          g_object_unref(im);
+          return std::nullopt;
+        }
+        g_object_unref(im);
+        im = u8;
+      }
+      const int tw = std::min(kTileSize, sw - tx * kTileSize);
+      const int th = std::min(kTileSize, sh - ty * kTileSize);
+      if (im->Xsize < 1 || im->Ysize < 1) {
+        g_object_unref(im);
+        return std::nullopt;
+      }
+      // Copy min(tile, cell) into canvas.
+      const int cw = std::min(tw, im->Xsize);
+      const int ch = std::min(th, im->Ysize);
+      for (int y = 0; y < ch; ++y) {
+        const std::uint8_t* src = VIPS_IMAGE_ADDR(im, 0, y);
+        std::uint8_t* dst =
+            canvas.data() +
+            (static_cast<std::size_t>((ty * kTileSize + y) * sw + tx * kTileSize) *
+             3);
+        if (im->Bands >= 3) {
+          std::memcpy(dst, src, static_cast<std::size_t>(cw) * 3);
+        }
+      }
+      g_object_unref(im);
+    }
+  }
+
+  // Optional shrink to target long edge.
+  int out_w = sw;
+  int out_h = sh;
+  std::vector<std::uint8_t> out_rgb = std::move(canvas);
+  const int long_px = std::max(sw, sh);
+  if (want > 0 && long_px > want) {
+    VipsImage* in = vips_image_new_from_memory(
+        out_rgb.data(), out_rgb.size(), sw, sh, 3, VIPS_FORMAT_UCHAR);
+    if (!in) return std::nullopt;
+    VipsImage* small = nullptr;
+    const double scale = static_cast<double>(want) / static_cast<double>(long_px);
+    if (vips_resize(in, &small, scale, nullptr) != 0 || !small) {
+      g_object_unref(in);
+      return std::nullopt;
+    }
+    g_object_unref(in);
+    out_w = small->Xsize;
+    out_h = small->Ysize;
+    out_rgb.resize(static_cast<std::size_t>(out_w) * out_h * 3);
+    for (int y = 0; y < out_h; ++y) {
+      std::memcpy(out_rgb.data() + static_cast<std::size_t>(y * out_w * 3),
+                  VIPS_IMAGE_ADDR(small, 0, y),
+                  static_cast<std::size_t>(out_w) * 3);
+    }
+    g_object_unref(small);
+  }
+
+  // Encode as single JXL soft-style level for host compatibility.
+  auto levels =
+      build_ladder_rgb(out_rgb.data(), out_w, out_h, meta->content_id,
+                       /*jxl_quality=*/70, std::max(out_w, out_h));
+  if (levels.empty()) return std::nullopt;
+  PixelLevel px;
+  px.max_edge = levels[0].max_edge;
+  px.frame_idx = 0;
+  px.width = levels[0].width;
+  px.height = levels[0].height;
+  px.codec = levels[0].codec;
+  px.bytes = std::move(levels[0].bytes);
+  px.source = PixelSource::TileSynth;
+  (void)worst;
+  return px;
+}
+
 
 
 std::optional<std::vector<std::uint8_t>> Client::get_lqip(
@@ -425,17 +599,6 @@ std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
   }
   return get_lqip(uri);
 }
-
-namespace {
-/// Soft ladder is adequate only when decoded long edge covers the request
-/// (clamped to kMaxSoftLadderEdge). A 256 level must not satisfy 512.
-bool soft_level_covers(const PixelLevel& px, int max_edge) {
-  const int want = max_edge > 0 ? max_edge : kMaxSoftLadderEdge;
-  const int need = std::min(want, kMaxSoftLadderEdge);
-  const int long_px = std::max(px.width, px.height);
-  return long_px >= (need * 9) / 10;
-}
-}  // namespace
 
 void Client::request_pixels(std::string uri, int max_edge, PixelsCallback cb,
                             int frame_idx) {

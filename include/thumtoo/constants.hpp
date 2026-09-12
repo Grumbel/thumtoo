@@ -20,6 +20,8 @@ inline constexpr std::array<int, 5> kLadderEdges = {128, 256, 512, 1024, 2048};
 /// (request_tile) or a full source decode in the consumer — not a larger JXL level.
 /// See TILES.md and tests/test_soft_ladder.cpp.
 inline constexpr int kMaxSoftLadderEdge = 512;
+/// Cap for FastBatch / shrink overview rasters (not soft durable max).
+inline constexpr int kBatchMaxEdge = 1024;
 
 /// Ladder codec is JPEG-XL via libvips (required dependency; see flake.nix).
 inline constexpr int kDefaultJxlQuality = 80;

@@ -104,6 +104,16 @@ class Client {
                                                      int max_edge,
                                                      int frame_idx = 0) const;
 
+  /**
+   * Cache-only: build a full-frame preview from stored grid tiles.
+   * Picks a pyramid scale whose long edge is ≥ min(max_edge, native), requires
+   * every cell at that scale to be present, composites, then shrinks to
+   * max_edge. PixelSource::TileSynth. No source I/O and no soft-ladder clamp —
+   * suitable for 512–kBatchMaxEdge (and higher) when the pyramid exists.
+   */
+  [[nodiscard]] std::optional<PixelLevel> get_pixels_from_tiles(
+      std::string_view uri, int max_edge) const;
+
   /// Cache-only: inline LQIP (ThumbHash) on the content row — no blob I/O.
   [[nodiscard]] std::optional<std::vector<std::uint8_t>> get_lqip(
       std::string_view uri) const;

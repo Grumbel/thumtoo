@@ -1,5 +1,29 @@
 # TODO / agent handoff
 
+## Status (2026-09-12)
+
+**Tip: thumtoo-160-pixels-from-tiles.** Construct full-frame pixels from grid tiles.
+Prior: **159**.
+
+### Change
+- `PixelSource::TileSynth`
+- `kBatchMaxEdge` (1024)
+- `Client::get_pixels_from_tiles` — cache-only composite at target edge
+- `get_pixels` falls through to tile construct when soft does not cover edge
+- Docs: TILES.md section, docs/PIXEL_PIPELINE.md
+
+### Next
+- FastBatch archive cursor + interest (biltoo plan Phase 2)
+- Host (biltoo) call `get_pixels_from_tiles` / trust TileSynth provenance
+
+### Done criteria
+- [x] Construct API
+- [x] Bundle **160**
+
+---
+
+# TODO / agent handoff
+
 ## Status (2026-09-11)
 
 **Tip: thumtoo-159-text-utf8.** Valid UTF-8 for MuPDF text extract; TTL3 cache.

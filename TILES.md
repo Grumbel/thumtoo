@@ -168,3 +168,25 @@ Durable cache keys `(content_id, scale, x, y)`. PDF cells finer than
 Interactive PDF `request_tile` replies with **`codec=rgb888` raw pixels** (no JPEG). Durable store (scale ≥ `kPdfMinDurableTileScale`) still writes JPEG at `kPdfTileQuality` for the next cache hit.
 
 Raster images never use negative scale.
+
+## Full-frame construct from tiles
+
+When a host needs a **whole-image** raster at an arbitrary long edge (not a
+single deep-zoom cell), and a grid pyramid is already warm:
+
+```text
+get_pixels_from_tiles(uri, max_edge)  // cache-only
+```
+
+1. Pick pyramid scale whose long edge still covers `max_edge` (else coarsest).
+2. Require **every** tile at that scale (`get_tile`); incomplete → miss.
+3. Composite to RGB, shrink to `max_edge`, encode JXL.
+4. `PixelSource::TileSynth`.
+
+`get_pixels` tries this path when the soft ladder level does not cover the
+requested edge. Soft durable storage remains capped at `kMaxSoftLadderEdge`
+(512); mid-edge UI (≤ `kBatchMaxEdge` 1024 and above) can use TileSynth without
+a full source re-decode.
+
+See biltoo `docs/PIXEL_PIPELINE_REDESIGN.md` for batch vs focus lanes that
+*build* the pyramid; this API only **reads** it.
