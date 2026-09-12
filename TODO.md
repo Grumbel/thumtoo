@@ -2,6 +2,24 @@
 
 ## Status (2026-09-12)
 
+**Tip: thumtoo-179-pipeline-hit-miss-log.** get_pixels HIT/MISS + EnsurePixels CACHE_HIT.
+Prior: **178**.
+
+### Change
+- `get_pixels`: log HIT / SHORT / MISS with source and dimensions
+- `EnsurePixels` early return: CACHE_HIT
+- `set_interest`: log epoch + item count
+
+### Done criteria
+- [x] THUMTOO_DEBUG shows cache vs build clearly
+- [x] Bundle **179**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-12)
+
 **Tip: thumtoo-178-levelrow-optional-dims.** Fix LevelRow optional width/height compile.
 Prior: **177**.
 

@@ -337,7 +337,13 @@ std::optional<PixelLevel> Client::load_level(
 std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
                                              int frame_idx) const {
   auto meta = db_->meta_for_uri(uri);
-  if (!meta) return std::nullopt;
+  if (!meta) {
+    if (debug_enabled()) {
+      dbg("get_pixels MISS uri=%s edge=%d (no meta)", std::string(uri).c_str(),
+          max_edge);
+    }
+    return std::nullopt;
+  }
   // //pdfimage: is a native-resolution extract — prefer the largest stored level
   // over a soft-preview edge. Soft max_edge is for photo filmstrips; scan embeds
   // should not stay stuck on 256 after size probe reports the real dimensions.
@@ -348,22 +354,59 @@ std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
       if (lr.frame_idx != frame_idx) continue;
       if (!best || lr.max_edge > best->max_edge) best = &lr;
     }
-    if (best) return load_level(*best);
+    if (best) {
+      auto px = load_level(*best);
+      if (debug_enabled()) {
+        dbg("get_pixels HIT uri=%s edge=%d src=%s level=%dx%d (pdfimage)",
+            std::string(uri).c_str(), max_edge,
+            px ? std::string(to_string(px->source)).c_str() : "?",
+            px ? px->width : 0, px ? px->height : 0);
+      }
+      return px;
+    }
+    if (debug_enabled()) {
+      dbg("get_pixels MISS uri=%s edge=%d (pdfimage no level)",
+          std::string(uri).c_str(), max_edge);
+    }
     return std::nullopt;
   }
   auto row = db_->find_best_level(meta->content_id, max_edge, frame_idx);
   if (row) {
     auto px = load_level(*row);
     if (px && pixels_cover_edge(*px, max_edge)) {
+      if (debug_enabled()) {
+        dbg("get_pixels HIT uri=%s edge=%d src=%s level=%dx%d db_edge=%d",
+            std::string(uri).c_str(), max_edge,
+            std::string(to_string(px->source)).c_str(), px->width, px->height,
+            row->max_edge);
+      }
       return px;
     }
   }
   // Soft missing or short for this edge: reconstruct from grid tiles.
   const int want = max_edge > 0 ? max_edge : kMaxSoftLadderEdge;
   if (auto from_tiles = get_pixels_from_tiles(uri, want)) {
+    if (debug_enabled()) {
+      dbg("get_pixels HIT uri=%s edge=%d src=tile_synth level=%dx%d",
+          std::string(uri).c_str(), max_edge, from_tiles->width,
+          from_tiles->height);
+    }
     return from_tiles;
   }
-  if (row) return load_level(*row);
+  if (row) {
+    auto px = load_level(*row);
+    if (debug_enabled()) {
+      dbg("get_pixels SHORT uri=%s edge=%d src=%s level=%dx%d db_edge=%d",
+          std::string(uri).c_str(), max_edge,
+          px ? std::string(to_string(px->source)).c_str() : "?",
+          px ? px->width : 0, px ? px->height : 0, row->max_edge);
+    }
+    return px;
+  }
+  if (debug_enabled()) {
+    dbg("get_pixels MISS uri=%s edge=%d (no level)", std::string(uri).c_str(),
+        max_edge);
+  }
   return std::nullopt;
 }
 
@@ -1651,6 +1694,10 @@ std::size_t Client::cancel_uri(std::string_view uri) {
 std::uint64_t Client::set_interest(std::vector<InterestItem> items) {
   // Cancel stale work first so the new snapshot owns the queue.
   const std::uint64_t epoch = bump_interest_epoch();
+  if (debug_enabled()) {
+    dbg("set_interest epoch=%llu items=%zu queue_before cancel",
+        static_cast<unsigned long long>(epoch), items.size());
+  }
 
   // Deduplicate by uri, keep highest role and max edge.
   struct Agg {
@@ -2458,6 +2505,11 @@ void Client::handle_ensure_pixels(
   // Fast path: adequate ladder already present.
   if (auto px = get_pixels(job.uri, job.max_edge, job.frame_idx)) {
     if (level_adequate(*px)) {
+      if (debug_enabled()) {
+        dbg("EnsurePixels CACHE_HIT uri=%s edge=%d overview=%d src=%s level=%dx%d",
+            job.uri.c_str(), job.max_edge, job.overview ? 1 : 0,
+            std::string(to_string(px->source)).c_str(), px->width, px->height);
+      }
       reply_pixels(std::move(px));
       return;
     }
