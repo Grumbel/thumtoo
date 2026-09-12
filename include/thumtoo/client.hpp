@@ -356,7 +356,7 @@ class Client {
   std::unique_ptr<BlobStore> blobs_;
   Executor executor_;
 
-  std::mutex mu_;
+  mutable std::mutex mu_;  // also locked from const interest_epoch()
   std::condition_variable cv_;
   std::deque<Job> queue_;
   bool stop_ = false;

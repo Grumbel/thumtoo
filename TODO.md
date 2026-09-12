@@ -2,6 +2,26 @@
 
 ## Status (2026-09-12)
 
+**Tip: thumtoo-165-fix-const-mutex.** Fix interest_epoch const mutex + nodiscard.
+Prior: **164**.
+
+### Change
+- `mu_` is mutable so const `interest_epoch()` can lock
+- `(void)` on cursor advance after extract (nodiscard)
+
+### Next
+- biltoo filmstrip overview; set_interest snapshot
+
+### Done criteria
+- [x] Compiles with -Werror-ish pedantic
+- [x] Bundle **165**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-12)
+
 **Tip: thumtoo-164-overview-pixels.** FastBatch request_overview_pixels ≤1024.
 Prior: **163**.
 

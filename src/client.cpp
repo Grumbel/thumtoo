@@ -1737,7 +1737,8 @@ void Client::worker_main() {
         }
         if (!from_disk.empty()) {
           // Advance cursor using the planned list (even if some members missed).
-          plan_and_maybe_advance_cursor(archive_path, extract_members, true);
+          (void)plan_and_maybe_advance_cursor(archive_path, extract_members,
+                                              true);
         }
       }
 
