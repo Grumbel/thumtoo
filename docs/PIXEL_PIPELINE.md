@@ -43,4 +43,4 @@ encode path at ≤1024 (soft remains capped at 512), second-handle focus policy.
 - [x] Interest epoch + `bump_interest_epoch` / `cancel_pending` / `cancel_uri`
 - [x] `set_interest` snapshot (overview + Primary → tile pyramid FocusFull)
 - [x] FastScale Q1 via `request_overview_pixels` (≤ kBatchMaxEdge, JpegShrink store)
-- [ ] Unified `request_raster` API
+- [x] Unified `request_raster` / `get_raster` (RasterPolicy)

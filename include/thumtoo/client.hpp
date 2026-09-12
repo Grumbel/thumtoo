@@ -38,6 +38,9 @@ namespace thumtoo {
 #ifndef THUMTOO_API_SET_INTEREST
 #define THUMTOO_API_SET_INTEREST 1
 #endif
+#ifndef THUMTOO_API_REQUEST_RASTER
+#define THUMTOO_API_REQUEST_RASTER 1
+#endif
 
 /// In-process client: cache-only get_* + async request_* (DESIGN API sketch).
 ///
@@ -162,6 +165,19 @@ class Client {
    */
   void request_overview_pixels(std::string uri, int max_edge,
                                PixelsCallback cb);
+
+  /**
+   * Cache-only unified raster lookup (PIXEL_PIPELINE).
+   * SoftOnly: soft ladder only.
+   * PreferCache / Overview: get_pixels (soft + TileSynth fallthrough).
+   */
+  [[nodiscard]] std::optional<PixelLevel> get_raster(const RasterRequest& req) const;
+
+  /**
+   * Unified async raster: SoftOnly → request_pixels; Overview/PreferCache with
+   * edge > soft max → request_overview_pixels; else request_pixels.
+   */
+  void request_raster(RasterRequest req, PixelsCallback cb);
 
   /// Cache-only grid tile (Phase 4 / Galapix). See TILES.md.
   [[nodiscard]] bool has_tile(std::string_view uri, int scale, int x,

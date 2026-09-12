@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-172-invalidate-q1-on-pyramid**. Next bundle: **173**.
+Latest agent handoff: **TODO.md → thumtoo-173-request-raster**. Next bundle: **174**.
 
 
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code

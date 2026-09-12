@@ -2,6 +2,28 @@
 
 ## Status (2026-09-12)
 
+**Tip: thumtoo-173-request-raster.** Unified get_raster / request_raster API.
+Prior: **172**.
+
+### Change
+- RasterPolicy, RasterRequest
+- get_raster (cache-only), request_raster (async route)
+- THUMTOO_API_REQUEST_RASTER
+
+### Next
+- biltoo optional migration to request_raster
+- Provenance UI
+
+### Done criteria
+- [x] API
+- [x] Bundle **173**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-12)
+
 **Tip: thumtoo-172-invalidate-q1-on-pyramid.** Drop JpegShrink levels after FocusFull pyramid.
 Prior: **171**.
 

@@ -53,6 +53,24 @@ inline constexpr std::string_view to_string(PixelSource s) {
   return "unknown";
 }
 
+/// Unified raster request policy (PIXEL_PIPELINE request_raster).
+enum class RasterPolicy : int {
+  /// Soft durable only (≤ kMaxSoftLadderEdge); never FastScale or tiles.
+  SoftOnly = 0,
+  /// Soft, else TileSynth, else overview FastScale ≤ kBatchMaxEdge.
+  PreferCache = 1,
+  /// Soft, TileSynth, overview FastScale; no full native dump.
+  Overview = 2,
+};
+
+/// Parameters for Client::get_raster / request_raster.
+struct RasterRequest {
+  std::string uri;
+  int max_edge = 0;  ///< 0 → policy default (soft max or batch max)
+  int frame_idx = 0;
+  RasterPolicy policy = RasterPolicy::PreferCache;
+};
+
 /// Role of a locator in a host interest snapshot (PIXEL_PIPELINE §6.1).
 enum class InterestRole : int {
   Speculative = 0,  ///< Idle / overscan — lowest priority

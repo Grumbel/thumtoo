@@ -818,6 +818,49 @@ std::optional<TileCoverage> Client::get_tile_coverage(
   return cov;
 }
 
+std::optional<PixelLevel> Client::get_raster(const RasterRequest& req) const {
+  if (req.uri.empty()) return std::nullopt;
+  int edge = req.max_edge;
+  if (req.policy == RasterPolicy::SoftOnly) {
+    if (edge <= 0) edge = kMaxSoftLadderEdge;
+    if (edge > kMaxSoftLadderEdge) edge = kMaxSoftLadderEdge;
+    // Soft path only — do not fall through to tiles via high max_edge.
+    return get_pixels(req.uri, edge, req.frame_idx);
+  }
+  if (edge <= 0) {
+    edge = (req.policy == RasterPolicy::Overview) ? kBatchMaxEdge
+                                                  : kMaxSoftLadderEdge;
+  }
+  // PreferCache / Overview: get_pixels already tries soft then TileSynth.
+  return get_pixels(req.uri, edge, req.frame_idx);
+}
+
+void Client::request_raster(RasterRequest req, PixelsCallback cb) {
+  if (req.uri.empty()) {
+    if (cb) {
+      executor_.post([cb = std::move(cb)]() mutable {
+        cb({}, 0, std::nullopt);
+      });
+    }
+    return;
+  }
+  int edge = req.max_edge;
+  if (req.policy == RasterPolicy::SoftOnly) {
+    if (edge <= 0) edge = kMaxSoftLadderEdge;
+    request_pixels(std::move(req.uri), edge, std::move(cb), req.frame_idx);
+    return;
+  }
+  if (edge <= 0) {
+    edge = kBatchMaxEdge;
+  }
+  if (edge > kMaxSoftLadderEdge || req.policy == RasterPolicy::Overview) {
+    request_overview_pixels(std::move(req.uri), edge, std::move(cb));
+  } else {
+    request_pixels(std::move(req.uri), edge, std::move(cb), req.frame_idx);
+  }
+}
+
+
 void Client::invalidate_tile(std::string_view uri, int scale, int x, int y) {
   auto meta = db_->meta_for_uri(uri);
   if (!meta) return;
