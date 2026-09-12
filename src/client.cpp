@@ -812,6 +812,9 @@ void Client::request_tile_pyramid(std::string uri, int min_scale, int max_scale,
 void Client::enqueue(Job job, bool front) {
   {
     std::lock_guard lock(mu_);
+    if (job.epoch == 0) {
+      job.epoch = interest_epoch_;
+    }
     // Drop older pending single-cell EnsureTiles for the same uri/scale/x/y so
     // superseded work never reaches a worker (Galapix cannot cancel queued
     // jobs). Applies for both FIFO and LIFO enqueue. Batch jobs
@@ -1373,6 +1376,110 @@ void Client::drain() {
   }
 }
 
+
+std::uint64_t Client::interest_epoch() const {
+  std::lock_guard lock(mu_);
+  return interest_epoch_;
+}
+
+void Client::reply_cancelled_job(Job& job) {
+  if (job.kind == JobKind::ProbeSize && job.size_cb) {
+    auto cb = std::move(job.size_cb);
+    auto uri = job.uri;
+    executor_.post([cb = std::move(cb), uri = std::move(uri)]() mutable {
+      cb(std::move(uri), std::nullopt);
+    });
+  } else if (job.kind == JobKind::EnsurePixels && job.pixels_cb) {
+    auto cb = std::move(job.pixels_cb);
+    auto uri = job.uri;
+    const int edge = job.max_edge;
+    executor_.post([cb = std::move(cb), uri = std::move(uri), edge]() mutable {
+      cb(std::move(uri), edge, std::nullopt);
+    });
+  } else if (job.kind == JobKind::EnsureTiles) {
+    if (!job.tile_batch.empty() && job.tile_batch_cb) {
+      auto cb = std::move(job.tile_batch_cb);
+      const std::size_t n = job.tile_batch.size();
+      executor_.post([cb = std::move(cb), n]() mutable {
+        for (std::size_t i = 0; i < n; ++i) {
+          cb(i, std::nullopt);
+        }
+      });
+    } else if (job.tile_cb) {
+      auto cb = std::move(job.tile_cb);
+      auto uri = job.uri;
+      const int sc = job.tile_scale;
+      const int x = job.tile_x;
+      const int y = job.tile_y;
+      executor_.post(
+          [cb = std::move(cb), uri = std::move(uri), sc, x, y]() mutable {
+            cb(std::move(uri), sc, x, y, std::nullopt);
+          });
+    }
+  }
+  // EnsureLqip has no host callback.
+}
+
+std::uint64_t Client::bump_interest_epoch() {
+  std::vector<Job> dropped;
+  std::uint64_t live = 0;
+  {
+    std::lock_guard lock(mu_);
+    ++interest_epoch_;
+    if (interest_epoch_ == 0) {
+      interest_epoch_ = 1;
+    }
+    live = interest_epoch_;
+    for (auto it = queue_.begin(); it != queue_.end();) {
+      if (it->epoch != 0 && it->epoch < live) {
+        dropped.push_back(std::move(*it));
+        it = queue_.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+  for (auto& j : dropped) {
+    reply_cancelled_job(j);
+  }
+  return live;
+}
+
+std::size_t Client::cancel_pending() {
+  std::vector<Job> dropped;
+  {
+    std::lock_guard lock(mu_);
+    dropped.reserve(queue_.size());
+    for (auto& j : queue_) {
+      dropped.push_back(std::move(j));
+    }
+    queue_.clear();
+  }
+  for (auto& j : dropped) {
+    reply_cancelled_job(j);
+  }
+  return dropped.size();
+}
+
+std::size_t Client::cancel_uri(std::string_view uri) {
+  std::vector<Job> dropped;
+  {
+    std::lock_guard lock(mu_);
+    for (auto it = queue_.begin(); it != queue_.end();) {
+      if (it->uri == uri) {
+        dropped.push_back(std::move(*it));
+        it = queue_.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+  for (auto& j : dropped) {
+    reply_cancelled_job(j);
+  }
+  return dropped.size();
+}
+
 void Client::worker_main() {
   for (;;) {
     std::vector<Job> batch;
@@ -1389,6 +1496,28 @@ void Client::worker_main() {
       }
       // Claim the job under the lock before removing it so drain() cannot
       // observe (empty queue && inflight==0) while work is still about to run.
+      // Skip jobs cancelled by epoch while they sat in the queue.
+      std::vector<Job> stale_jobs;
+      while (!queue_.empty()) {
+        if (queue_.front().epoch != 0 &&
+            queue_.front().epoch < interest_epoch_) {
+          stale_jobs.push_back(std::move(queue_.front()));
+          queue_.erase(queue_.begin());
+          continue;
+        }
+        break;
+      }
+      if (!stale_jobs.empty()) {
+        lock.unlock();
+        for (auto& s : stale_jobs) {
+          reply_cancelled_job(s);
+        }
+        lock.lock();
+        continue;
+      }
+      if (queue_.empty()) {
+        continue;
+      }
       if (!queue_.front().uri.empty()) ++inflight_;
       single = std::move(queue_.front());
       queue_.erase(queue_.begin());
@@ -1412,6 +1541,11 @@ void Client::worker_main() {
             auto other = parse_archive_uri(it->uri);
             if (!other || other->member_path.empty() ||
                 other->archive_path != arch->archive_path) {
+              ++it;
+              continue;
+            }
+            // Do not mix interest epochs in one extract pass.
+            if (it->epoch != batch.front().epoch) {
               ++it;
               continue;
             }

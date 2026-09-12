@@ -40,6 +40,7 @@ encode path at ≤1024 (soft remains capped at 512), second-handle focus policy.
 - [x] Tile pyramid + soft ladder (existing)
 - [x] `PixelSource::TileSynth` + `get_pixels_from_tiles` (construct)
 - [x] Archive cursor + TOC-ordered windowed batch extract (worker path)
-- [ ] Interest cancel / `set_interest`
+- [x] Interest epoch + `bump_interest_epoch` / `cancel_pending` / `cancel_uri`
+- [ ] Full `set_interest` snapshot API
 - [ ] FastScale Q1 durable/overview path distinct from soft-512
 - [ ] Unified `request_raster` API

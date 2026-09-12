@@ -2,6 +2,32 @@
 
 ## Status (2026-09-12)
 
+**Tip: thumtoo-163-interest-cancel.** Interest epoch + cancel pending/uri.
+Prior: **162**.
+
+### Change
+- Job.epoch stamped at enqueue from interest_epoch_
+- bump_interest_epoch / cancel_pending / cancel_uri
+- Worker skips stale queue head; coalesce stays same-epoch
+- Test: interest_cancel
+- Docs: PIXEL_PIPELINE.md
+
+### Next
+- FastScale Q1 path ≤ kBatchMaxEdge
+- Full set_interest snapshot
+- biltoo: bump epoch on gallery scroll + TileSynth provenance
+
+### Done criteria
+- [x] Epoch + cancel API
+- [x] Queue purge
+- [x] Bundle **163**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-12)
+
 **Tip: thumtoo-162-fastbatch-archive-cursor.** Archive cursor + TOC window + MuPDF optional.
 Prior: **161**.
 

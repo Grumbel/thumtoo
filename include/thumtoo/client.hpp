@@ -221,6 +221,22 @@ class Client {
 
   void drain();
 
+  /**
+   * Interest epoch for cancel-on-scroll (PIXEL_PIPELINE §6).
+   * New request_* jobs stamp the current epoch. bump_interest_epoch()
+   * increments the epoch and drops queued jobs stamped with an older value
+   * (callbacks get nullopt / empty so hosts can clear inflight state).
+   * In-flight workers may still finish; hosts should ignore stale epochs.
+   */
+  [[nodiscard]] std::uint64_t interest_epoch() const;
+  /// Increment epoch and purge stale queued jobs. Returns the new epoch.
+  std::uint64_t bump_interest_epoch();
+  /// Drop all queued jobs (any epoch); does not touch in-flight work.
+  /// Returns how many jobs were removed from the queue.
+  std::size_t cancel_pending();
+  /// Drop queued jobs whose uri matches (exact). Returns removed count.
+  std::size_t cancel_uri(std::string_view uri);
+
   /// Tags attach to content_id (sha256:… preferred). URI resolves via locator.
   [[nodiscard]] std::vector<std::string> get_tags(std::string_view uri) const;
 
@@ -263,6 +279,7 @@ class Client {
 
   struct Job {
     JobKind kind = JobKind::ProbeSize;
+    std::uint64_t epoch = 0;  // interest epoch at enqueue time
     std::string uri;
     int max_edge = 0;
     int frame_idx = 0;
@@ -286,6 +303,8 @@ class Client {
   };
 
   void worker_main();
+  /// Deliver nullopt/empty callbacks for a job removed from the queue.
+  void reply_cancelled_job(Job& job);
   /// \param front true → LIFO (interactive tiles); false → FIFO (bulk).
   void enqueue(Job job, bool front = false);
   void handle_probe_size(
@@ -331,6 +350,7 @@ class Client {
   std::deque<Job> queue_;
   bool stop_ = false;
   int inflight_ = 0;
+  std::uint64_t interest_epoch_ = 1;
   std::vector<std::thread> workers_;
 
   mutable std::mutex archive_cursor_mu_;
