@@ -938,13 +938,17 @@ void Client::enqueue(Job job, bool front) {
           ++pending_pyramids;
         }
       }
-      while (pending_pyramids >= kFocusFullMaxConcurrent) {
+      const int total_focus =
+          pending_pyramids + focus_full_inflight_;
+      // Room for the job about to be enqueued: need total_focus < max.
+      int room_used = total_focus;
+      while (room_used >= kFocusFullMaxConcurrent) {
         bool dropped = false;
         for (auto it = queue_.begin(); it != queue_.end(); ++it) {
           if (it->kind == JobKind::EnsureTiles && it->tile_pyramid) {
             reply_cancelled_job(*it);
             queue_.erase(it);
-            --pending_pyramids;
+            --room_used;
             dropped = true;
             break;
           }
@@ -1678,7 +1682,21 @@ void Client::worker_main() {
       if (queue_.empty()) {
         continue;
       }
+      // Do not claim a new FocusFull while one is already running (cap).
+      if (queue_.front().kind == JobKind::EnsureTiles &&
+          queue_.front().tile_pyramid &&
+          focus_full_inflight_ >= kFocusFullMaxConcurrent) {
+        // Rotate to the back so other work can proceed.
+        Job blocked = std::move(queue_.front());
+        queue_.erase(queue_.begin());
+        queue_.push_back(std::move(blocked));
+        continue;
+      }
       if (!queue_.front().uri.empty()) ++inflight_;
+      if (queue_.front().kind == JobKind::EnsureTiles &&
+          queue_.front().tile_pyramid) {
+        ++focus_full_inflight_;
+      }
       single = std::move(queue_.front());
       queue_.erase(queue_.begin());
       if (stop_ && single.uri.empty()) return;
@@ -1710,6 +1728,9 @@ void Client::worker_main() {
               continue;
             }
             ++inflight_;
+            if (it->kind == JobKind::EnsureTiles && it->tile_pyramid) {
+              ++focus_full_inflight_;
+            }
             batch.push_back(std::move(*it));
             it = queue_.erase(it);
           }
@@ -1863,6 +1884,10 @@ void Client::worker_main() {
         {
           std::lock_guard lock(mu_);
           --inflight_;
+          if (batch[it.index].kind == JobKind::EnsureTiles &&
+              batch[it.index].tile_pyramid && focus_full_inflight_ > 0) {
+            --focus_full_inflight_;
+          }
         }
       };
 
@@ -1895,6 +1920,10 @@ void Client::worker_main() {
       if (stop_) {
         // Shutdown: do not start new encode work.
         --inflight_;
+        if (single.kind == JobKind::EnsureTiles && single.tile_pyramid &&
+            focus_full_inflight_ > 0) {
+          --focus_full_inflight_;
+        }
         continue;
       }
     }
@@ -1909,6 +1938,11 @@ void Client::worker_main() {
     {
       std::lock_guard lock(mu_);
       --inflight_;
+      if (single.kind == JobKind::EnsureTiles && single.tile_pyramid) {
+        if (focus_full_inflight_ > 0) {
+          --focus_full_inflight_;
+        }
+      }
     }
   }
 }

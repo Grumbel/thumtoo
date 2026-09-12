@@ -383,6 +383,8 @@ class Client {
   std::deque<Job> queue_;
   bool stop_ = false;
   int inflight_ = 0;
+  /// FocusFull tile-pyramid jobs currently running (worker claimed).
+  int focus_full_inflight_ = 0;
   std::uint64_t interest_epoch_ = 1;
   std::vector<std::thread> workers_;
 

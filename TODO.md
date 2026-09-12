@@ -2,6 +2,28 @@
 
 ## Status (2026-09-12)
 
+**Tip: thumtoo-170-focus-full-inflight.** Inflight-aware FocusFull concurrency.
+Prior: **169**.
+
+### Change
+- focus_full_inflight_ counter on claim/release (single + batch)
+- enqueue cap uses pending + inflight
+- Worker rotates blocked pyramid jobs when already at inflight cap
+
+### Next
+- biltoo soft-path polish
+- metrics / debug dump of focus_full_inflight_
+
+### Done criteria
+- [x] Inflight accounting
+- [x] Bundle **170**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-12)
+
 **Tip: thumtoo-169-focus-full-cap.** Cap pending FocusFull tile pyramids.
 Prior: **168**.
 
