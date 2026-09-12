@@ -2,6 +2,22 @@
 
 ## Status (2026-09-12)
 
+**Tip: thumtoo-175-fix-delete-level-ns.** Move Database::delete_level into namespace thumtoo.
+Prior: **174**.
+
+### Change
+- delete_level was under anonymous namespace → -fpermissive error
+
+### Done criteria
+- [x] Builds
+- [x] Bundle **175**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-12)
+
 **Tip: thumtoo-174-queue-stats.** Client::queue_stats for host metrics.
 Prior: **173**.
 

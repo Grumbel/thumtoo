@@ -820,9 +820,6 @@ void Database::delete_content(std::string_view content_id) {
   sqlite3_finalize(stmt);
 }
 
-
-namespace {
-
 void Database::delete_level(std::string_view content_id, int max_edge,
                             int frame_idx) {
   std::lock_guard<std::recursive_mutex> lock(mu_);
@@ -844,6 +841,8 @@ void Database::delete_level(std::string_view content_id, int max_edge,
   sqlite3_finalize(stmt);
 }
 
+
+namespace {
 
 std::optional<Database::LevelRow> step_level_row(sqlite3_stmt* stmt) {
   if (sqlite3_step(stmt) != SQLITE_ROW) return std::nullopt;
