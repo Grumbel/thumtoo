@@ -2,6 +2,30 @@
 
 ## Status (2026-09-12)
 
+**Tip: thumtoo-164-overview-pixels.** FastBatch request_overview_pixels ≤1024.
+Prior: **163**.
+
+### Change
+- `request_overview_pixels` public API
+- Job.overview → EnsurePixels encodes/stores up to kBatchMaxEdge (JpegShrink)
+- Soft `request_pixels` unchanged (clamp 512)
+- Docs: PIXEL_PIPELINE.md
+
+### Next
+- biltoo: schedule overview for gallery/filmstrip; bump_interest_epoch on scroll
+- set_interest snapshot API
+- FocusFull / tile build priority
+
+### Done criteria
+- [x] Overview API
+- [x] Bundle **164**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-12)
+
 **Tip: thumtoo-163-interest-cancel.** Interest epoch + cancel pending/uri.
 Prior: **162**.
 

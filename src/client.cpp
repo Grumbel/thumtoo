@@ -685,6 +685,83 @@ void Client::request_pixels(std::string uri, int max_edge, PixelsCallback cb,
 
 
 
+void Client::request_overview_pixels(std::string uri, int max_edge,
+                                       PixelsCallback cb) {
+  // FastBatch cap — not soft durable max.
+  if (max_edge <= 0) {
+    max_edge = kBatchMaxEdge;
+  }
+  if (max_edge > kBatchMaxEdge) {
+    max_edge = kBatchMaxEdge;
+  }
+  // Cache hit: soft, or TileSynth via get_pixels fallthrough.
+  if (auto px = get_pixels(uri, max_edge, 0)) {
+    const int long_px = std::max(px->width, px->height);
+    if (long_px >= (max_edge * 9) / 10 ||
+        px->source == PixelSource::TileSynth ||
+        px->source == PixelSource::Full) {
+      if (cb) {
+        executor_.post([cb = std::move(cb), uri, max_edge,
+                        px = std::move(*px)]() mutable {
+          cb(std::move(uri), max_edge, std::move(px));
+        });
+      }
+      return;
+    }
+  }
+  // Ensure locator (same path as request_pixels).
+  if (!db_->find_locator(uri)) {
+    Database::LocatorRow loc;
+    loc.uri = uri;
+    loc.content_id = make_provisional_id();
+    if (auto pdf = parse_pdf_uri(uri)) {
+      loc.outer_path = pdf->pdf_path.string();
+      loc.member_path = std::to_string(pdf->page);
+      loc.size = file_size_bytes(pdf->pdf_path);
+      loc.mtime_ns = file_mtime_ns(pdf->pdf_path);
+    } else if (auto pimg = parse_pdf_image_uri(uri)) {
+      loc.outer_path = pimg->pdf_path.string();
+      loc.member_path = "pdfimage:" + std::to_string(pimg->image);
+      loc.size = file_size_bytes(pimg->pdf_path);
+      loc.mtime_ns = file_mtime_ns(pimg->pdf_path);
+    } else if (auto dj = parse_djvu_uri(uri)) {
+      loc.outer_path = dj->djvu_path.string();
+      loc.member_path = std::to_string(dj->page);
+      loc.size = file_size_bytes(dj->djvu_path);
+      loc.mtime_ns = file_mtime_ns(dj->djvu_path);
+    } else if (auto ep = parse_epub_uri(uri)) {
+      loc.outer_path = ep->epub_path.string();
+      loc.member_path = std::to_string(ep->page);
+      loc.size = file_size_bytes(ep->epub_path);
+      loc.mtime_ns = file_mtime_ns(ep->epub_path);
+    } else if (auto arch = parse_archive_uri(uri)) {
+      loc.outer_path = arch->archive_path.string();
+      loc.member_path = arch->member_path;
+      loc.size = file_size_bytes(arch->archive_path);
+      loc.mtime_ns = file_mtime_ns(arch->archive_path);
+    } else if (auto path = path_from_file_uri(uri)) {
+      loc.outer_path = path->string();
+      loc.size = file_size_bytes(*path);
+      loc.mtime_ns = file_mtime_ns(*path);
+    } else if (is_http_uri(uri)) {
+      loc.outer_path = std::string(uri);
+    }
+    Database::ContentRow crow;
+    crow.content_id = *loc.content_id;
+    crow.status = ContentStatus::Pending;
+    db_->upsert_content(crow);
+    db_->upsert_locator(loc);
+  }
+  Job job;
+  job.kind = JobKind::EnsurePixels;
+  job.uri = std::move(uri);
+  job.max_edge = max_edge;
+  job.frame_idx = 0;
+  job.overview = true;
+  job.pixels_cb = std::move(cb);
+  enqueue(std::move(job));
+}
+
 bool Client::has_tile(std::string_view uri, int scale, int x, int y) const {
   auto meta = db_->meta_for_uri(uri);
   if (!meta) return false;
@@ -2163,9 +2240,11 @@ void Client::handle_ensure_pixels(
       }
       return false;
     }
-    const int want = std::min(
-        job.max_edge > 0 ? job.max_edge : kMaxSoftLadderEdge, kMaxSoftLadderEdge);
-    // Require ~90% of the (soft-capped) requested long edge in actual pixels.
+    const int want = job.overview
+        ? std::min(job.max_edge > 0 ? job.max_edge : kBatchMaxEdge, kBatchMaxEdge)
+        : std::min(job.max_edge > 0 ? job.max_edge : kMaxSoftLadderEdge,
+                   kMaxSoftLadderEdge);
+    // Require ~90% of the requested long edge in actual pixels.
     if (long_px >= (want * 9) / 10) return true;
     if (auto m = db_->meta_for_uri(job.uri)) {
       if (m->size) {
@@ -2236,10 +2315,17 @@ void Client::handle_ensure_pixels(
     row.status = ContentStatus::Pending;
   }
 
-  // Single durable soft preview ≤ min(request, kMaxSoftLadderEdge).
-  // Larger display is tiles (see TILES.md), not a full-page JXL ladder step.
-  const int edge_limit = std::min(
-      job.max_edge > 0 ? job.max_edge : kMaxSoftLadderEdge, kMaxSoftLadderEdge);
+  // Soft path: durable ≤ kMaxSoftLadderEdge. Overview (FastBatch): encode and
+  // store JpegShrink levels up to kBatchMaxEdge (Q1); request_pixels still
+  // clamps to soft max so full-page soft is not the default path.
+  const int request_edge = job.max_edge > 0 ? job.max_edge
+      : (job.overview ? kBatchMaxEdge : kMaxSoftLadderEdge);
+  const int reply_edge = job.overview
+      ? std::min(request_edge, kBatchMaxEdge)
+      : std::min(request_edge, kMaxSoftLadderEdge);
+  const int edge_limit = job.overview
+      ? std::min(reply_edge, kBatchMaxEdge)
+      : std::min(reply_edge, kMaxSoftLadderEdge);
 
   if (auto loc_early = db_->find_locator(job.uri);
       loc_early && loc_early->content_id) {

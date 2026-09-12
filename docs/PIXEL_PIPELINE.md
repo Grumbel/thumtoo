@@ -14,7 +14,7 @@ Host-facing design lives in biltoo:
 | Plan concept | thumtoo today |
 |--------------|---------------|
 | Soft ≤512 | `get_pixels` / `request_pixels`, `kMaxSoftLadderEdge` |
-| FastBatch ≤1024 | `kBatchMaxEdge`, `kBatchWindowMembers` (32) |
+| FastBatch ≤1024 | `kBatchMaxEdge`, `kBatchWindowMembers`, **`request_overview_pixels`** |
 | Archive cursor | `ArchiveCursor`, `plan_archive_batch_window`, Client worker uses TOC-ordered window |
 | Tile pyramid | `get_tile` / `request_tile` / `request_tile_pyramid`, [TILES.md](../TILES.md) |
 | Construct ladder from tiles | **`get_pixels_from_tiles`** (`PixelSource::TileSynth`) |
@@ -42,5 +42,5 @@ encode path at ≤1024 (soft remains capped at 512), second-handle focus policy.
 - [x] Archive cursor + TOC-ordered windowed batch extract (worker path)
 - [x] Interest epoch + `bump_interest_epoch` / `cancel_pending` / `cancel_uri`
 - [ ] Full `set_interest` snapshot API
-- [ ] FastScale Q1 durable/overview path distinct from soft-512
+- [x] FastScale Q1 via `request_overview_pixels` (≤ kBatchMaxEdge, JpegShrink store)
 - [ ] Unified `request_raster` API

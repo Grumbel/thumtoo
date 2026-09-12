@@ -143,6 +143,15 @@ class Client {
   void request_pixels(std::string uri, int max_edge, PixelsCallback cb,
                       int frame_idx = 0);
 
+  /**
+   * FastBatch / overview path (PIXEL_PIPELINE Lane A).
+   * max_edge is clamped to kBatchMaxEdge (1024). Prefers cache (soft +
+   * TileSynth). On miss: shrink-decode source once (JpegShrink), reply with
+   * that level; durable soft is still only written ≤ kMaxSoftLadderEdge.
+   */
+  void request_overview_pixels(std::string uri, int max_edge,
+                               PixelsCallback cb);
+
   /// Cache-only grid tile (Phase 4 / Galapix). See TILES.md.
   [[nodiscard]] bool has_tile(std::string_view uri, int scale, int x,
                               int y) const;
@@ -283,6 +292,8 @@ class Client {
     std::string uri;
     int max_edge = 0;
     int frame_idx = 0;
+    /// EnsurePixels: true → FastBatch overview (reply ≤ kBatchMaxEdge).
+    bool overview = false;
     int tile_scale = 0;
     int tile_x = 0;
     int tile_y = 0;
