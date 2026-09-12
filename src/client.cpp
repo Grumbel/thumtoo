@@ -1596,9 +1596,12 @@ std::uint64_t Client::set_interest(std::vector<InterestItem> items) {
     if (edge > kBatchMaxEdge) {
       edge = kBatchMaxEdge;
     }
-    // Overview for all roles until FocusFull is a separate lane.
-    // Primary is sorted first so its jobs enter the FIFO queue earlier.
+    // FastBatch overview for all roles (Primary sorted first into the queue).
     request_overview_pixels(uri, edge, {});
+    // FocusFull: Primary also builds the durable tile pyramid (Q2 base).
+    if (agg.role == InterestRole::Primary) {
+      request_tile_pyramid(uri, /*min_scale=*/0, /*max_scale=*/-1, {});
+    }
   }
   return epoch;
 }

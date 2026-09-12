@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-167-set-interest**. Next bundle: **168**.
+Latest agent handoff: **TODO.md → thumtoo-168-focus-full-primary**. Next bundle: **169**.
 
 
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code

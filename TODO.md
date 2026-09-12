@@ -2,6 +2,26 @@
 
 ## Status (2026-09-12)
 
+**Tip: thumtoo-168-focus-full-primary.** Primary interest builds tile pyramid.
+Prior: **167**.
+
+### Change
+- set_interest: InterestRole::Primary → request_tile_pyramid after overview
+
+### Next
+- biltoo Image-mode Primary interest
+- Cap concurrent FocusFull jobs
+
+### Done criteria
+- [x] Primary FocusFull hook
+- [x] Bundle **168**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-12)
+
 **Tip: thumtoo-167-set-interest.** Interest snapshot API schedules overview work.
 Prior: **166**.
 

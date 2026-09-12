@@ -41,6 +41,6 @@ encode path at ≤1024 (soft remains capped at 512), second-handle focus policy.
 - [x] `PixelSource::TileSynth` + `get_pixels_from_tiles` (construct)
 - [x] Archive cursor + TOC-ordered windowed batch extract (worker path)
 - [x] Interest epoch + `bump_interest_epoch` / `cancel_pending` / `cancel_uri`
-- [x] `set_interest` snapshot (overview schedule; FocusFull later)
+- [x] `set_interest` snapshot (overview + Primary → tile pyramid FocusFull)
 - [x] FastScale Q1 via `request_overview_pixels` (≤ kBatchMaxEdge, JpegShrink store)
 - [ ] Unified `request_raster` API
