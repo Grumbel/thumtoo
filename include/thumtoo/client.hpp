@@ -352,6 +352,8 @@ class Client {
   void handle_ensure_lqip(Job& job);
   void store_tiles(const std::string& content_id,
                    const std::vector<TileBlob>& tiles);
+  /// Drop JpegShrink (Q1) soft levels once a durable tile pyramid exists.
+  void invalidate_q1_levels(const std::string& content_id);
 
   static constexpr std::size_t kExtractCacheMaxBytes = 512ull * 1024ull * 1024ull;
   /// Same budget shared conceptually; HTTP bodies use a separate map.

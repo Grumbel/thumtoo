@@ -823,6 +823,28 @@ void Database::delete_content(std::string_view content_id) {
 
 namespace {
 
+void Database::delete_level(std::string_view content_id, int max_edge,
+                            int frame_idx) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "DELETE FROM levels WHERE content_id = ?1 AND max_edge = ?2 AND "
+      "frame_idx = ?3;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, content_id.data(),
+                    static_cast<int>(content_id.size()), SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, max_edge);
+  sqlite3_bind_int(stmt, 3, frame_idx);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_finalize(stmt);
+}
+
+
 std::optional<Database::LevelRow> step_level_row(sqlite3_stmt* stmt) {
   if (sqlite3_step(stmt) != SQLITE_ROW) return std::nullopt;
   Database::LevelRow r;

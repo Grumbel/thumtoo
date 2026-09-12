@@ -127,6 +127,8 @@ class Database {
   };
 
   void upsert_level(const LevelRow& row);
+  /// Remove one ladder level row (metadata).
+  void delete_level(std::string_view content_id, int max_edge, int frame_idx);
 
   /// Point locator at a new content_id (after hash promotion).
   void update_locator_content_id(std::string_view uri, std::string_view content_id);

@@ -2,6 +2,29 @@
 
 ## Status (2026-09-12)
 
+**Tip: thumtoo-172-invalidate-q1-on-pyramid.** Drop JpegShrink levels after FocusFull pyramid.
+Prior: **171**.
+
+### Change
+- Database::delete_level / BlobStore::delete_level
+- invalidate_q1_levels after successful tile_pyramid store
+- Keeps Embedded + Full soft levels
+
+### Next
+- Prefer TileSynth construct in more get_pixels paths (already falls through)
+- Unified request_raster
+- Provenance UI
+
+### Done criteria
+- [x] Q1 invalidate on Q2
+- [x] Bundle **172**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-12)
+
 **Tip: thumtoo-171-speculative-idle.** Defer Speculative interest when queue is busy.
 Prior: **170**.
 

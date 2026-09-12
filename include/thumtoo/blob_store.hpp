@@ -65,6 +65,8 @@ class BlobStore {
   [[nodiscard]] std::int64_t delete_tiles_for_content(std::string_view content_id);
   /// Delete all level payloads for a content_id.
   [[nodiscard]] std::int64_t delete_levels_for_content(std::string_view content_id);
+  /// Delete one level payload (content_id, max_edge, frame_idx).
+  void delete_level(std::string_view content_id, int max_edge, int frame_idx);
 
  private:
   explicit BlobStore(sqlite3* db, std::filesystem::path db_path);

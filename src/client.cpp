@@ -2831,6 +2831,24 @@ void Client::store_tiles(const std::string& content_id,
   }
 }
 
+void Client::invalidate_q1_levels(const std::string& content_id) {
+  if (content_id.empty()) return;
+  // Keep Embedded + Full; drop FastScale JpegShrink overviews once Q2 exists.
+  constexpr int kJpegShrink = static_cast<int>(PixelSource::JpegShrink);
+  auto rows = db_->list_levels(content_id, /*limit=*/64);
+  for (const auto& row : rows) {
+    if (row.source != kJpegShrink) continue;
+    try {
+      blobs_->delete_level(content_id, row.max_edge, row.frame_idx);
+    } catch (...) {
+    }
+    try {
+      db_->delete_level(content_id, row.max_edge, row.frame_idx);
+    } catch (...) {
+    }
+  }
+}
+
 namespace {
 struct DeferredTileStore {
   std::string content_id;
@@ -3265,6 +3283,10 @@ void Client::handle_ensure_tiles(
 
   if (!tiles.empty()) {
     store_tiles(content_id, tiles);
+    // Q2 durable: retire Q1 FastScale soft levels for this content.
+    if (job.tile_pyramid) {
+      invalidate_q1_levels(content_id);
+    }
   }
   reply_pyramid_done(!tiles.empty());
 }
