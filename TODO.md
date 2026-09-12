@@ -2,6 +2,22 @@
 
 ## Status (2026-09-12)
 
+**Tip: thumtoo-178-levelrow-optional-dims.** Fix LevelRow optional width/height compile.
+Prior: **177**.
+
+### Change
+- `larger->width/height` are `std::optional<int>` — use `value_or(0)` before `std::max`
+
+### Done criteria
+- [x] Builds
+- [x] Bundle **178**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-12)
+
 **Tip: thumtoo-177-embedded-covers-edge.** Embedded EXIF only when it covers request.
 Prior: **176**.
 

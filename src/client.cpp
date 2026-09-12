@@ -2518,7 +2518,9 @@ void Client::handle_ensure_pixels(
             *loc_early->content_id, edge_limit, job.frame_idx)) {
       // Reject levels whose *pixels* do not cover the request (Embedded rows
       // historically stored under max_edge=512 with ~256px payload).
-      const int row_long = std::max(larger->width, larger->height);
+      const int row_w = larger->width.value_or(0);
+      const int row_h = larger->height.value_or(0);
+      const int row_long = std::max(row_w, row_h);
       if (row_long >= (edge_limit * 9) / 10) {
         if (auto bytes = blobs_->get_level(larger->content_id, larger->max_edge,
                                            larger->frame_idx)) {
