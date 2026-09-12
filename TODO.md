@@ -2,6 +2,27 @@
 
 ## Status (2026-09-12)
 
+**Tip: thumtoo-169-focus-full-cap.** Cap pending FocusFull tile pyramids.
+Prior: **168**.
+
+### Change
+- kFocusFullMaxConcurrent = 1
+- enqueue: supersede same-uri pyramid; drop oldest pending pyramids beyond cap
+
+### Next
+- biltoo Workspace Primary
+- inflight-aware FocusFull accounting (optional)
+
+### Done criteria
+- [x] Cap
+- [x] Bundle **169**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-12)
+
 **Tip: thumtoo-168-focus-full-primary.** Primary interest builds tile pyramid.
 Prior: **167**.
 

@@ -920,6 +920,40 @@ void Client::enqueue(Job job, bool front) {
         }
       }
     }
+    // FocusFull cap: at most kFocusFullMaxConcurrent pending tile pyramids.
+    // Same-uri pyramid is always superseded; others drop oldest first.
+    if (job.kind == JobKind::EnsureTiles && job.tile_pyramid) {
+      for (auto it = queue_.begin(); it != queue_.end();) {
+        if (it->kind == JobKind::EnsureTiles && it->tile_pyramid
+            && it->uri == job.uri) {
+          reply_cancelled_job(*it);
+          it = queue_.erase(it);
+        } else {
+          ++it;
+        }
+      }
+      int pending_pyramids = 0;
+      for (const auto& j : queue_) {
+        if (j.kind == JobKind::EnsureTiles && j.tile_pyramid) {
+          ++pending_pyramids;
+        }
+      }
+      while (pending_pyramids >= kFocusFullMaxConcurrent) {
+        bool dropped = false;
+        for (auto it = queue_.begin(); it != queue_.end(); ++it) {
+          if (it->kind == JobKind::EnsureTiles && it->tile_pyramid) {
+            reply_cancelled_job(*it);
+            queue_.erase(it);
+            --pending_pyramids;
+            dropped = true;
+            break;
+          }
+        }
+        if (!dropped) {
+          break;
+        }
+      }
+    }
     if (front) {
       queue_.push_front(std::move(job));
     } else {
