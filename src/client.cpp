@@ -1540,6 +1540,16 @@ std::uint64_t Client::interest_epoch() const {
   return interest_epoch_;
 }
 
+Client::QueueStats Client::queue_stats() const {
+  std::lock_guard lock(mu_);
+  QueueStats s;
+  s.pending = queue_.size();
+  s.inflight = inflight_;
+  s.focus_full_inflight = focus_full_inflight_;
+  s.interest_epoch = interest_epoch_;
+  return s;
+}
+
 void Client::reply_cancelled_job(Job& job) {
   if (job.kind == JobKind::ProbeSize && job.size_cb) {
     auto cb = std::move(job.size_cb);

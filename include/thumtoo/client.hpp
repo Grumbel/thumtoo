@@ -265,6 +265,15 @@ class Client {
    * In-flight workers may still finish; hosts should ignore stale epochs.
    */
   [[nodiscard]] std::uint64_t interest_epoch() const;
+
+  /// Snapshot of worker queue pressure (PIXEL_PIPELINE host metrics).
+  struct QueueStats {
+    std::size_t pending = 0;
+    int inflight = 0;
+    int focus_full_inflight = 0;
+    std::uint64_t interest_epoch = 0;
+  };
+  [[nodiscard]] QueueStats queue_stats() const;
   /// Increment epoch and purge stale queued jobs. Returns the new epoch.
   std::uint64_t bump_interest_epoch();
   /// Drop all queued jobs (any epoch); does not touch in-flight work.

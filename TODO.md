@@ -2,6 +2,27 @@
 
 ## Status (2026-09-12)
 
+**Tip: thumtoo-174-queue-stats.** Client::queue_stats for host metrics.
+Prior: **173**.
+
+### Change
+- QueueStats { pending, inflight, focus_full_inflight, interest_epoch }
+- PIXEL_PIPELINE.md stale "Still open" cleaned
+
+### Next
+- biltoo debug status can surface queue_stats
+- Soft-queue metrics optional
+
+### Done criteria
+- [x] API
+- [x] Bundle **174**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-12)
+
 **Tip: thumtoo-173-request-raster.** Unified get_raster / request_raster API.
 Prior: **172**.
 

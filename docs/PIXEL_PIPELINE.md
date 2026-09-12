@@ -32,8 +32,9 @@ Host-facing design lives in biltoo:
   libarchive pass.
 - Process extract LRU (existing) remains the shared member-byte cache for focus.
 
-Still open: explicit `set_interest` / cancel-by-epoch, dedicated FastScale Q1
-encode path at ≤1024 (soft remains capped at 512), second-handle focus policy.
+Shipped beyond the table: `set_interest`, interest epoch cancel, FastScale
+`request_overview_pixels`, FocusFull + caps, Q1 invalidate on pyramid,
+`request_raster` / `get_raster`, `queue_stats()`.
 
 ## Phase status
 
