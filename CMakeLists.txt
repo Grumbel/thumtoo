@@ -33,7 +33,6 @@ add_library(thumtoo
   src/image.cpp
   src/archive.cpp
   src/pdf.cpp
-  src/pdf_mupdf.cpp
   src/epub.cpp
   src/djvu.cpp
   src/expand.cpp
@@ -76,6 +75,7 @@ if(MUPDF_FOUND)
   endif()
   target_compile_definitions(thumtoo PUBLIC THUMTOO_HAVE_MUPDF=1)
   message(STATUS "thumtoo: MuPDF enabled (PDF pages)")
+  target_sources(thumtoo PRIVATE src/pdf_mupdf.cpp)
 else()
   message(STATUS "thumtoo: MuPDF not found — PDF page support disabled")
 endif()
@@ -146,6 +146,9 @@ if(THUMTOO_BUILD_TESTS)
   add_executable(thumtoo-test-pixels-from-tiles tests/test_pixels_from_tiles.cpp)
   target_link_libraries(thumtoo-test-pixels-from-tiles PRIVATE thumtoo)
   add_test(NAME pixels_from_tiles COMMAND thumtoo-test-pixels-from-tiles)
+  add_executable(thumtoo-test-archive-cursor tests/test_archive_cursor.cpp)
+  target_link_libraries(thumtoo-test-archive-cursor PRIVATE thumtoo)
+  add_test(NAME archive_cursor COMMAND thumtoo-test-archive-cursor)
   add_executable(thumtoo-test-pdf-text tests/test_pdf_text.cpp)
   target_link_libraries(thumtoo-test-pdf-text PRIVATE thumtoo)
   add_test(NAME pdf_text COMMAND thumtoo-test-pdf-text)

@@ -462,6 +462,7 @@ std::optional<PdfRaster> mupdf_render_tile_cell(const std::filesystem::path& pat
 }
 
 
+#if defined(THUMTOO_HAVE_MUPDF)
 /// True for a usable embedded raster Image XObject (not a stencil ImageMask).
 [[nodiscard]] bool mupdf_obj_is_raster_image(fz_context* ctx, pdf_obj* obj) {
   if (!ctx || !obj) return false;
@@ -515,6 +516,8 @@ std::optional<PdfRaster> mupdf_render_tile_cell(const std::filesystem::path& pat
   }
   return found_num;
 }
+
+#endif  // THUMTOO_HAVE_MUPDF
 
 std::optional<int> mupdf_embedded_image_count(const std::filesystem::path& path) {
 #if !defined(THUMTOO_HAVE_MUPDF)
