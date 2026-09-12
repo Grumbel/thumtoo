@@ -34,6 +34,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <cstring>
 
 namespace thumtoo {
 
@@ -369,6 +370,7 @@ std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
 
 std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
                                                         int max_edge) const {
+  image_library_init();
   auto meta = db_->meta_for_uri(uri);
   if (!meta || !meta->size) return std::nullopt;
   const int nw = meta->size->width;
@@ -381,12 +383,10 @@ std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
   }
 
   const int want = max_edge > 0 ? max_edge : kBatchMaxEdge;
-  // Scale s: long edge at scale is ~ native / 2^s. Prefer coarsest scale that
-  // still covers `want` (fewer tiles); fall back to min_s if all smaller.
+  // Prefer coarsest scale whose long edge still covers `want` (fewer tiles).
   int best_s = min_s;
   for (int s = min_s; s <= max_s; ++s) {
-    const int long_at_s =
-        (std::max(nw, nh) + ((1 << s) - 1)) >> s;  // ceil div 2^s
+    const int long_at_s = (std::max(nw, nh) + ((1 << s) - 1)) >> s;
     if (long_at_s >= (want * 9) / 10) {
       best_s = s;
     }
@@ -400,69 +400,81 @@ std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
     return std::nullopt;
   }
 
-  std::vector<std::uint8_t> canvas(static_cast<std::size_t>(sw) * sh * 3, 0);
-  TileSource worst = TileSource::Full;
+  std::vector<std::uint8_t> canvas(static_cast<std::size_t>(sw) * static_cast<std::size_t>(sh) * 3u, 0);
   for (int ty = 0; ty < ny; ++ty) {
     for (int tx = 0; tx < nx; ++tx) {
       auto tile = get_tile(uri, best_s, tx, ty);
       if (!tile || tile->bytes.empty()) {
         return std::nullopt;  // incomplete pyramid at this scale
       }
-      if (static_cast<int>(tile->source) > static_cast<int>(worst)) {
-        // Prefer documenting non-Full if any cell is shrink/embedded.
-        if (tile->source != TileSource::Full) {
-          worst = tile->source;
-        }
-      }
       VipsImage* im = nullptr;
-      if (vips_jpegload_buffer(tile->bytes.data(),
-                               static_cast<size_t>(tile->bytes.size()), &im,
-                               nullptr) != 0 ||
+      if (vips_jpegload_buffer(
+              const_cast<std::uint8_t*>(tile->bytes.data()),
+              static_cast<size_t>(tile->bytes.size()), &im, nullptr) != 0 ||
           !im) {
         return std::nullopt;
       }
-      // Ensure 3-band 8-bit.
-      VipsImage* rgb = nullptr;
-      if (vips_colourspace(im, &rgb, VIPS_INTERPRETATION_sRGB, nullptr) != 0 ||
-          !rgb) {
+      if (vips_image_wio_input(im) != 0) {
         g_object_unref(im);
         return std::nullopt;
       }
-      g_object_unref(im);
-      im = rgb;
-      if (im->Bands < 3 || im->BandFmt != VIPS_FORMAT_UCHAR) {
-        VipsImage* u8 = nullptr;
-        if (vips_cast_uchar(im, &u8, nullptr) != 0 || !u8) {
+      VipsImage* rgb = nullptr;
+      if (im->Type != VIPS_INTERPRETATION_sRGB || im->Bands != 3 ||
+          im->BandFmt != VIPS_FORMAT_UCHAR) {
+        if (vips_colourspace(im, &rgb, VIPS_INTERPRETATION_sRGB, nullptr) != 0 ||
+            !rgb) {
           g_object_unref(im);
           return std::nullopt;
         }
         g_object_unref(im);
-        im = u8;
+        im = rgb;
+        rgb = nullptr;
+        if (im->BandFmt != VIPS_FORMAT_UCHAR) {
+          VipsImage* u8 = nullptr;
+          if (vips_cast_uchar(im, &u8, nullptr) != 0 || !u8) {
+            g_object_unref(im);
+            return std::nullopt;
+          }
+          g_object_unref(im);
+          im = u8;
+        }
+        if (vips_image_wio_input(im) != 0) {
+          g_object_unref(im);
+          return std::nullopt;
+        }
       }
       const int tw = std::min(kTileSize, sw - tx * kTileSize);
       const int th = std::min(kTileSize, sh - ty * kTileSize);
-      if (im->Xsize < 1 || im->Ysize < 1) {
+      const int cw = std::min(tw, im->Xsize);
+      const int ch = std::min(th, im->Ysize);
+      const int bands = im->Bands;
+      if (bands < 3) {
         g_object_unref(im);
         return std::nullopt;
       }
-      // Copy min(tile, cell) into canvas.
-      const int cw = std::min(tw, im->Xsize);
-      const int ch = std::min(th, im->Ysize);
       for (int y = 0; y < ch; ++y) {
-        const std::uint8_t* src = VIPS_IMAGE_ADDR(im, 0, y);
+        const std::uint8_t* src =
+            static_cast<const std::uint8_t*>(VIPS_IMAGE_ADDR(im, 0, y));
         std::uint8_t* dst =
             canvas.data() +
-            (static_cast<std::size_t>((ty * kTileSize + y) * sw + tx * kTileSize) *
-             3);
-        if (im->Bands >= 3) {
-          std::memcpy(dst, src, static_cast<std::size_t>(cw) * 3);
+            (static_cast<std::size_t>(ty * kTileSize + y) *
+                 static_cast<std::size_t>(sw) +
+             static_cast<std::size_t>(tx * kTileSize)) *
+                3u;
+        if (bands == 3) {
+          std::memcpy(dst, src, static_cast<std::size_t>(cw) * 3u);
+        } else {
+          for (int x = 0; x < cw; ++x) {
+            dst[x * 3 + 0] = src[x * bands + 0];
+            dst[x * 3 + 1] = src[x * bands + 1];
+            dst[x * 3 + 2] = src[x * bands + 2];
+          }
         }
       }
       g_object_unref(im);
     }
   }
 
-  // Optional shrink to target long edge.
   int out_w = sw;
   int out_h = sh;
   std::vector<std::uint8_t> out_rgb = std::move(canvas);
@@ -471,6 +483,7 @@ std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
     VipsImage* in = vips_image_new_from_memory(
         out_rgb.data(), out_rgb.size(), sw, sh, 3, VIPS_FORMAT_UCHAR);
     if (!in) return std::nullopt;
+    in->Type = VIPS_INTERPRETATION_sRGB;
     VipsImage* small = nullptr;
     const double scale = static_cast<double>(want) / static_cast<double>(long_px);
     if (vips_resize(in, &small, scale, nullptr) != 0 || !small) {
@@ -478,21 +491,23 @@ std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
       return std::nullopt;
     }
     g_object_unref(in);
+    if (vips_image_wio_input(small) != 0) {
+      g_object_unref(small);
+      return std::nullopt;
+    }
     out_w = small->Xsize;
     out_h = small->Ysize;
-    out_rgb.resize(static_cast<std::size_t>(out_w) * out_h * 3);
+    out_rgb.resize(static_cast<std::size_t>(out_w) * static_cast<std::size_t>(out_h) * 3u);
     for (int y = 0; y < out_h; ++y) {
-      std::memcpy(out_rgb.data() + static_cast<std::size_t>(y * out_w * 3),
+      std::memcpy(out_rgb.data() + static_cast<std::size_t>(y * out_w) * 3u,
                   VIPS_IMAGE_ADDR(small, 0, y),
-                  static_cast<std::size_t>(out_w) * 3);
+                  static_cast<std::size_t>(out_w) * 3u);
     }
     g_object_unref(small);
   }
 
-  // Encode as single JXL soft-style level for host compatibility.
-  auto levels =
-      build_ladder_rgb(out_rgb.data(), out_w, out_h, meta->content_id,
-                       /*jxl_quality=*/70, std::max(out_w, out_h));
+  auto levels = build_ladder_rgb(out_rgb.data(), out_w, out_h, meta->content_id,
+                                 /*jxl_quality=*/70, std::max(out_w, out_h));
   if (levels.empty()) return std::nullopt;
   PixelLevel px;
   px.max_edge = levels[0].max_edge;
@@ -502,11 +517,8 @@ std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
   px.codec = levels[0].codec;
   px.bytes = std::move(levels[0].bytes);
   px.source = PixelSource::TileSynth;
-  (void)worst;
   return px;
 }
-
-
 
 std::optional<std::vector<std::uint8_t>> Client::get_lqip(
     std::string_view uri) const {

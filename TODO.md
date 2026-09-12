@@ -2,6 +2,33 @@
 
 ## Status (2026-09-12)
 
+**Tip: thumtoo-161-pixels-from-tiles-verify.** Harden TileSynth construct + smoke test.
+Prior: **160**.
+
+### Change
+- VIPS-safe composite (wio_input, colourspace, band copy)
+- `image_library_init` before decode
+- Smoke test `test_pixels_from_tiles` (miss path + constants)
+
+### Verify
+- Sandbox has no sqlite3/vips — full compile not run here
+- User: `nix develop` / local build + `ctest -R pixels_from_tiles`
+
+### Next
+- FastBatch archive cursor
+- biltoo consume TileSynth
+
+### Done criteria
+- [x] Harden construct
+- [x] Smoke test wired
+- [x] Bundle **161**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-12)
+
 **Tip: thumtoo-160-pixels-from-tiles.** Construct full-frame pixels from grid tiles.
 Prior: **159**.
 
