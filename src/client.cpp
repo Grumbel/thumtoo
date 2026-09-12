@@ -1629,16 +1629,30 @@ std::uint64_t Client::set_interest(std::vector<InterestItem> items) {
                      static_cast<int>(b.second.role);
             });
 
+  // Speculative work only when the queue is not already busy with
+  // Primary/Near (PIXEL_PIPELINE idle policy).
+  std::size_t queue_len = 0;
+  {
+    std::lock_guard lock(mu_);
+    queue_len = queue_.size();
+  }
+
   for (const auto& [uri, agg] : ordered) {
+    if (agg.role == InterestRole::Speculative &&
+        queue_len >= kSpeculativeEnqueueWhenQueueBelow) {
+      continue;
+    }
     int edge = agg.edge > 0 ? agg.edge : kBatchMaxEdge;
     if (edge > kBatchMaxEdge) {
       edge = kBatchMaxEdge;
     }
     // FastBatch overview for all roles (Primary sorted first into the queue).
     request_overview_pixels(uri, edge, {});
+    ++queue_len;  // approximate; request may no-op on cache hit
     // FocusFull: Primary also builds the durable tile pyramid (Q2 base).
     if (agg.role == InterestRole::Primary) {
       request_tile_pyramid(uri, /*min_scale=*/0, /*max_scale=*/-1, {});
+      ++queue_len;
     }
   }
   return epoch;

@@ -26,6 +26,8 @@ inline constexpr int kBatchMaxEdge = 1024;
 inline constexpr int kBatchWindowMembers = 32;
 /// Max concurrent FocusFull tile-pyramid jobs in the queue (PIXEL_PIPELINE §8).
 inline constexpr int kFocusFullMaxConcurrent = 1;
+/// Speculative interest only enqueues when pending queue length is below this.
+inline constexpr std::size_t kSpeculativeEnqueueWhenQueueBelow = 8;
 
 /// Ladder codec is JPEG-XL via libvips (required dependency; see flake.nix).
 inline constexpr int kDefaultJxlQuality = 80;

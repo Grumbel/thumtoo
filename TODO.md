@@ -2,6 +2,27 @@
 
 ## Status (2026-09-12)
 
+**Tip: thumtoo-171-speculative-idle.** Defer Speculative interest when queue is busy.
+Prior: **170**.
+
+### Change
+- kSpeculativeEnqueueWhenQueueBelow = 8
+- set_interest skips Speculative when queue_len ≥ threshold
+
+### Next
+- Unified request_raster API (optional)
+- Q1 invalidate when Q2 appears
+
+### Done criteria
+- [x] Speculative idle policy
+- [x] Bundle **171**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-12)
+
 **Tip: thumtoo-170-focus-full-inflight.** Inflight-aware FocusFull concurrency.
 Prior: **169**.
 
