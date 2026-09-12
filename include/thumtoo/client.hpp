@@ -4,6 +4,7 @@
 #pragma once
 
 #include "thumtoo/database.hpp"
+#include "thumtoo/archive.hpp"
 #include "thumtoo/blob_store.hpp"
 #include "thumtoo/executor.hpp"
 #include "thumtoo/types.hpp"
@@ -247,7 +248,18 @@ class Client {
                   std::unique_ptr<BlobStore> blobs, Executor executor,
                   unsigned worker_threads);
 
+  /// Load/refresh TOC-ordered image members for FastBatch cursor (source I/O on miss).
+  void ensure_archive_cursor(const std::filesystem::path& archive_path);
+
+  /// Plan TOC-ordered extract window; advances cursor after successful extract
+  /// when advance=true (worker path).
+  [[nodiscard]] std::vector<std::string> plan_and_maybe_advance_cursor(
+      const std::filesystem::path& archive_path,
+      const std::vector<std::string>& interest_members,
+      bool advance_after = false);
+
   enum class JobKind { ProbeSize, EnsurePixels, EnsureTiles, EnsureLqip };
+
 
   struct Job {
     JobKind kind = JobKind::ProbeSize;
@@ -321,7 +333,11 @@ class Client {
   int inflight_ = 0;
   std::vector<std::thread> workers_;
 
+  mutable std::mutex archive_cursor_mu_;
+  std::unordered_map<std::string, ArchiveCursor> archive_cursors_;
+
   mutable std::mutex extract_cache_mu_;
+
   /// LRU: front = most recently used. Values hold bytes + list iterator.
   /// Cache maps are mutable so const get() can touch the LRU order.
   struct ExtractCacheEntry {

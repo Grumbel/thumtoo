@@ -849,6 +849,78 @@ void Client::enqueue(Job job, bool front) {
   cv_.notify_one();
 }
 
+void Client::ensure_archive_cursor(const std::filesystem::path& archive_path) {
+  const std::string key = archive_path.lexically_normal().string();
+  {
+    std::lock_guard lock(archive_cursor_mu_);
+    auto it = archive_cursors_.find(key);
+    if (it != archive_cursors_.end() && !it->second.ordered_members.empty()) {
+      return;
+    }
+  }
+  // TOC read outside lock (source I/O).
+  std::vector<std::string> ordered;
+  if (auto toc = read_archive_toc(archive_path)) {
+    ordered.reserve(toc->size());
+    for (const auto& m : *toc) {
+      if (is_likely_image_member_path(m.member_path)) {
+        ordered.push_back(m.member_path);
+      }
+    }
+  }
+  std::lock_guard lock(archive_cursor_mu_);
+  auto& cur = archive_cursors_[key];
+  cur.archive_path = archive_path;
+  if (cur.ordered_members.empty() && !ordered.empty()) {
+    cur.ordered_members = std::move(ordered);
+    cur.next_index = 0;
+  } else if (!ordered.empty() && cur.ordered_members != ordered) {
+    // TOC changed (rare); reset.
+    cur.ordered_members = std::move(ordered);
+    cur.next_index = 0;
+  }
+}
+
+std::vector<std::string> Client::plan_and_maybe_advance_cursor(
+    const std::filesystem::path& archive_path,
+    const std::vector<std::string>& interest_members,
+    bool advance_after) {
+  ensure_archive_cursor(archive_path);
+  std::vector<std::string> ordered;
+  std::size_t next_index = 0;
+  const std::string key = archive_path.lexically_normal().string();
+  {
+    std::lock_guard lock(archive_cursor_mu_);
+    auto it = archive_cursors_.find(key);
+    if (it != archive_cursors_.end()) {
+      ordered = it->second.ordered_members;
+      next_index = it->second.next_index;
+    }
+  }
+  auto planned = plan_archive_batch_window(ordered, interest_members, next_index,
+                                           kBatchWindowMembers);
+  if (advance_after && !interest_members.empty()) {
+    // Advance past the last interest member that appears in TOC order.
+    std::optional<std::size_t> last;
+    for (const auto& m : interest_members) {
+      if (auto idx = archive_member_toc_index(ordered, m)) {
+        if (!last || *idx > *last) last = idx;
+      }
+    }
+    if (last) {
+      std::lock_guard lock(archive_cursor_mu_);
+      auto it = archive_cursors_.find(key);
+      if (it != archive_cursors_.end()) {
+        it->second.next_index = *last + 1;
+        if (it->second.next_index > it->second.ordered_members.size()) {
+          it->second.next_index = it->second.ordered_members.size();
+        }
+      }
+    }
+  }
+  return planned;
+}
+
 std::string Client::extract_cache_key(const std::filesystem::path& archive,
                                       std::string_view member) {
   return archive.string() + "\n" + std::string(member);
@@ -1418,24 +1490,43 @@ void Client::worker_main() {
 
       // Prefer in-process extract cache (filled by a prior pass) so we do not
       // open a solid RAR twice and so post-extract encode can run in parallel.
+      // FastBatch cursor: TOC-order + window cap so scroll does not open the
+      // whole archive for an unbounded interest set in one pass.
       std::unordered_map<std::string, std::vector<std::uint8_t>> extracted;
-      std::vector<std::string> extract_members;
-      extract_members.reserve(batch.size());
+      std::vector<std::string> interest_need;
+      interest_need.reserve(batch.size());
       for (size_t i = 0; i < batch.size(); ++i) {
         if (!need_extract[i]) continue;
         if (i >= members.size() || members[i].empty()) continue;
         if (auto cached = extract_cache_get(archive_path, members[i])) {
           extracted.emplace(members[i], std::move(*cached));
         } else {
-          extract_members.push_back(members[i]);
+          interest_need.push_back(members[i]);
         }
       }
 
-      if (!extract_members.empty()) {
+      std::vector<std::string> extract_members;
+      if (!interest_need.empty() && !archive_path.empty()) {
+        // Plan TOC-ordered window; advance cursor past last extracted on success.
+        extract_members =
+            plan_and_maybe_advance_cursor(archive_path, interest_need, false);
+        // Always include every interest member that is inside the planned
+        // window; if planner returned empty (no TOC yet), fall back to interest.
+        if (extract_members.empty()) {
+          extract_members = interest_need;
+          if (extract_members.size() >
+              static_cast<size_t>(kBatchWindowMembers)) {
+            extract_members.resize(static_cast<size_t>(kBatchWindowMembers));
+          }
+        }
         auto from_disk = extract_archive_members(archive_path, extract_members);
         for (auto& kv : from_disk) {
           extract_cache_put(archive_path, kv.first, kv.second);
           extracted[kv.first] = std::move(kv.second);
+        }
+        if (!from_disk.empty()) {
+          // Advance cursor using the planned list (even if some members missed).
+          plan_and_maybe_advance_cursor(archive_path, extract_members, true);
         }
       }
 

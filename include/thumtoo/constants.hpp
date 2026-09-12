@@ -22,6 +22,8 @@ inline constexpr std::array<int, 5> kLadderEdges = {128, 256, 512, 1024, 2048};
 inline constexpr int kMaxSoftLadderEdge = 512;
 /// Cap for FastBatch / shrink overview rasters (not soft durable max).
 inline constexpr int kBatchMaxEdge = 1024;
+/// Max archive members planned per FastBatch extract window (PIXEL_PIPELINE §5.2).
+inline constexpr int kBatchWindowMembers = 32;
 
 /// Ladder codec is JPEG-XL via libvips (required dependency; see flake.nix).
 inline constexpr int kDefaultJxlQuality = 80;

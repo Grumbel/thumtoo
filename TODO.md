@@ -2,6 +2,34 @@
 
 ## Status (2026-09-12)
 
+**Tip: thumtoo-162-fastbatch-archive-cursor.** Archive cursor + TOC window + MuPDF optional.
+Prior: **161**.
+
+### Change
+- MuPDF: compile `pdf_mupdf.cpp` only when found; guard fz helpers
+- `kBatchWindowMembers` (32)
+- `ArchiveCursor`, `plan_archive_batch_window`, `archive_member_toc_index`
+- Client: per-archive cursor, worker coalesce uses TOC-ordered extract window and advances cursor
+- Test: `archive_cursor`
+- Docs: PIXEL_PIPELINE.md
+
+### Next
+- Interest cancel / set_interest epoch
+- FastScale Q1 path ≤ kBatchMaxEdge (distinct from soft-512)
+- biltoo consume TileSynth provenance
+
+### Done criteria
+- [x] Cursor + plan API
+- [x] Worker wired
+- [x] MuPDF optional build
+- [x] Bundle **162**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-12)
+
 **Tip: thumtoo-161-pixels-from-tiles-verify.** Harden TileSynth construct + smoke test.
 Prior: **160**.
 

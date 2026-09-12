@@ -9,6 +9,7 @@
 #include <archive.h>
 #include <archive_entry.h>
 
+#include <algorithm>
 #include <cstring>
 #include <cctype>
 #include <unordered_map>
@@ -241,6 +242,100 @@ bool is_likely_image_member_path(std::string_view member_path) {
   if (member_path.empty() || is_unsafe_archive_member_path(member_path))
     return false;
   return is_image_extension(member_extension_lower(member_path));
+}
+
+std::optional<std::size_t> archive_member_toc_index(
+    const std::vector<std::string>& ordered_members,
+    std::string_view member_path) {
+  for (std::size_t i = 0; i < ordered_members.size(); ++i) {
+    if (member_paths_equal(ordered_members[i], member_path)) return i;
+  }
+  return std::nullopt;
+}
+
+std::vector<std::string> plan_archive_batch_window(
+    const std::vector<std::string>& ordered_members,
+    const std::vector<std::string>& interest,
+    std::size_t next_index,
+    int max_window) {
+  std::vector<std::string> out;
+  if (ordered_members.empty() || max_window <= 0) return out;
+
+  const std::size_t n = ordered_members.size();
+  const std::size_t cap = static_cast<std::size_t>(max_window);
+
+  // Map interest → TOC indices (unique, sorted).
+  std::vector<std::size_t> idxs;
+  idxs.reserve(interest.size());
+  for (const auto& m : interest) {
+    if (auto i = archive_member_toc_index(ordered_members, m)) {
+      idxs.push_back(*i);
+    }
+  }
+  std::sort(idxs.begin(), idxs.end());
+  idxs.erase(std::unique(idxs.begin(), idxs.end()), idxs.end());
+
+  if (idxs.empty()) {
+    // No interest: continue from cursor for up to cap members.
+    std::size_t start = next_index < n ? next_index : 0;
+    for (std::size_t i = start; i < n && out.size() < cap; ++i) {
+      out.push_back(ordered_members[i]);
+    }
+    return out;
+  }
+
+  // Prefer a contiguous TOC span covering interest near the cursor.
+  // If interest spans more than max_window, take a window of size cap
+  // starting at the interest index closest to next_index (or min interest).
+  const std::size_t lo = idxs.front();
+  const std::size_t hi = idxs.back();  // inclusive
+  const std::size_t span = hi - lo + 1;
+
+  std::size_t win_lo = lo;
+  if (span > cap) {
+    // Anchor near cursor when possible.
+    std::size_t anchor = lo;
+    if (next_index >= lo && next_index <= hi) {
+      anchor = next_index;
+    } else {
+      // Closest interest index to next_index.
+      std::size_t best = idxs.front();
+      std::size_t best_dist = (best > next_index) ? (best - next_index)
+                                                  : (next_index - best);
+      for (std::size_t ix : idxs) {
+        const std::size_t d =
+            (ix > next_index) ? (ix - next_index) : (next_index - ix);
+        if (d < best_dist) {
+          best_dist = d;
+          best = ix;
+        }
+      }
+      anchor = best;
+    }
+    // Window of size cap containing anchor, clamped to [lo, hi].
+    if (anchor + 1 >= cap) {
+      win_lo = anchor + 1 - cap;
+    } else {
+      win_lo = 0;
+    }
+    if (win_lo < lo) win_lo = lo;
+    if (win_lo + cap - 1 > hi) {
+      if (hi + 1 >= cap) win_lo = hi + 1 - cap;
+      else win_lo = 0;
+      if (win_lo < lo) win_lo = lo;
+    }
+  }
+
+  const std::size_t win_hi = std::min(hi, win_lo + cap - 1);
+  // Prefer continuing forward from next_index when it falls inside the window:
+  // emit from max(win_lo, next_index) first, then the remainder before it so
+  // libarchive still sees a single forward pass if we restart from win_lo.
+  // For extract_archive_members (full restart each open), TOC order from
+  // win_lo is correct — one sequential scan covers the window.
+  for (std::size_t i = win_lo; i <= win_hi && out.size() < cap; ++i) {
+    out.push_back(ordered_members[i]);
+  }
+  return out;
 }
 
 }  // namespace thumtoo
