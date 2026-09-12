@@ -35,6 +35,9 @@ namespace thumtoo {
 #ifndef THUMTOO_API_OVERVIEW_PIXELS
 #define THUMTOO_API_OVERVIEW_PIXELS 1
 #endif
+#ifndef THUMTOO_API_SET_INTEREST
+#define THUMTOO_API_SET_INTEREST 1
+#endif
 
 /// In-process client: cache-only get_* + async request_* (DESIGN API sketch).
 ///
@@ -253,6 +256,17 @@ class Client {
   std::size_t cancel_pending();
   /// Drop queued jobs whose uri matches (exact). Returns removed count.
   std::size_t cancel_uri(std::string_view uri);
+
+  /**
+   * Replace the interest snapshot (PIXEL_PIPELINE §6.1).
+   * Bumps the interest epoch (cancels stale queued work), then enqueues
+   * background work for the new set:
+   * - Near / Speculative: request_overview_pixels at min(edge, kBatchMaxEdge)
+   * - Primary: same for now; FocusFull (tiles) is a later phase
+   * Callbacks are optional; nullopt is fine for pure scheduling.
+   * @return the new interest epoch
+   */
+  std::uint64_t set_interest(std::vector<InterestItem> items);
 
   /// Tags attach to content_id (sha256:… preferred). URI resolves via locator.
   [[nodiscard]] std::vector<std::string> get_tags(std::string_view uri) const;

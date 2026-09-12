@@ -1557,6 +1557,52 @@ std::size_t Client::cancel_uri(std::string_view uri) {
   return dropped.size();
 }
 
+std::uint64_t Client::set_interest(std::vector<InterestItem> items) {
+  // Cancel stale work first so the new snapshot owns the queue.
+  const std::uint64_t epoch = bump_interest_epoch();
+
+  // Deduplicate by uri, keep highest role and max edge.
+  struct Agg {
+    int edge = 0;
+    InterestRole role = InterestRole::Speculative;
+  };
+  std::unordered_map<std::string, Agg> by_uri;
+  by_uri.reserve(items.size());
+  for (auto& it : items) {
+    if (it.uri.empty()) continue;
+    auto& a = by_uri[it.uri];
+    if (static_cast<int>(it.role) > static_cast<int>(a.role)) {
+      a.role = it.role;
+    }
+    if (it.target_long_edge > a.edge) {
+      a.edge = it.target_long_edge;
+    }
+  }
+
+  // Primary first, then Near, then Speculative — enqueue front for Primary.
+  std::vector<std::pair<std::string, Agg>> ordered;
+  ordered.reserve(by_uri.size());
+  for (auto& kv : by_uri) {
+    ordered.emplace_back(kv.first, kv.second);
+  }
+  std::sort(ordered.begin(), ordered.end(),
+            [](const auto& a, const auto& b) {
+              return static_cast<int>(a.second.role) >
+                     static_cast<int>(b.second.role);
+            });
+
+  for (const auto& [uri, agg] : ordered) {
+    int edge = agg.edge > 0 ? agg.edge : kBatchMaxEdge;
+    if (edge > kBatchMaxEdge) {
+      edge = kBatchMaxEdge;
+    }
+    // Overview for all roles until FocusFull is a separate lane.
+    // Primary is sorted first so its jobs enter the FIFO queue earlier.
+    request_overview_pixels(uri, edge, {});
+  }
+  return epoch;
+}
+
 void Client::worker_main() {
   for (;;) {
     std::vector<Job> batch;

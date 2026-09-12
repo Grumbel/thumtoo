@@ -2,6 +2,30 @@
 
 ## Status (2026-09-12)
 
+**Tip: thumtoo-167-set-interest.** Interest snapshot API schedules overview work.
+Prior: **166**.
+
+### Change
+- InterestRole, InterestItem
+- Client::set_interest — bump epoch, dedupe, request_overview_pixels
+- THUMTOO_API_SET_INTEREST
+- Test: set_interest
+
+### Next
+- biltoo: call set_interest from gallery/filmstrip window
+- FocusFull for Primary (tile pyramid)
+- Speculative idle-only policy
+
+### Done criteria
+- [x] API + test
+- [x] Bundle **167**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-12)
+
 **Tip: thumtoo-166-api-feature-macros.** THUMTOO_API_OVERVIEW_PIXELS / INTEREST_EPOCH.
 Prior: **165**.
 

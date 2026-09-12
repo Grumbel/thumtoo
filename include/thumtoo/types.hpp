@@ -53,6 +53,20 @@ inline constexpr std::string_view to_string(PixelSource s) {
   return "unknown";
 }
 
+/// Role of a locator in a host interest snapshot (PIXEL_PIPELINE §6.1).
+enum class InterestRole : int {
+  Speculative = 0,  ///< Idle / overscan — lowest priority
+  Near = 1,         ///< Visible or near-visible (FastBatch window)
+  Primary = 2,      ///< Focused image(s) — FocusFull path later
+};
+
+/// One interest entry for set_interest().
+struct InterestItem {
+  std::string uri;
+  int target_long_edge = 0;  ///< 0 → kBatchMaxEdge for Near/Primary overview
+  InterestRole role = InterestRole::Near;
+};
+
 /// Encoded ladder level from cache (JPEG-XL bytes by default).
 struct PixelLevel {
   int max_edge = 0;
