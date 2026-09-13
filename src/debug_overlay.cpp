@@ -316,18 +316,23 @@ void debug_overlay_rgb888(std::uint8_t* rgb, int width, int height,
   if (!rgb || width < 8 || height < 8) {
     return;
   }
-  const int border = std::max(2, std::min(width, height) / 64);
+  const int border = std::max(3, std::min(width, height) / 40);
   draw_debug_border(rgb, width, height, border);
 
-  const int scale = std::max(1, std::min(3, std::min(width, height) / 120));
+  std::string joined;
+  for (std::size_t i = 0; i < lines.size(); ++i) {
+    if (i) joined.push_back(' ');
+    joined += lines[i];
+  }
+  const int scale = std::max(2, std::min(4, std::min(width, height) / 80));
+  const int line_w = static_cast<int>(joined.size()) * (kGw + kGGap) * scale;
   const int line_h = (kGh + 2) * scale;
-  int y = border + 2;
-  for (const std::string& line : lines) {
-    if (y + line_h >= height - border) {
-      break;
+  const int step_x = std::max(line_w + 24, width / 3);
+  const int step_y = std::max(line_h * 4, height / 4);
+  for (int y = border + 2; y + line_h < height - border; y += step_y) {
+    for (int x = border + 2; x + 8 < width - border; x += step_x) {
+      draw_text_line(rgb, width, height, x, y, joined, scale);
     }
-    draw_text_line(rgb, width, height, border + 2, y, line, scale);
-    y += line_h + scale;
   }
 }
 
