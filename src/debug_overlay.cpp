@@ -158,8 +158,8 @@ void put_px(std::uint8_t* rgb, int w, int h, int x, int y, std::uint8_t r,
   p[2] = b;
 }
 
-void draw_char(std::uint8_t* rgb, int w, int h, int x0, int y0, char c,
-               int scale) {
+void draw_char_pass(std::uint8_t* rgb, int w, int h, int x0, int y0, char c,
+                    int scale, bool outline) {
   for (int row = 0; row < kGh; ++row) {
     const std::uint8_t bits = glyph_row(c, row);
     for (int col = 0; col < kGw; ++col) {
@@ -170,12 +170,20 @@ void draw_char(std::uint8_t* rgb, int w, int h, int x0, int y0, char c,
         for (int dx = 0; dx < scale; ++dx) {
           const int x = x0 + col * scale + dx;
           const int y = y0 + row * scale + dy;
-          // Black outline around glyph, white fill.
-          put_px(rgb, w, h, x - 1, y, 0, 0, 0);
-          put_px(rgb, w, h, x + 1, y, 0, 0, 0);
-          put_px(rgb, w, h, x, y - 1, 0, 0, 0);
-          put_px(rgb, w, h, x, y + 1, 0, 0, 0);
-          put_px(rgb, w, h, x, y, 255, 230, 40);
+          if (outline) {
+            // Outline only — must run before fill or neighbors paint over yellow.
+            put_px(rgb, w, h, x - 1, y, 0, 0, 0);
+            put_px(rgb, w, h, x + 1, y, 0, 0, 0);
+            put_px(rgb, w, h, x, y - 1, 0, 0, 0);
+            put_px(rgb, w, h, x, y + 1, 0, 0, 0);
+            put_px(rgb, w, h, x - 1, y - 1, 0, 0, 0);
+            put_px(rgb, w, h, x + 1, y - 1, 0, 0, 0);
+            put_px(rgb, w, h, x - 1, y + 1, 0, 0, 0);
+            put_px(rgb, w, h, x + 1, y + 1, 0, 0, 0);
+          } else {
+            // Bright yellow fill (final pass).
+            put_px(rgb, w, h, x, y, 255, 230, 40);
+          }
         }
       }
     }
@@ -184,14 +192,19 @@ void draw_char(std::uint8_t* rgb, int w, int h, int x0, int y0, char c,
 
 void draw_text_line(std::uint8_t* rgb, int w, int h, int x0, int y0,
                     const std::string& s, int scale) {
-  int x = x0;
-  for (char c : s) {
-    draw_char(rgb, w, h, x, y0, c, scale);
-    x += (kGw + kGGap) * scale;
-    if (x >= w - 4) {
-      break;
+  // Two passes so outline of one glyph pixel cannot erase fill of another.
+  auto run = [&](bool outline) {
+    int x = x0;
+    for (char c : s) {
+      draw_char_pass(rgb, w, h, x, y0, c, scale, outline);
+      x += (kGw + kGGap) * scale;
+      if (x >= w - 4) {
+        break;
+      }
     }
-  }
+  };
+  run(true);
+  run(false);
 }
 
 void draw_debug_border(std::uint8_t* rgb, int w, int h, int thickness) {
