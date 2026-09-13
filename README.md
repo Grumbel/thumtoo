@@ -65,6 +65,13 @@ cmake -B build && cmake --build build && ctest --test-dir build
 
 Use `nix develop` for the toolchain: **libvips** and **libjxl** are required (no stb/codec fallbacks). See `flake.nix`.
 
+## Debug overlay
+
+Set **`THUMTOO_DEBUG_OVERLAY=1`** (alias `BILTOO_DEBUG_OVERLAY`) to stamp every
+returned soft level and grid tile with a **black outline** plus text:
+basename, pixel size, request edge / tile scale+coords, and source tag.
+Read-path only — does not rewrite the on-disk cache.
+
 ## License
 
 GPL-3.0-or-later. See [LICENSES/GPL-3.0-or-later.txt](LICENSES/GPL-3.0-or-later.txt)

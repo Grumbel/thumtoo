@@ -15,6 +15,7 @@
 #include "thumtoo/epub.hpp"
 #include "thumtoo/format.hpp"
 #include "thumtoo/blob_store.hpp"
+#include "thumtoo/debug_overlay.hpp"
 
 #include <vips/vips.h>
 
@@ -319,6 +320,16 @@ bool pixels_cover_edge(const PixelLevel& px, int max_edge) {
 }
 }  // namespace
 
+
+namespace {
+void maybe_overlay_pixels(std::optional<PixelLevel>& px, std::string_view uri,
+                          int max_edge) {
+  if (px) {
+    debug_overlay_pixel_level(*px, uri, max_edge);
+  }
+}
+}  // namespace
+
 std::optional<PixelLevel> Client::load_level(
     const Database::LevelRow& row) const {
   auto data = blobs_->get_level(row.content_id, row.max_edge, row.frame_idx);
@@ -362,6 +373,7 @@ std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
             px ? std::string(to_string(px->source)).c_str() : "?",
             px ? px->width : 0, px ? px->height : 0);
       }
+      maybe_overlay_pixels(px, uri, max_edge);
       return px;
     }
     if (debug_enabled()) {
@@ -380,6 +392,7 @@ std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
             std::string(to_string(px->source)).c_str(), px->width, px->height,
             row->max_edge);
       }
+      maybe_overlay_pixels(px, uri, max_edge);
       return px;
     }
   }
@@ -391,6 +404,7 @@ std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
           std::string(uri).c_str(), max_edge, from_tiles->width,
           from_tiles->height);
     }
+    maybe_overlay_pixels(from_tiles, uri, max_edge);
     return from_tiles;
   }
   if (row) {
@@ -401,6 +415,7 @@ std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
           px ? std::string(to_string(px->source)).c_str() : "?",
           px ? px->width : 0, px ? px->height : 0, row->max_edge);
     }
+    maybe_overlay_pixels(px, uri, max_edge);
     return px;
   }
   if (debug_enabled()) {
@@ -560,6 +575,7 @@ std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
   px.codec = levels[0].codec;
   px.bytes = std::move(levels[0].bytes);
   px.source = PixelSource::TileSynth;
+  debug_overlay_pixel_level(px, uri, max_edge);
   return px;
 }
 
@@ -828,6 +844,8 @@ std::optional<TileBlob> Client::get_tile(std::string_view uri, int scale, int x,
   if (row->codec) t.codec = *row->codec;
   else t.codec = kDefaultTileCodec;
   t.bytes = std::move(*bytes);
+  t.source = static_cast<TileSource>(row->source);
+  debug_overlay_tile(t, uri);
   return t;
 }
 
@@ -2981,6 +2999,9 @@ void Client::handle_ensure_tiles(
   }
   auto reply_one = [&](std::optional<TileBlob> t) {
     if (!job.tile_cb) return;
+    if (t) {
+      debug_overlay_tile(*t, job.uri);
+    }
     auto cb = std::move(job.tile_cb);
     auto uri = job.uri;
     const int scale = job.tile_scale;

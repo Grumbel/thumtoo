@@ -1,5 +1,24 @@
 # TODO / agent handoff
 
+## Status (2026-09-13)
+
+**Tip: thumtoo-180-debug-overlay.** THUMTOO_DEBUG_OVERLAY stamps soft/tiles with size/scale/source.
+Prior: **179**.
+
+### Change
+- Env `THUMTOO_DEBUG_OVERLAY=1` (or `BILTOO_DEBUG_OVERLAY=1`)
+- On `get_pixels` / `get_tile` / live tile reply: black border + text
+  (basename, WxH, request edge / scale/x/y, PixelSource / TileSource)
+- Applied on the **read path only** — durable cache bytes unchanged
+- Soft levels re-encoded as JPEG when stamped (debug-only)
+
+### Done criteria
+- [x] Bundle **180**
+
+---
+
+# TODO / agent handoff
+
 ## Status (2026-09-12)
 
 **Tip: thumtoo-179-pipeline-hit-miss-log.** get_pixels HIT/MISS + EnsurePixels CACHE_HIT.

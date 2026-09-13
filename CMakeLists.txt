@@ -31,6 +31,7 @@ add_library(thumtoo
   src/uri.cpp
   src/client.cpp
   src/image.cpp
+  src/debug_overlay.cpp
   src/archive.cpp
   src/pdf.cpp
   src/epub.cpp

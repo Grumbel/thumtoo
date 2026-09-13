@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-179-pipeline-hit-miss-log**. Next bundle: **180**.
+Latest agent handoff: **TODO.md → thumtoo-180-debug-overlay**. Next bundle: **181**.
 
 
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code
