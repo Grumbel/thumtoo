@@ -17,6 +17,8 @@
       # pkg-config looks for when probing vips (same set biltoo uses to silence
       # "Package '…' was not found" spam). We do not necessarily link all of
       # these into thumtoo; they only need to be on PKG_CONFIG_PATH.
+      # Also exported as lib.mkBuildInputs for consumers (biltoo) that
+      # add_subdirectory thumtoo and must have the same pkg-config deps.
       vipsInputs = pkgs: with pkgs; [
         sqlite
         vips
@@ -170,6 +172,13 @@
           runGdb
         ];
     in {
+      # biltoo (and others) that add_subdirectory this source need these on
+      # PKG_CONFIG_PATH / link path — otherwise optional backends (libunarr, …)
+      # silently disable at configure time.
+      lib = {
+        mkBuildInputs = vipsInputs;
+      };
+
       packages = forAllSystems ({ pkgs, ... }: {
         default = mkPackage pkgs;
       });

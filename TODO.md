@@ -2,6 +2,21 @@
 
 ## Status (2026-09-13)
 
+**Tip: thumtoo-194-export-mkBuildInputs.** Export `lib.mkBuildInputs` for biltoo nested builds.
+Prior: **193**.
+
+### Change
+- `flake.nix` `lib.mkBuildInputs` = same list as package `buildInputs` (includes libunarr)
+
+### Done criteria
+- [x] Bundle **194**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-13)
+
 **Tip: thumtoo-193-unarr-backslash-literal.** Fix `'\\'` char literal in member_paths_equal.
 Prior: **192**.
 
