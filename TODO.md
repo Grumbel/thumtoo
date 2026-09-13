@@ -2,6 +2,29 @@
 
 ## Status (2026-09-13)
 
+**Tip: thumtoo-195-status-path-query.** `thumtoo-status path PATH|URI` shows cache rows for one path.
+Prior: **194**.
+
+### Change
+- `thumtoo-status path` / `query` / `show`: resolve path or URI → locator(s), content, levels, tile scale summary
+- Matches exact URI, `file://` from absolute path, outer_path, uri prefix
+
+### Usage
+```bash
+thumtoo-status path /tmp/photo.jpg
+thumtoo-status path 'file:///tmp/photo.jpg'
+thumtoo-status path /tmp/archive.rar   # locators + archive members under outer_path
+```
+
+### Done criteria
+- [x] Bundle **195**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-13)
+
 **Tip: thumtoo-194-export-mkBuildInputs.** Export `lib.mkBuildInputs` for biltoo nested builds.
 Prior: **193**.
 
