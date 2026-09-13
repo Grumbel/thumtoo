@@ -2,6 +2,21 @@
 
 ## Status (2026-09-13)
 
+**Tip: thumtoo-197-parent-scope-guard.** Only PARENT_SCOPE feature exports when nested.
+Prior: **196**.
+
+### Change
+- `thumtoo_export_to_parent` macro: skip PARENT_SCOPE when standalone (no parent)
+
+### Done criteria
+- [x] Bundle **197**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-13)
+
 **Tip: thumtoo-196-status-archives-restore.** Restore full `archives` listing (members) after path-query edit.
 Prior: **195**.
 

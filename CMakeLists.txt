@@ -33,7 +33,16 @@ else()
     message(STATUS "thumtoo: libunarr not found — RAR via libarchive only")
   endif()
 endif()
-set(THUMTOO_HAVE_UNARR "${THUMTOO_HAVE_UNARR}" PARENT_SCOPE)
+# Export feature flags to parent only when nested (biltoo add_subdirectory).
+# Standalone `cmake -S .` has no parent — bare PARENT_SCOPE is an author warning.
+macro(thumtoo_export_to_parent _var)
+  get_directory_property(_thumtoo_parent PARENT_DIRECTORY)
+  if(_thumtoo_parent)
+    set(${_var} "${${_var}}" PARENT_SCOPE)
+  endif()
+endmacro()
+
+thumtoo_export_to_parent(THUMTOO_HAVE_UNARR)
 # DjVuLibre ships ddjvuapi.pc (headers + libdjvulibre). On Nix the .pc lives
 # in the .dev output — ensure djvulibre is on PKG_CONFIG_PATH (buildInputs).
 pkg_check_modules(DJVULIBRE IMPORTED_TARGET ddjvuapi)
@@ -107,7 +116,7 @@ if(MUPDF_FOUND)
 else()
   message(STATUS "thumtoo: MuPDF not found — PDF page support disabled")
 endif()
-set(THUMTOO_HAVE_MUPDF "${THUMTOO_HAVE_MUPDF}" PARENT_SCOPE)
+thumtoo_export_to_parent(THUMTOO_HAVE_MUPDF)
 
 set(THUMTOO_HAVE_DJVU 0)
 if(DJVULIBRE_FOUND)
@@ -122,7 +131,7 @@ else()
     "Install djvulibre/libdjvulibre-dev and ensure PKG_CONFIG_PATH sees ddjvuapi.pc. "
     "Nix: put pkgs.djvulibre in buildInputs (pulls .dev for pkg-config).")
 endif()
-set(THUMTOO_HAVE_DJVU "${THUMTOO_HAVE_DJVU}" PARENT_SCOPE)
+thumtoo_export_to_parent(THUMTOO_HAVE_DJVU)
 
 set(THUMTOO_HAVE_CURL 0)
 if(LIBCURL_FOUND)
@@ -133,7 +142,7 @@ if(LIBCURL_FOUND)
 else()
   message(STATUS "thumtoo: libcurl not found — HTTP/S fetch disabled")
 endif()
-set(THUMTOO_HAVE_CURL "${THUMTOO_HAVE_CURL}" PARENT_SCOPE)
+thumtoo_export_to_parent(THUMTOO_HAVE_CURL)
 target_compile_options(thumtoo PRIVATE -Wall -Wextra -Wpedantic)
 
 if(THUMTOO_BUILD_TOOLS)
