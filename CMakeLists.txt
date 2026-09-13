@@ -18,6 +18,21 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(SQLITE3 REQUIRED IMPORTED_TARGET sqlite3)
 pkg_check_modules(VIPS REQUIRED IMPORTED_TARGET vips)
 pkg_check_modules(LIBARCHIVE REQUIRED IMPORTED_TARGET libarchive)
+# Optional solid-RAR backend (libunarr / unarr). RAR5 still limited upstream.
+option(THUMTOO_WITH_UNARR "Use libunarr for RAR/CBR (solid)" ON)
+pkg_check_modules(UNARR IMPORTED_TARGET libunarr)
+if(NOT UNARR_FOUND)
+  pkg_check_modules(UNARR IMPORTED_TARGET unarr)
+endif()
+if(THUMTOO_WITH_UNARR AND UNARR_FOUND)
+  set(THUMTOO_HAVE_UNARR 1)
+  message(STATUS "thumtoo: libunarr enabled (solid RAR/CBR)")
+else()
+  set(THUMTOO_HAVE_UNARR 0)
+  if(THUMTOO_WITH_UNARR)
+    message(STATUS "thumtoo: libunarr not found — RAR via libarchive only")
+  endif()
+endif()
 # DjVuLibre ships ddjvuapi.pc (headers + libdjvulibre). On Nix the .pc lives
 # in the .dev output — ensure djvulibre is on PKG_CONFIG_PATH (buildInputs).
 pkg_check_modules(DJVULIBRE IMPORTED_TARGET ddjvuapi)
@@ -48,6 +63,15 @@ add_library(thumtoo
   src/appearance.cpp
 )
 add_library(thumtoo::thumtoo ALIAS thumtoo)
+
+if(THUMTOO_HAVE_UNARR)
+  target_sources(thumtoo PRIVATE src/archive_unarr.cpp)
+  target_link_libraries(thumtoo PUBLIC PkgConfig::UNARR)
+  target_compile_definitions(thumtoo PUBLIC THUMTOO_HAVE_UNARR=1)
+else()
+  target_sources(thumtoo PRIVATE src/archive_unarr_stub.cpp)
+endif()
+
 target_include_directories(thumtoo
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

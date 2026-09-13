@@ -24,8 +24,18 @@ struct ParsedArchiveUri {
   std::string member_path;
 };
 
-/// Read archive TOC via libarchive (source I/O — not cache-only).
+/// True when this build linked libunarr (solid RAR/CBR backend).
+[[nodiscard]] bool unarr_backend_available();
+
+/// Prefer unarr for this path (.rar / .cbr) when the backend is linked.
+[[nodiscard]] bool archive_prefers_unarr(const std::filesystem::path& archive_path);
+
+/// Read archive TOC via libarchive or unarr (source I/O — not cache-only).
 [[nodiscard]] std::optional<std::vector<ArchiveMember>> read_archive_toc(
+    const std::filesystem::path& archive_path);
+
+/// libunarr TOC (RAR only). nullopt if unarr unavailable or open failed.
+[[nodiscard]] std::optional<std::vector<ArchiveMember>> read_archive_toc_unarr(
     const std::filesystem::path& archive_path);
 
 /// Extract one regular-file member into memory (enforces size caps).
@@ -37,6 +47,10 @@ struct ParsedArchiveUri {
 [[nodiscard]] std::unordered_map<std::string, std::vector<std::uint8_t>>
 extract_archive_members(const std::filesystem::path& archive_path,
                         const std::vector<std::string>& member_paths);
+
+[[nodiscard]] std::unordered_map<std::string, std::vector<std::uint8_t>>
+extract_archive_members_unarr(const std::filesystem::path& archive_path,
+                              const std::vector<std::string>& member_paths);
 
 /// file:///abs.zip//archive  or  file:///abs.zip//archive:member
 [[nodiscard]] std::string archive_uri(const std::filesystem::path& archive_path,

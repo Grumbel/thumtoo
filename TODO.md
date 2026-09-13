@@ -2,6 +2,28 @@
 
 ## Status (2026-09-13)
 
+**Tip: thumtoo-187-libunarr-rar.** Optional libunarr for solid RAR/CBR under //archive:.
+Prior: **186**.
+
+### Change
+- Optional `libunarr` (`THUMTOO_WITH_UNARR`, flake `libunarr`)
+- `.rar`/`.cbr` TOC + extract prefer unarr (sequential solid-safe walk)
+- libarchive remains default for ZIP/7z and RAR fallback
+- `//archive:` unchanged (no forced `//unarr:` URI yet)
+- Docs: TILES.md archive backends + seek notes
+
+### Limits
+- unarr: **no RAR5** yet; solid extract is sequential (not random seek of payloads)
+
+### Done criteria
+- [x] Bundle **187**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-13)
+
 **Tip: thumtoo-186-request-full-pixels.** Full/near-native via request_full_pixels.
 Prior: **185**.
 

@@ -190,3 +190,18 @@ a full source re-decode.
 
 See biltoo `docs/PIXEL_PIPELINE_REDESIGN.md` for batch vs focus lanes that
 *build* the pyramid; this API only **reads** it.
+
+## Archive backends (RAR / solid)
+
+| Backend | Formats | Solid RAR | RAR5 |
+|---------|---------|-----------|------|
+| **libarchive** (default) | zip, 7z, rar, … | Often **unsupported** (`RAR solid archive support unavailable`) | Partial |
+| **libunarr** (optional) | **RAR / CBR** focus | **Yes** (sequential walk) | **No** (upstream WIP) |
+
+When built with `THUMTOO_HAVE_UNARR`, `.rar` / `.cbr` TOC + extract use unarr first
+(`//archive:` URIs unchanged). ZIP/CBZ stay on libarchive.
+
+**Seek:** unarr can `ar_seek` the **file stream** and `ar_parse_entry_at` **headers**.
+Solid **payloads** are not randomly seekable — extract walks members in order and
+must uncompress intermediate solid members to keep the dictionary (see
+`extract_archive_members_unarr`). Prefer sequential batch windows for CBR.

@@ -90,6 +90,10 @@ std::optional<ParsedArchiveUri> parse_archive_uri(std::string_view uri) {
 
 std::optional<std::vector<ArchiveMember>> read_archive_toc(
     const std::filesystem::path& archive_path) {
+  if (unarr_backend_available() && archive_prefers_unarr(archive_path)) {
+    if (auto toc = read_archive_toc_unarr(archive_path)) return toc;
+    // Fall through to libarchive (non-solid / listing-only may still work).
+  }
   struct archive* a = archive_read_new();
   if (!a) return std::nullopt;
   archive_read_support_filter_all(a);
@@ -164,6 +168,11 @@ std::optional<std::vector<std::uint8_t>> read_entry_bytes(
 std::unordered_map<std::string, std::vector<std::uint8_t>>
 extract_archive_members(const std::filesystem::path& archive_path,
                         const std::vector<std::string>& member_paths) {
+  if (unarr_backend_available() && archive_prefers_unarr(archive_path)) {
+    auto out = extract_archive_members_unarr(archive_path, member_paths);
+    if (!out.empty() || member_paths.empty()) return out;
+    // Empty with non-empty requests: try libarchive (e.g. RAR5 unarr miss).
+  }
   ScopedNsAccumulator timer(global_build_stats().archive_extract_ns);
   std::unordered_map<std::string, std::vector<std::uint8_t>> out;
   if (member_paths.empty()) return out;
