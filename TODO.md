@@ -2,6 +2,23 @@
 
 ## Status (2026-09-13)
 
+**Tip: thumtoo-181-debug-overlay-visible.** Overlay was silent (JXL decode fail / low contrast).
+Prior: **180**.
+
+### Change
+- JXL load fallback for soft ladder decode
+- Magenta border; log when active / decode fail / stamp
+- Must rebuild thumtoo **and** biltoo (host also stamps QImage)
+
+### Done criteria
+- [x] Bundle **181**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-13)
+
 **Tip: thumtoo-180-debug-overlay.** THUMTOO_DEBUG_OVERLAY stamps soft/tiles with size/scale/source.
 Prior: **179**.
 

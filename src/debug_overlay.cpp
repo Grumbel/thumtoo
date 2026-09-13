@@ -194,12 +194,16 @@ void draw_text_line(std::uint8_t* rgb, int w, int h, int x0, int y0,
   }
 }
 
-void draw_black_border(std::uint8_t* rgb, int w, int h, int thickness) {
-  const int t = std::max(1, thickness);
+void draw_debug_border(std::uint8_t* rgb, int w, int h, int thickness) {
+  if (!rgb || w < 1 || h < 1 || thickness < 1) {
+    return;
+  }
+  const int t = std::min(thickness, std::min(w, h) / 2);
+  // Magenta border — visible on light and dark photos.
   for (int y = 0; y < h; ++y) {
     for (int x = 0; x < w; ++x) {
       if (x < t || y < t || x >= w - t || y >= h - t) {
-        put_px(rgb, w, h, x, y, 0, 0, 0);
+        put_px(rgb, w, h, x, y, 255, 0, 255);
       }
     }
   }
@@ -229,8 +233,16 @@ bool rgb_from_encoded(const std::vector<std::uint8_t>& bytes, int& w, int& h,
     return false;
   }
   VipsImage* img = vips_image_new_from_buffer(
-      bytes.data(), bytes.size(), "", nullptr);
+      bytes.data(), static_cast<size_t>(bytes.size()), "", nullptr);
+  // Soft ladder is often JXL — some libvips builds need an explicit loader.
+  if (!img && bytes.size() >= 12) {
+    (void)vips_jxlload_buffer(const_cast<void*>(static_cast<const void*>(bytes.data())),
+                              bytes.size(), &img, nullptr);
+  }
   if (!img) {
+    std::fprintf(stderr,
+                 "thumtoo: DEBUG_OVERLAY decode failed (bytes=%zu)\n",
+                 bytes.size());
     return false;
   }
   VipsImage* rgb = nullptr;
@@ -305,7 +317,7 @@ void debug_overlay_rgb888(std::uint8_t* rgb, int width, int height,
     return;
   }
   const int border = std::max(2, std::min(width, height) / 64);
-  draw_black_border(rgb, width, height, border);
+  draw_debug_border(rgb, width, height, border);
 
   const int scale = std::max(1, std::min(3, std::min(width, height) / 120));
   const int line_h = (kGh + 2) * scale;
@@ -323,6 +335,12 @@ void debug_overlay_pixel_level(PixelLevel& px, std::string_view uri_tail,
                                int request_edge) {
   if (!debug_overlay_enabled() || px.bytes.empty()) {
     return;
+  }
+  static bool once = false;
+  if (!once) {
+    once = true;
+    std::fprintf(stderr,
+                 "thumtoo: DEBUG_OVERLAY active (stamping soft levels + tiles)\n");
   }
   int w = 0;
   int h = 0;
@@ -349,6 +367,9 @@ void debug_overlay_pixel_level(PixelLevel& px, std::string_view uri_tail,
   px.codec = "jpeg";
   px.width = w;
   px.height = h;
+  std::fprintf(stderr,
+               "thumtoo: DEBUG_OVERLAY soft %dx%d req=%d %s\n", w, h,
+               request_edge, std::string(basename_tail(uri_tail)).c_str());
 }
 
 void debug_overlay_tile(TileBlob& tile, std::string_view uri_tail) {
