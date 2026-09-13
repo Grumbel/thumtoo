@@ -29,11 +29,11 @@ bool member_paths_equal(std::string_view a, std::string_view b) {
   if (a == b) return true;
   std::string aa(a), bb(b);
   for (char& c : aa) {
-    if (c == '\') c = '/';
+    if (c == '\\') c = '/';
     else c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
   }
   for (char& c : bb) {
-    if (c == '\') c = '/';
+    if (c == '\\') c = '/';
     else c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
   }
   return aa == bb;

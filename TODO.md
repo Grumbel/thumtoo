@@ -2,6 +2,21 @@
 
 ## Status (2026-09-13)
 
+**Tip: thumtoo-193-unarr-backslash-literal.** Fix `'\\'` char literal in member_paths_equal.
+Prior: **192**.
+
+### Change
+- `archive_unarr.cpp`: backslash compare was `'\'` (invalid C++); use `'\\'`
+
+### Done criteria
+- [x] Bundle **193**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-13)
+
 **Tip: thumtoo-192-feature-parent-scope.** Export THUMTOO_HAVE_* to parent (biltoo About/summary).
 Prior: **191**.
 
