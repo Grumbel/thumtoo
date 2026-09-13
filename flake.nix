@@ -79,6 +79,8 @@
           "-DTHUMTOO_BUILD_TOOLS=ON"
         ];
         doCheck = true;
+        # Bin presence is checked by `checks.tools-bin` (`nix flake check`),
+        # not postInstall. Install list: CMakeLists.txt THUMTOO_BUILD_TOOLS.
         meta = with pkgs.lib; {
           description = "Persistent media index and display-pixel ladder";
           license = licenses.gpl3Plus;
@@ -138,6 +140,7 @@
           runStatus = runTool "status";
           runPrepare = runTool "prepare";
           runBench = runTool "bench";
+          runArchive = runTool "archive";
           runGdb = pkgs.writeShellScriptBin "thumtoo-run-gdb" (
             preamble
             + ''
@@ -163,12 +166,42 @@
           runStatus
           runPrepare
           runBench
+          runArchive
           runGdb
         ];
     in {
       packages = forAllSystems ({ pkgs, ... }: {
         default = mkPackage pkgs;
       });
+
+
+      # Package integrity: run with `nix flake check` (not postInstall).
+      checks = forAllSystems ({ pkgs, system, ... }:
+        let
+          pkg = self.packages.${system}.default;
+          bins = [
+            "thumtoo-status"
+            "thumtoo-prepare"
+            "thumtoo-bench"
+            "thumtoo-tile"
+            "thumtoo-gc"
+            "thumtoo-archive"
+            "thumtoo-microbench-decode"
+          ];
+        in {
+          tools-bin = pkgs.runCommand "thumtoo-tools-bin-check" { } ''
+            set -euo pipefail
+            for b in ${pkgs.lib.concatStringsSep " " bins}; do
+              if [ ! -x "${pkg}/bin/$b" ]; then
+                echo "missing or not executable: ${pkg}/bin/$b" >&2
+                ls -la "${pkg}/bin" >&2 || true
+                exit 1
+              fi
+            done
+            echo "ok: all tool binaries present"
+            touch "$out"
+          '';
+        });
 
       apps = forAllSystems ({ pkgs, system, ... }:
         let
@@ -186,6 +219,7 @@
           prepare = app "thumtoo-prepare" "Prewarm size probe and soft ladder for paths";
           bench = app "thumtoo-bench" "Benchmark ladder / tile paths";
           gc = app "thumtoo-gc" "Garbage-collect unreferenced cache blobs";
+          archive = app "thumtoo-archive" "List/extract archive members (same backends as //archive:)";
         });
 
       devShells = forAllSystems ({ pkgs, ... }: {
@@ -212,8 +246,10 @@
             echo "  thumtoo-run-status …"
             echo "  thumtoo-run-prepare …"
             echo "  thumtoo-run-bench …"
-            echo "  thumtoo-run-gdb [tool] …   # tool = prepare|bench|status (default: prepare)"
-            echo "  flake apps: nix run .#status|prepare|bench"
+            echo "  thumtoo-run-archive …"
+            echo "  thumtoo-run-gdb [tool] …   # tool = prepare|bench|status|archive"
+            echo "  flake apps: nix run .#status|prepare|bench|archive"
+            echo "  nix flake check            # includes tools-bin check"
           '';
         };
       });

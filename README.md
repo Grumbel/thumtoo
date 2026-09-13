@@ -61,6 +61,7 @@ preview ladder, archive listing helpers)—not only 128² file-manager icons.
 ```bash
 cmake -B build && cmake --build build && ctest --test-dir build
 ./build/thumtoo-status --cache ~/.cache/thumtoo summary
+./build/thumtoo-archive list /path/to/book.cbz
 ```
 
 Use `nix develop` for the toolchain: **libvips** and **libjxl** are required (no stb/codec fallbacks). See `flake.nix`.
@@ -87,6 +88,7 @@ thumtoo-build
 thumtoo-test
 thumtoo-run-prepare -- --help
 thumtoo-run-bench --ladder 256 /path/to/images
+thumtoo-run-archive list /path/to/book.cbr
 ```
 
 Flake apps (built package, not the dev build dir):
@@ -95,4 +97,6 @@ Flake apps (built package, not the dev build dir):
 nix run .#prepare -- --help
 nix run .#bench -- --ladder 256 .
 nix run .#status -- /path/to/cache
+nix run .#archive -- list /path/to/book.cbz
+nix flake check   # tools-bin: status, prepare, archive, …
 ```

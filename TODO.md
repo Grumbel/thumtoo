@@ -2,6 +2,24 @@
 
 ## Status (2026-09-13)
 
+**Tip: thumtoo-188-archive-cli.** thumtoo-archive + flake checks.tools-bin (no postInstall).
+Prior: **187**.
+
+### Change
+- `thumtoo-archive` CLI (list/info/cat/extract)
+- CMake build + install into `$out/bin`
+- flake app `archive`, `thumtoo-run-archive`
+- **`checks.tools-bin`** for `nix flake check` — not postInstall asserts
+
+### Done criteria
+- [x] Bundle **188**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-13)
+
 **Tip: thumtoo-187-libunarr-rar.** Optional libunarr for solid RAR/CBR under //archive:.
 Prior: **186**.
 
