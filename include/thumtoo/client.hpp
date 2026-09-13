@@ -41,6 +41,9 @@ namespace thumtoo {
 #ifndef THUMTOO_API_REQUEST_RASTER
 #define THUMTOO_API_REQUEST_RASTER 1
 #endif
+#ifndef THUMTOO_API_FULL_PIXELS
+#define THUMTOO_API_FULL_PIXELS 1
+#endif
 
 /// In-process client: cache-only get_* + async request_* (DESIGN API sketch).
 ///
@@ -165,6 +168,11 @@ class Client {
    */
   void request_overview_pixels(std::string uri, int max_edge,
                                PixelsCallback cb);
+  /// Full / near-native level (≤ kFullMaxEdge). max_edge 0 → kFullMaxEdge.
+  void request_full_pixels(std::string uri, int max_edge, PixelsCallback cb);
+  /// Cache-only largest level for uri (optional max_edge cap). DEBUG_OVERLAY stamps.
+  [[nodiscard]] std::optional<PixelLevel> get_full_pixels(std::string_view uri,
+                                                          int max_edge = 0) const;
 
   /**
    * Cache-only unified raster lookup (PIXEL_PIPELINE).
@@ -341,6 +349,8 @@ class Client {
     int frame_idx = 0;
     /// EnsurePixels: true → FastBatch overview (reply ≤ kBatchMaxEdge).
     bool overview = false;
+    /// Full-native path: edge_limit up to kFullMaxEdge.
+    bool full_native = false;
     int tile_scale = 0;
     int tile_x = 0;
     int tile_y = 0;

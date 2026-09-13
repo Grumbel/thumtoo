@@ -61,6 +61,8 @@ enum class RasterPolicy : int {
   PreferCache = 1,
   /// Soft, TileSynth, overview FastScale; no full native dump.
   Overview = 2,
+  /// Native-ish full level via request_full_pixels (≤ kFullMaxEdge).
+  Full = 3,
 };
 
 /// Parameters for Client::get_raster / request_raster.

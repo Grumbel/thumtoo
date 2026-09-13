@@ -22,6 +22,9 @@ inline constexpr std::array<int, 5> kLadderEdges = {128, 256, 512, 1024, 2048};
 inline constexpr int kMaxSoftLadderEdge = 512;
 /// Cap for FastBatch / shrink overview rasters (not soft durable max).
 inline constexpr int kBatchMaxEdge = 1024;
+/// Cap for request_full_pixels / Full policy (native-ish display level).
+/// Not soft durable; encodes one high level for host full-res path.
+inline constexpr int kFullMaxEdge = 8192;
 /// Max archive members planned per FastBatch extract window (PIXEL_PIPELINE §5.2).
 inline constexpr int kBatchWindowMembers = 32;
 /// Max concurrent FocusFull tile-pyramid jobs in the queue (PIXEL_PIPELINE §8).

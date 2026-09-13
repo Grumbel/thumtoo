@@ -2,6 +2,23 @@
 
 ## Status (2026-09-13)
 
+**Tip: thumtoo-186-request-full-pixels.** Full/near-native via request_full_pixels.
+Prior: **185**.
+
+### API
+- `request_full_pixels(uri, max_edge, cb)` / `get_full_pixels`
+- `RasterPolicy::Full`, `kFullMaxEdge` (8192)
+- EnsurePixels `job.full_native` uses edge_limit up to kFullMaxEdge
+
+### Done criteria
+- [x] Bundle **186**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-13)
+
 **Tip: thumtoo-181-debug-overlay-visible.** Overlay was silent (JXL decode fail / low contrast).
 Prior: **180**.
 

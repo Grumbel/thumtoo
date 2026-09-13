@@ -879,6 +879,81 @@ std::optional<TileCoverage> Client::get_tile_coverage(
   return cov;
 }
 
+
+std::optional<PixelLevel> Client::get_full_pixels(std::string_view uri,
+                                                   int max_edge) const {
+  if (uri.empty()) return std::nullopt;
+  int want = max_edge > 0 ? max_edge : kFullMaxEdge;
+  if (want > kFullMaxEdge) want = kFullMaxEdge;
+  // Prefer an adequate cached level (Full / overview / soft / tile synth).
+  if (auto px = get_pixels(uri, want, 0)) {
+    if (pixels_cover_edge(*px, want) || px->source == PixelSource::Full) {
+      return px;  // already stamped inside get_pixels
+    }
+    // Return best short rather than null — host may still display.
+    return px;
+  }
+  return std::nullopt;
+}
+
+void Client::request_full_pixels(std::string uri, int max_edge,
+                                 PixelsCallback cb) {
+  if (max_edge <= 0) {
+    max_edge = kFullMaxEdge;
+  }
+  if (max_edge > kFullMaxEdge) {
+    max_edge = kFullMaxEdge;
+  }
+  if (auto px = get_full_pixels(uri, max_edge)) {
+    if (pixels_cover_edge(*px, max_edge) ||
+        px->source == PixelSource::Full ||
+        std::max(px->width, px->height) >= (max_edge * 9) / 10) {
+      if (cb) {
+        executor_.post([cb = std::move(cb), uri, max_edge,
+                        px = std::move(*px)]() mutable {
+          cb(std::move(uri), max_edge, std::move(px));
+        });
+      }
+      return;
+    }
+  }
+  // Ensure locator (same as overview / soft).
+  if (!db_->find_locator(uri)) {
+    Database::LocatorRow loc;
+    loc.uri = uri;
+    loc.content_id = make_provisional_id();
+    if (auto path = path_from_file_uri(uri)) {
+      loc.outer_path = path->string();
+      loc.size = file_size_bytes(*path);
+      loc.mtime_ns = file_mtime_ns(*path);
+    } else if (auto arch = parse_archive_uri(uri)) {
+      loc.outer_path = arch->archive_path.string();
+      loc.member_path = arch->member_path;
+      loc.size = file_size_bytes(arch->archive_path);
+      loc.mtime_ns = file_mtime_ns(arch->archive_path);
+    } else if (auto pdf = parse_pdf_uri(uri)) {
+      loc.outer_path = pdf->pdf_path.string();
+      loc.member_path = std::to_string(pdf->page);
+      loc.size = file_size_bytes(pdf->pdf_path);
+      loc.mtime_ns = file_mtime_ns(pdf->pdf_path);
+    }
+    Database::ContentRow content;
+    content.content_id = *loc.content_id;
+    content.status = ContentStatus::Pending;
+    db_->upsert_content(content);
+    db_->upsert_locator(loc);
+  }
+  Job job;
+  job.kind = JobKind::EnsurePixels;
+  job.uri = std::move(uri);
+  job.max_edge = max_edge;
+  job.frame_idx = 0;
+  job.overview = false;
+  job.full_native = true;
+  job.pixels_cb = std::move(cb);
+  enqueue(std::move(job));
+}
+
 std::optional<PixelLevel> Client::get_raster(const RasterRequest& req) const {
   if (req.uri.empty()) return std::nullopt;
   int edge = req.max_edge;
@@ -887,6 +962,9 @@ std::optional<PixelLevel> Client::get_raster(const RasterRequest& req) const {
     if (edge > kMaxSoftLadderEdge) edge = kMaxSoftLadderEdge;
     // Soft path only — do not fall through to tiles via high max_edge.
     return get_pixels(req.uri, edge, req.frame_idx);
+  }
+  if (req.policy == RasterPolicy::Full) {
+    return get_full_pixels(req.uri, edge);
   }
   if (edge <= 0) {
     edge = (req.policy == RasterPolicy::Overview) ? kBatchMaxEdge
@@ -909,6 +987,10 @@ void Client::request_raster(RasterRequest req, PixelsCallback cb) {
   if (req.policy == RasterPolicy::SoftOnly) {
     if (edge <= 0) edge = kMaxSoftLadderEdge;
     request_pixels(std::move(req.uri), edge, std::move(cb), req.frame_idx);
+    return;
+  }
+  if (req.policy == RasterPolicy::Full) {
+    request_full_pixels(std::move(req.uri), edge, std::move(cb));
     return;
   }
   if (edge <= 0) {
@@ -2574,13 +2656,16 @@ void Client::handle_ensure_pixels(
   // store JpegShrink levels up to kBatchMaxEdge (Q1); request_pixels still
   // clamps to soft max so full-page soft is not the default path.
   const int request_edge = job.max_edge > 0 ? job.max_edge
-      : (job.overview ? kBatchMaxEdge : kMaxSoftLadderEdge);
-  const int reply_edge = job.overview
-      ? std::min(request_edge, kBatchMaxEdge)
-      : std::min(request_edge, kMaxSoftLadderEdge);
-  const int edge_limit = job.overview
-      ? std::min(reply_edge, kBatchMaxEdge)
-      : std::min(reply_edge, kMaxSoftLadderEdge);
+      : (job.full_native ? kFullMaxEdge
+         : (job.overview ? kBatchMaxEdge : kMaxSoftLadderEdge));
+  const int reply_edge = job.full_native
+      ? std::min(request_edge, kFullMaxEdge)
+      : (job.overview ? std::min(request_edge, kBatchMaxEdge)
+                      : std::min(request_edge, kMaxSoftLadderEdge));
+  const int edge_limit = job.full_native
+      ? std::min(reply_edge, kFullMaxEdge)
+      : (job.overview ? std::min(reply_edge, kBatchMaxEdge)
+                      : std::min(reply_edge, kMaxSoftLadderEdge));
 
   if (auto loc_early = db_->find_locator(job.uri);
       loc_early && loc_early->content_id) {
