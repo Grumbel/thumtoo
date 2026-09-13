@@ -2,6 +2,29 @@
 
 ## Status (2026-09-13)
 
+**Tip: thumtoo-198-rar5-skip-unarr.** Probe RAR5 magic; skip unarr (no spam); use libarchive.
+Prior: **197**.
+
+### Problem
+Every unarr open on RAR5 printed `rar.c:214: RAR 5 format isn't supported` and
+returned null. TOC/extract retried → biltoo/thumtoo spam loops. Libarchive can
+list/extract many non-solid RAR5 archives.
+
+### Change
+- `file_is_rar5` 8-byte magic probe
+- `archive_prefers_unarr` false for RAR5 → TOC + extract use libarchive
+- `open_rar` refuses RAR5 before `ar_open_rar_archive`
+- `archive_is_rar5` public; `thumtoo-archive info` reports rar5
+
+### Done criteria
+- [x] Bundle **198**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-13)
+
 **Tip: thumtoo-197-parent-scope-guard.** Only PARENT_SCOPE feature exports when nested.
 Prior: **196**.
 

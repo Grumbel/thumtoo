@@ -50,6 +50,18 @@ bool path_looks_rar(const std::filesystem::path& path) {
   return lower.find(".rar") != std::string::npos;
 }
 
+// RAR magic probe (visible to archive_is_rar5 / prefers after this TU section).
+bool file_is_rar5(const std::filesystem::path& path) {
+  std::FILE* f = std::fopen(path.string().c_str(), "rb");
+  if (!f) return false;
+  unsigned char mag[8] = {};
+  const size_t n = std::fread(mag, 1, 8, f);
+  std::fclose(f);
+  if (n < 7) return false;
+  return mag[0] == 'R' && mag[1] == 'a' && mag[2] == 'r' && mag[3] == '!'
+         && mag[4] == 0x1a && mag[5] == 0x07 && mag[6] == 0x01;
+}
+
 struct UnarrHolder {
   ar_stream* stream = nullptr;
   ar_archive* ar = nullptr;
@@ -60,14 +72,12 @@ struct UnarrHolder {
 };
 
 std::unique_ptr<UnarrHolder> open_rar(const std::filesystem::path& path) {
+  if (file_is_rar5(path)) return nullptr;
   auto u = std::make_unique<UnarrHolder>();
   u->stream = ar_open_file(path.string().c_str());
   if (!u->stream) return nullptr;
   u->ar = ar_open_rar_archive(u->stream);
-  if (!u->ar) {
-    // Typical failure: RAR5 (signature Rar!\x1a\x07\x01) — unarr has no RAR5.
-    return nullptr;
-  }
+  if (!u->ar) return nullptr;
   return u;
 }
 
@@ -84,8 +94,15 @@ std::optional<std::vector<std::uint8_t>> uncompress_current(ar_archive* ar) {
 
 bool unarr_backend_available() { return true; }
 
+bool archive_is_rar5(const std::filesystem::path& archive_path) {
+  return file_is_rar5(archive_path);
+}
+
 bool archive_prefers_unarr(const std::filesystem::path& archive_path) {
-  return path_looks_rar(archive_path);
+  // RAR5: never call unarr (stderr spam + null). Libarchive for non-solid RAR5.
+  if (!path_looks_rar(archive_path)) return false;
+  if (file_is_rar5(archive_path)) return false;
+  return true;
 }
 
 std::optional<std::vector<ArchiveMember>> read_archive_toc_unarr(

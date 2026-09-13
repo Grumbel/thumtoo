@@ -201,8 +201,9 @@ See biltoo `docs/PIXEL_PIPELINE_REDESIGN.md` for batch vs focus lanes that
 When built with `THUMTOO_HAVE_UNARR`, `.rar` / `.cbr` use unarr for TOC + extract
 (`//archive:` URIs unchanged). Extract does **not** fall back to libarchive for
 RAR — libarchive cannot extract solid RAR and only confuses RAR5 failures.
-**RAR5 is not supported by libunarr** (upstream WIP). Convert to RAR4/ZIP or use
-a non-solid archive. ZIP/CBZ stay on libarchive.
+**RAR5:** libunarr cannot open it (spam on stderr if called). thumtoo probes the
+magic and routes RAR5 to **libarchive** (TOC + extract for non-solid). Solid RAR5
+remains limited. RAR4 solid stays on unarr. ZIP/CBZ stay on libarchive.
 
 **Seek:** unarr can `ar_seek` the **file stream** and `ar_parse_entry_at` **headers**.
 Solid **payloads** are not randomly seekable — extract walks members in order and

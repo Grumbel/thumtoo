@@ -9,6 +9,8 @@ bool unarr_backend_available() { return false; }
 
 bool archive_prefers_unarr(const std::filesystem::path&) { return false; }
 
+bool archive_is_rar5(const std::filesystem::path&) { return false; }
+
 std::optional<std::vector<ArchiveMember>> read_archive_toc_unarr(
     const std::filesystem::path&) {
   return std::nullopt;

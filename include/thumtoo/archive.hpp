@@ -28,7 +28,11 @@ struct ParsedArchiveUri {
 [[nodiscard]] bool unarr_backend_available();
 
 /// Prefer unarr for this path (.rar / .cbr) when the backend is linked.
+/// False for RAR5 (unarr unsupported) — callers use libarchive instead.
 [[nodiscard]] bool archive_prefers_unarr(const std::filesystem::path& archive_path);
+
+/// True when the file magic is RAR5 (Rar!\x1a\x07\x01). Cheap 8-byte probe.
+[[nodiscard]] bool archive_is_rar5(const std::filesystem::path& archive_path);
 
 /// Read archive TOC via libarchive or unarr (source I/O — not cache-only).
 [[nodiscard]] std::optional<std::vector<ArchiveMember>> read_archive_toc(

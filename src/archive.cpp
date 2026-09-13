@@ -169,9 +169,9 @@ std::unordered_map<std::string, std::vector<std::uint8_t>>
 extract_archive_members(const std::filesystem::path& archive_path,
                         const std::vector<std::string>& member_paths) {
   if (unarr_backend_available() && archive_prefers_unarr(archive_path)) {
-    // unarr only for .rar/.cbr when linked. Libarchive cannot extract solid RAR
-    // and after an unarr miss (RAR5, open failure) only yields a misleading
-    // "RAR solid archive support unavailable" — do not fall through.
+    // RAR4/CBR via unarr (solid). RAR5: prefers_unarr is false → libarchive below.
+    // Do not fall through after an empty unarr result for RAR4 solid (libarchive
+    // cannot extract those and only confuses the error).
     return extract_archive_members_unarr(archive_path, member_paths);
   }
   ScopedNsAccumulator timer(global_build_stats().archive_extract_ns);
