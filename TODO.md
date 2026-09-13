@@ -2,6 +2,18 @@
 
 ## Status (2026-09-13)
 
+**Tip: thumtoo-196-status-archives-restore.** Restore full `archives` listing (members) after path-query edit.
+Prior: **195**.
+
+### Done criteria
+- [x] Bundle **196**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-13)
+
 **Tip: thumtoo-195-status-path-query.** `thumtoo-status path PATH|URI` shows cache rows for one path.
 Prior: **194**.
 
