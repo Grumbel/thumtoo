@@ -33,7 +33,7 @@
         libsepol       # libsepol.pc (Requires.private of libselinux)
 
         # libarchive
-        libunarr Requires.private
+        libunarr 
         libarchive
         mupdf
         djvulibre
