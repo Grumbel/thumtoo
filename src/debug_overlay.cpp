@@ -313,25 +313,31 @@ bool debug_overlay_enabled() {
 
 void debug_overlay_rgb888(std::uint8_t* rgb, int width, int height,
                           const std::vector<std::string>& lines) {
-  if (!rgb || width < 8 || height < 8) {
+  if (!rgb || width < 8 || height < 8 || lines.empty()) {
     return;
   }
-  const int border = std::max(3, std::min(width, height) / 40);
+  const int border = std::max(2, std::min(width, height) / 64);
   draw_debug_border(rgb, width, height, border);
 
-  std::string joined;
-  for (std::size_t i = 0; i < lines.size(); ++i) {
-    if (i) joined.push_back(' ');
-    joined += lines[i];
+  // scale 1 — small glyphs; multi-line blocks with vertical spacing.
+  const int scale = 1;
+  int max_line_w = 0;
+  for (const auto& line : lines) {
+    max_line_w = std::max(
+        max_line_w,
+        static_cast<int>(line.size()) * (kGw + kGGap) * scale);
   }
-  const int scale = std::max(2, std::min(4, std::min(width, height) / 80));
-  const int line_w = static_cast<int>(joined.size()) * (kGw + kGGap) * scale;
   const int line_h = (kGh + 2) * scale;
-  const int step_x = std::max(line_w + 24, width / 3);
-  const int step_y = std::max(line_h * 4, height / 4);
-  for (int y = border + 2; y + line_h < height - border; y += step_y) {
+  const int block_h = line_h * static_cast<int>(lines.size()) + 4;
+  const int step_x = std::max(max_line_w + 20, width / 4);
+  const int step_y = std::max(block_h + 16, height / 5);
+  for (int y = border + 2; y + block_h < height - border; y += step_y) {
     for (int x = border + 2; x + 8 < width - border; x += step_x) {
-      draw_text_line(rgb, width, height, x, y, joined, scale);
+      int yy = y;
+      for (const auto& line : lines) {
+        draw_text_line(rgb, width, height, x, yy, line, scale);
+        yy += line_h;
+      }
     }
   }
 }
