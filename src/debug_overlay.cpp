@@ -175,7 +175,7 @@ void draw_char(std::uint8_t* rgb, int w, int h, int x0, int y0, char c,
           put_px(rgb, w, h, x + 1, y, 0, 0, 0);
           put_px(rgb, w, h, x, y - 1, 0, 0, 0);
           put_px(rgb, w, h, x, y + 1, 0, 0, 0);
-          put_px(rgb, w, h, x, y, 255, 255, 220);
+          put_px(rgb, w, h, x, y, 255, 230, 40);
         }
       }
     }
@@ -319,8 +319,8 @@ void debug_overlay_rgb888(std::uint8_t* rgb, int width, int height,
   const int border = std::max(2, std::min(width, height) / 64);
   draw_debug_border(rgb, width, height, border);
 
-  // scale 1 — small glyphs; multi-line blocks with vertical spacing.
-  const int scale = 1;
+  // scale 2 (~2× prior small glyphs); yellow text, top-left grid (thumtoo).
+  const int scale = 2;
   int max_line_w = 0;
   for (const auto& line : lines) {
     max_line_w = std::max(
@@ -329,10 +329,13 @@ void debug_overlay_rgb888(std::uint8_t* rgb, int width, int height,
   }
   const int line_h = (kGh + 2) * scale;
   const int block_h = line_h * static_cast<int>(lines.size()) + 4;
-  const int step_x = std::max(max_line_w + 20, width / 4);
-  const int step_y = std::max(block_h + 16, height / 5);
-  for (int y = border + 2; y + block_h < height - border; y += step_y) {
-    for (int x = border + 2; x + 8 < width - border; x += step_x) {
+  const int step_x = std::max(max_line_w + 24, width / 4);
+  const int step_y = std::max(block_h + 20, height / 5);
+  // Top-left half only so biltoo cyan (bottom-right) does not compete.
+  const int x_max = std::max(border + 8, width / 2);
+  const int y_max = std::max(border + 8, height / 2);
+  for (int y = border + 2; y + block_h < y_max; y += step_y) {
+    for (int x = border + 2; x + 8 < x_max; x += step_x) {
       int yy = y;
       for (const auto& line : lines) {
         draw_text_line(rgb, width, height, x, yy, line, scale);
@@ -360,6 +363,7 @@ void debug_overlay_pixel_level(PixelLevel& px, std::string_view uri_tail,
     return;
   }
   std::vector<std::string> lines;
+  lines.push_back("THUM");
   lines.push_back(basename_tail(uri_tail));
   lines.push_back("SOFT " + std::to_string(w) + "x" + std::to_string(h));
   lines.push_back("req=" + std::to_string(request_edge) +
@@ -394,6 +398,7 @@ void debug_overlay_tile(TileBlob& tile, std::string_view uri_tail) {
     return;
   }
   std::vector<std::string> lines;
+  lines.push_back("THUM");
   lines.push_back(basename_tail(uri_tail));
   lines.push_back("TILE " + std::to_string(w) + "x" + std::to_string(h));
   lines.push_back("s=" + std::to_string(tile.scale) + " x=" +
