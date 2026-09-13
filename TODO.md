@@ -2,6 +2,22 @@
 
 ## Status (2026-09-13)
 
+**Tip: thumtoo-190-purge-test-fix.** Qualify Database::LocatorRow/ContentRow in purge test.
+Prior: **189**.
+
+### Change
+- test_database purge block uses `Database::LocatorRow` / `Database::ContentRow`
+- `(void)` on nodiscard blob delete counts
+
+### Done criteria
+- [x] Bundle **190**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-13)
+
 **Tip: thumtoo-189-purge-path.** Forget a path/URI from the cache (cold for debug).
 Prior: **188**.
 

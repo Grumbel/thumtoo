@@ -215,14 +215,14 @@ int main() {
 
   // Forget path / uri → cold (locator + orphan content)
   {
-    LocatorRow loc;
+    Database::LocatorRow loc;
     loc.uri = "file:///tmp/thumtoo-purge-test.jpg";
     loc.content_id = "sha256:purge_test_cid";
     loc.outer_path = "/tmp/thumtoo-purge-test.jpg";
     {
       auto db = Database::open(root);
       db.upsert_locator(loc);
-      ContentRow c;
+      Database::ContentRow c;
       c.content_id = "sha256:purge_test_cid";
       c.width = 10;
       c.height = 20;
@@ -241,8 +241,8 @@ int main() {
       for (const auto& id : db.list_orphan_content_ids()) {
         if (id == "sha256:purge_test_cid") {
           orphan = true;
-          blobs.delete_tiles_for_content(id);
-          blobs.delete_levels_for_content(id);
+          (void)blobs.delete_tiles_for_content(id);
+          (void)blobs.delete_levels_for_content(id);
           db.purge_content_metadata(id);
         }
       }
