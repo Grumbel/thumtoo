@@ -3,11 +3,13 @@
 
 #include "thumtoo/blob_store.hpp"
 #include "thumtoo/database.hpp"
+#include "thumtoo/uri.hpp"
 
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -26,13 +28,18 @@ std::filesystem::path default_cache_root() {
 void usage(const char* argv0) {
   std::cerr
       << "Usage: " << argv0
-      << " [--cache DIR] [--dry-run] [--min-scale N] [--orphans] [--dead-paths]\n"
+      << " [--cache DIR] [--dry-run]\n"
+      << "       [--uri URI]... [--path PATH]...\n"
+      << "       [--min-scale N] [--orphans] [--dead-paths]\n"
       << "\n"
       << "Manual cache maintenance (no automatic eviction).\n"
       << "\n"
       << "  --cache DIR     Cache root (default: $XDG_CACHE_HOME/thumtoo or\n"
       << "                  ~/.cache/thumtoo)\n"
       << "  --dry-run       Report only; do not delete\n"
+      << "  --uri URI       Forget this location URI (locator + orphan content/tiles)\n"
+      << "  --path PATH     Forget all locators for this filesystem path (outer_path\n"
+      << "                  and file:/// form). Returns that path to cold cache state.\n"
       << "  --min-scale N   Drop tile rows/blobs with scale < N (keep coarser)\n"
       << "                  Higher scale = coarser in thumtoo tile coords.\n"
       << "                  Example: --min-scale 3 removes fine scales 0,1,2\n"
@@ -40,8 +47,91 @@ void usage(const char* argv0) {
       << "  --dead-paths    Remove locators whose outer_path is missing on disk\n"
       << "                  (then purge newly orphaned content)\n"
       << "\n"
-      << "At least one of --min-scale / --orphans / --dead-paths is required.\n"
-      << "LQIP on content rows is kept until the content row is purged.\n";
+      << "At least one action flag is required.\n"
+      << "LQIP on content rows is kept until the content row is purged.\n"
+      << "Shared content_id is only fully purged when no locators remain.\n";
+}
+
+thumtoo::Database::PurgeStats purge_uris(thumtoo::Database& db,
+                                         thumtoo::BlobStore& blobs,
+                                         const std::vector<std::string>& uris,
+                                         bool dry_run) {
+  thumtoo::Database::PurgeStats stats;
+  for (const auto& uri : uris) {
+    if (uri.empty()) {
+      continue;
+    }
+    auto loc = db.find_locator(uri);
+    if (!loc) {
+      std::cout << "  miss (not in cache): " << uri << "\n";
+      continue;
+    }
+    stats.removed_uris.push_back(uri);
+    std::cout << "  locator: " << uri;
+    if (loc->content_id) {
+      std::cout << "  content=" << *loc->content_id;
+    }
+    std::cout << "\n";
+    const auto cid = loc->content_id;
+    if (dry_run) {
+      continue;
+    }
+    db.delete_locator(uri);
+    if (!cid || cid->empty()) {
+      continue;
+    }
+    if (!db.list_locators_for_content_id(*cid, 1).empty()) {
+      std::cout << "    content kept (other locators)\n";
+      continue;
+    }
+    stats.tiles_deleted += blobs.delete_tiles_for_content(*cid);
+    stats.levels_deleted += blobs.delete_levels_for_content(*cid);
+    db.purge_content_metadata(*cid);
+    stats.purged_content_ids.push_back(*cid);
+    std::cout << "    purged content + tiles/levels\n";
+  }
+  return stats;
+}
+
+std::vector<std::string> uris_for_path(thumtoo::Database& db,
+                                       const std::filesystem::path& path) {
+  std::vector<std::string> uris;
+  auto add = [&](const std::string& u) {
+    if (u.empty()) return;
+    for (const auto& e : uris) {
+      if (e == u) return;
+    }
+    uris.push_back(u);
+  };
+  std::error_code ec;
+  std::filesystem::path abs = path;
+  if (!abs.is_absolute()) {
+    abs = std::filesystem::absolute(path, ec);
+    if (ec) abs = path;
+  }
+  const std::string path_s = abs.lexically_normal().string();
+  for (const auto& loc : db.list_locators_for_outer_path(path_s)) {
+    add(loc.uri);
+  }
+  if (path_s != path.string()) {
+    for (const auto& loc : db.list_locators_for_outer_path(path.string())) {
+      add(loc.uri);
+    }
+  }
+  const std::string file_uri = thumtoo::file_uri_from_path(abs);
+  add(file_uri);
+  if (auto loc = db.find_locator(file_uri)) {
+    add(loc->uri);
+  }
+  return uris;
+}
+
+void print_purge_stats(const thumtoo::Database::PurgeStats& s, bool dry_run) {
+  std::cout << "  uris=" << s.removed_uris.size()
+            << " content_purged=" << s.purged_content_ids.size()
+            << " tiles=" << s.tiles_deleted
+            << " levels=" << s.levels_deleted
+            << (dry_run ? " (dry-run)\n" : "\n");
 }
 
 }  // namespace
@@ -51,7 +141,9 @@ int main(int argc, char** argv) {
   bool dry_run = false;
   bool do_orphans = false;
   bool do_dead = false;
-  int min_scale = -1;  // <0 means unused
+  int min_scale = -1;
+  std::vector<std::string> uris;
+  std::vector<std::filesystem::path> paths;
 
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
@@ -65,6 +157,14 @@ int main(int argc, char** argv) {
     }
     if (a == "--dry-run") {
       dry_run = true;
+      continue;
+    }
+    if (a == "--uri" && i + 1 < argc) {
+      uris.emplace_back(argv[++i]);
+      continue;
+    }
+    if (a == "--path" && i + 1 < argc) {
+      paths.emplace_back(argv[++i]);
       continue;
     }
     if (a == "--min-scale" && i + 1 < argc) {
@@ -84,7 +184,7 @@ int main(int argc, char** argv) {
     return 2;
   }
 
-  if (min_scale < 0 && !do_orphans && !do_dead) {
+  if (min_scale < 0 && !do_orphans && !do_dead && uris.empty() && paths.empty()) {
     usage(argv[0]);
     return 2;
   }
@@ -99,6 +199,29 @@ int main(int argc, char** argv) {
 
     std::cout << "cache: " << cache << (dry_run ? " (dry-run)\n" : "\n");
 
+    if (!uris.empty() || !paths.empty()) {
+      std::vector<std::string> all = uris;
+      for (const auto& p : paths) {
+        auto more = uris_for_path(db, p);
+        if (more.empty()) {
+          std::cout << "path: " << p << " — no locators\n";
+        }
+        for (const auto& u : more) {
+          bool seen = false;
+          for (const auto& e : all) {
+            if (e == u) {
+              seen = true;
+              break;
+            }
+          }
+          if (!seen) all.push_back(u);
+        }
+      }
+      std::cout << "purge uris (" << all.size() << "):\n";
+      const auto st = purge_uris(db, blobs, all, dry_run);
+      print_purge_stats(st, dry_run);
+    }
+
     if (min_scale >= 0) {
       const auto before_t = db.count_tiles();
       const auto before_b = blobs.count_tiles();
@@ -111,7 +234,6 @@ int main(int argc, char** argv) {
         std::cout << "  deleted index rows: " << n_idx
                   << "  blob rows: " << n_blob << "\n";
       } else {
-        // Approximate: list not available; report intent only
         std::cout << "  dry-run: would DELETE FROM tiles/tile_blobs WHERE scale < "
                   << min_scale << "\n";
       }
@@ -126,7 +248,6 @@ int main(int argc, char** argv) {
         std::cout << "\n";
         if (!dry_run) db.delete_locator(loc.uri);
       }
-      // Fall through: orphans pass cleans content left without locators
       do_orphans = true;
     }
 

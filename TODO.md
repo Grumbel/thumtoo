@@ -2,6 +2,35 @@
 
 ## Status (2026-09-13)
 
+**Tip: thumtoo-189-purge-path.** Forget a path/URI from the cache (cold for debug).
+Prior: **188**.
+
+### API
+- `Database::list_locators_for_outer_path` — exact outer_path match
+- `Database::PurgeStats` — removed_uris, purged_content_ids, tiles/levels counts
+- `Client::purge_uri(uri, dry_run)` — cancel queue + drop locator; purge content
+  blobs when last locator for that content_id
+- `Client::purge_path(path, dry_run)` — all locators for outer_path + file:/// form
+- `thumtoo-gc --uri URI` / `--path PATH` (repeatable; works with `--dry-run`)
+
+### Behaviour
+- Does not delete source files on disk
+- Shared content_id kept until no locators remain
+- After purge: `get_size` / `get_pixels` miss (cold)
+
+### Done criteria
+- [x] Bundle **189**
+
+### Next
+- Optional biltoo debug action to call purge_path on current image
+- Host ImageCache clear for same path when debugging
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-13)
+
 **Tip: thumtoo-188-archive-cli.** thumtoo-archive + flake checks.tools-bin (no postInstall).
 Prior: **187**.
 

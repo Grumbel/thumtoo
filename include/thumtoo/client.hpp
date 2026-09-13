@@ -44,6 +44,9 @@ namespace thumtoo {
 #ifndef THUMTOO_API_FULL_PIXELS
 #define THUMTOO_API_FULL_PIXELS 1
 #endif
+#ifndef THUMTOO_API_PURGE_URI
+#define THUMTOO_API_PURGE_URI 1
+#endif
 
 /// In-process client: cache-only get_* + async request_* (DESIGN API sketch).
 ///
@@ -289,6 +292,21 @@ class Client {
   std::size_t cancel_pending();
   /// Drop queued jobs whose uri matches (exact). Returns removed count.
   std::size_t cancel_uri(std::string_view uri);
+
+  /**
+   * Forget a location: cancel queued work, drop the locator row, and if that
+   * content_id has no remaining locators, purge tile/level blobs + metadata.
+   * Leaves the source file on disk; next get_size/get_pixels miss (cold).
+   * Shared content (multiple locators) only loses this URI until the last one.
+   */
+  [[nodiscard]] Database::PurgeStats purge_uri(std::string_view uri,
+                                               bool dry_run = false);
+  /**
+   * Forget every locator whose outer_path matches @p path (absolute preferred).
+   * Also tries file:/// URI for the path. Useful for debug "make this cold".
+   */
+  [[nodiscard]] Database::PurgeStats purge_path(
+      const std::filesystem::path& path, bool dry_run = false);
 
   /**
    * Replace the interest snapshot (PIXEL_PIPELINE §6.1).

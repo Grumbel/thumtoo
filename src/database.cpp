@@ -1382,6 +1382,27 @@ void Database::delete_locator(std::string_view uri) {
   sqlite3_finalize(stmt);
 }
 
+std::vector<Database::LocatorRow> Database::list_locators_for_outer_path(
+    std::string_view outer_path, int limit) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT uri, content_id, outer_path, member_path, size, mtime_ns "
+      "FROM locators WHERE outer_path = ?1 ORDER BY uri LIMIT ?2;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, outer_path.data(),
+                    static_cast<int>(outer_path.size()), SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 2, limit > 0 ? limit : 100000);
+  std::vector<LocatorRow> rows;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    rows.push_back(locator_from_stmt(stmt));
+  }
+  sqlite3_finalize(stmt);
+  return rows;
+}
+
 void Database::purge_content_metadata(std::string_view content_id) {
   std::lock_guard<std::recursive_mutex> lock(mu_);
   auto run = [&](const char* sql) {

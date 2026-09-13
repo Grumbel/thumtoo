@@ -213,6 +213,45 @@ int main() {
     expect(!stale.has_value(), "ttl miss");
   }
 
+  // Forget path / uri → cold (locator + orphan content)
+  {
+    LocatorRow loc;
+    loc.uri = "file:///tmp/thumtoo-purge-test.jpg";
+    loc.content_id = "sha256:purge_test_cid";
+    loc.outer_path = "/tmp/thumtoo-purge-test.jpg";
+    {
+      auto db = Database::open(root);
+      db.upsert_locator(loc);
+      ContentRow c;
+      c.content_id = "sha256:purge_test_cid";
+      c.width = 10;
+      c.height = 20;
+      c.status = ContentStatus::Ready;
+      db.upsert_content(c);
+      expect(db.find_locator(loc.uri).has_value(), "locator present before purge");
+      expect(!db.list_locators_for_outer_path("/tmp/thumtoo-purge-test.jpg").empty(),
+             "outer_path list finds locator");
+    }
+    {
+      auto db = Database::open(root);
+      auto blobs = BlobStore::open(root);
+      db.delete_locator(loc.uri);
+      expect(!db.find_locator(loc.uri).has_value(), "locator gone after delete");
+      bool orphan = false;
+      for (const auto& id : db.list_orphan_content_ids()) {
+        if (id == "sha256:purge_test_cid") {
+          orphan = true;
+          blobs.delete_tiles_for_content(id);
+          blobs.delete_levels_for_content(id);
+          db.purge_content_metadata(id);
+        }
+      }
+      expect(orphan, "content orphaned after locator delete");
+      expect(!db.find_content("sha256:purge_test_cid").has_value(),
+             "content purged");
+    }
+  }
+
   std::error_code ec;
   fs::remove_all(root, ec);
 

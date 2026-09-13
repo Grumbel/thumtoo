@@ -210,8 +210,19 @@ class Database {
   [[nodiscard]] std::vector<LocatorRow> list_dead_path_locators(
       int limit = 100000) const;
   void delete_locator(std::string_view uri);
+  /// Exact outer_path match (filesystem path as stored on the locator row).
+  [[nodiscard]] std::vector<LocatorRow> list_locators_for_outer_path(
+      std::string_view outer_path, int limit = 100000) const;
   /// Drop content row and related levels/tiles/tags metadata (not blob store).
   void purge_content_metadata(std::string_view content_id);
+
+  /// Result of forgetting one or more locators (+ orphan content/blobs).
+  struct PurgeStats {
+    std::vector<std::string> removed_uris;
+    std::vector<std::string> purged_content_ids;
+    std::int64_t tiles_deleted = 0;
+    std::int64_t levels_deleted = 0;
+  };
 
   // --- text layers (semantic overlay cache) ---
   void upsert_text_layer(std::string_view content_id, int page_1based,

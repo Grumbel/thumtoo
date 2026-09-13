@@ -1791,6 +1791,103 @@ std::size_t Client::cancel_uri(std::string_view uri) {
   return dropped.size();
 }
 
+namespace {
+
+Database::PurgeStats purge_uris_impl(Database& db, BlobStore& blobs,
+                                     const std::vector<std::string>& uris,
+                                     bool dry_run) {
+  Database::PurgeStats stats;
+  for (const auto& uri : uris) {
+    if (uri.empty()) {
+      continue;
+    }
+    auto loc = db.find_locator(uri);
+    if (!loc) {
+      continue;
+    }
+    stats.removed_uris.push_back(uri);
+    const std::optional<std::string> cid = loc->content_id;
+    if (dry_run) {
+      continue;
+    }
+    db.delete_locator(uri);
+    if (!cid || cid->empty()) {
+      continue;
+    }
+    // Only purge content when no locator still points at it.
+    const auto remaining = db.list_locators_for_content_id(*cid, 1);
+    if (!remaining.empty()) {
+      continue;
+    }
+    stats.tiles_deleted += blobs.delete_tiles_for_content(*cid);
+    stats.levels_deleted += blobs.delete_levels_for_content(*cid);
+    db.purge_content_metadata(*cid);
+    stats.purged_content_ids.push_back(*cid);
+  }
+  return stats;
+}
+
+}  // namespace
+
+Database::PurgeStats Client::purge_uri(std::string_view uri, bool dry_run) {
+  if (uri.empty()) {
+    return {};
+  }
+  if (!dry_run) {
+    cancel_uri(uri);
+  }
+  return purge_uris_impl(*db_, *blobs_, {std::string(uri)}, dry_run);
+}
+
+Database::PurgeStats Client::purge_path(const std::filesystem::path& path,
+                                        bool dry_run) {
+  Database::PurgeStats stats;
+  if (path.empty()) {
+    return stats;
+  }
+  std::error_code ec;
+  std::filesystem::path abs = path;
+  if (!abs.is_absolute()) {
+    abs = std::filesystem::absolute(path, ec);
+    if (ec) {
+      abs = path;
+    }
+  }
+  const std::string path_s = abs.lexically_normal().string();
+
+  // Collect unique URIs: exact outer_path + file:/// form.
+  std::vector<std::string> uris;
+  auto add_unique = [&](const std::string& u) {
+    if (u.empty()) return;
+    for (const auto& e : uris) {
+      if (e == u) return;
+    }
+    uris.push_back(u);
+  };
+
+  for (const auto& loc : db_->list_locators_for_outer_path(path_s)) {
+    add_unique(loc.uri);
+  }
+  // Also accept non-normalized / relative outer_path as stored.
+  if (path_s != path.string()) {
+    for (const auto& loc : db_->list_locators_for_outer_path(path.string())) {
+      add_unique(loc.uri);
+    }
+  }
+  const std::string file_uri = file_uri_from_path(abs);
+  add_unique(file_uri);
+  if (auto loc = db_->find_locator(file_uri)) {
+    add_unique(loc->uri);
+  }
+
+  if (!dry_run) {
+    for (const auto& u : uris) {
+      cancel_uri(u);
+    }
+  }
+  return purge_uris_impl(*db_, *blobs_, uris, dry_run);
+}
+
 std::uint64_t Client::set_interest(std::vector<InterestItem> items) {
   // Cancel stale work first so the new snapshot owns the queue.
   const std::uint64_t epoch = bump_interest_epoch();
