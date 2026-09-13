@@ -2,6 +2,22 @@
 
 ## Status (2026-09-13)
 
+**Tip: thumtoo-192-feature-parent-scope.** Export THUMTOO_HAVE_* to parent (biltoo About/summary).
+Prior: **191**.
+
+### Change
+- `THUMTOO_HAVE_UNARR|MUPDF|DJVU|CURL` set with `PARENT_SCOPE` for biltoo
+  `add_subdirectory` consumers
+
+### Done criteria
+- [x] Bundle **192**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-13)
+
 **Tip: thumtoo-191-rar-unarr-no-libarchive-fallback.** RAR extract stays on unarr; no libarchive fallback.
 Prior: **190**.
 
