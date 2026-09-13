@@ -12,6 +12,7 @@
 #include <unarr.h>
 
 #include <cctype>
+#include <cstdio>
 #include <memory>
 #include <string>
 
@@ -27,10 +28,14 @@ bool member_paths_equal(std::string_view a, std::string_view b) {
   b = strip(b);
   if (a == b) return true;
   std::string aa(a), bb(b);
-  for (char& c : aa)
-    if (c == '\\') c = '/';
-  for (char& c : bb)
-    if (c == '\\') c = '/';
+  for (char& c : aa) {
+    if (c == '\') c = '/';
+    else c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  for (char& c : bb) {
+    if (c == '\') c = '/';
+    else c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
   return aa == bb;
 }
 
@@ -59,7 +64,10 @@ std::unique_ptr<UnarrHolder> open_rar(const std::filesystem::path& path) {
   u->stream = ar_open_file(path.string().c_str());
   if (!u->stream) return nullptr;
   u->ar = ar_open_rar_archive(u->stream);
-  if (!u->ar) return nullptr;
+  if (!u->ar) {
+    // Typical failure: RAR5 (signature Rar!\x1a\x07\x01) — unarr has no RAR5.
+    return nullptr;
+  }
   return u;
 }
 

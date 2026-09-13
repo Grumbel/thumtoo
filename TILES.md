@@ -198,8 +198,11 @@ See biltoo `docs/PIXEL_PIPELINE_REDESIGN.md` for batch vs focus lanes that
 | **libarchive** (default) | zip, 7z, rar, … | Often **unsupported** (`RAR solid archive support unavailable`) | Partial |
 | **libunarr** (optional) | **RAR / CBR** focus | **Yes** (sequential walk) | **No** (upstream WIP) |
 
-When built with `THUMTOO_HAVE_UNARR`, `.rar` / `.cbr` TOC + extract use unarr first
-(`//archive:` URIs unchanged). ZIP/CBZ stay on libarchive.
+When built with `THUMTOO_HAVE_UNARR`, `.rar` / `.cbr` use unarr for TOC + extract
+(`//archive:` URIs unchanged). Extract does **not** fall back to libarchive for
+RAR — libarchive cannot extract solid RAR and only confuses RAR5 failures.
+**RAR5 is not supported by libunarr** (upstream WIP). Convert to RAR4/ZIP or use
+a non-solid archive. ZIP/CBZ stay on libarchive.
 
 **Seek:** unarr can `ar_seek` the **file stream** and `ar_parse_entry_at` **headers**.
 Solid **payloads** are not randomly seekable — extract walks members in order and

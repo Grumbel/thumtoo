@@ -92,7 +92,7 @@ std::optional<std::vector<ArchiveMember>> read_archive_toc(
     const std::filesystem::path& archive_path) {
   if (unarr_backend_available() && archive_prefers_unarr(archive_path)) {
     if (auto toc = read_archive_toc_unarr(archive_path)) return toc;
-    // Fall through to libarchive (non-solid / listing-only may still work).
+    // unarr open failed (often RAR5). Libarchive may still list headers only.
   }
   struct archive* a = archive_read_new();
   if (!a) return std::nullopt;
@@ -169,9 +169,10 @@ std::unordered_map<std::string, std::vector<std::uint8_t>>
 extract_archive_members(const std::filesystem::path& archive_path,
                         const std::vector<std::string>& member_paths) {
   if (unarr_backend_available() && archive_prefers_unarr(archive_path)) {
-    auto out = extract_archive_members_unarr(archive_path, member_paths);
-    if (!out.empty() || member_paths.empty()) return out;
-    // Empty with non-empty requests: try libarchive (e.g. RAR5 unarr miss).
+    // unarr only for .rar/.cbr when linked. Libarchive cannot extract solid RAR
+    // and after an unarr miss (RAR5, open failure) only yields a misleading
+    // "RAR solid archive support unavailable" — do not fall through.
+    return extract_archive_members_unarr(archive_path, member_paths);
   }
   ScopedNsAccumulator timer(global_build_stats().archive_extract_ns);
   std::unordered_map<std::string, std::vector<std::uint8_t>> out;

@@ -2,6 +2,36 @@
 
 ## Status (2026-09-13)
 
+**Tip: thumtoo-191-rar-unarr-no-libarchive-fallback.** RAR extract stays on unarr; no libarchive fallback.
+Prior: **190**.
+
+### Problem
+`extract_archive_members` tried unarr for `.rar`/`.cbr`, then on empty result fell
+through to libarchive. Libarchive cannot extract solid RAR, so hosts saw
+"RAR solid archive support unavailable" even when the real issue was unarr open
+failure (typically **RAR5**, unsupported by libunarr).
+
+### Change
+- `.rar`/`.cbr` extract: **unarr only** when `THUMTOO_HAVE_UNARR` (no libarchive fallback)
+- Member path match: case-insensitive + `\` → `/` normalize
+- Docs: RAR5 not supported by unarr; convert to RAR4/ZIP
+
+### Done criteria
+- [x] Bundle **191**
+
+### Verify
+```bash
+# RAR4 solid should extract via unarr
+xxd /tmp/archive.rar | head -1   # Rar!..07 00 = RAR4; ..07 01 = RAR5
+thumtoo-archive list /tmp/archive.rar
+```
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-13)
+
 **Tip: thumtoo-190-purge-test-fix.** Qualify Database::LocatorRow/ContentRow in purge test.
 Prior: **189**.
 
