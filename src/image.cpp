@@ -364,16 +364,31 @@ std::optional<std::vector<std::uint8_t>> extract_exif_jpeg_thumbnail_file(
 /// max_edge_limit ≤ 0 → no request cap (still capped by source / kLadderEdges).
 int pick_preview_edge(int long_edge, int max_edge_limit) {
   if (long_edge <= 0) return 0;
+  int limit = max_edge_limit > 0 ? max_edge_limit : kLadderEdges.back();
+  if (limit > long_edge) limit = long_edge;
+  if (limit > kFullMaxEdge) limit = kFullMaxEdge;
+
+  // Soft band: snap only to durable soft steps (≤ kMaxSoftLadderEdge).
+  if (limit <= kMaxSoftLadderEdge) {
+    int best = 0;
+    for (int edge : kLadderEdges) {
+      if (edge > kMaxSoftLadderEdge) break;
+      if (edge <= limit && edge > best) best = edge;
+    }
+    return best > 0 ? best : kLadderEdges.front();
+  }
+
+  // Display / Full: largest ladder step ≤ limit, or the exact limit when the
+  // host asked past the last soft step (e.g. native 6048). Clamping Full to
+  // 2048 left biltoo Gallery zoom stuck on a soft-ish sample forever.
   int best = 0;
   for (int edge : kLadderEdges) {
-    if (edge > long_edge) continue;
-    if (max_edge_limit > 0 && edge > max_edge_limit) continue;
-    if (edge > best) best = edge;
+    if (edge <= limit && edge > best) best = edge;
   }
-  // Source smaller than every ladder step: still emit one level keyed as the
-  // smallest policy edge so get_pixels(max_edge) can find it.
-  if (best == 0) best = kLadderEdges.front();
-  return best;
+  if (limit > best) {
+    return limit;
+  }
+  return best > 0 ? best : kLadderEdges.front();
 }
 
 LevelBlob encode_jxl_level(VipsImage* thumb, int edge,

@@ -2,6 +2,36 @@
 
 ## Status (2026-09-14)
 
+**Tip: thumtoo-203-full-past-2048.** Full ladder past 2048; soft shortfall is not a Full hit.
+Prior: **202**.
+
+### Problem
+`kLadderEdges` ended at **2048**. `pick_preview_edge` for Full with edge_limit 6048
+still encoded max 2048 — biltoo Gallery zoom stuck below native.
+`get_full_pixels` returned soft shortfall as "best short", which hosts could settle on.
+
+### Change
+- `kLadderEdges` → `{128,256,512,1024,2048,4096,8192}`
+- `pick_preview_edge`: soft band snaps ≤512; display/Full may use exact limit past soft
+- `get_full_pixels`: soft/JpegShrink/Embedded shortfall when want > soft max → nullopt (force Ensure Full)
+
+### Apply
+```bash
+git pull /path/to/thumtoo-203-full-past-2048.bundle HEAD
+```
+
+### Host
+Rebuild biltoo against this thumtoo tip so Gallery Full climb can store 4k/8k levels.
+
+### Done criteria
+- [x] Bundle **203**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-14)
+
 **Tip: thumtoo-202-document-index.** Durable page-count index for PDF / DjVu / EPUB.
 Prior: **201**.
 

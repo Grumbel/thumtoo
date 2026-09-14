@@ -926,7 +926,16 @@ std::optional<PixelLevel> Client::get_full_pixels(std::string_view uri,
     if (pixels_cover_edge(*px, want) || px->source == PixelSource::Full) {
       return px;  // already stamped inside get_pixels
     }
-    // Return best short rather than null — host may still display.
+    // Soft / TileSynth shortfall is not a Full hit when the host asked past
+    // soft max — return null so request_full_pixels encodes a real Full level
+    // (returning soft left biltoo settled on 512/2048 forever).
+    if (want > kMaxSoftLadderEdge
+        && (px->source == PixelSource::Embedded
+            || px->source == PixelSource::JpegShrink
+            || std::max(px->width, px->height) <= kMaxSoftLadderEdge)) {
+      return std::nullopt;
+    }
+    // Overview / TileSynth intermediate: still useful as BestAvailable short.
     return px;
   }
   return std::nullopt;

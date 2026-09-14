@@ -14,10 +14,13 @@ inline constexpr int kSchemaVersion = 4;
 
 /// Policy long-edge steps (pixels). Soft durable storage only uses steps
 /// ≤ kMaxSoftLadderEdge; larger values exist for API compatibility / future use.
-inline constexpr std::array<int, 5> kLadderEdges = {128, 256, 512, 1024, 2048};
+/// Policy long-edge steps. Soft durable storage only uses steps ≤ kMaxSoftLadderEdge.
+/// 2048+ steps are for Full / display levels (request_full_pixels), not soft.
+inline constexpr std::array<int, 7> kLadderEdges = {
+    128, 256, 512, 1024, 2048, 4096, 8192};
 /// Maximum long edge stored by request_pixels / EnsurePixels (soft preview).
-/// Requests above this are clamped. Deep zoom and native display use tiles
-/// (request_tile) or a full source decode in the consumer — not a larger JXL level.
+/// Soft requests above this are clamped. Full uses kFullMaxEdge via
+/// request_full_pixels / build_ladder with a higher max_edge_limit.
 /// See TILES.md and tests/test_soft_ladder.cpp.
 inline constexpr int kMaxSoftLadderEdge = 512;
 /// Cap for FastBatch / shrink overview rasters (not soft durable max).
