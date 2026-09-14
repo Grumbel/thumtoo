@@ -930,12 +930,11 @@ std::optional<PixelLevel> Client::get_full_pixels(std::string_view uri,
     // soft max — return null so request_full_pixels encodes a real Full level
     // (returning soft left biltoo settled on 512/2048 forever).
     if (want > kMaxSoftLadderEdge
-        && (px->source == PixelSource::Embedded
-            || px->source == PixelSource::JpegShrink
-            || std::max(px->width, px->height) <= kMaxSoftLadderEdge)) {
+        && !pixels_cover_edge(*px, want)
+        && px->source != PixelSource::Full) {
+      // Soft / TileSynth / overview shortfall is not a Full hit — force encode.
       return std::nullopt;
     }
-    // Overview / TileSynth intermediate: still useful as BestAvailable short.
     return px;
   }
   return std::nullopt;
@@ -2792,10 +2791,16 @@ void Client::handle_ensure_pixels(
       }
       return false;
     }
-    const int want = job.overview
-        ? std::min(job.max_edge > 0 ? job.max_edge : kBatchMaxEdge, kBatchMaxEdge)
-        : std::min(job.max_edge > 0 ? job.max_edge : kMaxSoftLadderEdge,
-                   kMaxSoftLadderEdge);
+    // full_native must compare against the Full request edge — not soft max.
+    // Using soft max here made TileSynth 2048 look adequate for want=6048
+    // (CACHE_HIT loop: biltoo scheduleFull shortfall → retry forever).
+    const int want = job.full_native
+        ? std::min(job.max_edge > 0 ? job.max_edge : kFullMaxEdge, kFullMaxEdge)
+        : job.overview
+            ? std::min(job.max_edge > 0 ? job.max_edge : kBatchMaxEdge,
+                       kBatchMaxEdge)
+            : std::min(job.max_edge > 0 ? job.max_edge : kMaxSoftLadderEdge,
+                       kMaxSoftLadderEdge);
     // Require ~90% of the requested long edge in actual pixels.
     if (long_px >= (want * 9) / 10) return true;
     if (auto m = db_->meta_for_uri(job.uri)) {

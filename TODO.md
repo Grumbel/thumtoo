@@ -2,6 +2,31 @@
 
 ## Status (2026-09-14)
 
+**Tip: thumtoo-204-full-no-tilesynth-cachehit.** Full EnsurePixels must not CACHE_HIT on TileSynth shortfall.
+Prior: **203**.
+
+### Problem
+`level_adequate` for full_native used soft max (512) as want. TileSynth 2048
+looked adequate for request 6048 → CACHE_HIT → biltoo shortfall RETRY forever.
+
+### Change
+- `level_adequate`: full_native compares against Full request edge (≤ kFullMaxEdge)
+- `get_full_pixels`: any non-Full shortfall when want > soft max → nullopt
+
+### Apply
+```bash
+git pull /path/to/thumtoo-204-full-no-tilesynth-cachehit.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **204**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-14)
+
 **Tip: thumtoo-203-full-past-2048.** Full ladder past 2048; soft shortfall is not a Full hit.
 Prior: **202**.
 
