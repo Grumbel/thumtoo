@@ -46,12 +46,10 @@ void store_lqip_if_missing(Database& db, const std::string& content_id,
                            const std::uint8_t* file_bytes = nullptr,
                            std::size_t file_size = 0) {
   if (content_id.empty()) return;
-  if (auto existing = db.get_lqip(content_id)) {
-    // Already Handsum — keep. Replace ThumbHash / other with Handsum.
-    if (existing->size() >= 2 && (*existing)[0] == 0xFE &&
-        ((*existing)[1] & 0xFE) == 0xD6) {
-      return;
-    }
+  // Any durable LQIP is enough — do not re-encode (Handsum upgrade used to
+  // re-decode the source on every EnsureLqip and starved the worker).
+  if (db.get_lqip(content_id)) {
+    return;
   }
   std::vector<std::uint8_t> hash;
   if (rgb && w > 0 && h > 0) {
@@ -588,19 +586,40 @@ std::optional<std::vector<std::uint8_t>> Client::get_lqip(
 
 std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
     std::string_view uri) {
+  // Cache hit: never upgrade or re-decode. Hosts only need *some* LQIP blob.
   if (auto existing = get_lqip(uri)) {
-    // Keep Handsum; re-encode legacy ThumbHash rows once.
-    if (existing->size() >= 2 && (*existing)[0] == 0xFE &&
-        ((*existing)[1] & 0xFE) == 0xD6) {
-      return existing;
-    }
-    // Fall through to replace ThumbHash / unknown with Handsum.
+    return existing;
   }
   auto loc = db_->find_locator(uri);
   if (!loc || !loc->content_id) {
     return std::nullopt;
   }
   const std::string& cid = *loc->content_id;
+
+  // Prefer a durable soft/full ladder level already in the blob store. Decoding
+  // a small JXL/JPEG preview is far cheaper than reopening the source file or
+  // rasterizing a PDF page solely for Handsum.
+  {
+    auto levels = db_->list_levels(cid, /*limit=*/64);
+    const Database::LevelRow* best = nullptr;
+    for (const auto& lr : levels) {
+      if (lr.frame_idx != 0) continue;
+      // Smallest positive edge first (enough for ThumbHash/Handsum).
+      if (!best || lr.max_edge < best->max_edge) best = &lr;
+    }
+    if (best) {
+      if (auto data = blobs_->get_level(cid, best->max_edge, best->frame_idx)) {
+        if (data && !data->empty()) {
+          // lqip_thumbhash_from_buffer uses vips_thumbnail_buffer (JXL/JPEG/…).
+          store_lqip_if_missing(*db_, cid, nullptr, nullptr, 0, 0, data->data(),
+                                data->size());
+          if (auto got = get_lqip(uri)) {
+            return got;
+          }
+        }
+      }
+    }
+  }
 
   // PDF / DjVu pages: never feed the container path to Vips/Magick — that
   // decodes the whole document (or wrong page) and can lock the UI for minutes.
@@ -679,6 +698,11 @@ void Client::request_pixels(std::string uri, int max_edge, PixelsCallback cb,
   }
   if (auto px = get_pixels(uri, max_edge, frame_idx)) {
     if (soft_level_covers(*px, max_edge)) {
+      // Soft already durable — fill LQIP from that blob on a worker if missing.
+      // Does not block this reply; ensure_lqip prefers soft levels over source.
+      if (!get_lqip(uri)) {
+        request_lqip(uri);
+      }
       if (cb) {
         executor_.post([cb = std::move(cb), uri, max_edge,
                         px = std::move(*px)]() mutable {
@@ -759,6 +783,9 @@ void Client::request_overview_pixels(std::string uri, int max_edge,
     if (long_px >= (max_edge * 9) / 10 ||
         px->source == PixelSource::TileSynth ||
         px->source == PixelSource::Full) {
+      if (!get_lqip(uri)) {
+        request_lqip(uri);
+      }
       if (cb) {
         executor_.post([cb = std::move(cb), uri, max_edge,
                         px = std::move(*px)]() mutable {

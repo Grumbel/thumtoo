@@ -139,11 +139,13 @@ class Client {
   [[nodiscard]] std::optional<std::vector<std::uint8_t>> get_lqip(
       std::string_view uri) const;
 
-  /// If LQIP missing, try a cheap file/buffer thumbnail encode (worker-safe).
-  /// Returns get_lqip afterward. No-op when already present.
+  /// If LQIP missing, fill from an existing soft/full ladder blob when possible
+  /// (worker-safe; no host-driven “generate now” required). Falls back to a
+  /// small source raster only when no durable level exists. Returns get_lqip.
+  /// No-op when any LQIP is already stored (does not upgrade ThumbHash→Handsum).
   std::optional<std::vector<std::uint8_t>> ensure_lqip(std::string_view uri);
 
-  /// Queue background LQIP fill (worker only). Used after a durable thumbnail
+  /// Queue background LQIP fill (worker only). Prefer after soft/tiles exist so
   /// so successive opens get a soft underlay — never blocks tile replies.
   void request_lqip(std::string uri);
 

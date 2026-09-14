@@ -1,5 +1,30 @@
 # TODO / agent handoff
 
+## Status (2026-09-14)
+
+**Tip: thumtoo-199-lqip-from-soft.** Opportunistic LQIP from durable soft levels.
+Prior: **198**.
+
+### Problem
+LQIP was rarely present for biltoo cold opens. Size probe correctly does not
+encode LQIP. Soft PreferCache hits returned pixels without ever filling LQIP.
+`ensure_lqip` also re-decoded the source to “upgrade” ThumbHash→Handsum, which
+is expensive and starved the worker.
+
+### Change
+- `store_lqip_if_missing`: keep **any** existing LQIP (no re-encode)
+- `ensure_lqip`: return existing; else encode from **smallest soft/full level**
+  blob via `lqip_thumbhash_from_buffer`; only then fall back to source/page paths
+- `request_pixels` / `request_overview_pixels` soft cache hits: `request_lqip`
+  when missing (worker fills from soft — not a host ensure API)
+
+### Done criteria
+- [x] Bundle **199**
+
+---
+
+# TODO / agent handoff
+
 ## Status (2026-09-13)
 
 **Tip: thumtoo-198-rar5-skip-unarr.** Probe RAR5 magic; skip unarr (no spam); use libarchive.
