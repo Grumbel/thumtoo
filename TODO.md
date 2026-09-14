@@ -2,6 +2,34 @@
 
 ## Status (2026-09-14)
 
+**Tip: thumtoo-201-softonly-no-tilesynth.** SoftOnly / soft request skip TileSynth.
+Prior: **200**.
+
+### Problem
+Gallery SoftOnly called `get_pixels`, which fell through to **TileSynth** when the
+soft ladder was missing but grid tiles existed. TileSynth JPEG-decodes every
+cell sequentially on one worker, then re-encodes — multi-second per image and
+feels single-threaded even with a "cached" archive.
+
+### Change
+- `get_pixels(..., allow_tile_synth=true)` — SoftOnly / `request_pixels` pass false
+- Missing soft → EnsurePixels (parallel soft ladder), not TileSynth
+- PreferCache / overview still may TileSynth
+
+### Apply
+```bash
+git pull /path/to/thumtoo-201-softonly-no-tilesynth.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **201**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-14)
+
 **Tip: thumtoo-200-size-reply-lqip.** Size probe returns durable LQIP with size.
 Prior: **199**.
 

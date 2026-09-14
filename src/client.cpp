@@ -344,7 +344,8 @@ std::optional<PixelLevel> Client::load_level(
 }
 
 std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
-                                             int frame_idx) const {
+                                             int frame_idx,
+                                             bool allow_tile_synth) const {
   auto meta = db_->meta_for_uri(uri);
   if (!meta) {
     if (debug_enabled()) {
@@ -394,16 +395,21 @@ std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
       return px;
     }
   }
-  // Soft missing or short for this edge: reconstruct from grid tiles.
-  const int want = max_edge > 0 ? max_edge : kMaxSoftLadderEdge;
-  if (auto from_tiles = get_pixels_from_tiles(uri, want)) {
-    if (debug_enabled()) {
-      dbg("get_pixels HIT uri=%s edge=%d src=tile_synth level=%dx%d",
-          std::string(uri).c_str(), max_edge, from_tiles->width,
-          from_tiles->height);
+  // Soft missing or short: optional TileSynth (PreferCache / overview).
+  // SoftOnly and request_pixels must NOT take this path — compositing every
+  // JPEG cell + re-encoding is sequential and multi-second per image when the
+  // soft ladder is absent but tiles exist (feels "single-threaded" in Gallery).
+  if (allow_tile_synth) {
+    const int want = max_edge > 0 ? max_edge : kMaxSoftLadderEdge;
+    if (auto from_tiles = get_pixels_from_tiles(uri, want)) {
+      if (debug_enabled()) {
+        dbg("get_pixels HIT uri=%s edge=%d src=tile_synth level=%dx%d",
+            std::string(uri).c_str(), max_edge, from_tiles->width,
+            from_tiles->height);
+      }
+      maybe_overlay_pixels(from_tiles, uri, max_edge);
+      return from_tiles;
     }
-    maybe_overlay_pixels(from_tiles, uri, max_edge);
-    return from_tiles;
   }
   if (row) {
     auto px = load_level(*row);
@@ -696,8 +702,11 @@ void Client::request_pixels(std::string uri, int max_edge, PixelsCallback cb,
   if (max_edge > kMaxSoftLadderEdge) {
     max_edge = kMaxSoftLadderEdge;
   }
-  if (auto px = get_pixels(uri, max_edge, frame_idx)) {
-    if (soft_level_covers(*px, max_edge)) {
+  // Soft ladder only — never accept TileSynth as a soft hit (that path is
+  // JPEG-heavy and serial per cell). Missing soft → EnsurePixels encodes ladder.
+  if (auto px = get_pixels(uri, max_edge, frame_idx, /*allow_tile_synth=*/false)) {
+    if (soft_level_covers(*px, max_edge)
+        && px->source != PixelSource::TileSynth) {
       // Soft already durable — fill LQIP from that blob on a worker if missing.
       // Does not block this reply; ensure_lqip prefers soft levels over source.
       if (!get_lqip(uri)) {
@@ -987,8 +996,8 @@ std::optional<PixelLevel> Client::get_raster(const RasterRequest& req) const {
   if (req.policy == RasterPolicy::SoftOnly) {
     if (edge <= 0) edge = kMaxSoftLadderEdge;
     if (edge > kMaxSoftLadderEdge) edge = kMaxSoftLadderEdge;
-    // Soft path only — do not fall through to tiles via high max_edge.
-    return get_pixels(req.uri, edge, req.frame_idx);
+    // Soft ladder only — no TileSynth (see get_pixels allow_tile_synth).
+    return get_pixels(req.uri, edge, req.frame_idx, /*allow_tile_synth=*/false);
   }
   if (req.policy == RasterPolicy::Full) {
     return get_full_pixels(req.uri, edge);

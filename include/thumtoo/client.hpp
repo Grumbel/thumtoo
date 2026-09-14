@@ -121,9 +121,9 @@ class Client {
   /// (frame 0 default). Does not build levels. Soft storage is capped at
   /// kMaxSoftLadderEdge (512); a 256-level is returned for larger max_edge
   /// until a higher soft level has been ensured.
-  [[nodiscard]] std::optional<PixelLevel> get_pixels(std::string_view uri,
-                                                     int max_edge,
-                                                     int frame_idx = 0) const;
+  [[nodiscard]] std::optional<PixelLevel> get_pixels(
+      std::string_view uri, int max_edge, int frame_idx = 0,
+      bool allow_tile_synth = true) const;
 
   /**
    * Cache-only: build a full-frame preview from stored grid tiles.
