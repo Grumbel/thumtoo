@@ -1,6 +1,6 @@
 -- SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 -- SPDX-License-Identifier: GPL-3.0-or-later
--- thumtoo schema_version 3
+-- thumtoo schema_version 4
 
 CREATE TABLE IF NOT EXISTS schema_meta (
   key TEXT PRIMARY KEY,
@@ -117,3 +117,14 @@ CREATE TABLE IF NOT EXISTS document_outlines (
 );
 
 CREATE INDEX IF NOT EXISTS idx_text_layers_content_id ON text_layers(content_id);
+
+CREATE TABLE IF NOT EXISTS document_index (
+  document_uri TEXT NOT NULL,
+  layout_key TEXT NOT NULL DEFAULT '',
+  page_count INTEGER NOT NULL,
+  size INTEGER,
+  mtime_ns INTEGER,
+  indexed_at INTEGER,
+  PRIMARY KEY (document_uri, layout_key)
+);
+

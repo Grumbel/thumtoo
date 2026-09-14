@@ -10,7 +10,7 @@
 namespace thumtoo {
 
 /// schema_meta / schema_version = 1 (DESIGN §6b). Bump only with incompatible layout.
-inline constexpr int kSchemaVersion = 3;
+inline constexpr int kSchemaVersion = 4;
 
 /// Policy long-edge steps (pixels). Soft durable storage only uses steps
 /// ≤ kMaxSoftLadderEdge; larger values exist for API compatibility / future use.

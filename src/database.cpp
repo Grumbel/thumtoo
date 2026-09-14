@@ -163,6 +163,15 @@ CREATE TABLE IF NOT EXISTS document_outlines (
   PRIMARY KEY (content_id, layout_key)
 );
 CREATE INDEX IF NOT EXISTS idx_text_layers_content_id ON text_layers(content_id);
+CREATE TABLE IF NOT EXISTS document_index (
+  document_uri TEXT NOT NULL,
+  layout_key TEXT NOT NULL DEFAULT '',
+  page_count INTEGER NOT NULL,
+  size INTEGER,
+  mtime_ns INTEGER,
+  indexed_at INTEGER,
+  PRIMARY KEY (document_uri, layout_key)
+);
 )SQL";
 
 }  // namespace
@@ -255,6 +264,7 @@ void Database::migrate_or_init() {
       exec("ALTER TABLE content ADD COLUMN lqip_kind INTEGER NOT NULL DEFAULT 0;");
     }
     // v3: text_layers + document_outlines created by kSchemaSql IF NOT EXISTS.
+    // v4: document_index (PDF/DjVu/EPUB page-count TOC) via IF NOT EXISTS.
     meta_set(kSchemaMetaVersionKey, std::to_string(kSchemaVersion));
     schema_version_ = kSchemaVersion;
   }
@@ -1018,6 +1028,93 @@ std::vector<Database::ArchiveEntryRow> Database::list_archive_entries(
   }
   sqlite3_finalize(stmt);
   return rows;
+}
+
+
+void Database::put_document_index(const DocumentIndexRow& row) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "INSERT INTO document_index(document_uri, layout_key, page_count, size, "
+      "mtime_ns, indexed_at) VALUES(?1,?2,?3,?4,?5,?6) "
+      "ON CONFLICT(document_uri, layout_key) DO UPDATE SET "
+      "page_count=excluded.page_count, size=excluded.size, "
+      "mtime_ns=excluded.mtime_ns, indexed_at=excluded.indexed_at;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, row.document_uri.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 2, row.layout_key.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 3, row.page_count);
+  if (row.size)
+    sqlite3_bind_int64(stmt, 4, *row.size);
+  else
+    sqlite3_bind_null(stmt, 4);
+  if (row.mtime_ns)
+    sqlite3_bind_int64(stmt, 5, *row.mtime_ns);
+  else
+    sqlite3_bind_null(stmt, 5);
+  if (row.indexed_at)
+    sqlite3_bind_int64(stmt, 6, *row.indexed_at);
+  else
+    sqlite3_bind_null(stmt, 6);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_finalize(stmt);
+}
+
+std::optional<Database::DocumentIndexRow> Database::get_document_index(
+    std::string_view document_uri, std::string_view layout_key) const {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT document_uri, layout_key, page_count, size, mtime_ns, indexed_at "
+      "FROM document_index WHERE document_uri = ?1 AND layout_key = ?2;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, document_uri.data(),
+                    static_cast<int>(document_uri.size()), SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 2, layout_key.data(),
+                    static_cast<int>(layout_key.size()), SQLITE_STATIC);
+  std::optional<DocumentIndexRow> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    DocumentIndexRow r;
+    r.document_uri = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    r.layout_key = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    r.page_count = sqlite3_column_int(stmt, 2);
+    if (sqlite3_column_type(stmt, 3) != SQLITE_NULL)
+      r.size = sqlite3_column_int64(stmt, 3);
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+      r.mtime_ns = sqlite3_column_int64(stmt, 4);
+    if (sqlite3_column_type(stmt, 5) != SQLITE_NULL)
+      r.indexed_at = sqlite3_column_int64(stmt, 5);
+    out = std::move(r);
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+void Database::delete_document_index(std::string_view document_uri,
+                                     std::string_view layout_key) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "DELETE FROM document_index WHERE document_uri = ?1 AND layout_key = ?2;";
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_bind_text(stmt, 1, document_uri.data(),
+                    static_cast<int>(document_uri.size()), SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 2, layout_key.data(),
+                    static_cast<int>(layout_key.size()), SQLITE_STATIC);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw std::runtime_error(sqlite3_errmsg(db_));
+  }
+  sqlite3_finalize(stmt);
 }
 
 

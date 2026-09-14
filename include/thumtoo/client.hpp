@@ -10,6 +10,8 @@
 #include "thumtoo/types.hpp"
 #include "thumtoo/text.hpp"
 #include "thumtoo/pdf.hpp"
+#include "thumtoo/epub.hpp"
+#include "thumtoo/djvu.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -246,7 +248,23 @@ class Client {
   std::vector<Database::ArchiveEntryRow> refresh_archive_toc(
       const std::filesystem::path& archive_path);
 
+  /// Document kinds for durable page-count index (PDF / DjVu / EPUB).
+  enum class DocumentKind { Pdf = 0, Djvu = 1, Epub = 2 };
+
+  /// Cache-first page count (validates file size+mtime). On miss or stale
+  /// index, opens the document once, stores page_count, returns it.
+  /// layout is required for Epub (default layout if null).
+  [[nodiscard]] std::optional<int> document_page_count(
+      const std::filesystem::path& path, DocumentKind kind,
+      const EpubLayout* layout = nullptr);
+
+  /// Force re-read from source and replace the durable index row.
+  std::optional<int> refresh_document_index(
+      const std::filesystem::path& path, DocumentKind kind,
+      const EpubLayout* layout = nullptr);
+
   /// PDF page count (1-based pages). nullopt if no backend can open the file.
+  /// Source-only (no durable index). Prefer document_page_count for hosts.
   [[nodiscard]] static std::optional<int> pdf_page_count(
       const std::filesystem::path& path,
       PdfBackend backend = PdfBackend::Default);

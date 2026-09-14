@@ -1540,7 +1540,7 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
     }
 
     if (is_likely_pdf_path(abs)) {
-      auto count = pdf_page_count(abs);
+      auto count = document_page_count(abs, DocumentKind::Pdf);
       if (count && *count > 0) {
         // Cap prepare volume so huge books do not flood the queue.
         constexpr int kMaxPreparePages = 512;
@@ -1574,7 +1574,7 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
     }
 
     if (is_likely_djvu_path(abs)) {
-      auto count = djvu_page_count(abs);
+      auto count = document_page_count(abs, DocumentKind::Djvu);
       if (count && *count > 0) {
         constexpr int kMaxPreparePages = 512;
         const int n = std::min(*count, kMaxPreparePages);
@@ -1609,7 +1609,7 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
 
     if (is_likely_epub_path(abs)) {
       const auto layout = default_epub_layout();
-      auto count = epub_page_count(abs, layout);
+      auto count = document_page_count(abs, DocumentKind::Epub, &layout);
       if (count && *count > 0) {
         constexpr int kMaxPreparePages = 512;
         const int n = std::min(*count, kMaxPreparePages);
@@ -1676,6 +1676,74 @@ std::vector<Database::ArchiveEntryRow> Client::refresh_archive_toc(
   }
   db_->replace_archive_entries(uri, rows);
   return rows;
+}
+
+std::optional<int> Client::refresh_document_index(
+    const std::filesystem::path& path, DocumentKind kind,
+    const EpubLayout* layout) {
+  if (path.empty()) return std::nullopt;
+  std::error_code ec;
+  const auto abs = std::filesystem::weakly_canonical(path, ec);
+  const auto& use = ec ? path : abs;
+  if (!std::filesystem::is_regular_file(use, ec)) return std::nullopt;
+
+  EpubLayout epub_layout = layout ? *layout : default_epub_layout();
+  std::string layout_key;
+  std::optional<int> count;
+  switch (kind) {
+    case DocumentKind::Pdf:
+      count = thumtoo::pdf_page_count(use);
+      break;
+    case DocumentKind::Djvu:
+      count = thumtoo::djvu_page_count(use);
+      break;
+    case DocumentKind::Epub:
+      layout_key = format_epub_layout_params(epub_layout);
+      count = thumtoo::epub_page_count(use, epub_layout);
+      break;
+  }
+  if (!count || *count <= 0) return std::nullopt;
+
+  Database::DocumentIndexRow row;
+  row.document_uri = file_uri_from_path(use.lexically_normal());
+  row.layout_key = std::move(layout_key);
+  row.page_count = *count;
+  row.size = file_size_bytes(use);
+  row.mtime_ns = file_mtime_ns(use);
+  row.indexed_at = static_cast<std::int64_t>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::system_clock::now().time_since_epoch())
+          .count());
+  db_->put_document_index(row);
+  return count;
+}
+
+std::optional<int> Client::document_page_count(
+    const std::filesystem::path& path, DocumentKind kind,
+    const EpubLayout* layout) {
+  if (path.empty()) return std::nullopt;
+  std::error_code ec;
+  const auto abs = std::filesystem::weakly_canonical(path, ec);
+  const auto& use = ec ? path : abs;
+  if (!std::filesystem::is_regular_file(use, ec)) return std::nullopt;
+
+  EpubLayout epub_layout = layout ? *layout : default_epub_layout();
+  std::string layout_key;
+  if (kind == DocumentKind::Epub) {
+    layout_key = format_epub_layout_params(epub_layout);
+  }
+  const auto uri = file_uri_from_path(use.lexically_normal());
+  const auto size = file_size_bytes(use);
+  const auto mtime = file_mtime_ns(use);
+
+  if (auto cached = db_->get_document_index(uri, layout_key)) {
+    const bool size_ok = !size || !cached->size || *size == *cached->size;
+    const bool mtime_ok = !mtime || !cached->mtime_ns || *mtime == *cached->mtime_ns;
+    if (cached->page_count > 0 && size_ok && mtime_ok) {
+      return cached->page_count;
+    }
+  }
+  return refresh_document_index(use, kind, layout ? layout : &epub_layout);
 }
 
 

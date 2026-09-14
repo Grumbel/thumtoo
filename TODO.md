@@ -2,6 +2,28 @@
 
 ## Status (2026-09-14)
 
+**Tip: thumtoo-202-document-index.** Durable page-count index for PDF / DjVu / EPUB.
+Prior: **201**.
+
+### Design
+- Schema **v4** table `document_index (document_uri, layout_key, page_count, size, mtime_ns, indexed_at)`
+- `Client::document_page_count` — cache-first; validate size+mtime; else source open + store
+- `Client::refresh_document_index` — force re-index
+- EPUB `layout_key` = `format_epub_layout_params` (empty for PDF/DjVu)
+- `prepare_paths` uses the cached path
+
+### Host
+biltoo expand PDF/EPUB/DjVu should call `Client::document_page_count` like archive TOC.
+
+### Done criteria
+- [x] Bundle **202**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-14)
+
 **Tip: thumtoo-201-softonly-no-tilesynth.** SoftOnly / soft request skip TileSynth.
 Prior: **200**.
 

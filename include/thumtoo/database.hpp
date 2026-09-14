@@ -158,6 +158,23 @@ class Database {
   [[nodiscard]] std::vector<ArchiveEntryRow> list_archive_entries(
       std::string_view archive_uri, int limit = 10000) const;
 
+  /// Durable page-count index for PDF / DjVu / EPUB (archive TOC analogue).
+  /// layout_key is empty for PDF/DjVu; EPUB uses format_epub_layout_params.
+  struct DocumentIndexRow {
+    std::string document_uri;
+    std::string layout_key;
+    int page_count = 0;
+    std::optional<std::int64_t> size;
+    std::optional<std::int64_t> mtime_ns;
+    std::optional<std::int64_t> indexed_at;
+  };
+
+  void put_document_index(const DocumentIndexRow& row);
+  [[nodiscard]] std::optional<DocumentIndexRow> get_document_index(
+      std::string_view document_uri, std::string_view layout_key = "") const;
+  void delete_document_index(std::string_view document_uri,
+                             std::string_view layout_key = "");
+
   // --- tags (content_id keyed; align with dirtoo sha256 identity) ---
   struct TagRow {
     std::string content_id;
