@@ -2,6 +2,34 @@
 
 ## Status (2026-09-14)
 
+**Tip: thumtoo-205-full-adequate-real-native.** Full CACHE_HIT only when pixels cover request or true native meta.
+Prior: **204**.
+
+### Problem
+Meta size was often a soft/TileSynth probe (~2048). `level_adequate` treated
+covering that meta as success for full_native want=6048 → CACHE_HIT TileSynth
+forever; Gallery stayed low-res.
+
+### Change
+- full_native: meta-size cover only if meta itself is ≥ ~request (real native)
+- Final EnsurePixels reply: no TileSynth for full_native
+- Ladder levels above soft max tagged PixelSource::Full
+- Archive Full encode promotes content width/height when larger than soft probe
+
+### Apply
+```bash
+git pull /path/to/thumtoo-205-full-adequate-real-native.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **205**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-14)
+
 **Tip: thumtoo-204-full-no-tilesynth-cachehit.** Full EnsurePixels must not CACHE_HIT on TileSynth shortfall.
 Prior: **203**.
 

@@ -2791,9 +2791,6 @@ void Client::handle_ensure_pixels(
       }
       return false;
     }
-    // full_native must compare against the Full request edge — not soft max.
-    // Using soft max here made TileSynth 2048 look adequate for want=6048
-    // (CACHE_HIT loop: biltoo scheduleFull shortfall → retry forever).
     const int want = job.full_native
         ? std::min(job.max_edge > 0 ? job.max_edge : kFullMaxEdge, kFullMaxEdge)
         : job.overview
@@ -2801,8 +2798,24 @@ void Client::handle_ensure_pixels(
                        kBatchMaxEdge)
             : std::min(job.max_edge > 0 ? job.max_edge : kMaxSoftLadderEdge,
                        kMaxSoftLadderEdge);
-    // Require ~90% of the requested long edge in actual pixels.
+    // Primary: decoded pixels cover the request edge.
     if (long_px >= (want * 9) / 10) return true;
+
+    // Meta size is often a soft/overview probe (e.g. 2048) while the file is
+    // 6k. Covering that meta must NOT satisfy full_native for a higher want —
+    // that was CACHE_HIT on TileSynth 2048 forever.
+    if (job.full_native) {
+      if (auto m = db_->meta_for_uri(job.uri)) {
+        if (m->size) {
+          const int native = std::max(m->size->width, m->size->height);
+          // Only trust meta when it is itself at least ~request (real native).
+          if (native >= (want * 9) / 10 && long_px >= (native * 9) / 10) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
     if (auto m = db_->meta_for_uri(job.uri)) {
       if (m->size) {
         const int native = std::max(m->size->width, m->size->height);
@@ -3135,6 +3148,7 @@ void Client::handle_ensure_pixels(
         auto levels =
             build_ladder_buffer(bytes->data(), bytes->size(), row.content_id,
                                 kDefaultJxlQuality, edge_limit);
+        int best_w = 0, best_h = 0;
         for (const auto& lvl : levels) {
           blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
                              lvl.width, lvl.height, lvl.codec, lvl.quality,
@@ -3150,6 +3164,18 @@ void Client::handle_ensure_pixels(
           lr.source = static_cast<int>(lvl.source);
           lr.path = "blobs.sqlite";
           db_->upsert_level(lr);
+          if (std::max(lvl.width, lvl.height) > std::max(best_w, best_h)) {
+            best_w = lvl.width;
+            best_h = lvl.height;
+          }
+        }
+        // Promote meta size when Full decoded larger than a prior soft probe.
+        if (best_w > 0 && best_h > 0) {
+          const int have = std::max(row.width.value_or(0), row.height.value_or(0));
+          if (std::max(best_w, best_h) > have) {
+            row.width = best_w;
+            row.height = best_h;
+          }
         }
         row.status =
             levels.empty() ? ContentStatus::Incomplete : ContentStatus::Ready;
@@ -3225,7 +3251,10 @@ void Client::handle_ensure_pixels(
     }
   }
 
-  auto px = get_pixels(job.uri, job.max_edge, job.frame_idx);
+  // full_native: never fall back to TileSynth for the reply — that is how
+  // 2048 "Full" replies leaked after a real encode attempt.
+  auto px = get_pixels(job.uri, job.max_edge, job.frame_idx,
+                       /*allow_tile_synth=*/!job.full_native);
   if (debug_enabled()) {
     const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::steady_clock::now() - t0)

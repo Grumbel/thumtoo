@@ -497,7 +497,12 @@ std::vector<LevelBlob> build_ladder(const std::filesystem::path& path,
 
   LevelBlob b = encode_jxl_level(thumb, edge, id_dir, q);
   g_object_unref(thumb);
-  if (!b.bytes.empty()) levels.push_back(std::move(b));
+  if (!b.bytes.empty()) {
+    if (edge > kMaxSoftLadderEdge) {
+      b.source = PixelSource::Full;
+    }
+    levels.push_back(std::move(b));
+  }
   return levels;
 }
 
@@ -573,7 +578,13 @@ std::vector<LevelBlob> build_ladder_buffer(const std::uint8_t* data,
 
   LevelBlob b = encode_jxl_level(thumb, edge, id_dir, q);
   g_object_unref(thumb);
-  if (!b.bytes.empty()) levels.push_back(std::move(b));
+  if (!b.bytes.empty()) {
+    // Above soft band is a Full/display level, not soft shrink.
+    if (edge > kMaxSoftLadderEdge) {
+      b.source = PixelSource::Full;
+    }
+    levels.push_back(std::move(b));
+  }
   return levels;
 }
 
