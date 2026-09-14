@@ -2,6 +2,32 @@
 
 ## Status (2026-09-14)
 
+**Tip: thumtoo-206-full-requires-coverage.** Full hit requires pixel coverage; soft 512 is not Full.
+Prior: **205**.
+
+### Problem
+Soft ladder levels tagged `PixelSource::Full` (edge >= soft raster long edge).
+`request_full_pixels` accepted Source::Full without coverage → returned 512 forever
+for PDF pages; biltoo soft-tier RETRY looped.
+
+### Change
+- get_full_pixels / request_full: coverage only
+- build_level_rgb_at_edge: Full only if edge > kMaxSoftLadderEdge && edge >= long_edge
+
+### Apply
+```bash
+git pull /path/to/thumtoo-206-full-requires-coverage.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **206**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-14)
+
 **Tip: thumtoo-205-full-adequate-real-native.** Full CACHE_HIT only when pixels cover request or true native meta.
 Prior: **204**.
 

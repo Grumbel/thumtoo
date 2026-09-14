@@ -921,21 +921,14 @@ std::optional<PixelLevel> Client::get_full_pixels(std::string_view uri,
   if (uri.empty()) return std::nullopt;
   int want = max_edge > 0 ? max_edge : kFullMaxEdge;
   if (want > kFullMaxEdge) want = kFullMaxEdge;
-  // Prefer an adequate cached level (Full / overview / soft / tile synth).
+  // Prefer a level that *covers* the request. Source::Full alone is not enough —
+  // soft ladder rows were sometimes tagged Full (edge >= soft raster long edge),
+  // so 512px "Full" short-circuited request_full forever.
   if (auto px = get_pixels(uri, want, 0)) {
-    if (pixels_cover_edge(*px, want) || px->source == PixelSource::Full) {
-      return px;  // already stamped inside get_pixels
+    if (pixels_cover_edge(*px, want)) {
+      return px;
     }
-    // Soft / TileSynth shortfall is not a Full hit when the host asked past
-    // soft max — return null so request_full_pixels encodes a real Full level
-    // (returning soft left biltoo settled on 512/2048 forever).
-    if (want > kMaxSoftLadderEdge
-        && !pixels_cover_edge(*px, want)
-        && px->source != PixelSource::Full) {
-      // Soft / TileSynth / overview shortfall is not a Full hit — force encode.
-      return std::nullopt;
-    }
-    return px;
+    return std::nullopt;
   }
   return std::nullopt;
 }
@@ -949,9 +942,8 @@ void Client::request_full_pixels(std::string uri, int max_edge,
     max_edge = kFullMaxEdge;
   }
   if (auto px = get_full_pixels(uri, max_edge)) {
-    if (pixels_cover_edge(*px, max_edge) ||
-        px->source == PixelSource::Full ||
-        std::max(px->width, px->height) >= (max_edge * 9) / 10) {
+    // Coverage only — never accept mis-tagged Full soft levels.
+    if (pixels_cover_edge(*px, max_edge)) {
       if (cb) {
         executor_.post([cb = std::move(cb), uri, max_edge,
                         px = std::move(*px)]() mutable {
