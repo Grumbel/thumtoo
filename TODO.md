@@ -2,6 +2,31 @@
 
 ## Status (2026-09-14)
 
+**Tip: thumtoo-207-exif-autorot-display-size.** EXIF orientation is a decode contract.
+Prior: **206**.
+
+### Contract
+- **Probe / stored native size** = display size after EXIF (tags 5–8 swap axes)
+- **Tiles / full Vips opens** = `vips_autorot` before cut/encode
+- **Ladder soft** = `vips_thumbnail` already autorots by default; long-edge pick uses display size
+
+Hosts (biltoo) must not re-apply a second autorot policy on thumtoo samples.
+Session ContentXform remains app-side (user turns/flips).
+
+### Apply
+```bash
+git pull /path/to/thumtoo-207-exif-autorot-display-size.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **207**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-14)
+
 **Tip: thumtoo-206-full-requires-coverage.** Full hit requires pixel coverage; soft 512 is not Full.
 Prior: **205**.
 

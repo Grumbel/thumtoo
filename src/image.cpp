@@ -206,6 +206,33 @@ std::optional<std::vector<std::uint8_t>> read_file_bytes(
   return buf;
 }
 
+/// Display size after EXIF orientation (tags 5–8 swap axes). Header-only.
+/// Stored native size must match upright display (vips_autorot / thumbnail).
+Size display_size_from_vips_header(VipsImage* img) {
+  int w = vips_image_get_width(img);
+  int h = vips_image_get_height(img);
+  int orientation = 0;
+  if (vips_image_get_typeof(img, VIPS_META_ORIENTATION) != 0) {
+    vips_image_get_int(img, VIPS_META_ORIENTATION, &orientation);
+  }
+  if (orientation >= 5 && orientation <= 8) {
+    const int tmp = w;
+    w = h;
+    h = tmp;
+  }
+  return Size{w, h};
+}
+
+/// Upright pixels for full decode / tile paths. Replaces *img on success.
+void autorot_vips_inplace(VipsImage** img) {
+  if (!img || !*img) return;
+  VipsImage* rotated = nullptr;
+  if (vips_autorot(*img, &rotated, nullptr) == 0 && rotated) {
+    g_object_unref(*img);
+    *img = rotated;
+  }
+}
+
 std::optional<ProbeResult> probe_image_file(const std::filesystem::path& path) {
   // Never open PDF/DjVu via Vips/Magick — multipage docs decode at full
   // resolution and can allocate tens of GB. Use pdf.hpp / djvu.hpp instead.
@@ -217,11 +244,10 @@ std::optional<ProbeResult> probe_image_file(const std::filesystem::path& path) {
   VipsImage* img = vips_image_new_from_file(
       path.string().c_str(), "access", VIPS_ACCESS_SEQUENTIAL, nullptr);
   if (!img) return std::nullopt;
-  const int w = vips_image_get_width(img);
-  const int h = vips_image_get_height(img);
+  const Size sz = display_size_from_vips_header(img);
   g_object_unref(img);
-  if (w <= 0 || h <= 0) return std::nullopt;
-  return ProbeResult{Size{w, h}, format_from_path(path)};
+  if (sz.width <= 0 || sz.height <= 0) return std::nullopt;
+  return ProbeResult{sz, format_from_path(path)};
 }
 
 std::optional<ProbeResult> probe_image_buffer(const std::uint8_t* data,
@@ -232,13 +258,12 @@ std::optional<ProbeResult> probe_image_buffer(const std::uint8_t* data,
   VipsImage* img = vips_image_new_from_buffer(
       data, size, nullptr, "access", VIPS_ACCESS_SEQUENTIAL, nullptr);
   if (!img) return std::nullopt;
-  const int w = vips_image_get_width(img);
-  const int h = vips_image_get_height(img);
+  const Size sz = display_size_from_vips_header(img);
   g_object_unref(img);
-  if (w <= 0 || h <= 0) return std::nullopt;
+  if (sz.width <= 0 || sz.height <= 0) return std::nullopt;
   std::string fmt = std::string(hint_format);
   if (fmt.empty()) fmt = "unknown";
-  return ProbeResult{Size{w, h}, fmt};
+  return ProbeResult{sz, fmt};
 }
 
 namespace {
@@ -432,8 +457,8 @@ std::vector<LevelBlob> build_ladder(const std::filesystem::path& path,
   VipsImage* header = vips_image_new_from_file(
       path.string().c_str(), "access", VIPS_ACCESS_SEQUENTIAL, nullptr);
   if (!header) return levels;
-  const int long_edge =
-      std::max(vips_image_get_width(header), vips_image_get_height(header));
+  const Size dsz = display_size_from_vips_header(header);
+  const int long_edge = std::max(dsz.width, dsz.height);
   g_object_unref(header);
   if (long_edge <= 0) return levels;
 
@@ -517,8 +542,8 @@ std::vector<LevelBlob> build_ladder_buffer(const std::uint8_t* data,
   VipsImage* header = vips_image_new_from_buffer(
       data, size, nullptr, "access", VIPS_ACCESS_SEQUENTIAL, nullptr);
   if (!header) return levels;
-  const int long_edge =
-      std::max(vips_image_get_width(header), vips_image_get_height(header));
+  const Size dsz = display_size_from_vips_header(header);
+  const int long_edge = std::max(dsz.width, dsz.height);
   g_object_unref(header);
   if (long_edge <= 0) return levels;
 
@@ -1191,6 +1216,13 @@ std::vector<TileBlob> build_tile_pyramid(const std::filesystem::path& path,
     full = vips_image_new_from_file(path.string().c_str(), nullptr);
   }
   if (!full) return tiles;
+  {
+    VipsImage* rotated = nullptr;
+    if (vips_autorot(full, &rotated, nullptr) == 0 && rotated) {
+      g_object_unref(full);
+      full = rotated;
+    }
+  }
   tiles = cut_pyramid_from_vips(full, min_scale, max_scale, jpeg_quality);
   g_object_unref(full);
   return tiles;
@@ -1209,6 +1241,13 @@ std::vector<TileBlob> build_tile_pyramid_buffer(const std::uint8_t* data,
     full = vips_image_new_from_buffer(data, size, nullptr, nullptr);
   }
   if (!full) return tiles;
+  {
+    VipsImage* rotated = nullptr;
+    if (vips_autorot(full, &rotated, nullptr) == 0 && rotated) {
+      g_object_unref(full);
+      full = rotated;
+    }
+  }
   tiles = cut_pyramid_from_vips(full, min_scale, max_scale, jpeg_quality);
   g_object_unref(full);
   return tiles;
@@ -1237,6 +1276,13 @@ std::optional<TileBlob> build_tile_cell(const std::filesystem::path& path,
       }
     }
     if (shrunk) {
+      {
+        VipsImage* rotated = nullptr;
+        if (vips_autorot(shrunk, &rotated, nullptr) == 0 && rotated) {
+          g_object_unref(shrunk);
+          shrunk = rotated;
+        }
+      }
       auto tile = cut_cell_from_vips(shrunk, remain, x, y, jpeg_quality);
       g_object_unref(shrunk);
       if (tile) {
@@ -1254,6 +1300,13 @@ std::optional<TileBlob> build_tile_cell(const std::filesystem::path& path,
       full = vips_image_new_from_file(path.string().c_str(), nullptr);
     }
     if (!full) return std::nullopt;
+    {
+      VipsImage* rotated = nullptr;
+      if (vips_autorot(full, &rotated, nullptr) == 0 && rotated) {
+        g_object_unref(full);
+        full = rotated;
+      }
+    }
     auto tile = cut_cell_from_vips(full, scale, x, y, jpeg_quality);
     g_object_unref(full);
     if (tile) tile->scale = scale;
@@ -1263,7 +1316,15 @@ std::optional<TileBlob> build_tile_cell(const std::filesystem::path& path,
   const std::string key = ladder_key_for_file(path);
   VipsImage* level = ladder_acquire_level(key, scale, [&]() -> VipsImage* {
     ScopedNsAccumulator timer(global_build_stats().image_load_ns);
-    return vips_image_new_from_file(path.string().c_str(), nullptr);
+    VipsImage* full = vips_image_new_from_file(path.string().c_str(), nullptr);
+    if (full) {
+      VipsImage* rotated = nullptr;
+      if (vips_autorot(full, &rotated, nullptr) == 0 && rotated) {
+        g_object_unref(full);
+        full = rotated;
+      }
+    }
+    return full;
   });
   if (!level) return std::nullopt;
   auto tile = extract_rgb_cell_from_level(level, scale, x, y);
@@ -1296,6 +1357,13 @@ std::optional<TileBlob> build_tile_cell_buffer(const std::uint8_t* data,
       }
     }
     if (shrunk) {
+      {
+        VipsImage* rotated = nullptr;
+        if (vips_autorot(shrunk, &rotated, nullptr) == 0 && rotated) {
+          g_object_unref(shrunk);
+          shrunk = rotated;
+        }
+      }
       auto tile = cut_cell_from_vips(shrunk, remain, x, y, jpeg_quality);
       g_object_unref(shrunk);
       if (tile) {
@@ -1313,6 +1381,13 @@ std::optional<TileBlob> build_tile_cell_buffer(const std::uint8_t* data,
       full = vips_image_new_from_buffer(data, size, nullptr, nullptr);
     }
     if (!full) return std::nullopt;
+    {
+      VipsImage* rotated = nullptr;
+      if (vips_autorot(full, &rotated, nullptr) == 0 && rotated) {
+        g_object_unref(full);
+        full = rotated;
+      }
+    }
     auto tile = cut_cell_from_vips(full, scale, x, y, jpeg_quality);
     g_object_unref(full);
     if (tile) tile->scale = scale;
@@ -1322,7 +1397,15 @@ std::optional<TileBlob> build_tile_cell_buffer(const std::uint8_t* data,
   const std::string key(decode_cache_key);
   VipsImage* level = ladder_acquire_level(key, scale, [&]() -> VipsImage* {
     ScopedNsAccumulator timer(global_build_stats().image_load_ns);
-    return vips_image_new_from_buffer(data, size, nullptr, nullptr);
+    VipsImage* full = vips_image_new_from_buffer(data, size, nullptr, nullptr);
+    if (full) {
+      VipsImage* rotated = nullptr;
+      if (vips_autorot(full, &rotated, nullptr) == 0 && rotated) {
+        g_object_unref(full);
+        full = rotated;
+      }
+    }
+    return full;
   });
   if (!level) return std::nullopt;
   auto tile = extract_rgb_cell_from_level(level, scale, x, y);
