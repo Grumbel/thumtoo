@@ -49,9 +49,9 @@ int main() {
     uris.push_back(file_uri_from_path(p));
   }
   for (const auto& u : uris) {
-    client->request_size(u, [&](std::string, std::optional<Size> s) {
+    client->request_size(u, [&](std::string, SizeReply r) {
       ++any_cb;
-      if (!s) ++null_cb;
+      if (!r.size) ++null_cb;
     });
   }
 
@@ -70,8 +70,8 @@ int main() {
   // cancel_uri on a fresh enqueue.
   const auto u = file_uri_from_path(root / "solo-missing.jpg");
   std::atomic<int> solo_null{0};
-  client->request_size(u, [&](std::string, std::optional<Size> s) {
-    if (!s) ++solo_null;
+  client->request_size(u, [&](std::string, SizeReply r) {
+    if (!r.size) ++solo_null;
   });
   const std::size_t n = client->cancel_uri(u);
   client->drain();
@@ -82,7 +82,7 @@ int main() {
   // bump after enqueue should drop stale.
   for (int i = 0; i < 20; ++i) {
     client->request_size(file_uri_from_path(root / ("stale-" + std::to_string(i) + ".jpg")),
-                         [](std::string, std::optional<Size>) {});
+                         [](std::string, SizeReply) {});
   }
   const auto e2 = client->bump_interest_epoch();
   expect(e2 > e1, "second bump");

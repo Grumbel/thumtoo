@@ -144,7 +144,8 @@ int main(int argc, char** argv) {
 
     const size_t total = client->prepare_paths(
         paths,
-        [&](std::string uri, std::optional<thumtoo::Size> size) {
+        [&](std::string uri, thumtoo::SizeReply reply) {
+          auto size = reply.size;
           if (size && (ladder_edge > 0 || do_tiles)) {
             std::lock_guard lock(progress_mu);
             sized_uris.push_back(uri);

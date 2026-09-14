@@ -164,7 +164,7 @@ int main() {
   // Probe size (layout @ kPdfLayoutDpi).
   {
     bool done = false;
-    client->request_size(uri, [&](std::string, std::optional<thumtoo::Size>) {
+    client->request_size(uri, [&](std::string, thumtoo::SizeReply) {
       done = true;
     });
     client->drain();

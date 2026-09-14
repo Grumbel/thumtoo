@@ -17,6 +17,14 @@ struct Size {
   int height = 0;
 };
 
+/// Result of request_size / ProbeSize — native size plus cache-only LQIP when
+/// already backfilled (never generated on the size path).
+struct SizeReply {
+  std::optional<Size> size;
+  /// ThumbHash / Handsum blob from the content row; empty if not stored yet.
+  std::optional<std::vector<std::uint8_t>> lqip;
+};
+
 struct ContentMeta {
   std::string content_id;
   std::optional<Size> size;

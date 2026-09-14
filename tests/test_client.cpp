@@ -87,9 +87,9 @@ int main() {
 
     bool called = false;
     std::optional<Size> got;
-    client->request_size(uri, [&](std::string, std::optional<Size> s) {
+    client->request_size(uri, [&](std::string, SizeReply r) {
       called = true;
-      got = s;
+      got = r.size;
     });
     client->drain();
     expect(called, "callback invoked");

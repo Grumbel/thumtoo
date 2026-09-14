@@ -2,6 +2,26 @@
 
 ## Status (2026-09-14)
 
+**Tip: thumtoo-200-size-reply-lqip.** Size probe returns durable LQIP with size.
+Prior: **199**.
+
+### Change
+- `SizeReply { size, lqip }` replaces `optional<Size>` on `SizeCallback`
+- Every size path attaches cache-only `get_lqip` (never generates on probe)
+- Hosts get size+LQIP together on open; soft/full still fill later
+
+### ABI
+- **Breaking** for `request_size` / `prepare_paths` callbacks — update callers
+
+### Done criteria
+- [x] Bundle **200**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-14)
+
 **Tip: thumtoo-199-lqip-from-soft.** Opportunistic LQIP from durable soft levels.
 Prior: **198**.
 

@@ -1383,9 +1383,11 @@ void Client::request_size(std::string uri, SizeCallback cb) {
     if (m->size && (m->status == ContentStatus::Ready ||
                     m->status == ContentStatus::Incomplete)) {
       if (cb) {
-        auto size = m->size;
-        executor_.post([cb = std::move(cb), uri, size]() mutable {
-          cb(std::move(uri), size);
+        SizeReply reply;
+        reply.size = m->size;
+        reply.lqip = get_lqip(uri);
+        executor_.post([cb = std::move(cb), uri, reply = std::move(reply)]() mutable {
+          cb(std::move(uri), std::move(reply));
         });
       }
       return;
@@ -1725,7 +1727,7 @@ void Client::reply_cancelled_job(Job& job) {
     auto cb = std::move(job.size_cb);
     auto uri = job.uri;
     executor_.post([cb = std::move(cb), uri = std::move(uri)]() mutable {
-      cb(std::move(uri), std::nullopt);
+      cb(std::move(uri), SizeReply{});
     });
   } else if (job.kind == JobKind::EnsurePixels && job.pixels_cb) {
     auto cb = std::move(job.pixels_cb);
@@ -2315,7 +2317,7 @@ void Client::handle_probe_size(
       auto cb = std::move(job.size_cb);
       auto uri = job.uri;
       executor_.post([cb = std::move(cb), uri = std::move(uri)]() mutable {
-        cb(std::move(uri), std::nullopt);
+        cb(std::move(uri), SizeReply{});
       });
     }
     return;
@@ -2333,18 +2335,22 @@ void Client::handle_probe_size(
   std::optional<Size> size_out;
 
   // Size already known (ladder may still be missing — Incomplete).
-  // Do not re-hash / re-probe on every request_size — but backfill LQIP when
-  // missing (content probed before schema v2 / ThumbHash, or encode failed).
+  // Do not re-hash / re-probe on every request_size. LQIP comes along only if
+  // already stored (soft/pixels backfill); never encode on the size path.
   if (row.width && row.height
       && (row.status == ContentStatus::Ready
           || row.status == ContentStatus::Incomplete)) {
     size_out = Size{*row.width, *row.height};
-    // LQIP is not generated on size probe (decoupled — ensure_lqip / EnsurePixels).
+    // LQIP not generated here — attach durable blob if already backfilled.
     if (job.size_cb) {
       auto cb = std::move(job.size_cb);
       auto uri = job.uri;
-      executor_.post([cb = std::move(cb), uri = std::move(uri), size_out]() mutable {
-        cb(std::move(uri), size_out);
+      SizeReply reply;
+      reply.size = size_out;
+      reply.lqip = get_lqip(uri);
+      executor_.post([cb = std::move(cb), uri = std::move(uri),
+                      reply = std::move(reply)]() mutable {
+        cb(std::move(uri), std::move(reply));
       });
     }
     return;
@@ -2660,14 +2666,18 @@ void Client::handle_probe_size(
 
   db_->upsert_content(row);
 
-  // LQIP is not generated during size probe. Callers that need a soft
-  // underlay use ensure_lqip / EnsurePixels (Galapix polls get_lqip).
+  // LQIP is not generated during size probe — only returned if already stored
+  // (e.g. backfilled after soft ladder). Soft/full pixels fill in later.
 
   if (job.size_cb) {
     auto cb = std::move(job.size_cb);
     auto uri = job.uri;
-    executor_.post([cb = std::move(cb), uri = std::move(uri), size_out]() mutable {
-      cb(std::move(uri), size_out);
+    SizeReply reply;
+    reply.size = size_out;
+    reply.lqip = get_lqip(uri);
+    executor_.post([cb = std::move(cb), uri = std::move(uri),
+                    reply = std::move(reply)]() mutable {
+      cb(std::move(uri), std::move(reply));
     });
   }
 }

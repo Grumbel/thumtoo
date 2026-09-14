@@ -58,7 +58,7 @@ namespace thumtoo {
 /// concurrent workers can share the connection.
 class Client {
  public:
-  using SizeCallback = std::function<void(std::string uri, std::optional<Size>)>;
+  using SizeCallback = std::function<void(std::string uri, SizeReply)>;
   using PixelsCallback =
       std::function<void(std::string uri, int max_edge, std::optional<PixelLevel>)>;
   using TileCallback = std::function<void(std::string uri, int scale, int x, int y,

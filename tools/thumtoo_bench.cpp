@@ -167,7 +167,8 @@ int main(int argc, char** argv) {
       const auto t0 = std::chrono::steady_clock::now();
       std::vector<std::string> sized;
       const size_t total = client->prepare_paths(
-          paths, [&](std::string uri, std::optional<thumtoo::Size> size) {
+          paths, [&](std::string uri, thumtoo::SizeReply reply) {
+            auto size = reply.size;
             if (size) sized.push_back(std::move(uri));
           });
       (void)total;

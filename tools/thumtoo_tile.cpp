@@ -201,7 +201,7 @@ int main(int argc, char** argv) {
   // Ensure size probe so meta exists (needed for cache keys / PDF layout).
   {
     bool done = false;
-    client->request_size(uri, [&](std::string, std::optional<thumtoo::Size>) {
+    client->request_size(uri, [&](std::string, thumtoo::SizeReply) {
       done = true;
     });
     client->drain();
