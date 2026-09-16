@@ -2,6 +2,29 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-211-overlay-decisions.** Record redesign decisions + Hypertia sketch.
+Prior: **210**.
+
+### Change
+- `docs/BLOB_AND_OVERLAY.md`: tiles-only; hash-on-read/tag; EPUB multi-key;
+  three DB roles; thumtoo-as-library; link text refs; provisional PK vs export
+  hash; directory cache-first; media+kind; 0.2.0 deferrals; Hypertia HTTP
+  sketch; updated priority and narrow open list.
+
+### Apply
+```bash
+git pull /path/to/thumtoo-211-overlay-decisions.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **211**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-210-archive-pipe-uri.** Prefer //archive: pipes; no JAR !/ in docs.
 Prior: **209**.
 

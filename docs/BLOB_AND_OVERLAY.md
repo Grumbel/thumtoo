@@ -569,49 +569,192 @@ WWW.
 
 ---
 
-## 16. Priority order (discussion)
+## 16. Decisions (2026-09-16)
 
-1. Blob + `blob_hash` + locator + container_member (identity + archives)  
-2. Media + region + tiles (+ codec table); levels demoted  
-3. Blob tags (dirtoo parity) and sets/collections  
-4. Doc structure (text, links, maps) + bookmarks/annotations  
-5. Link edges / trails + backlinks index  
-6. media_aux (attention, AI)  
-7. HTTP(s) locators + Internet Archive (open items; IIIF for books)  
-8. Hypertia transport / IPLD export (shape only until needed)
+Settled for the redesign spine. Earlier “open questions” that match these are
+closed.
+
+### Pixels: tiles only
+
+- **No durable multi-edge levels** in the new schema.
+- Tile grid is the pixel source of truth (256² and below already match a “level”;
+  larger soft/full views are **reconstructed from tiles**).
+- biltoo may keep a compatibility path that assembles ladder-like edges from
+  tiles until **0.1.0**; after that, prefer full tile rendering in the host.
+
+### When to hash archive members
+
+Hash member bytes when:
+
+1. the member is **read in full** for another purpose (decode, extract, copy), or  
+2. the user **explicitly** requests a checksum, or  
+3. hashing is **required** for tagging, bookmarks, trails, or other overlay ops
+   keyed by blob identity.
+
+Not on mere TOC list. Nested archives follow the same rule per member.
+
+### EPUB region keys
+
+- Prefer keys derivable from the **text / structure overlay** when available
+  (stable anchors from the extract).
+- Allow **multiple addressing means** for the same bookmark target (e.g. spine
+  id, CFI-like path, ordinal) — store as alternate keys or multi-key region
+  rows rather than a single fragile scheme.
+- Exact EPUB key grammar still needs a short design pass; principle is fixed.
+
+### Database layout (three roles)
+
+| Store | Contents | Notes |
+|-------|----------|--------|
+| **Index / small meta** | blob, blob_hash, locator, container_member, media, region, directory snapshots, link_edge text refs, schema_meta | SQLite, hot, small rows |
+| **Bulk cache** | tile payloads, HTTP body cache, other large BLOBs | Separate SQLite (or equivalent); disposable |
+| **User data** | tags, tag defs, collections/sets, bookmarks, user annotations, user link trails | Separate DB under XDG data (not pure cache); survives cache wipe |
+
+Exact filenames under `$XDG_CACHE_HOME` / `$XDG_DATA_HOME` TBD; the split is
+normative. Cache wipe must **not** destroy user data.
+
+### Library ownership
+
+- **thumtoo** is the shared **library** for the lower layers (blob, locator,
+  archive members, media probe, tiles, directory cache, optional HTTP fetch).
+- dirtoo / biltoo link the library; avoid long-term dual checksum/tag
+  implementations. Bridge/migration from existing dirtoo DBs is allowed; the
+  target API is thumtoo (or a thin façade over the same stores).
+
+### Deferred to 0.2.0 (keep on TODO, do not block spine)
+
+- Internet Archive **search** UI and **IIIF-first** book reading  
+- **`ia:`** URI scheme vs only `https://archive.org/…`  
+- WWW **HTML as container of links** (extract graph from pages)  
+- Full **Hypertia** multi-machine product (protocol sketch below is enough for now)
+
+### Link edges
+
+- **Text canonical refs** for `from_ref` / `to_ref` (no `ref_node` / typed FK
+  edges for now). Requires strict `canonicalize(ref)`.
+
+### Provisional blobs
+
+- **Inside the DB:** always link by integer **PK** (`blob_id`, etc.).
+- **Exported / wire URLs:** content-addressed form (`blob:sha256:…`). If a hash
+  is not yet available, **compute it on demand** when exporting or when an
+  overlay needs a stable public ref—do not ship provisional path-only identities
+  as durable external links.
+
+### Directory listings
+
+- **First open** of a directory should read a **cached snapshot from the DB**
+  (no blocking full filesystem walk on cold USB/NFS).
+- `inotify` (and similar) **update the cache** and notify listeners later; they
+  are not required for the initial paint.
+- Live FS remains authoritative for mutations; cache is the fast path for list
+  UI (dirtoo + thumtoo alignment).
+
+### `media` table
+
+- Single **`media`** row with **`kind`** (`image` | `document` | `video` |
+  `audio` | …), not separate top-level image/video/audio tables (see discussion
+  notes above).
 
 ---
 
-## 17. Open questions
+## 17. Hypertia protocol sketch (DB-agnostic)
 
-1. Canonical merge digest (SHA-256 only vs multi-algo equality rules).  
-2. Region key stability for EPUB reflow and archive renames inside CBR.  
-3. Tiles-only vs hybrid single soft preview blob for Gallery performance.  
-4. One SQLite vs split (checksum cache vs tags data) while sharing blob ids.  
-5. Whether collections are exclusive membership (dirtoo FileSet) or multi-set.  
-6. Hypertia auth and multi-user overlay namespaces.  
-7. How much extracted WWW structure to store vs on-demand fetch.  
-8. IA: IIIF-first vs PDF download-first for `mediatype:texts`; whether
-   `ia:` is a first-class URI scheme or only `https://archive.org/…`.
+Goal: one thumtoo instance can offer blobs, media views, and overlays to another
+machine **without exposing SQLite internals**. Refs on the wire are the same
+canonical text forms as local (`blob:sha256:…`, pipes, `https:…`).
+
+### Roles
+
+- **Server:** local library + optional user-data store; speaks Hypertia over HTTP
+  (or HTTP/2).  
+- **Client:** another thumtoo / biltoo / dirtoo; resolves refs, may cache tiles
+  locally as its own bulk DB.
+
+### URL shape (illustrative)
+
+```text
+GET /v1/blob/{algo}/{hex}           → raw bytes (if permitted)
+HEAD /v1/blob/{algo}/{hex}          → size, digest headers only
+GET /v1/blob/{algo}/{hex}/meta      → JSON: size, kind hints, media probe
+GET /v1/blob/{algo}/{hex}/tiles?scale=&x=&y=  → tile bytes + codec
+GET /v1/blob/{algo}/{hex}/page/{n}  → page meta / raster policy
+GET /v1/blob/{algo}/{hex}/links     → outgoing link_edge as JSON
+GET /v1/blob/{algo}/{hex}/backlinks
+GET /v1/tags?blob=sha256:…          → tag list (if user-data shared)
+GET /v1/resolve?uri=file:///…       → { blob, media } if known (local server)
+```
+
+- Path and query use **public refs**, never internal integer ids.  
+- Integer PKs stay server-local.  
+- Authz (read-only share vs user-data write) is orthogonal; default sketch is
+  read of cacheable blob/media, optional read of overlays.
+
+### Client behaviour
+
+1. Receive or paste `blob:sha256:…` or `https://host/v1/blob/sha256/…`.  
+2. Fetch meta → optional tiles/pages.  
+3. Store in **local** bulk/index under the same digest (merge by hash).  
+4. Overlays either stay on the server or are copied as link_edge text rows.
+
+This is enough to implement a prototype later; not part of 0.1.0 spine.
 
 ---
 
-## 18. Summary
+## 18. Implementation priority (post-decision)
 
-- Replace string `content_id` PKs with **integer blob ids**; digests in
-  **`blob_hash`**; name dumb bytes **`blob`**, meaning **`media`/`region`**.
-- Hash **archive members**; support nested containers in the model.
-- Prefer **tiles** (+ optional preview) over a parallel full ladder.
-- Put tags, sets, trails, bookmarks, annotations in an **overlay graph** that
-  only references ids—Memex-style association without mutating records.
-- Align with **dirtoo** checksum + tag + set + archive behaviour at the
-  identity boundary.
-- **Hypertia** is HTTP-shaped access to blobs, media, and overlays; the WWW is
-  another locator space and link source, not a separate data model.
-- **Internet Archive** is a first-class remote library: metadata/search/download
-  APIs + IIIF for open texts/images; map to locators, containers, and regions.
-- **IPFS/IPLD** contribute vocabulary (CID, immutable blocks, mutable names),
-  not a required runtime.
+**0.1.0 spine (thumtoo library)**
 
-This document is the standing brainstorm; normative schema belongs in
-DESIGN.md (or a successor) only after the open questions above are decided.
+1. blob + blob_hash + locator (PK-internal; wire `blob:sha256:`)  
+2. container_member + //archive: + hash-on-read/tag policy  
+3. media + kind + //page: regions  
+4. tiles + codec (+ reconstruct soft views); no new levels table  
+5. directory **snapshots in DB**; first list from cache  
+6. split DBs: index / bulk / user-data  
+7. tag_def + blob_tag; collections/sets  
+8. link_edge (canonical text refs)  
+9. extracted text layer / links cache on page region  
+10. minimal HTTPS fetch → body in bulk store → blob  
+
+**After 0.1.0**
+
+- biltoo full tile rendering (drop ladder compatibility path)  
+- EPUB multi-key regions detail  
+- Hypertia prototype  
+
+**0.2.0+ TODO**
+
+- IA search + IIIF-first books; `ia:` scheme  
+- WWW HTML link extraction  
+- Richer hypertia auth / multi-user  
+
+---
+
+## 19. Still open (narrow)
+
+1. Canonical **merge** when several algos present (SHA-256 wins for identity?).  
+2. EPUB **concrete** key fields (from text overlay vs spine list).  
+3. Collection membership **exclusive** (dirtoo FileSet) vs multi-set.  
+4. Exact XDG paths and filenames for the three DB roles.  
+5. Directory snapshot **invalidation** policy when inotify is missing.  
+6. Whether user-data DB is process-shared read/write from dirtoo and biltoo
+   simultaneously (locking).
+
+---
+
+## 20. Summary
+
+- Integer **blob** PKs; **blob_hash** side table; **media** + **kind**; regions
+  via **`//page:`** / **`//archive:`** pipes.  
+- **Tiles only**; reconstruct larger views; biltoo tile-native after 0.1.0.  
+- Hash archive members on full read, explicit request, or overlay need.  
+- **Three stores:** small index, bulk cache, user-editable data.  
+- **thumtoo library** owns the lower layer for dirtoo and biltoo.  
+- **link_edge** = canonical text refs; provisional blobs use PK inside, hash on
+  export.  
+- **Directory first paint from DB cache**; watchers refresh later.  
+- IA / HTML graph / full Hypertia product deferred; protocol sketch is
+  ref-based HTTP, not SQL over the wire.
+
+Normative schema should land in DESIGN.md (or a successor) from §16–18 once
+the narrow open list (§19) is closed enough to code.
