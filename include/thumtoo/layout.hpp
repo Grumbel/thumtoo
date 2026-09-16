@@ -16,7 +16,7 @@ namespace thumtoo {
 /// Opt out (dual-path): THUMTOO_STORE_ONLY=0.
 [[nodiscard]] bool store_only_mode();
 
-/// Dual-write into Store from legacy rows (false under STORE_ONLY).
+/// Dual-write legacy→Store for probe rows (false when store_only_mode()).
 [[nodiscard]] bool dual_write_to_store_enabled();
 
 [[nodiscard]] std::filesystem::path legacy_db_root(

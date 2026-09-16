@@ -67,13 +67,10 @@ tree); do not invent a second PreferCache retry loop.
    `THUMTOO_STORE_ONLY=0` for dual-path.
    Durable Store only for the common URI kinds (file, PDF, DjVu, EPUB, archive
    members, HTTP images): probe, session pixels, tile cells.
-4. Dual-write (`mirror_probe_to_store`) skipped under STORE_ONLY; tags are
-   Store-only. `mirror_tiles_to_store` remains the durable tile write path.
-5. Public APIs null-safe under STORE_ONLY: `prepare_paths`, archive TOC,
-   document page count, text/outline (session extract), `invalidate_tile`.
-6. ~~Host soak~~ — confirmed; STORE_ONLY is the default (≥257).
-7. Dual-write (`mirror_probe_to_store`) only when `THUMTOO_STORE_ONLY=0`.
-8. Migration: **no** ladder→tile conversion (PLAN non-goal); cold rebuild tiles.
+4. Default STORE_ONLY (≥257). Dual-write probe only when `THUMTOO_STORE_ONLY=0`.
+5. `put_tiles_to_store` is the durable tile path (renamed from mirror_tiles).
+6. Public APIs null-safe without legacy: `prepare_paths`, archive TOC, etc.
+7. Migration: **no** ladder→tile conversion (PLAN non-goal); cold rebuild tiles.
 
 Under tiles-first, EnsurePixels does not write durable `levels` for soft *or*
 full_native. Session encode + TileSynth (when the pyramid covers the want) supply

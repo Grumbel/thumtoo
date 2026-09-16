@@ -4406,11 +4406,11 @@ void Client::store_tiles(const std::string& content_id,
     tr.source = static_cast<int>(t.source);
     db_->upsert_tile(tr);
   }
-  // Always durable on Store (primary under STORE_ONLY; dual-write under dual-path).
-  mirror_tiles_to_store(content_id, tiles);
+  // Durable tile write to redesign Store (legacy tiles written above when present).
+  put_tiles_to_store(content_id, tiles);
 }
 
-void Client::mirror_tiles_to_store(const std::string& content_id,
+void Client::put_tiles_to_store(const std::string& content_id,
                                    const std::vector<TileBlob>& tiles) {
   if (!store_ || tiles.empty() || content_id.empty()) return;
 
@@ -4455,7 +4455,7 @@ void Client::mirror_tiles_to_store(const std::string& content_id,
       store_->put_hash(*blob_id, HashAlgoId::Sha256, *digest);
     } catch (const std::exception& ex) {
       if (debug_enabled()) {
-        dbg("mirror_tiles_to_store insert_blob: %s", ex.what());
+        dbg("put_tiles_to_store insert_blob: %s", ex.what());
       }
       return;
     }
@@ -4498,7 +4498,7 @@ void Client::mirror_tiles_to_store(const std::string& content_id,
     }
   } catch (const std::exception& ex) {
     if (debug_enabled()) {
-      dbg("mirror_tiles_to_store failed content_id=%s: %s", content_id.c_str(),
+      dbg("put_tiles_to_store failed content_id=%s: %s", content_id.c_str(),
           ex.what());
     }
   }

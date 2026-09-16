@@ -454,7 +454,7 @@ class Client {
   void mirror_probe_to_store(std::string_view uri,
                              const Database::ContentRow& row);
   /// Dual-path: copy newly encoded tiles into Store bulk (by content_id hash).
-  void mirror_tiles_to_store(const std::string& content_id,
+  void put_tiles_to_store(const std::string& content_id,
                              const std::vector<TileBlob>& tiles);
 
   /// Resolve pure/page content_id to Store media+region for tile read fallback.

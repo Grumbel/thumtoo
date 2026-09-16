@@ -2,6 +2,31 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-258-put-tiles-rename.** put_tiles_to_store; docs for default STORE_ONLY.
+Prior: **257**.
+
+### Change
+- Rename `mirror_tiles_to_store` → `put_tiles_to_store` (primary Store write)
+- HOST_CUTOVER env: STORE_ONLY default on
+
+### Next
+- Optional: remove `mirror_probe_to_store` after dual-path deprecation window
+- Hosts rely on default Store-only
+
+### Apply
+```bash
+git pull /path/to/thumtoo-258-put-tiles-rename.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **258**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-257-store-only-default.** STORE_ONLY is the default after soak.
 Prior: **256**.
 
