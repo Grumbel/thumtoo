@@ -2,6 +2,32 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-228-archive-store-mirror.** Archive TOC + member blob dual-write to Store.
+Prior: **227**.
+
+### Change
+- `ensure_store_container_blob` — container blob + root/`file://` locators
+- `refresh_archive_toc` → Store `replace_container_members`
+- `mirror_probe_to_store` on `//archive:` → `set_container_member_blob`
+
+### Next
+- Host tile-native (biltoo after 0.1.0)
+- Drop legacy levels when hosts ready
+
+### Apply
+```bash
+git pull /path/to/thumtoo-228-archive-store-mirror.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **228**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-227-tiles-first-soft.** Skip soft ladder encode when tiles cover.
 Prior: **226**.
 

@@ -55,6 +55,8 @@ cache wipe.
   media dims when legacy has no row (`meta_from_store`).
 - **Directory:** `Client::{find,list,replace,delete,refresh}_directory_*`
   forward to Store (cache-first folder open).
+- **Archive:** `refresh_archive_toc` dual-writes Store `container_member` TOC;
+  member size probe attaches hashed member blob via `set_container_member_blob`.
 
 ## Next cutover steps
 
