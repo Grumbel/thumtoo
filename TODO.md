@@ -2,6 +2,33 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-271-legacy-lib-split.** Database/BlobStore → `thumtoo_legacy` library.
+Prior: **270**.
+
+### Change
+- Core `libthumtoo.a` no longer compiles `database.cpp` / `blob_store.cpp`
+- New `libthumtoo_legacy.a` (`thumtoo::legacy`) for tools/tests that still touch schema-4
+- `thumtoo-gc` / `thumtoo-status` / `test_database` / `test_text_layer_cache` link legacy
+- `test_store_root` migrate seed uses raw SQLite (no Database class)
+
+### Apply
+```bash
+git pull /path/to/thumtoo-271-legacy-lib-split.bundle HEAD
+```
+
+### Host note
+Biltoo/Store-only hosts link only `thumtoo`. Operators building gc/status need `thumtoo_legacy` too.
+
+### Done criteria
+- [x] Bundle **271**
+- [x] Full unit test suite passes
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-270-store-forget-uri.** Store::forget_uri + Client purge + gc Store path.
 Prior: **269**.
 

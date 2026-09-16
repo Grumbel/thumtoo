@@ -3,11 +3,11 @@
 
 /// Top-level Store layout (default) + dual-path migrate + STORE_ROOT=0 opt-out.
 
-#include "thumtoo/blob_store.hpp"
 #include "thumtoo/client.hpp"
 #include "thumtoo/constants.hpp"
-#include "thumtoo/database.hpp"
 #include "thumtoo/store.hpp"
+
+#include "sqlite3.h"
 
 #include <cstdlib>
 #include <filesystem>
@@ -74,14 +74,35 @@ int main() {
   // --- B: classic dual-path cache migrates on open ---
   {
     const fs::path cache = make_tmpdir("store-root-migrate");
-    // Seed legacy at top (schema < 100): index + blobs (classic dual-path).
+    // Seed legacy at top (schema < 100) without Database/BlobStore classes.
     {
-      auto db = thumtoo::Database::open(cache);
-      expect(db.schema_version() == thumtoo::kSchemaVersion, "seed legacy schema");
-      (void)db;
-      auto blobs = thumtoo::BlobStore::open(cache);
+      auto seed_meta = [](const fs::path& db_path, int version) {
+        sqlite3* db = nullptr;
+        if (sqlite3_open(db_path.string().c_str(), &db) != SQLITE_OK) {
+          if (db) sqlite3_close(db);
+          expect(false, "seed open sqlite");
+          return;
+        }
+        char* err = nullptr;
+        sqlite3_exec(db,
+                     "CREATE TABLE IF NOT EXISTS schema_meta("
+                     "key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+                     nullptr, nullptr, &err);
+        if (err) {
+          sqlite3_free(err);
+          err = nullptr;
+        }
+        const std::string sql =
+            "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('schema_version', '" +
+            std::to_string(version) + "');";
+        sqlite3_exec(db, sql.c_str(), nullptr, nullptr, &err);
+        if (err) sqlite3_free(err);
+        sqlite3_close(db);
+      };
+      seed_meta(cache / "index.sqlite", thumtoo::kSchemaVersion);
+      seed_meta(cache / "blobs.sqlite", thumtoo::kSchemaVersion);
+      expect(file_nonempty(cache / "index.sqlite"), "seed legacy index.sqlite");
       expect(file_nonempty(cache / "blobs.sqlite"), "seed legacy blobs.sqlite");
-      (void)blobs;
     }
     // Seed redesign under store/ (schema ≥ 100).
     {

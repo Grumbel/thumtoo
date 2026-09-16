@@ -11,7 +11,6 @@
 
 #include "thumtoo/client.hpp"
 #include "thumtoo/constants.hpp"
-#include "thumtoo/database.hpp"
 #include "thumtoo/pdf.hpp"
 #include "thumtoo/uri.hpp"
 

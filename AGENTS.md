@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-270-store-forget-uri**. Next bundle: **271**.
+Latest agent handoff: **TODO.md → thumtoo-271-legacy-lib-split**. Next bundle: **272**.
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code
 here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 

@@ -52,7 +52,6 @@ endif()
 pkg_check_modules(LIBCURL IMPORTED_TARGET libcurl)
 
 add_library(thumtoo
-  src/database.cpp
   src/store.cpp
   src/uri.cpp
   src/client.cpp
@@ -65,7 +64,6 @@ add_library(thumtoo
   src/djvu.cpp
   src/expand.cpp
   src/format.cpp
-  src/blob_store.cpp
   src/build_stats.cpp
   src/lqip.cpp
   src/handsum.cpp
@@ -75,6 +73,15 @@ add_library(thumtoo
   src/appearance.cpp
 )
 add_library(thumtoo::thumtoo ALIAS thumtoo)
+
+# Schema-4 ladder (index.sqlite + blobs.sqlite). Optional for hosts; tools/tests
+# that still GC or inspect on-disk legacy caches link this target.
+add_library(thumtoo_legacy
+  src/database.cpp
+  src/blob_store.cpp
+)
+add_library(thumtoo::legacy ALIAS thumtoo_legacy)
+target_link_libraries(thumtoo_legacy PUBLIC thumtoo)
 
 if(THUMTOO_HAVE_UNARR)
   target_sources(thumtoo PRIVATE src/archive_unarr.cpp)
@@ -149,13 +156,13 @@ target_compile_options(thumtoo PRIVATE -Wall -Wextra -Wpedantic)
 
 if(THUMTOO_BUILD_TOOLS)
   add_executable(thumtoo-status tools/thumtoo_status.cpp)
-  target_link_libraries(thumtoo-status PRIVATE thumtoo)
+  target_link_libraries(thumtoo-status PRIVATE thumtoo_legacy)
   add_executable(thumtoo-prepare tools/thumtoo_prepare.cpp)
   target_link_libraries(thumtoo-prepare PRIVATE thumtoo)
   add_executable(thumtoo-bench tools/thumtoo_bench.cpp)
   add_executable(thumtoo-tile tools/thumtoo_tile.cpp)
   add_executable(thumtoo-gc tools/thumtoo_gc.cpp)
-  target_link_libraries(thumtoo-gc PRIVATE thumtoo)
+  target_link_libraries(thumtoo-gc PRIVATE thumtoo_legacy)
   add_executable(thumtoo-archive tools/thumtoo_archive.cpp)
   target_link_libraries(thumtoo-archive PRIVATE thumtoo)
   target_link_libraries(thumtoo-tile PRIVATE thumtoo)
@@ -167,7 +174,7 @@ endif()
 if(THUMTOO_BUILD_TESTS)
   enable_testing()
   add_executable(thumtoo-test-database tests/test_database.cpp)
-  target_link_libraries(thumtoo-test-database PRIVATE thumtoo)
+  target_link_libraries(thumtoo-test-database PRIVATE thumtoo_legacy)
   add_test(NAME database COMMAND thumtoo-test-database)
 
   add_executable(thumtoo-test-store tests/test_store.cpp)
@@ -227,11 +234,11 @@ if(THUMTOO_BUILD_TESTS)
   target_link_libraries(thumtoo-test-epub-text PRIVATE thumtoo)
   add_test(NAME epub_text COMMAND thumtoo-test-epub-text)
   add_executable(thumtoo-test-text-layer-cache tests/test_text_layer_cache.cpp)
-  target_link_libraries(thumtoo-test-text-layer-cache PRIVATE thumtoo)
+  target_link_libraries(thumtoo-test-text-layer-cache PRIVATE thumtoo_legacy)
   add_test(NAME text_layer_cache COMMAND thumtoo-test-text-layer-cache)
 endif()
 
-install(TARGETS thumtoo
+install(TARGETS thumtoo thumtoo_legacy
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
