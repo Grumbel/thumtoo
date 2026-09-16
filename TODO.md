@@ -2,6 +2,27 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-260-store-meta-ready.** Store meta Ready when durable tiles exist.
+Prior: **259**.
+
+### Change
+- `meta_from_store`: Ready if any tile scales for image full / page region
+- `get_meta_for_content_id` via Store locators when no legacy
+
+### Apply
+```bash
+git pull /path/to/thumtoo-260-store-meta-ready.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **260**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-259-fix-client-store-only.** Fix test_client under default STORE_ONLY.
 Prior: **258**.
 

@@ -296,6 +296,9 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
     cm.content_id += ":page:" + std::to_string(pdf->page);
     cm.format = "pdf";
     cm.status = ContentStatus::Incomplete;
+    if (!store_->list_tile_scales(media->id, region->id).empty()) {
+      cm.status = ContentStatus::Ready;
+    }
     // Prefer layout-size probe; fall back to media dims from last Store-only probe.
     if (auto layout =
             pdf_page_layout_size(pdf->pdf_path, pdf->page, pdf->backend)) {
@@ -316,6 +319,9 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
     cm.content_id += ":page:" + std::to_string(dj->page);
     cm.format = "djvu";
     cm.status = ContentStatus::Incomplete;
+    if (!store_->list_tile_scales(media->id, region->id).empty()) {
+      cm.status = ContentStatus::Ready;
+    }
     if (auto layout = djvu_page_layout_size(dj->djvu_path, dj->page)) {
       cm.size = *layout;
     } else if (media->width && media->height) {
@@ -335,6 +341,9 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
     cm.content_id += ":page:" + std::to_string(ep->page);
     cm.format = "epub";
     cm.status = ContentStatus::Incomplete;
+    if (!store_->list_tile_scales(media->id, region->id).empty()) {
+      cm.status = ContentStatus::Ready;
+    }
     if (auto layout =
             epub_page_layout_size(ep->epub_path, ep->page, ep->layout)) {
       cm.size = *layout;
@@ -351,6 +360,11 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
     }
     cm.format = "image";
     cm.status = ContentStatus::Incomplete;
+    if (auto full = store_->find_full_region(media->id)) {
+      if (!store_->list_tile_scales(media->id, full->id).empty()) {
+        cm.status = ContentStatus::Ready;
+      }
+    }
     return cm;
   }
   return std::nullopt;
@@ -524,8 +538,23 @@ std::vector<Database::LocatorRow> Client::list_uris_for_content_id(
 
 std::optional<ContentMeta> Client::get_meta_for_content_id(
     std::string_view content_id) const {
-  if (!db_) return std::nullopt;
-  return db_->meta_for_content_id(content_id);
+  if (db_) {
+    if (auto m = db_->meta_for_content_id(content_id)) return m;
+  }
+  // STORE_ONLY: pure sha256 content_id → first Store locator for that blob.
+  if (!store_) return std::nullopt;
+  constexpr std::string_view kSha = "sha256:";
+  if (!content_id.starts_with(kSha) || content_id.size() < kSha.size() + 64) {
+    return std::nullopt;
+  }
+  const std::string_view hex = content_id.substr(kSha.size(), 64);
+  auto digest = Store::parse_sha256_digest(hex);
+  if (!digest) return std::nullopt;
+  auto blob_id = store_->find_blob_by_hash(HashAlgoId::Sha256, *digest);
+  if (!blob_id) return std::nullopt;
+  auto locs = store_->list_locators_for_blob(*blob_id, 1);
+  if (locs.empty()) return std::nullopt;
+  return meta_from_store(locs.front().uri);
 }
 
 
