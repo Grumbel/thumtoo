@@ -2,6 +2,28 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-282-locator-row-init.** Fix -Wmaybe-uninitialized on list_locators.
+Prior: **281**.
+
+### Change
+- `Client::locator_row_from_store` — value-init LocatorRow; assign optionals via `has_value`
+- All list/find locator paths use the helper (no bare `r.size = sl.size`)
+
+### Apply
+```bash
+git pull /path/to/thumtoo-282-locator-row-init.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **282**
+- [x] No -Wmaybe-uninitialized on list_locators
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-281-polish-docs-handlers.** Post-cutover comment/doc polish; drop `_store_only` names.
 Prior: **280**.
 

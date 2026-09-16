@@ -381,16 +381,26 @@ std::size_t Client::refresh_directory_snapshot(
   return entries.size();
 }
 
+Client::LocatorRow Client::locator_row_from_store(const Store::LocatorRow& sl) const {
+  Client::LocatorRow r{};
+  r.uri = sl.uri;
+  if (sl.size) {
+    r.size = std::optional<std::int64_t>(*sl.size);
+  }
+  if (sl.mtime_ns) {
+    r.mtime_ns = std::optional<std::int64_t>(*sl.mtime_ns);
+  }
+  if (auto m = meta_from_store(sl.uri)) {
+    r.content_id = std::move(m->content_id);
+  }
+  return r;
+}
+
 std::vector<Client::LocatorRow> Client::list_locators(int limit) const {
   if (!store_) return {};
   std::vector<Client::LocatorRow> out;
   for (const auto& sl : store_->list_locators(limit)) {
-    Client::LocatorRow r;
-    r.uri = sl.uri;
-    r.size = sl.size;
-    r.mtime_ns = sl.mtime_ns;
-    if (auto m = meta_from_store(sl.uri)) r.content_id = m->content_id;
-    out.push_back(std::move(r));
+    out.push_back(locator_row_from_store(sl));
   }
   return out;
 }
@@ -399,12 +409,7 @@ std::optional<Client::LocatorRow> Client::find_locator(std::string_view uri) con
   if (!store_) return std::nullopt;
   auto sl = store_->find_locator(uri);
   if (!sl) return std::nullopt;
-  Client::LocatorRow r;
-  r.uri = sl->uri;
-  r.size = sl->size;
-  r.mtime_ns = sl->mtime_ns;
-  if (auto m = meta_from_store(uri)) r.content_id = m->content_id;
-  return r;
+  return locator_row_from_store(*sl);
 }
 
 std::vector<Client::LocatorRow> Client::list_locators_by_uri_prefix(
@@ -412,12 +417,7 @@ std::vector<Client::LocatorRow> Client::list_locators_by_uri_prefix(
   if (!store_ || uri_prefix.empty()) return {};
   std::vector<Client::LocatorRow> out;
   for (const auto& sl : store_->list_locators_by_uri_prefix(uri_prefix, limit)) {
-    Client::LocatorRow r;
-    r.uri = sl.uri;
-    r.size = sl.size;
-    r.mtime_ns = sl.mtime_ns;
-    if (auto m = meta_from_store(sl.uri)) r.content_id = m->content_id;
-    out.push_back(std::move(r));
+    out.push_back(locator_row_from_store(sl));
   }
   return out;
 }
@@ -439,12 +439,7 @@ std::vector<Client::LocatorRow> Client::list_locators_like(
   if (!store_ || uri_like_pattern.empty()) return {};
   std::vector<Client::LocatorRow> out;
   for (const auto& sl : store_->list_locators_like(uri_like_pattern, limit)) {
-    Client::LocatorRow r;
-    r.uri = sl.uri;
-    r.size = sl.size;
-    r.mtime_ns = sl.mtime_ns;
-    if (auto m = meta_from_store(sl.uri)) r.content_id = m->content_id;
-    out.push_back(std::move(r));
+    out.push_back(locator_row_from_store(sl));
   }
   return out;
 }
@@ -474,11 +469,8 @@ std::vector<Client::LocatorRow> Client::list_uris_for_content_id(
   std::vector<Client::LocatorRow> out;
   out.reserve(store_locs.size());
   for (const auto& sl : store_locs) {
-    Client::LocatorRow r;
-    r.uri = sl.uri;
+    auto r = locator_row_from_store(sl);
     r.content_id = std::string(content_id.substr(0, kSha.size() + 64));
-    r.size = sl.size;
-    r.mtime_ns = sl.mtime_ns;
     out.push_back(std::move(r));
   }
   return out;

@@ -486,6 +486,8 @@ class Client {
   /// ContentMeta from Store locator + media/regions.
   [[nodiscard]] std::optional<ContentMeta> meta_from_store(
       std::string_view uri) const;
+  [[nodiscard]] LocatorRow locator_row_from_store(
+      const Store::LocatorRow& sl) const;
 
   /// Ensure a Store blob + locators for an archive container (no full-file hash).
   [[nodiscard]] std::optional<std::int64_t> ensure_store_container_blob(
