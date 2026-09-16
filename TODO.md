@@ -2,6 +2,31 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-236-gc-soft-levels.** thumtoo-gc --soft-levels purges soft ladder rows.
+Prior: **235**.
+
+### Change
+- `thumtoo-gc --soft-levels`: delete levels with max_edge ≤ kBatchMaxEdge (index + blobs)
+- HOST_CUTOVER documents purge for tiles-first caches
+
+### Next
+- Store-only Client open / top-level Store layout
+- Remove dual-write helpers after Store-only is default
+
+### Apply
+```bash
+git pull /path/to/thumtoo-236-gc-soft-levels.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **236**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-235-cutover-soft-writes-done.** Mark soft-level write stop in cutover docs.
 Prior: **234**.
 

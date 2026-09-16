@@ -30,7 +30,7 @@ void usage(const char* argv0) {
       << "Usage: " << argv0
       << " [--cache DIR] [--dry-run]\n"
       << "       [--uri URI]... [--path PATH]...\n"
-      << "       [--min-scale N] [--orphans] [--dead-paths]\n"
+      << "       [--min-scale N] [--orphans] [--dead-paths] [--soft-levels]\n"
       << "\n"
       << "Manual cache maintenance (no automatic eviction).\n"
       << "\n"
@@ -46,6 +46,8 @@ void usage(const char* argv0) {
       << "  --orphans       Remove content with no locators (+ their blobs)\n"
       << "  --dead-paths    Remove locators whose outer_path is missing on disk\n"
       << "                  (then purge newly orphaned content)\n"
+      << "  --soft-levels   Drop soft/overview levels (max_edge ≤ batch edge)\n"
+      << "                  from index + blobs; keep full_native and tiles\n"
       << "\n"
       << "At least one action flag is required.\n"
       << "LQIP on content rows is kept until the content row is purged.\n"
@@ -141,6 +143,7 @@ int main(int argc, char** argv) {
   bool dry_run = false;
   bool do_orphans = false;
   bool do_dead = false;
+  bool do_soft_levels = false;
   int min_scale = -1;
   std::vector<std::string> uris;
   std::vector<std::filesystem::path> paths;
@@ -179,12 +182,17 @@ int main(int argc, char** argv) {
       do_dead = true;
       continue;
     }
+    if (a == "--soft-levels") {
+      do_soft_levels = true;
+      continue;
+    }
     std::cerr << "Unknown argument: " << a << "\n";
     usage(argv[0]);
     return 2;
   }
 
-  if (min_scale < 0 && !do_orphans && !do_dead && uris.empty() && paths.empty()) {
+  if (min_scale < 0 && !do_orphans && !do_dead && !do_soft_levels && uris.empty()
+      && paths.empty()) {
     usage(argv[0]);
     return 2;
   }
@@ -236,6 +244,31 @@ int main(int argc, char** argv) {
       } else {
         std::cout << "  dry-run: would DELETE FROM tiles/tile_blobs WHERE scale < "
                   << min_scale << "\n";
+      }
+    }
+
+    if (do_soft_levels) {
+      const int edge_cap = thumtoo::kBatchMaxEdge;
+      std::cout << "soft/overview levels (max_edge <= " << edge_cap << "):\n";
+      auto contents = db.list_content(1000000);
+      std::int64_t n = 0;
+      for (const auto& c : contents) {
+        auto levels = db.list_levels(c.content_id, 100000);
+        for (const auto& lv : levels) {
+          if (lv.max_edge > edge_cap) continue;
+          std::cout << "  " << lv.content_id << " edge=" << lv.max_edge
+                    << " frame=" << lv.frame_idx << "\n";
+          ++n;
+          if (!dry_run) {
+            blobs.delete_level(lv.content_id, lv.max_edge, lv.frame_idx);
+            db.delete_level(lv.content_id, lv.max_edge, lv.frame_idx);
+          }
+        }
+      }
+      if (dry_run) {
+        std::cout << "  dry-run: would delete " << n << " level rows\n";
+      } else {
+        std::cout << "  deleted index+blob levels: " << n << "\n";
       }
     }
 

@@ -97,3 +97,10 @@ Pair with biltoo ≥1007 (`scheduleSoftPixels`) for PreferCache when tiles exist
 Soft ladder rows may still exist in older caches; new soft encodes no longer
 persist them unless soft levels are explicitly re-enabled.
 
+Purge existing soft/overview levels (keep tiles + full_native):
+
+```bash
+thumtoo-gc --cache "$XDG_CACHE_HOME/thumtoo" --soft-levels
+# or: thumtoo-gc --soft-levels --dry-run
+```
+
