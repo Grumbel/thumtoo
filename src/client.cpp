@@ -1903,6 +1903,27 @@ std::vector<Database::ArchiveEntryRow> Client::refresh_archive_toc(
     rows.push_back(std::move(r));
   }
   db_->replace_archive_entries(uri, rows);
+
+  // Dual-path: Store container_member TOC (no member hash until probe/read).
+  if (auto cid = ensure_store_container_blob(archive_path)) {
+    try {
+      std::vector<Store::ContainerMemberRow> members;
+      members.reserve(rows.size());
+      for (const auto& r : rows) {
+        Store::ContainerMemberRow cm;
+        cm.container_id = *cid;
+        cm.member_path = r.member_path;
+        cm.is_directory = false;
+        cm.uncompressed_size = r.uncompressed_size;
+        members.push_back(std::move(cm));
+      }
+      store_->replace_container_members(*cid, members);
+    } catch (const std::exception& ex) {
+      if (debug_enabled()) {
+        dbg("refresh_archive_toc Store mirror failed: %s", ex.what());
+      }
+    }
+  }
   return rows;
 }
 
@@ -3066,11 +3087,51 @@ void Client::mirror_probe_to_store(std::string_view uri,
     } else if (row.width && row.height) {
       (void)store_->ensure_image_media(blob_id, *row.width, *row.height);
     }
+
+    // Archive member: attach hashed member blob to container TOC row.
+    if (auto arch = parse_archive_uri(uri);
+        arch && !arch->member_path.empty()) {
+      if (auto cid = ensure_store_container_blob(arch->archive_path)) {
+        store_->upsert_container_member(*cid, arch->member_path, false,
+                                        byte_size, blob_id);
+        store_->set_container_member_blob(*cid, arch->member_path, blob_id);
+      }
+    }
   } catch (const std::exception& ex) {
     if (debug_enabled()) {
       dbg("mirror_probe_to_store failed uri=%.*s: %s",
           static_cast<int>(uri.size()), uri.data(), ex.what());
     }
+  }
+}
+
+std::optional<std::int64_t> Client::ensure_store_container_blob(
+    const std::filesystem::path& archive_path) {
+  if (!store_ || archive_path.empty()) return std::nullopt;
+  try {
+    const auto root_uri = archive_uri(archive_path);
+    if (auto loc = store_->find_locator(root_uri)) {
+      if (loc->blob_id) return *loc->blob_id;
+    }
+    // Also try plain file:// of the archive (same bytes, different locator).
+    const auto file_uri = file_uri_from_path(archive_path.lexically_normal());
+    if (auto loc = store_->find_locator(file_uri)) {
+      if (loc->blob_id) {
+        store_->upsert_locator(root_uri, *loc->blob_id, loc->size, loc->mtime_ns);
+        return *loc->blob_id;
+      }
+    }
+    const auto size = file_size_bytes(archive_path);
+    const auto mtime = file_mtime_ns(archive_path);
+    const auto blob_id = store_->insert_blob(size, BlobStatus::Ok);
+    store_->upsert_locator(root_uri, blob_id, size, mtime);
+    store_->upsert_locator(file_uri, blob_id, size, mtime);
+    return blob_id;
+  } catch (const std::exception& ex) {
+    if (debug_enabled()) {
+      dbg("ensure_store_container_blob failed: %s", ex.what());
+    }
+    return std::nullopt;
   }
 }
 

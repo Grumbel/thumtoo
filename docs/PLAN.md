@@ -195,7 +195,7 @@ Otherwise implement through Phase E.
 - [x] New empty DBs open; old epoch refused or wiped with clear message.  
 - [x] Local image: locator → blob/hash → media → full region → tiles (dual-path).  
 - [x] Soft pixel fetch works for biltoo via tiles (compat TileSynth + Store).  
-- [ ] Zip member open via `//archive:`; member hash after full read/tag (legacy path; Store mirror optional).  
+- [x] Zip member open via `//archive:`; member hash after probe; Store container TOC dual-write.  
 - [x] PDF page via `//page:N`; tiles keyed by page region (dual-write).  
 - [x] Directory list returns snapshot without mandatory FS walk on first paint (Client → Store).  
 - [x] Tags on `blob:sha256:` survive index/bulk delete (user.sqlite + dual-write).  
