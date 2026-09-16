@@ -97,7 +97,7 @@ Pair with biltoo ≥1007 (`scheduleSoftPixels`) for PreferCache when tiles exist
 | biltoo `data_root` | **Done** (biltoo-1004; XDG data root) |
 | biltoo tile-native PreferCache / filmstrip | **Partial** (1005 Prefer plateau; 1006–1007 `scheduleSoftPixels`) |
 | Tiles-first soft writes (default) | **On** (thumtoo-234; opt out via `THUMTOO_SOFT_LEVELS=1`) |
-| Top-level Store layout (`THUMTOO_STORE_ROOT`) | **Experimental** (thumtoo-237) |
+| Top-level Store layout (`THUMTOO_STORE_ROOT`) | **Experimental** (≥237; migrate ≥238; `test_store_root`) |
 | Drop legacy Database open (Store-only) | **Next** after STORE_ROOT soak |
 
 Soft ladder rows may still exist in older caches; new soft encodes no longer

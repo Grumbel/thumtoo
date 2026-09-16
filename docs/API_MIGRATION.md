@@ -70,6 +70,7 @@ cache wipe.
 5. ~~Soft/overview level writes off by default~~ (≥234; `THUMTOO_SOFT_LEVELS=1` restores).
 6. ~~Top-level Store path~~ (`THUMTOO_STORE_ROOT=1` → Store at `$cache/`, legacy
    under `$cache/legacy/`; default still `store/` dual-path).
+   Covered by `test_store_root` (fresh layout + dual-path migrate).
 7. Drop legacy Database/BlobStore open (Store-only Client).
 8. Hosts pass `$XDG_DATA_HOME/thumtoo` as `data_root` (biltoo does).
 

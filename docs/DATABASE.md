@@ -3,12 +3,16 @@ SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
-# Database redesign — schema for review
+# Database redesign — schema
 
-Status: **design for review** — not yet implemented.  
-Replaces the current `index.sqlite` / `blobs.sqlite` layout. **No migration** of
-old rows; on epoch bump warn and replace cache DBs. User-data DB is separate and
-must survive cache wipe.
+Status: **implemented** in `Store` (index + bulk + user) with dual-path Client
+cutover still in progress (see [API_MIGRATION.md](API_MIGRATION.md),
+[HOST_CUTOVER.md](HOST_CUTOVER.md)). Legacy `Database` / `BlobStore`
+(`content_id` TEXT + `levels`) remain open until Store-only Client ships.
+
+**No migration** of old ladder rows into tiles. On epoch detect: warn / replace
+cache DBs; **user** DB must survive cache wipe. Experimental top-level Store
+layout: `THUMTOO_STORE_ROOT=1` (migrate dual-path on open).
 
 **Scope:** identity, locators, archives, media, tiles, directory cache, tags,
 collections, link edges, extracted document structure.  

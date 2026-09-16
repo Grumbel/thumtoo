@@ -2,6 +2,34 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-242-tiles-first-tests-store-root.** Tiles-first tests + STORE_ROOT test/docs.
+Prior: **241**.
+
+### Change
+- `test_client` / `test_soft_ladder`: align with tiles-first default (SOFT_LEVELS=1 for durable soft)
+- `test_store_root`: fresh STORE_ROOT layout, dual-path migrate, default layout unchanged
+- `docs/DATABASE.md`: status implemented (dual-path; Store-only pending)
+- API_MIGRATION / HOST_CUTOVER: note `test_store_root` coverage
+
+### Next
+- Store-only Client (no legacy open) — needs full_native story without levels
+- Soak STORE_ROOT with biltoo hosts
+
+### Apply
+```bash
+git pull /path/to/thumtoo-242-tiles-first-tests-store-root.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **242**
+- [ ] client + soft_ladder + store_root tests pass in CI / nix check
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-241-status-store.** thumtoo-status summary includes Store counts.
 Prior: **240**.
 
@@ -21,6 +49,7 @@ git pull /path/to/thumtoo-241-status-store.bundle HEAD
 - [x] Bundle **241**
 
 ---
+
 
 # TODO / agent handoff
 
