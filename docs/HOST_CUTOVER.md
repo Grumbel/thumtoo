@@ -63,15 +63,16 @@ tree); do not invent a second PreferCache retry loop.
    **Auto-migrate (≥238):** on open, classic dual-path caches move top-level legacy
    schema files → `legacy/` and `store/` redesign files → cache root (skips if
    destinations already exist). Soak-confirmed with biltoo.
-3. **Store-only (`THUMTOO_STORE_ONLY=1`, ≥247–251):** no legacy Database/BlobStore.
+3. **Store-only (default ≥257):** no legacy Database/BlobStore. Opt out:
+   `THUMTOO_STORE_ONLY=0` for dual-path.
    Durable Store only for the common URI kinds (file, PDF, DjVu, EPUB, archive
    members, HTTP images): probe, session pixels, tile cells.
 4. Dual-write (`mirror_probe_to_store`) skipped under STORE_ONLY; tags are
    Store-only. `mirror_tiles_to_store` remains the durable tile write path.
 5. Public APIs null-safe under STORE_ONLY: `prepare_paths`, archive TOC,
    document page count, text/outline (session extract), `invalidate_tile`.
-6. Host soak with **biltoo ≥ 1002** (`THUMTOO_STORE_ONLY=1`, dedicated cache).
-7. After soak confirm → default STORE_ONLY → delete dual-write helpers.
+6. ~~Host soak~~ — confirmed; STORE_ONLY is the default (≥257).
+7. Dual-write (`mirror_probe_to_store`) only when `THUMTOO_STORE_ONLY=0`.
 8. Migration: **no** ladder→tile conversion (PLAN non-goal); cold rebuild tiles.
 
 Under tiles-first, EnsurePixels does not write durable `levels` for soft *or*
@@ -110,7 +111,7 @@ Pair with biltoo ≥1007 (`scheduleSoftPixels`) for PreferCache when tiles exist
 | Top-level Store layout (`THUMTOO_STORE_ROOT`) | **Default on** (≥245; migrate ≥238; soak OK; `test_store_root`) |
 | Full-from-tiles (EnsurePixels Full) | **On** when tile pyramid covers want (≥243) |
 | Tiles-first skips full_native levels | **On** (≥244; same env as soft) |
-| Store-only (`THUMTOO_STORE_ONLY`) | **Soak-ready** (≥247–253; public APIs null-safe) |
+| Store-only (`THUMTOO_STORE_ONLY`) | **Default on** (≥257; opt out `=0`) |
 
 Soft ladder rows may still exist in older caches; new soft encodes no longer
 persist them unless soft levels are explicitly re-enabled.

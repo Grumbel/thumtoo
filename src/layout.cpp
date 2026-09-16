@@ -82,7 +82,15 @@ bool store_root_layout_enabled() {
   return true;
 }
 
-bool store_only_mode() { return env_flag_on("THUMTOO_STORE_ONLY"); }
+bool store_only_mode() {
+  // Default: no legacy Database/BlobStore (soak-confirmed with biltoo).
+  // Opt out (dual-path): THUMTOO_STORE_ONLY=0.
+  const char* e = std::getenv("THUMTOO_STORE_ONLY");
+  if (!e || !e[0]) return true;
+  if (e[0] == '0' || e[0] == 'f' || e[0] == 'F' || e[0] == 'n' || e[0] == 'N')
+    return false;
+  return true;
+}
 
 bool dual_write_to_store_enabled() { return !store_only_mode(); }
 

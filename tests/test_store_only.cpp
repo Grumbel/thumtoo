@@ -92,7 +92,7 @@ void write_tiny_bmp(const fs::path& path, int w, int h) {
 }  // namespace
 
 int main() {
-  setenv("THUMTOO_STORE_ONLY", "1", 1);
+  unsetenv("THUMTOO_STORE_ONLY");  // default on
   unsetenv("THUMTOO_STORE_ROOT");  // default top-level Store
 
   const fs::path root = make_tmpdir();

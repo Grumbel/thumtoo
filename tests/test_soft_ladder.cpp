@@ -136,6 +136,8 @@ std::optional<thumtoo::PixelLevel> wait_pixels(thumtoo::Client& c,
 int main() {
   // Durable soft ladder behaviour under test; tiles-first default skips put_level.
   setenv("THUMTOO_SOFT_LEVELS", "1", 1);
+  // Durable soft levels require legacy Database.
+  setenv("THUMTOO_STORE_ONLY", "0", 1);
   const fs::path tmp =
       fs::temp_directory_path() / "thumtoo-test-soft-ladder";
   fs::remove_all(tmp);

@@ -12,8 +12,8 @@ namespace thumtoo {
 /// (Store under cache_root/store/; legacy at cache_root).
 [[nodiscard]] bool store_root_layout_enabled();
 
-/// THUMTOO_STORE_ONLY=1 → no legacy Database/BlobStore; durable Store only.
-/// Plain file:// images use Store-first probe and session pixels.
+/// Default **on**: no legacy Database/BlobStore; durable Store only.
+/// Opt out (dual-path): THUMTOO_STORE_ONLY=0.
 [[nodiscard]] bool store_only_mode();
 
 /// Dual-write into Store from legacy rows (false under STORE_ONLY).

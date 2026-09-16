@@ -102,7 +102,9 @@ int main() {
     // Size probe does not encode the display ladder.
     expect(meta && meta->status == ContentStatus::Incomplete, "status incomplete after size");
     expect(meta && meta->content_id.find("sha256:") == 0, "sha256 content id");
-    expect(client->db().count_levels() == 0, "no levels after size-only probe");
+    if (client->has_legacy()) {
+      expect(client->db().count_levels() == 0, "no levels after size-only probe");
+    }
     expect(!client->get_pixels(uri, 256).has_value(), "no pixels until request_pixels");
 
     bool called_px = false;
@@ -120,15 +122,22 @@ int main() {
     expect(meta && meta->status == ContentStatus::Ready, "status ready after pixels");
     // Tiles-first default (THUMTOO_SOFT_LEVELS unset): soft request replies from
     // session encode and does not persist durable soft/overview levels.
-    expect(client->db().count_levels() == 0,
-           "tiles-first: no soft levels after request_pixels");
+    if (client->has_legacy()) {
+      expect(client->db().count_levels() == 0,
+             "tiles-first: no soft levels after request_pixels");
+    }
     // No durable soft and no tiles yet → cache-only get_pixels is empty.
     expect(!client->get_pixels(uri, 256).has_value(),
            "tiles-first: no durable soft pixels until tiles or SOFT_LEVELS");
 
-    // Default STORE_ROOT: legacy blobs under cache/legacy/.
-    expect(fs::exists(legacy_db_root(cache) / "blobs.sqlite"),
-           "blobs.sqlite present");
+    // Default STORE_ONLY: no legacy blobs file.
+    if (client->has_legacy()) {
+      expect(fs::exists(legacy_db_root(cache) / "blobs.sqlite"),
+             "blobs.sqlite present (dual-path)");
+    } else {
+      expect(!fs::exists(cache / "legacy" / "blobs.sqlite"),
+             "no legacy blobs under STORE_ONLY");
+    }
 
     // --- grid tiles (Phase 4) ---
     expect(!client->has_tile(uri, 0, 0, 0), "has_tile false before request");
@@ -146,7 +155,10 @@ int main() {
                          });
     client->drain();
     expect(called_tile, "request_tile callback");
-    expect(client->db().count_tiles() >= 1, "tiles stored");
+    if (client->has_legacy()) {
+      expect(client->db().count_tiles() >= 1, "legacy tiles stored");
+    }
+    expect(client->has_tile(uri, 0, 0, 0), "tile present after request");
     expect(client->has_tile(uri, 0, 0, 0), "has_tile after request");
     auto t0 = client->get_tile(uri, 0, 0, 0);
     expect(t0.has_value(), "get_tile cache hit");

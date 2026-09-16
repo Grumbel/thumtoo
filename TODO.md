@@ -2,6 +2,27 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-257-store-only-default.** STORE_ONLY is the default after soak.
+Prior: **256**.
+
+### Change
+- `store_only_mode()` default **on**; opt out `THUMTOO_STORE_ONLY=0`
+- Tests updated for default Store-only; soft_ladder forces dual-path
+
+### Apply
+```bash
+git pull /path/to/thumtoo-257-store-only-default.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **257**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-256-dual-write-gate.** Explicit dual_write_to_store_enabled().
 Prior: **255**.
 
