@@ -13,14 +13,6 @@
 namespace thumtoo {
 namespace {
 
-bool env_flag_on(const char* name) {
-  const char* e = std::getenv(name);
-  if (!e || !e[0]) return false;
-  if (e[0] == '0' || e[0] == 'f' || e[0] == 'F' || e[0] == 'n' || e[0] == 'N')
-    return false;
-  return true;
-}
-
 std::optional<int> probe_index_schema_version(
     const std::filesystem::path& index_path) {
   namespace fs = std::filesystem;

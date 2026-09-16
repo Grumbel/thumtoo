@@ -2,6 +2,31 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-265-fix-store-root-migrate-blobs.** Seed legacy blobs in store_root migrate test.
+Prior: **264**.
+
+### Change
+- `test_store_root` B: also open `BlobStore` when seeding classic dual-path so
+  `blobs.sqlite` exists and migrates under `legacy/` (was FAIL after Store-only
+  client no longer opened BlobStore on Client::open)
+- Drop dead `tiles_only_mode()` (store-only path does not write durable soft levels)
+- Drop unused `env_flag_on` in `layout.cpp` (silences -Wunused-function)
+
+### Apply
+```bash
+git pull /path/to/thumtoo-265-fix-store-root-migrate-blobs.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **265**
+- [x] `store_root` test passes
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-264-rewrite-test-client.** Store-only client test (Ready after tiles).
 Prior: **263**.
 

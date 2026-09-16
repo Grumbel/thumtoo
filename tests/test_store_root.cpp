@@ -3,6 +3,7 @@
 
 /// Top-level Store layout (default) + dual-path migrate + STORE_ROOT=0 opt-out.
 
+#include "thumtoo/blob_store.hpp"
 #include "thumtoo/client.hpp"
 #include "thumtoo/constants.hpp"
 #include "thumtoo/database.hpp"
@@ -73,11 +74,14 @@ int main() {
   // --- B: classic dual-path cache migrates on open ---
   {
     const fs::path cache = make_tmpdir("store-root-migrate");
-    // Seed legacy at top (schema < 100).
+    // Seed legacy at top (schema < 100): index + blobs (classic dual-path).
     {
       auto db = thumtoo::Database::open(cache);
       expect(db.schema_version() == thumtoo::kSchemaVersion, "seed legacy schema");
       (void)db;
+      auto blobs = thumtoo::BlobStore::open(cache);
+      expect(file_nonempty(cache / "blobs.sqlite"), "seed legacy blobs.sqlite");
+      (void)blobs;
     }
     // Seed redesign under store/ (schema ≥ 100).
     {
@@ -92,6 +96,7 @@ int main() {
       expect(blob_id >= 1, "seed store blob");
     }
     expect(file_nonempty(cache / "index.sqlite"), "pre: top legacy index");
+    expect(file_nonempty(cache / "blobs.sqlite"), "pre: top legacy blobs");
     expect(file_nonempty(cache / "store" / "index.sqlite"), "pre: store/ index");
 
     auto client = thumtoo::Client::open(cache);
