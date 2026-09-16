@@ -4179,6 +4179,144 @@ struct DeferredTileStore {
 thread_local std::vector<DeferredTileStore> g_deferred_tile_stores;
 }  // namespace
 
+
+void Client::handle_ensure_tiles_store_only(Job& job) {
+  auto reply_one = [&](std::optional<TileBlob> tile) {
+    if (!job.tile_cb) return;
+    if (tile) debug_overlay_tile(*tile, job.uri);
+    auto cb = std::move(job.tile_cb);
+    auto uri = job.uri;
+    const int scale = job.tile_scale;
+    const int x = job.tile_x;
+    const int y = job.tile_y;
+    executor_.post([cb = std::move(cb), uri = std::move(uri), scale, x, y,
+                    tile = std::move(tile)]() mutable {
+      cb(std::move(uri), scale, x, y, std::move(tile));
+    });
+  };
+  auto reply_pyramid_done = [&](bool /*ok*/) {
+    // No separate pyramid completion callback on Job for store-only path.
+  };
+
+  // Cache hit (Store tiles via get_tile).
+  if (!job.tile_pyramid) {
+    if (auto t = get_tile(job.uri, job.tile_scale, job.tile_x, job.tile_y)) {
+      reply_one(std::move(t));
+      return;
+    }
+  }
+
+  if (!job.skip_probe) {
+    Job probe;
+    probe.kind = JobKind::ProbeSize;
+    probe.uri = job.uri;
+    handle_probe_size_store_only(probe);
+  }
+
+  if (!job.tile_pyramid) {
+    if (auto t = get_tile(job.uri, job.tile_scale, job.tile_x, job.tile_y)) {
+      reply_one(std::move(t));
+      return;
+    }
+  }
+
+  auto sm = meta_from_store(job.uri);
+  if (!sm || sm->content_id.empty()) {
+    reply_one(std::nullopt);
+    return;
+  }
+  const std::string content_id = sm->content_id;
+
+  // Single cell: plain file:// images only for now.
+  if (!job.tile_pyramid) {
+    std::optional<TileBlob> cell;
+    if (auto path = path_from_file_uri(job.uri)) {
+      if (std::filesystem::is_regular_file(*path)) {
+        cell = build_tile_cell(*path, job.tile_scale, job.tile_x, job.tile_y,
+                               kDefaultTileQuality);
+      }
+    }
+    if (!cell || cell->bytes.empty()) {
+      reply_one(std::nullopt);
+      return;
+    }
+    TileBlob live = std::move(*cell);
+    const bool rgb = (live.codec == kTileCodecRgb888);
+    std::vector<std::uint8_t> rgb_copy;
+    int dw = 0, dh = 0, ds = 0, dx = 0, dy = 0;
+    if (rgb) {
+      rgb_copy = live.bytes;
+      dw = live.width;
+      dh = live.height;
+      ds = live.scale;
+      dx = live.x;
+      dy = live.y;
+    }
+    TileBlob non_rgb_store;
+    if (!rgb) non_rgb_store = live;
+    reply_one(std::move(live));
+    if (rgb && !rgb_copy.empty()) {
+      if (auto jpeg = encode_tile_cell_rgb(rgb_copy.data(), dw, dh, ds, dx, dy,
+                                           kDefaultTileQuality)) {
+        store_tiles(content_id, std::vector<TileBlob>{*jpeg});
+      }
+    } else if (!non_rgb_store.bytes.empty()) {
+      store_tiles(content_id, std::vector<TileBlob>{std::move(non_rgb_store)});
+    }
+    return;
+  }
+
+  // Pyramid: encode all cells for file:// when size known.
+  if (!sm->size || sm->size->width <= 0 || sm->size->height <= 0) {
+    reply_pyramid_done(false);
+    return;
+  }
+  auto path = path_from_file_uri(job.uri);
+  if (!path || !std::filesystem::is_regular_file(*path)) {
+    reply_pyramid_done(false);
+    return;
+  }
+
+  const int min_scale = job.tile_min_scale;
+  int max_scale = job.tile_max_scale;
+  if (max_scale < 0) {
+    max_scale = 0;
+    int w = sm->size->width, h = sm->size->height;
+    while (w > kTileSize || h > kTileSize) {
+      w = (w + 1) / 2;
+      h = (h + 1) / 2;
+      ++max_scale;
+    }
+  }
+  std::vector<TileBlob> tiles;
+  for (int scale = min_scale; scale <= max_scale; ++scale) {
+    const int full_w = (sm->size->width + ((1 << scale) - 1)) >> scale;
+    const int full_h = (sm->size->height + ((1 << scale) - 1)) >> scale;
+    const int nx = (full_w + kTileSize - 1) / kTileSize;
+    const int ny = (full_h + kTileSize - 1) / kTileSize;
+    for (int ty = 0; ty < ny; ++ty) {
+      for (int tx = 0; tx < nx; ++tx) {
+        if (auto cell = build_tile_cell(*path, scale, tx, ty,
+                                        kDefaultTileQuality)) {
+          if (cell->codec == kTileCodecRgb888) {
+            if (auto jpeg = encode_tile_cell_rgb(
+                    cell->bytes.data(), cell->width, cell->height, scale, tx, ty,
+                    kDefaultTileQuality)) {
+              tiles.push_back(std::move(*jpeg));
+            }
+          } else {
+            tiles.push_back(std::move(*cell));
+          }
+        }
+      }
+    }
+  }
+  if (!tiles.empty()) {
+    store_tiles(content_id, tiles);
+  }
+  reply_pyramid_done(!tiles.empty());
+}
+
 void Client::handle_ensure_tiles(
     Job& job, const std::optional<std::vector<std::uint8_t>>& preextracted) {
   global_build_stats().tile_jobs.fetch_add(1, std::memory_order_relaxed);
@@ -4188,17 +4326,7 @@ void Client::handle_ensure_tiles(
         job.tile_pyramid ? 1 : 0);
   }
   if (!db_) {
-    // Store-only tile encode not yet implemented — empty reply.
-    if (job.tile_cb) {
-      auto cb = std::move(job.tile_cb);
-      auto uri = job.uri;
-      const int scale = job.tile_scale;
-      const int x = job.tile_x;
-      const int y = job.tile_y;
-      executor_.post([cb = std::move(cb), uri = std::move(uri), scale, x, y]() mutable {
-        cb(std::move(uri), scale, x, y, std::nullopt);
-      });
-    }
+    handle_ensure_tiles_store_only(job);
     return;
   }
   auto reply_one = [&](std::optional<TileBlob> t) {

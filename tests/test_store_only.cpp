@@ -139,6 +139,18 @@ int main() {
   client->drain();
   expect(px_ok, "Store-only request_pixels session encode");
 
+  bool tile_ok = false;
+  client->request_tile(uri, 0, 0, 0,
+                       [&](std::string, int, int, int,
+                           std::optional<thumtoo::TileBlob> t) {
+                         tile_ok = t.has_value() && !t->bytes.empty();
+                       });
+  client->drain();
+  expect(tile_ok, "Store-only request_tile scale0 cell");
+  expect(client->has_tile(uri, 0, 0, 0), "has_tile after Store durable write");
+  auto t0 = client->get_tile(uri, 0, 0, 0);
+  expect(t0.has_value() && !t0->bytes.empty(), "get_tile from Store");
+
   if (g_failures) {
     std::cerr << g_failures << " failure(s)\n";
     return 1;

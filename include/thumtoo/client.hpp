@@ -482,6 +482,7 @@ class Client {
       Job& job,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);
   void handle_ensure_pixels_store_only(Job& job);
+  void handle_ensure_tiles_store_only(Job& job);
   void handle_ensure_tiles(
       Job& job,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);

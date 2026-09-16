@@ -2,6 +2,31 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-248-store-only-tiles.** Store-only file:// tile encode.
+Prior: **247**.
+
+### Change
+- `handle_ensure_tiles_store_only`: single cell + pyramid for plain files
+- Tiles written via `store_tiles` → Store bulk; `test_store_only` covers request_tile
+
+### Next
+- Store-only PDF/archive probe + tiles
+- Drop dual-write helpers when hosts use STORE_ONLY
+
+### Apply
+```bash
+git pull /path/to/thumtoo-248-store-only-tiles.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **248**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-247-store-only-no-legacy.** STORE_ONLY skips legacy open entirely.
 Prior: **246**.
 
