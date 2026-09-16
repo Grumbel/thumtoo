@@ -2,6 +2,32 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-227-tiles-first-soft.** Skip soft ladder encode when tiles cover.
+Prior: **226**.
+
+### Change
+- `handle_ensure_pixels`: after probe, if not full_native and tiles cover the
+  request edge, reply TileSynth and skip durable soft-level encode.
+
+### Next
+- Host tile-native (biltoo after 0.1.0)
+- Archive member Store mirror
+- Drop legacy levels entirely when hosts ready
+
+### Apply
+```bash
+git pull /path/to/thumtoo-227-tiles-first-soft.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **227**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-226-client-directory.** Client directory snapshot API on Store.
 Prior: **225**.
 

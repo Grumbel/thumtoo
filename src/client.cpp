@@ -3173,6 +3173,28 @@ void Client::handle_ensure_pixels(
     }
   }
 
+  // Prefer an existing tile pyramid over encoding a durable soft ladder
+  // (Phase E tiles-first). SoftOnly hosts still get a reply; we avoid dual
+  // soft-level storage when tiles already cover the request edge.
+  if (!job.full_native && !is_pdf_image_uri(job.uri)) {
+    const int want = job.overview
+        ? std::min(job.max_edge > 0 ? job.max_edge : kBatchMaxEdge,
+                   kBatchMaxEdge)
+        : std::min(job.max_edge > 0 ? job.max_edge : kMaxSoftLadderEdge,
+                   kMaxSoftLadderEdge);
+    if (auto from_tiles = get_pixels_from_tiles(job.uri, want)) {
+      if (level_adequate(*from_tiles)) {
+        if (debug_enabled()) {
+          dbg("EnsurePixels TILES_COVER skip_soft_ladder uri=%s edge=%d "
+              "level=%dx%d",
+              job.uri.c_str(), want, from_tiles->width, from_tiles->height);
+        }
+        reply_pixels(std::move(from_tiles));
+        return;
+      }
+    }
+  }
+
   // Encode display ladder now that size/content_id are settled.
   auto loc = db_->find_locator(job.uri);
   if (!loc || !loc->content_id) {

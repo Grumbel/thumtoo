@@ -129,9 +129,9 @@ read/tag/explicit via `set_container_member_blob`); `ensure_document_media` /
 `ensure_page_region`.  
 **Phase D status:** complete (directory, user overlays, http_body, tile list).  
 **Phase E (started):** dual-path Store; tag/probe/tile dual-write; tile read +
-TileSynth + size/meta fall back; Client directory snapshot API. See
-[API_MIGRATION.md](API_MIGRATION.md). Next: drop legacy levels write path;
-host tile-native rendering after biltoo 0.1.0.
+TileSynth + size/meta fall back; directory Client API; soft EnsurePixels
+skips soft-ladder encode when tiles cover. See [API_MIGRATION.md](API_MIGRATION.md).
+Next: host tile-native rendering after biltoo 0.1.0; archive Store mirror.
 
 ### Phase B — images
 

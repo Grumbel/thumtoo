@@ -59,8 +59,9 @@ cache wipe.
 ## Next cutover steps
 
 1. ~~Resolve locator → blob/hash on Store when probing~~ (pure image + page done).
-2. ~~Write new tiles to Store bulk~~ (dual-write from `store_tiles`; legacy
-   levels still written until hosts stop relying on them).
+2. ~~Write new tiles to Store bulk~~ (dual-write from `store_tiles`). Soft
+   `EnsurePixels` skips durable soft-ladder encode when tiles already cover
+   the request edge (tiles-first).
 3. ~~Soft `get_pixels` assemble from Store tiles~~ (TileSynth via Store fallback).
 4. ~~Store size/meta fallback~~ (`get_size` / `get_meta`).
 5. Drop legacy `index.sqlite` after biltoo ships on Store-only open.
