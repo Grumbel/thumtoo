@@ -2,6 +2,28 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-293-tiles-before-probe-starve.** Interactive tiles beat ProbeSize claim.
+Prior: **292**.
+
+### Change
+- Worker claim: interactive EnsureTiles (non-pyramid) first, then ProbeSize, then FIFO
+- Stops Galapix (and zoom paths) staying on coarse stand-ins under size floods
+- Theoretical max_scale (coverage + pyramid) uses floor-half like dim_at_tile_scale
+
+### Apply
+```bash
+git pull /path/to/thumtoo-293-tiles-before-probe-starve.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **293**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-292-probe-size-priority.** ProbeSize runs ahead of soft/tiles.
 Prior: **291**.
 

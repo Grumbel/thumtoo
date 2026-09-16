@@ -1145,8 +1145,10 @@ std::optional<TileCoverage> Client::get_tile_coverage(
   int h = meta->size->height;
   int s = 0;
   while (w > kTileSize || h > kTileSize) {
-    w = (w + 1) / 2;
-    h = (h + 1) / 2;
+    w = dim_at_tile_scale(w, 1);
+    h = dim_at_tile_scale(h, 1);
+    if (w < 1) w = 1;
+    if (h < 1) h = 1;
     ++s;
   }
   cov.max_scale = s;
@@ -2201,19 +2203,29 @@ void Client::worker_main() {
       if (queue_.empty()) {
         continue;
       }
-      // Prefer ProbeSize over soft/tiles so layout settles before thumbnails.
+      // Claim priority: interactive EnsureTiles (Galapix zoom) first, then
+      // ProbeSize (layout), then FIFO. Blind ProbeSize-first starved tile
+      // jobs under size floods and left viewers stuck on coarse stand-ins.
       {
-        auto probe_it = queue_.end();
+        auto prefer = queue_.end();
         for (auto it = queue_.begin(); it != queue_.end(); ++it) {
-          if (it->kind == JobKind::ProbeSize) {
-            probe_it = it;
+          if (it->kind == JobKind::EnsureTiles && !it->tile_pyramid) {
+            prefer = it;
             break;
           }
         }
-        if (probe_it != queue_.end() && probe_it != queue_.begin()) {
-          Job probe = std::move(*probe_it);
-          queue_.erase(probe_it);
-          queue_.push_front(std::move(probe));
+        if (prefer == queue_.end()) {
+          for (auto it = queue_.begin(); it != queue_.end(); ++it) {
+            if (it->kind == JobKind::ProbeSize) {
+              prefer = it;
+              break;
+            }
+          }
+        }
+        if (prefer != queue_.end() && prefer != queue_.begin()) {
+          Job job = std::move(*prefer);
+          queue_.erase(prefer);
+          queue_.push_front(std::move(job));
         }
       }
       // Do not claim a new FocusFull while one is already running (cap).
@@ -3307,8 +3319,10 @@ void Client::handle_ensure_tiles_store(Job& job) {
     max_scale = 0;
     int w = sm->size->width, h = sm->size->height;
     while (w > kTileSize || h > kTileSize) {
-      w = (w + 1) / 2;
-      h = (h + 1) / 2;
+      w = dim_at_tile_scale(w, 1);
+      h = dim_at_tile_scale(h, 1);
+      if (w < 1) w = 1;
+      if (h < 1) h = 1;
       ++max_scale;
     }
   }
