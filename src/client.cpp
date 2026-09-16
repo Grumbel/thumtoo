@@ -1356,8 +1356,10 @@ void Client::enqueue(Job job, bool front) {
         }
       }
     }
-    // FocusFull cap: at most kFocusFullMaxConcurrent pending tile pyramids.
-    // Same-uri pyramid is always superseded; others drop oldest first.
+    // Tile pyramids: supersede only the same URI. Do not drop other URIs'
+    // pyramids (thumtoo-prepare --tiles queued N jobs and kFocusFullMaxConcurrent=1
+    // cancelled N-1 as immediate "miss"). Worker still serializes running
+    // FocusFull via focus_full_inflight_ / claim rotation.
     if (job.kind == JobKind::EnsureTiles && job.tile_pyramid) {
       for (auto it = queue_.begin(); it != queue_.end();) {
         if (it->kind == JobKind::EnsureTiles && it->tile_pyramid
@@ -1366,31 +1368,6 @@ void Client::enqueue(Job job, bool front) {
           it = queue_.erase(it);
         } else {
           ++it;
-        }
-      }
-      int pending_pyramids = 0;
-      for (const auto& j : queue_) {
-        if (j.kind == JobKind::EnsureTiles && j.tile_pyramid) {
-          ++pending_pyramids;
-        }
-      }
-      const int total_focus =
-          pending_pyramids + focus_full_inflight_;
-      // Room for the job about to be enqueued: need total_focus < max.
-      int room_used = total_focus;
-      while (room_used >= kFocusFullMaxConcurrent) {
-        bool dropped = false;
-        for (auto it = queue_.begin(); it != queue_.end(); ++it) {
-          if (it->kind == JobKind::EnsureTiles && it->tile_pyramid) {
-            reply_cancelled_job(*it);
-            queue_.erase(it);
-            --room_used;
-            dropped = true;
-            break;
-          }
-        }
-        if (!dropped) {
-          break;
         }
       }
     }
@@ -3139,8 +3116,26 @@ void Client::handle_ensure_tiles_store(Job& job) {
       cb(std::move(uri), scale, x, y, std::move(tile));
     });
   };
-  auto reply_pyramid_done = [&](bool /*ok*/) {
-    // No separate pyramid completion callback on Job for store-only path.
+  auto reply_pyramid_done = [&](bool ok) {
+    // prepare --tiles / hosts use tile_cb as completion (one shot per URI).
+    if (!job.tile_cb) return;
+    auto cb = std::move(job.tile_cb);
+    auto uri = job.uri;
+    if (ok) {
+      TileBlob marker;
+      marker.scale = 0;
+      marker.x = 0;
+      marker.y = 0;
+      marker.codec = "pyramid-ok";
+      executor_.post([cb = std::move(cb), uri = std::move(uri),
+                      marker = std::move(marker)]() mutable {
+        cb(std::move(uri), 0, 0, 0, std::move(marker));
+      });
+    } else {
+      executor_.post([cb = std::move(cb), uri = std::move(uri)]() mutable {
+        cb(std::move(uri), 0, 0, 0, std::nullopt);
+      });
+    }
   };
 
   // Cache hit (Store tiles via get_tile).
@@ -3302,13 +3297,8 @@ void Client::handle_ensure_tiles_store(Job& job) {
     return;
   }
 
-  // Pyramid: encode all cells for file:// when size known.
+  // Pyramid: durable JPEG cells for file:// and archive members (size known).
   if (!sm->size || sm->size->width <= 0 || sm->size->height <= 0) {
-    reply_pyramid_done(false);
-    return;
-  }
-  auto path = path_from_file_uri(job.uri);
-  if (!path || !std::filesystem::is_regular_file(*path)) {
     reply_pyramid_done(false);
     return;
   }
@@ -3326,29 +3316,31 @@ void Client::handle_ensure_tiles_store(Job& job) {
       ++max_scale;
     }
   }
+
   std::vector<TileBlob> tiles;
-  for (int scale = min_scale; scale <= max_scale; ++scale) {
-    const int full_w = dim_at_tile_scale(sm->size->width, scale);
-    const int full_h = dim_at_tile_scale(sm->size->height, scale);
-    const int nx = (full_w + kTileSize - 1) / kTileSize;
-    const int ny = (full_h + kTileSize - 1) / kTileSize;
-    for (int ty = 0; ty < ny; ++ty) {
-      for (int tx = 0; tx < nx; ++tx) {
-        if (auto cell = build_tile_cell(*path, scale, tx, ty,
-                                        kDefaultTileQuality)) {
-          if (cell->codec == kTileCodecRgb888) {
-            if (auto jpeg = encode_tile_cell_rgb(
-                    cell->bytes.data(), cell->width, cell->height, scale, tx, ty,
-                    kDefaultTileQuality)) {
-              tiles.push_back(std::move(*jpeg));
-            }
-          } else {
-            tiles.push_back(std::move(*cell));
-          }
-        }
-      }
+  if (auto arch = parse_archive_uri(job.uri)) {
+    if (arch->member_path.empty()) {
+      reply_pyramid_done(false);
+      return;
     }
+    auto bytes = member_bytes(arch->archive_path, arch->member_path);
+    if (!bytes || bytes->empty()) {
+      reply_pyramid_done(false);
+      return;
+    }
+    tiles = build_tile_pyramid_buffer(bytes->data(), bytes->size(), min_scale,
+                                      max_scale, kDefaultTileQuality);
+  } else if (auto path = path_from_file_uri(job.uri)) {
+    if (!std::filesystem::is_regular_file(*path)) {
+      reply_pyramid_done(false);
+      return;
+    }
+    tiles = build_tile_pyramid(*path, min_scale, max_scale, kDefaultTileQuality);
+  } else {
+    reply_pyramid_done(false);
+    return;
   }
+
   if (!tiles.empty()) {
     store_tiles(content_id, tiles);
   }
