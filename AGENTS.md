@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-211-overlay-decisions**. Next bundle: **212**.
+Latest agent handoff: **TODO.md → thumtoo-212-database-schema**. Next bundle: **213**.
 
 
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code
@@ -30,7 +30,8 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 | [TODO.md](TODO.md) | Phase tracking |
 | [INTEGRATION.md](INTEGRATION.md) | biltoo API mapping |
 | [TAGS.md](TAGS.md) | content-hash tags vs dirtoo TagStore |
-| [docs/BLOB_AND_OVERLAY.md](docs/BLOB_AND_OVERLAY.md) | Brainstorm: blob/overlay/hypertia redesign |
+| [docs/DATABASE.md](docs/DATABASE.md) | DB redesign schema for review (index/bulk/user) |
+| [docs/BLOB_AND_OVERLAY.md](docs/BLOB_AND_OVERLAY.md) | Pointer only → DATABASE.md |
 
 ## Handoff
 

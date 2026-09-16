@@ -2,6 +2,29 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-212-database-schema.** DATABASE.md schema for review; split 0.2.0 TODOs.
+Prior: **211**.
+
+### Change
+- Add `docs/DATABASE.md`: concrete SQL for index/bulk/user DBs, rationale,
+  policies (tiles-only, hash-on-read, directory cache-first, text link refs).
+- `docs/BLOB_AND_OVERLAY.md` reduced to a pointer; 0.2.0 topics listed in
+  DATABASE.md §12 only.
+
+### Apply
+```bash
+git pull /path/to/thumtoo-212-database-schema.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **212**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-211-overlay-decisions.** Record redesign decisions + Hypertia sketch.
 Prior: **210**.
 
