@@ -151,16 +151,75 @@ int main() {
       expect(dmedia == doc_media, "ensure document idempotent");
       const auto p1 = store.ensure_page_region(dmedia, 1);
       expect(store.find_region(p1)->key == "1", "page 1 key");
+
+      // Phase D: directory snapshot (cache-first list)
+      thumtoo::Store::DirectorySnapshotRow snap;
+      snap.dir_uri = "file:///tmp/photos";
+      snap.size = 2;
+      snap.mtime_ns = 1000;
+      snap.incomplete = false;
+      std::vector<thumtoo::Store::DirectoryEntryRow> entries;
+      {
+        thumtoo::Store::DirectoryEntryRow e;
+        e.name = "a.jpg";
+        e.child_uri = "file:///tmp/photos/a.jpg";
+        e.is_dir = false;
+        e.size = 12345;
+        entries.push_back(std::move(e));
+      }
+      {
+        thumtoo::Store::DirectoryEntryRow e;
+        e.name = "subdir";
+        e.child_uri = "file:///tmp/photos/subdir";
+        e.is_dir = true;
+        entries.push_back(std::move(e));
+      }
+      store.replace_directory_snapshot(snap, entries);
+      expect(store.count_directory_snapshots() == 1, "one dir snapshot");
+      auto got_snap = store.find_directory_snapshot(snap.dir_uri);
+      expect(got_snap && got_snap->size && *got_snap->size == 2, "snap size");
+      auto listed = store.list_directory_entries(snap.dir_uri);
+      expect(listed.size() == 2, "two dir entries");
+      expect(listed[0].name == "a.jpg" && !listed[0].is_dir, "entry file");
+      expect(listed[1].name == "subdir" && listed[1].is_dir, "entry dir");
+      // Replace shrinks entries
+      store.replace_directory_snapshot(snap, {entries[0]});
+      expect(store.list_directory_entries(snap.dir_uri).size() == 1,
+             "replace shrinks");
+
+      // Phase D: user tags survive by blob_ref
+      const std::string bref = *ref;
+      store.add_blob_tag(bref, "favorite", "user");
+      store.add_blob_tag(bref, "vacation", "user");
+      auto tags = store.tags_for_blob_ref(bref);
+      expect(tags.size() == 2, "two tags");
+      expect(tags[0] == "favorite" && tags[1] == "vacation", "tag order");
+      auto defs = store.find_tag_def_by_name("favorite");
+      expect(defs.has_value(), "tag_def exists");
+      expect(store.ensure_tag_def("favorite") == defs->id, "ensure tag idempotent");
+      auto refs = store.blob_refs_for_tag("favorite");
+      expect(refs.size() == 1 && refs[0] == bref, "blob_refs_for_tag");
+      expect(store.remove_blob_tag(bref, "vacation"), "remove tag");
+      expect(store.tags_for_blob_ref(bref).size() == 1, "one tag left");
+      expect(store.tags_for_blob_ref(bref)[0] == "favorite", "favorite remains");
     }
 
     // Re-open preserves rows
     {
       auto store = thumtoo::Store::open(dir);
-      expect(store.count_blobs() == 1, "reopen blobs");
+      expect(store.count_blobs() == 4, "reopen blobs");
       expect(store.count_locators() == 1, "reopen locators");
+      expect(store.count_directory_snapshots() == 1, "reopen dir snap");
+      // User tags still present
+      std::vector<std::uint8_t> digest(32);
+      for (int i = 0; i < 32; ++i)
+        digest[static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(i + 1);
+      auto bref = thumtoo::Store::format_blob_ref_sha256(digest);
+      expect(store.tags_for_blob_ref(bref).size() == 1, "reopen tags");
     }
 
     // Re-create after deleting index+bulk (simulates operator cache wipe).
+    // User DB must keep tags.
     {
       fs::remove(dir / "index.sqlite");
       fs::remove(dir / "bulk.sqlite");
@@ -168,6 +227,13 @@ int main() {
       expect(store.index_schema_version() == thumtoo::kStoreIndexSchemaVersion,
              "fresh after remove");
       expect(store.count_blobs() == 0, "empty after wipe");
+      expect(store.count_directory_snapshots() == 0, "dir snap wiped with index");
+      std::vector<std::uint8_t> digest(32);
+      for (int i = 0; i < 32; ++i)
+        digest[static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(i + 1);
+      auto bref = thumtoo::Store::format_blob_ref_sha256(digest);
+      expect(store.tags_for_blob_ref(bref).size() == 1, "tags survive wipe");
+      expect(store.tags_for_blob_ref(bref)[0] == "favorite", "favorite survives");
     }
   } catch (const std::exception& ex) {
     std::cerr << "exception: " << ex.what() << '\n';

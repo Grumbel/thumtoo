@@ -316,6 +316,73 @@ class Store {
   [[nodiscard]] std::int64_t ensure_page_region(std::int64_t media_id,
                                                int page_1based);
 
+  // --- directory_snapshot (cache-first folder open; index DB) ---
+  struct DirectorySnapshotRow {
+    std::string dir_uri;
+    std::optional<std::int64_t> size;
+    std::optional<std::int64_t> mtime_ns;
+    std::int64_t listed_at = 0;
+    bool incomplete = false;
+  };
+
+  struct DirectoryEntryRow {
+    std::string dir_uri;
+    std::string name;
+    std::optional<std::string> child_uri;
+    bool is_dir = false;
+    std::optional<std::int64_t> size;
+    std::optional<std::int64_t> mtime_ns;
+  };
+
+  /// Replace snapshot meta + all entries transactionally (TOC-style refresh).
+  void replace_directory_snapshot(const DirectorySnapshotRow& snap,
+                                  const std::vector<DirectoryEntryRow>& entries);
+
+  [[nodiscard]] std::optional<DirectorySnapshotRow> find_directory_snapshot(
+      std::string_view dir_uri) const;
+
+  [[nodiscard]] std::vector<DirectoryEntryRow> list_directory_entries(
+      std::string_view dir_uri, int limit = 100000) const;
+
+  void delete_directory_snapshot(std::string_view dir_uri);
+
+  [[nodiscard]] std::int64_t count_directory_snapshots() const;
+
+  // --- user tags (tag_def + blob_tag; survive index/bulk wipe) ---
+  struct TagDefRow {
+    std::int64_t id = 0;
+    std::string name;
+    std::optional<std::string> label;
+    std::optional<std::string> color;
+    std::optional<std::string> badge;
+    std::int64_t created_at = 0;
+  };
+
+  /// Ensure a tag_def row by unique name; returns id. Optional meta only applied
+  /// on insert (existing rows keep their label/color/badge).
+  [[nodiscard]] std::int64_t ensure_tag_def(
+      std::string_view name, std::optional<std::string_view> label = {},
+      std::optional<std::string_view> color = {},
+      std::optional<std::string_view> badge = {});
+
+  [[nodiscard]] std::optional<TagDefRow> find_tag_def(std::int64_t id) const;
+  [[nodiscard]] std::optional<TagDefRow> find_tag_def_by_name(
+      std::string_view name) const;
+
+  /// Attach tag to blob_ref (`blob:sha256:…`). Creates tag_def if needed.
+  /// Empty name or blob_ref is a no-op.
+  void add_blob_tag(std::string_view blob_ref, std::string_view tag_name,
+                    std::string_view source = "user");
+
+  /// Returns true if a row was removed.
+  bool remove_blob_tag(std::string_view blob_ref, std::string_view tag_name);
+
+  [[nodiscard]] std::vector<std::string> tags_for_blob_ref(
+      std::string_view blob_ref) const;
+
+  [[nodiscard]] std::vector<std::string> blob_refs_for_tag(
+      std::string_view tag_name, int limit = 1000) const;
+
  private:
   Store(sqlite3* index, sqlite3* bulk, sqlite3* user,
         std::filesystem::path cache_root, std::filesystem::path data_root,

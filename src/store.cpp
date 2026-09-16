@@ -167,6 +167,22 @@ CREATE TABLE IF NOT EXISTS tile (
   quality    INTEGER,
   PRIMARY KEY (media_id, region_id, scale, x, y)
 );
+CREATE TABLE IF NOT EXISTS directory_snapshot (
+  dir_uri    TEXT PRIMARY KEY,
+  size       INTEGER,
+  mtime_ns   INTEGER,
+  listed_at  INTEGER NOT NULL,
+  incomplete INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS directory_entry (
+  dir_uri    TEXT NOT NULL REFERENCES directory_snapshot(dir_uri) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  child_uri  TEXT,
+  is_dir     INTEGER NOT NULL,
+  size       INTEGER,
+  mtime_ns   INTEGER,
+  PRIMARY KEY (dir_uri, name)
+);
 )SQL";
 
 constexpr char kBulkSchemaSql[] = R"SQL(
@@ -1508,6 +1524,413 @@ std::int64_t Store::ensure_page_region(std::int64_t media_id, int page_1based) {
   }
   const std::string key = std::to_string(page_1based);
   return ensure_region(media_id, RegionKind::Page, key, page_1based);
+}
+
+void Store::replace_directory_snapshot(
+    const DirectorySnapshotRow& snap,
+    const std::vector<DirectoryEntryRow>& entries) {
+  if (snap.dir_uri.empty()) {
+    throw std::invalid_argument("replace_directory_snapshot: empty dir_uri");
+  }
+  const std::int64_t listed_at =
+      snap.listed_at != 0 ? snap.listed_at : now_unix_s();
+  exec_index("BEGIN IMMEDIATE;");
+  try {
+    sqlite3_stmt* del = nullptr;
+    if (sqlite3_prepare_v2(
+            index_, "DELETE FROM directory_snapshot WHERE dir_uri = ?1;", -1,
+            &del, nullptr) != SQLITE_OK) {
+      throw_sqlite(index_, "prepare replace_directory_snapshot delete");
+    }
+    sqlite3_bind_text(del, 1, snap.dir_uri.data(),
+                      static_cast<int>(snap.dir_uri.size()), SQLITE_STATIC);
+    if (sqlite3_step(del) != SQLITE_DONE) {
+      sqlite3_finalize(del);
+      throw_sqlite(index_, "step replace_directory_snapshot delete");
+    }
+    sqlite3_finalize(del);
+
+    sqlite3_stmt* ins = nullptr;
+    if (sqlite3_prepare_v2(
+            index_,
+            "INSERT INTO directory_snapshot(dir_uri, size, mtime_ns, listed_at, "
+            "incomplete) VALUES(?1,?2,?3,?4,?5);",
+            -1, &ins, nullptr) != SQLITE_OK) {
+      throw_sqlite(index_, "prepare replace_directory_snapshot insert");
+    }
+    sqlite3_bind_text(ins, 1, snap.dir_uri.data(),
+                      static_cast<int>(snap.dir_uri.size()), SQLITE_STATIC);
+    if (snap.size) {
+      sqlite3_bind_int64(ins, 2, *snap.size);
+    } else {
+      sqlite3_bind_null(ins, 2);
+    }
+    if (snap.mtime_ns) {
+      sqlite3_bind_int64(ins, 3, *snap.mtime_ns);
+    } else {
+      sqlite3_bind_null(ins, 3);
+    }
+    sqlite3_bind_int64(ins, 4, listed_at);
+    sqlite3_bind_int(ins, 5, snap.incomplete ? 1 : 0);
+    if (sqlite3_step(ins) != SQLITE_DONE) {
+      sqlite3_finalize(ins);
+      throw_sqlite(index_, "step replace_directory_snapshot insert");
+    }
+    sqlite3_finalize(ins);
+
+    sqlite3_stmt* ent = nullptr;
+    if (sqlite3_prepare_v2(
+            index_,
+            "INSERT INTO directory_entry(dir_uri, name, child_uri, is_dir, size, "
+            "mtime_ns) VALUES(?1,?2,?3,?4,?5,?6);",
+            -1, &ent, nullptr) != SQLITE_OK) {
+      throw_sqlite(index_, "prepare replace_directory_snapshot entry");
+    }
+    for (const auto& e : entries) {
+      if (e.name.empty()) continue;
+      sqlite3_reset(ent);
+      sqlite3_clear_bindings(ent);
+      sqlite3_bind_text(ent, 1, snap.dir_uri.data(),
+                        static_cast<int>(snap.dir_uri.size()), SQLITE_STATIC);
+      sqlite3_bind_text(ent, 2, e.name.data(), static_cast<int>(e.name.size()),
+                        SQLITE_STATIC);
+      if (e.child_uri) {
+        sqlite3_bind_text(ent, 3, e.child_uri->data(),
+                          static_cast<int>(e.child_uri->size()), SQLITE_STATIC);
+      } else {
+        sqlite3_bind_null(ent, 3);
+      }
+      sqlite3_bind_int(ent, 4, e.is_dir ? 1 : 0);
+      if (e.size) {
+        sqlite3_bind_int64(ent, 5, *e.size);
+      } else {
+        sqlite3_bind_null(ent, 5);
+      }
+      if (e.mtime_ns) {
+        sqlite3_bind_int64(ent, 6, *e.mtime_ns);
+      } else {
+        sqlite3_bind_null(ent, 6);
+      }
+      if (sqlite3_step(ent) != SQLITE_DONE) {
+        sqlite3_finalize(ent);
+        throw_sqlite(index_, "step replace_directory_snapshot entry");
+      }
+    }
+    sqlite3_finalize(ent);
+    exec_index("COMMIT;");
+  } catch (...) {
+    exec_index("ROLLBACK;");
+    throw;
+  }
+}
+
+std::optional<Store::DirectorySnapshotRow> Store::find_directory_snapshot(
+    std::string_view dir_uri) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          index_,
+          "SELECT dir_uri, size, mtime_ns, listed_at, incomplete "
+          "FROM directory_snapshot WHERE dir_uri = ?1;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare find_directory_snapshot");
+  }
+  sqlite3_bind_text(stmt, 1, dir_uri.data(), static_cast<int>(dir_uri.size()),
+                    SQLITE_STATIC);
+  std::optional<DirectorySnapshotRow> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    DirectorySnapshotRow r;
+    r.dir_uri = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    if (sqlite3_column_type(stmt, 1) != SQLITE_NULL) {
+      r.size = sqlite3_column_int64(stmt, 1);
+    }
+    if (sqlite3_column_type(stmt, 2) != SQLITE_NULL) {
+      r.mtime_ns = sqlite3_column_int64(stmt, 2);
+    }
+    r.listed_at = sqlite3_column_int64(stmt, 3);
+    r.incomplete = sqlite3_column_int(stmt, 4) != 0;
+    out = std::move(r);
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+std::vector<Store::DirectoryEntryRow> Store::list_directory_entries(
+    std::string_view dir_uri, int limit) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          index_,
+          "SELECT dir_uri, name, child_uri, is_dir, size, mtime_ns "
+          "FROM directory_entry WHERE dir_uri = ?1 ORDER BY name LIMIT ?2;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare list_directory_entries");
+  }
+  sqlite3_bind_text(stmt, 1, dir_uri.data(), static_cast<int>(dir_uri.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, limit);
+  std::vector<DirectoryEntryRow> out;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    DirectoryEntryRow r;
+    r.dir_uri = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    r.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    if (sqlite3_column_type(stmt, 2) != SQLITE_NULL) {
+      r.child_uri =
+          reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+    }
+    r.is_dir = sqlite3_column_int(stmt, 3) != 0;
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL) {
+      r.size = sqlite3_column_int64(stmt, 4);
+    }
+    if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
+      r.mtime_ns = sqlite3_column_int64(stmt, 5);
+    }
+    out.push_back(std::move(r));
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+void Store::delete_directory_snapshot(std::string_view dir_uri) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          index_, "DELETE FROM directory_snapshot WHERE dir_uri = ?1;", -1,
+          &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare delete_directory_snapshot");
+  }
+  sqlite3_bind_text(stmt, 1, dir_uri.data(), static_cast<int>(dir_uri.size()),
+                    SQLITE_STATIC);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(index_, "step delete_directory_snapshot");
+  }
+  sqlite3_finalize(stmt);
+}
+
+std::int64_t Store::count_directory_snapshots() const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(index_, "SELECT COUNT(*) FROM directory_snapshot;", -1,
+                         &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare count_directory_snapshots");
+  }
+  std::int64_t n = 0;
+  if (sqlite3_step(stmt) == SQLITE_ROW) n = sqlite3_column_int64(stmt, 0);
+  sqlite3_finalize(stmt);
+  return n;
+}
+
+std::int64_t Store::ensure_tag_def(std::string_view name,
+                                   std::optional<std::string_view> label,
+                                   std::optional<std::string_view> color,
+                                   std::optional<std::string_view> badge) {
+  if (name.empty()) {
+    throw std::invalid_argument("ensure_tag_def: empty name");
+  }
+  if (auto existing = find_tag_def_by_name(name)) {
+    return existing->id;
+  }
+  const std::int64_t now = now_unix_s();
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "INSERT INTO tag_def(name, label, color, badge, created_at) "
+          "VALUES(?1,?2,?3,?4,?5);",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare ensure_tag_def");
+  }
+  sqlite3_bind_text(stmt, 1, name.data(), static_cast<int>(name.size()),
+                    SQLITE_STATIC);
+  if (label) {
+    sqlite3_bind_text(stmt, 2, label->data(), static_cast<int>(label->size()),
+                      SQLITE_STATIC);
+  } else {
+    sqlite3_bind_null(stmt, 2);
+  }
+  if (color) {
+    sqlite3_bind_text(stmt, 3, color->data(), static_cast<int>(color->size()),
+                      SQLITE_STATIC);
+  } else {
+    sqlite3_bind_null(stmt, 3);
+  }
+  if (badge) {
+    sqlite3_bind_text(stmt, 4, badge->data(), static_cast<int>(badge->size()),
+                      SQLITE_STATIC);
+  } else {
+    sqlite3_bind_null(stmt, 4);
+  }
+  sqlite3_bind_int64(stmt, 5, now);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    // Race: another writer may have inserted the same name.
+    if (auto existing = find_tag_def_by_name(name)) {
+      return existing->id;
+    }
+    throw_sqlite(user_, "step ensure_tag_def");
+  }
+  const std::int64_t id = sqlite3_last_insert_rowid(user_);
+  sqlite3_finalize(stmt);
+  return id;
+}
+
+std::optional<Store::TagDefRow> Store::find_tag_def(std::int64_t id) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "SELECT id, name, label, color, badge, created_at FROM tag_def "
+          "WHERE id = ?1;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare find_tag_def");
+  }
+  sqlite3_bind_int64(stmt, 1, id);
+  std::optional<TagDefRow> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    TagDefRow r;
+    r.id = sqlite3_column_int64(stmt, 0);
+    r.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    if (sqlite3_column_type(stmt, 2) != SQLITE_NULL) {
+      r.label = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+    }
+    if (sqlite3_column_type(stmt, 3) != SQLITE_NULL) {
+      r.color = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+    }
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL) {
+      r.badge = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+    }
+    r.created_at = sqlite3_column_int64(stmt, 5);
+    out = std::move(r);
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+std::optional<Store::TagDefRow> Store::find_tag_def_by_name(
+    std::string_view name) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "SELECT id, name, label, color, badge, created_at FROM tag_def "
+          "WHERE name = ?1;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare find_tag_def_by_name");
+  }
+  sqlite3_bind_text(stmt, 1, name.data(), static_cast<int>(name.size()),
+                    SQLITE_STATIC);
+  std::optional<TagDefRow> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    TagDefRow r;
+    r.id = sqlite3_column_int64(stmt, 0);
+    r.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    if (sqlite3_column_type(stmt, 2) != SQLITE_NULL) {
+      r.label = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+    }
+    if (sqlite3_column_type(stmt, 3) != SQLITE_NULL) {
+      r.color = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+    }
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL) {
+      r.badge = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+    }
+    r.created_at = sqlite3_column_int64(stmt, 5);
+    out = std::move(r);
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+void Store::add_blob_tag(std::string_view blob_ref, std::string_view tag_name,
+                         std::string_view source) {
+  if (blob_ref.empty() || tag_name.empty()) return;
+  const std::int64_t tag_id = ensure_tag_def(tag_name);
+  const std::int64_t now = now_unix_s();
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "INSERT OR IGNORE INTO blob_tag(blob_ref, tag_id, tagged_at, source) "
+          "VALUES(?1,?2,?3,?4);",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare add_blob_tag");
+  }
+  sqlite3_bind_text(stmt, 1, blob_ref.data(), static_cast<int>(blob_ref.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_int64(stmt, 2, tag_id);
+  sqlite3_bind_int64(stmt, 3, now);
+  if (source.empty()) {
+    sqlite3_bind_null(stmt, 4);
+  } else {
+    sqlite3_bind_text(stmt, 4, source.data(), static_cast<int>(source.size()),
+                      SQLITE_STATIC);
+  }
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(user_, "step add_blob_tag");
+  }
+  sqlite3_finalize(stmt);
+}
+
+bool Store::remove_blob_tag(std::string_view blob_ref,
+                            std::string_view tag_name) {
+  if (blob_ref.empty() || tag_name.empty()) return false;
+  auto def = find_tag_def_by_name(tag_name);
+  if (!def) return false;
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "DELETE FROM blob_tag WHERE blob_ref = ?1 AND tag_id = ?2;", -1, &stmt,
+          nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare remove_blob_tag");
+  }
+  sqlite3_bind_text(stmt, 1, blob_ref.data(), static_cast<int>(blob_ref.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_int64(stmt, 2, def->id);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(user_, "step remove_blob_tag");
+  }
+  const int changes = sqlite3_changes(user_);
+  sqlite3_finalize(stmt);
+  return changes > 0;
+}
+
+std::vector<std::string> Store::tags_for_blob_ref(
+    std::string_view blob_ref) const {
+  std::vector<std::string> out;
+  if (blob_ref.empty()) return out;
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "SELECT d.name FROM blob_tag t JOIN tag_def d ON d.id = t.tag_id "
+          "WHERE t.blob_ref = ?1 ORDER BY d.name;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare tags_for_blob_ref");
+  }
+  sqlite3_bind_text(stmt, 1, blob_ref.data(), static_cast<int>(blob_ref.size()),
+                    SQLITE_STATIC);
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    out.emplace_back(
+        reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)));
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+std::vector<std::string> Store::blob_refs_for_tag(std::string_view tag_name,
+                                                  int limit) const {
+  std::vector<std::string> out;
+  if (tag_name.empty()) return out;
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "SELECT t.blob_ref FROM blob_tag t JOIN tag_def d ON d.id = t.tag_id "
+          "WHERE d.name = ?1 ORDER BY t.blob_ref LIMIT ?2;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare blob_refs_for_tag");
+  }
+  sqlite3_bind_text(stmt, 1, tag_name.data(), static_cast<int>(tag_name.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, limit);
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    out.emplace_back(
+        reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)));
+  }
+  sqlite3_finalize(stmt);
+  return out;
 }
 
 }  // namespace thumtoo

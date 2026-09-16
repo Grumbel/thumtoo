@@ -126,8 +126,11 @@ Feature macros: new schema epoch; `TILES_ONLY`; user-store present.
 **Phase B status:** media + region + tiles on `Store`.  
 **Phase C status:** `container_member` TOC + optional member blob_id (hash on
 read/tag/explicit via `set_container_member_blob`); `ensure_document_media` /
-`ensure_page_region`. Legacy Client unchanged. Next: Phase D directory
-snapshots + user tags.
+`ensure_page_region`.  
+**Phase D (partial):** directory_snapshot/entry on index; user `tag_def` +
+`blob_tag` API (`add_blob_tag` / `tags_for_blob_ref`). Collections, bookmarks,
+link_edge APIs and HTTPS/`http_body` still open. Legacy Client unchanged.
+Next: Phase D remainder (collections / bookmarks / links) or Client wiring.
 
 ### Phase B — images
 

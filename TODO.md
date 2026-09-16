@@ -2,6 +2,36 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-217-store-phase-d-dir-tags.** Store Phase D (partial): directory + tags.
+Prior: **216**.
+
+### Change
+- Index: `directory_snapshot` / `directory_entry`; `replace_directory_snapshot`,
+  list/find/delete/count APIs (cache-first folder open).
+- User: `ensure_tag_def`, `add_blob_tag` / `remove_blob_tag`,
+  `tags_for_blob_ref` / `blob_refs_for_tag` on `blob:sha256:` refs.
+- Tests: dir replace, tags survive index+bulk wipe; fix reopen blob count.
+- PLAN.md Phase D partial status.
+
+### Not in this tip
+- collection / bookmark / link_edge / annotation write APIs
+- HTTPS → http_body
+- Client wiring to Store
+
+### Apply
+```bash
+git pull /path/to/thumtoo-217-store-phase-d-dir-tags.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **217**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-216-store-phase-c.** Store Phase C: container_member, document pages.
 Prior: **215**.
 
