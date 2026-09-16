@@ -381,15 +381,15 @@ std::size_t Client::refresh_directory_snapshot(
   return entries.size();
 }
 
-std::vector<Database::LocatorRow> Client::list_locators(int /*limit*/) const {
+std::vector<Client::LocatorRow> Client::list_locators(int /*limit*/) const {
   return {};
 }
 
-std::optional<Database::LocatorRow> Client::find_locator(std::string_view uri) const {
+std::optional<Client::LocatorRow> Client::find_locator(std::string_view uri) const {
   if (!store_) return std::nullopt;
   auto sl = store_->find_locator(uri);
   if (!sl) return std::nullopt;
-  Database::LocatorRow r;
+  Client::LocatorRow r;
   r.uri = sl->uri;
   r.size = sl->size;
   r.mtime_ns = sl->mtime_ns;
@@ -397,17 +397,17 @@ std::optional<Database::LocatorRow> Client::find_locator(std::string_view uri) c
   return r;
 }
 
-std::vector<Database::LocatorRow> Client::list_locators_by_uri_prefix(
+std::vector<Client::LocatorRow> Client::list_locators_by_uri_prefix(
     std::string_view /*uri_prefix*/, int /*limit*/) const {
   return {};
 }
 
-std::vector<Database::LocatorRow> Client::list_locators_by_outer_path_prefix(
+std::vector<Client::LocatorRow> Client::list_locators_by_outer_path_prefix(
     std::string_view /*path_prefix*/, int /*limit*/) const {
   return {};
 }
 
-std::vector<Database::LocatorRow> Client::list_locators_like(
+std::vector<Client::LocatorRow> Client::list_locators_like(
     std::string_view /*uri_like_pattern*/, int /*limit*/) const {
   return {};
 }
@@ -420,7 +420,7 @@ std::optional<std::string> Client::resolve_content_id(std::string_view uri) cons
   return std::nullopt;
 }
 
-std::vector<Database::LocatorRow> Client::list_uris_for_content_id(
+std::vector<Client::LocatorRow> Client::list_uris_for_content_id(
     std::string_view content_id, int limit) const {
   if (!store_ || content_id.empty()) return {};
   // STORE_ONLY: content_id "sha256:<hex>" or "sha256:<hex>:page:N" → Store blob.
@@ -434,10 +434,10 @@ std::vector<Database::LocatorRow> Client::list_uris_for_content_id(
   auto blob_id = store_->find_blob_by_hash(HashAlgoId::Sha256, *digest);
   if (!blob_id) return {};
   auto store_locs = store_->list_locators_for_blob(*blob_id, limit);
-  std::vector<Database::LocatorRow> out;
+  std::vector<Client::LocatorRow> out;
   out.reserve(store_locs.size());
   for (const auto& sl : store_locs) {
-    Database::LocatorRow r;
+    Client::LocatorRow r;
     r.uri = sl.uri;
     r.content_id = std::string(content_id.substr(0, kSha.size() + 64));
     r.size = sl.size;
@@ -1420,8 +1420,7 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
   struct Pending {
     std::string uri;
     bool need_register = false;
-    Database::LocatorRow loc;
-    Database::ContentRow content;
+    Client::LocatorRow loc;
   };
   std::vector<Pending> pending;
   pending.reserve(paths.size());
@@ -1436,13 +1435,11 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
     item.loc.outer_path = abs.string();
     item.loc.size = file_size_bytes(abs);
     item.loc.mtime_ns = file_mtime_ns(abs);
-    item.content.content_id = *item.loc.content_id;
-    item.content.status = ContentStatus::Pending;
     pending.push_back(std::move(item));
   };
 
   auto enqueue_archive_member = [&](const std::filesystem::path& abs,
-                                    const Database::ArchiveEntryRow& entry) {
+                                    const Client::ArchiveEntryRow& entry) {
     const auto uri = archive_uri(abs, entry.member_path);
     Pending item;
     item.uri = uri;
@@ -1452,8 +1449,6 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
     item.loc.outer_path = abs.string();
     item.loc.member_path = entry.member_path;
     item.loc.size = entry.uncompressed_size;
-    item.content.content_id = *item.loc.content_id;
-    item.content.status = ContentStatus::Pending;
     pending.push_back(std::move(item));
   };
 
@@ -1496,8 +1491,6 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
           item.loc.member_path = std::to_string(page);
           item.loc.size = file_size_bytes(abs);
           item.loc.mtime_ns = file_mtime_ns(abs);
-          item.content.content_id = *item.loc.content_id;
-          item.content.status = ContentStatus::Pending;
           pending.push_back(std::move(item));
         }
       }
@@ -1520,8 +1513,6 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
           item.loc.member_path = std::to_string(page);
           item.loc.size = file_size_bytes(abs);
           item.loc.mtime_ns = file_mtime_ns(abs);
-          item.content.content_id = *item.loc.content_id;
-          item.content.status = ContentStatus::Pending;
           pending.push_back(std::move(item));
         }
       }
@@ -1546,8 +1537,6 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
           item.loc.member_path = std::to_string(page);
           item.loc.size = file_size_bytes(abs);
           item.loc.mtime_ns = file_mtime_ns(abs);
-          item.content.content_id = *item.loc.content_id;
-          item.content.status = ContentStatus::Pending;
           pending.push_back(std::move(item));
         }
       }
@@ -1565,9 +1554,9 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
 }
 
 
-std::vector<Database::ArchiveEntryRow> Client::get_archive_entries(
+std::vector<Client::ArchiveEntryRow> Client::get_archive_entries(
     std::string_view archive_uri) const {
-  std::vector<Database::ArchiveEntryRow> rows;
+  std::vector<Client::ArchiveEntryRow> rows;
 
   // Store container_member TOC.
   auto resolve_container = [&]() -> std::optional<std::int64_t> {
@@ -1595,7 +1584,7 @@ std::vector<Database::ArchiveEntryRow> Client::get_archive_entries(
     rows.reserve(members.size());
     for (const auto& m : members) {
       if (m.is_directory) continue;
-      Database::ArchiveEntryRow r;
+      Client::ArchiveEntryRow r;
       r.archive_uri = std::string(archive_uri);
       r.member_path = m.member_path;
       r.uncompressed_size = m.uncompressed_size;
@@ -1606,15 +1595,15 @@ std::vector<Database::ArchiveEntryRow> Client::get_archive_entries(
   return rows;
 }
 
-std::vector<Database::ArchiveEntryRow> Client::refresh_archive_toc(
+std::vector<Client::ArchiveEntryRow> Client::refresh_archive_toc(
     const std::filesystem::path& archive_path) {
   auto toc = read_archive_toc(archive_path);
   if (!toc) return {};
   const auto uri = archive_uri(archive_path);
-  std::vector<Database::ArchiveEntryRow> rows;
+  std::vector<Client::ArchiveEntryRow> rows;
   rows.reserve(toc->size());
   for (const auto& m : *toc) {
-    Database::ArchiveEntryRow r;
+    Client::ArchiveEntryRow r;
     r.archive_uri = uri;
     r.member_path = m.member_path;
     r.uncompressed_size = m.uncompressed_size;
@@ -1840,12 +1829,12 @@ std::size_t Client::cancel_uri(std::string_view uri) {
   return dropped.size();
 }
 
-Database::PurgeStats Client::purge_uri(std::string_view /*uri*/, bool /*dry_run*/) {
+Client::PurgeStats Client::purge_uri(std::string_view /*uri*/, bool /*dry_run*/) {
   // Legacy ladder purge only; Store GC is separate (thumtoo-gc tools path).
   return {};
 }
 
-Database::PurgeStats Client::purge_path(const std::filesystem::path& /*path*/,
+Client::PurgeStats Client::purge_path(const std::filesystem::path& /*path*/,
                                         bool /*dry_run*/) {
   return {};
 }

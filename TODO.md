@@ -2,6 +2,29 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-269-client-pod-types.** Client PODs replace Database::LocatorRow in public API.
+Prior: **268**.
+
+### Change
+- `Client::{LocatorRow,ArchiveEntryRow,PurgeStats}` owned by Client (no database.hpp)
+- Public list/find/archive/purge APIs no longer use `Database::` types
+- `client.hpp` no longer includes `database.hpp`
+
+### Apply
+```bash
+git pull /path/to/thumtoo-269-client-pod-types.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **269**
+- [x] Full unit test suite passes
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-268-tools-store-first.** GC/status/prepare use Store; Client::db() removed.
 Prior: **267**.
 

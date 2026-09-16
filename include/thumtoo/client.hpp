@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "thumtoo/database.hpp"
 #include "thumtoo/archive.hpp"
 #include "thumtoo/executor.hpp"
 #include "thumtoo/store.hpp"
@@ -66,6 +65,31 @@ namespace thumtoo {
 /// concurrent workers can share the connection.
 class Client {
  public:
+  /// Cache locator (path/URI → content identity). Independent of legacy Database.
+  struct LocatorRow {
+    std::string uri;
+    std::optional<std::string> content_id;
+    std::optional<std::string> outer_path;
+    std::optional<std::string> member_path;
+    std::optional<std::int64_t> size;
+    std::optional<std::int64_t> mtime_ns;
+  };
+
+  /// Archive TOC row (container member listing).
+  struct ArchiveEntryRow {
+    std::string archive_uri;
+    std::string member_path;
+    std::optional<std::int64_t> uncompressed_size;
+  };
+
+  /// Result of purge_uri / purge_path (no-ops on Store-only Client).
+  struct PurgeStats {
+    std::vector<std::string> removed_uris;
+    std::vector<std::string> purged_content_ids;
+    std::int64_t tiles_deleted = 0;
+    std::int64_t levels_deleted = 0;
+  };
+
   using SizeCallback = std::function<void(std::string uri, SizeReply)>;
   using PixelsCallback =
       std::function<void(std::string uri, int max_edge, std::optional<PixelLevel>)>;
@@ -118,16 +142,16 @@ class Client {
       const std::filesystem::path& dir_path);
 
   /// Cache-only: locator rows known to this cache (browse without source I/O).
-  [[nodiscard]] std::vector<Database::LocatorRow> list_locators(int limit = 100) const;
-  [[nodiscard]] std::optional<Database::LocatorRow> find_locator(
+  [[nodiscard]] std::vector<LocatorRow> list_locators(int limit = 100) const;
+  [[nodiscard]] std::optional<LocatorRow> find_locator(
       std::string_view uri) const;
 
-  /// Cache-only listing helpers (see Database::list_locators_*).
-  [[nodiscard]] std::vector<Database::LocatorRow> list_locators_by_uri_prefix(
+  /// Cache-only listing helpers (prefix/LIKE; empty until Store listing lands).
+  [[nodiscard]] std::vector<LocatorRow> list_locators_by_uri_prefix(
       std::string_view uri_prefix, int limit = 100) const;
-  [[nodiscard]] std::vector<Database::LocatorRow> list_locators_by_outer_path_prefix(
+  [[nodiscard]] std::vector<LocatorRow> list_locators_by_outer_path_prefix(
       std::string_view path_prefix, int limit = 100) const;
-  [[nodiscard]] std::vector<Database::LocatorRow> list_locators_like(
+  [[nodiscard]] std::vector<LocatorRow> list_locators_like(
       std::string_view uri_like_pattern, int limit = 100) const;
 
   /// Resolve a location or content-id URI to the durable content_id (cache only).
@@ -136,7 +160,7 @@ class Client {
       std::string_view uri) const;
 
   /// Locators that share this content_id (same bytes, different paths).
-  [[nodiscard]] std::vector<Database::LocatorRow> list_uris_for_content_id(
+  [[nodiscard]] std::vector<LocatorRow> list_uris_for_content_id(
       std::string_view content_id, int limit = 100) const;
 
   /// Cache-only meta by content_id (same as get_meta("sha256:…")).
@@ -273,11 +297,11 @@ class Client {
                        SizeCallback on_each = {});
 
   /// Cache-only TOC if present.
-  [[nodiscard]] std::vector<Database::ArchiveEntryRow> get_archive_entries(
+  [[nodiscard]] std::vector<ArchiveEntryRow> get_archive_entries(
       std::string_view archive_uri) const;
 
   /// Read TOC from source (libarchive), store under archive_uri, return entries.
-  std::vector<Database::ArchiveEntryRow> refresh_archive_toc(
+  std::vector<ArchiveEntryRow> refresh_archive_toc(
       const std::filesystem::path& archive_path);
 
   /// Document kinds for durable page-count index (PDF / DjVu / EPUB).
@@ -351,13 +375,13 @@ class Client {
    * Leaves the source file on disk; next get_size/get_pixels miss (cold).
    * Shared content (multiple locators) only loses this URI until the last one.
    */
-  [[nodiscard]] Database::PurgeStats purge_uri(std::string_view uri,
+  [[nodiscard]] PurgeStats purge_uri(std::string_view uri,
                                                bool dry_run = false);
   /**
    * Forget every locator whose outer_path matches @p path (absolute preferred).
    * Also tries file:/// URI for the path. Useful for debug "make this cold".
    */
-  [[nodiscard]] Database::PurgeStats purge_path(
+  [[nodiscard]] PurgeStats purge_path(
       const std::filesystem::path& path, bool dry_run = false);
 
   /**
