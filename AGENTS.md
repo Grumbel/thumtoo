@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-278-verify-features-restore-lists**. Next bundle: **279**.
+Latest agent handoff: **TODO.md → thumtoo-279-text-outline-lqip-lists**. Next bundle: **280**.
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code
 here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 

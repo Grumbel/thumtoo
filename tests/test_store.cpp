@@ -343,6 +343,24 @@ int main() {
         expect(store.get_blob_lqip_kind(bid) && *store.get_blob_lqip_kind(bid) == 1,
                "lqip kind");
       }
+
+      // page_text_layer + document_outline
+      {
+        const auto bid = store.insert_blob(9, thumtoo::BlobStatus::Ok);
+        const std::vector<std::uint8_t> payload = {9, 8, 7};
+        store.put_page_text_layer(bid, 2, "k", payload);
+        auto got = store.get_page_text_layer(bid, 2, "k");
+        expect(got && *got == payload, "text layer roundtrip");
+        store.put_document_outline(bid, "", payload);
+        auto og = store.get_document_outline(bid, "");
+        expect(og && *og == payload, "outline roundtrip");
+      }
+
+      // list_locators_like
+      {
+        auto rows = store.list_locators_like("file:///tmp/%", 50);
+        expect(rows.size() >= 1, "like list finds file uris");
+      }
     }
 
     // Re-create after deleting index+bulk (simulates operator cache wipe).

@@ -423,13 +423,30 @@ std::vector<Client::LocatorRow> Client::list_locators_by_uri_prefix(
 }
 
 std::vector<Client::LocatorRow> Client::list_locators_by_outer_path_prefix(
-    std::string_view /*path_prefix*/, int /*limit*/) const {
-  return {};
+    std::string_view path_prefix, int limit) const {
+  // Store has no outer_path column; approximate via file:// URI prefix.
+  if (!store_ || path_prefix.empty()) return {};
+  std::error_code ec;
+  auto abs = std::filesystem::absolute(
+      std::filesystem::path(std::string(path_prefix)), ec);
+  if (ec) abs = std::filesystem::path(std::string(path_prefix));
+  const auto uri_pref = file_uri_from_path(abs.lexically_normal());
+  return list_locators_by_uri_prefix(uri_pref, limit);
 }
 
 std::vector<Client::LocatorRow> Client::list_locators_like(
-    std::string_view /*uri_like_pattern*/, int /*limit*/) const {
-  return {};
+    std::string_view uri_like_pattern, int limit) const {
+  if (!store_ || uri_like_pattern.empty()) return {};
+  std::vector<Client::LocatorRow> out;
+  for (const auto& sl : store_->list_locators_like(uri_like_pattern, limit)) {
+    Client::LocatorRow r;
+    r.uri = sl.uri;
+    r.size = sl.size;
+    r.mtime_ns = sl.mtime_ns;
+    if (auto m = meta_from_store(sl.uri)) r.content_id = m->content_id;
+    out.push_back(std::move(r));
+  }
+  return out;
 }
 
 std::optional<std::string> Client::resolve_content_id(std::string_view uri) const {
@@ -773,11 +790,14 @@ std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
     return bytes;
   }
 
-  // Have blob: prefer encode from file when URI is file://, else skip.
+  // Encode from plain file, archive member bytes, or small source buffer.
   std::vector<std::uint8_t> bytes;
   if (auto path = path_from_file_uri(uri);
-      path && std::filesystem::is_regular_file(*path)) {
+      path && std::filesystem::is_regular_file(*path) && !is_archive_uri(uri) &&
+      !is_pdf_page_uri(uri) && !is_pdf_image_uri(uri)) {
     bytes = lqip_thumbhash_from_file(*path);
+  } else if (auto src = read_source_bytes(uri); src && !src->empty()) {
+    bytes = lqip_thumbhash_from_buffer(src->data(), src->size());
   }
   if (bytes.empty()) return std::nullopt;
   store_->put_blob_lqip(*loc->blob_id, kLqipKindThumbHash, bytes);
@@ -3165,26 +3185,133 @@ bool Client::remove_tag(std::string_view uri, std::string_view tag) {
 }
 
 
-std::optional<PageTextLayer> Client::get_page_text_layer(
-    std::string_view /*uri*/) const {
+namespace {
+
+struct DocBlobKey {
+  std::int64_t blob_id = 0;
+  int page_1based = 1;
+  std::string layout_key;
+};
+
+std::optional<DocBlobKey> doc_blob_key_lookup(const Store& store,
+                                              std::string_view uri) {
+  std::filesystem::path file;
+  int page = 1;
+  std::string layout;
+  if (auto pdf = parse_pdf_uri(uri)) {
+    file = pdf->pdf_path;
+    page = pdf->page;
+  } else if (auto dj = parse_djvu_uri(uri)) {
+    file = dj->djvu_path;
+    page = dj->page;
+  } else if (auto ep = parse_epub_uri(uri)) {
+    file = ep->epub_path;
+    page = ep->page;
+    layout = format_epub_layout_params(ep->layout);
+  } else {
+    return std::nullopt;
+  }
+  if (auto loc = store.find_locator(uri); loc && loc->blob_id) {
+    return DocBlobKey{*loc->blob_id, page, layout};
+  }
+  if (!file.empty()) {
+    const auto file_uri = file_uri_from_path(file);
+    if (auto loc = store.find_locator(file_uri); loc && loc->blob_id) {
+      return DocBlobKey{*loc->blob_id, page, layout};
+    }
+  }
   return std::nullopt;
+}
+
+std::optional<DocBlobKey> doc_blob_key_ensure(Store& store,
+                                              std::string_view uri) {
+  if (auto hit = doc_blob_key_lookup(store, uri)) return hit;
+  std::filesystem::path file;
+  int page = 1;
+  std::string layout;
+  if (auto pdf = parse_pdf_uri(uri)) {
+    file = pdf->pdf_path;
+    page = pdf->page;
+  } else if (auto dj = parse_djvu_uri(uri)) {
+    file = dj->djvu_path;
+    page = dj->page;
+  } else if (auto ep = parse_epub_uri(uri)) {
+    file = ep->epub_path;
+    page = ep->page;
+    layout = format_epub_layout_params(ep->layout);
+  } else {
+    return std::nullopt;
+  }
+  if (!std::filesystem::is_regular_file(file)) return std::nullopt;
+  const auto hex = sha256_file_hex(file);
+  if (hex.empty()) return std::nullopt;
+  auto digest = Store::parse_sha256_digest(hex);
+  if (!digest) return std::nullopt;
+  std::int64_t blob_id = 0;
+  if (auto existing = store.find_blob_by_hash(HashAlgoId::Sha256, *digest)) {
+    blob_id = *existing;
+  } else {
+    blob_id = store.insert_blob(file_size_bytes(file), BlobStatus::Ok);
+    store.put_hash(blob_id, HashAlgoId::Sha256, *digest);
+  }
+  const auto file_uri = file_uri_from_path(file);
+  (void)store.upsert_locator(file_uri, blob_id, file_size_bytes(file),
+                             file_mtime_ns(file));
+  return DocBlobKey{blob_id, page, layout};
+}
+
+}  // namespace
+
+std::optional<PageTextLayer> Client::get_page_text_layer(
+    std::string_view uri) const {
+  if (!store_ || uri.empty()) return std::nullopt;
+  auto key = doc_blob_key_lookup(*store_, uri);
+  if (!key) return std::nullopt;
+  auto bytes = store_->get_page_text_layer(key->blob_id, key->page_1based,
+                                           key->layout_key);
+  if (!bytes) return std::nullopt;
+  return deserialize_page_text_layer(*bytes);
 }
 
 std::optional<PageTextLayer> Client::ensure_page_text_layer(
     std::string_view uri) {
   if (auto hit = get_page_text_layer(uri)) return hit;
-  // Session-only: no durable text layer store on redesign schema yet.
-  return extract_page_text_layer(uri);
+  auto layer = extract_page_text_layer(uri);
+  if (!layer || !store_) return layer;
+  auto key = doc_blob_key_ensure(*store_, uri);
+  if (key) {
+    auto bytes = serialize_page_text_layer(*layer);
+    if (!bytes.empty()) {
+      store_->put_page_text_layer(key->blob_id, key->page_1based,
+                                  key->layout_key, bytes);
+    }
+  }
+  return layer;
 }
 
 std::optional<DocumentOutline> Client::get_document_outline(
-    std::string_view /*uri*/) const {
-  return std::nullopt;
+    std::string_view uri) const {
+  if (!store_ || uri.empty()) return std::nullopt;
+  auto key = doc_blob_key_lookup(*store_, uri);
+  if (!key) return std::nullopt;
+  auto bytes = store_->get_document_outline(key->blob_id, key->layout_key);
+  if (!bytes) return std::nullopt;
+  return deserialize_document_outline(*bytes);
 }
 
 std::optional<DocumentOutline> Client::ensure_document_outline(
     std::string_view uri) {
-  return extract_document_outline(uri);
+  if (auto hit = get_document_outline(uri)) return hit;
+  auto outline = extract_document_outline(uri);
+  if (!outline || !store_) return outline;
+  auto key = doc_blob_key_ensure(*store_, uri);
+  if (key) {
+    auto bytes = serialize_document_outline(*outline);
+    if (!bytes.empty()) {
+      store_->put_document_outline(key->blob_id, key->layout_key, bytes);
+    }
+  }
+  return outline;
 }
 
 

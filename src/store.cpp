@@ -145,6 +145,19 @@ CREATE TABLE IF NOT EXISTS blob_lqip (
   kind    INTEGER NOT NULL DEFAULT 0,
   data    BLOB NOT NULL
 );
+CREATE TABLE IF NOT EXISTS page_text_layer (
+  blob_id INTEGER NOT NULL REFERENCES blob(id) ON DELETE CASCADE,
+  page_1based INTEGER NOT NULL,
+  layout_key TEXT NOT NULL DEFAULT '',
+  data BLOB NOT NULL,
+  PRIMARY KEY (blob_id, page_1based, layout_key)
+);
+CREATE TABLE IF NOT EXISTS document_outline (
+  blob_id INTEGER NOT NULL REFERENCES blob(id) ON DELETE CASCADE,
+  layout_key TEXT NOT NULL DEFAULT '',
+  data BLOB NOT NULL,
+  PRIMARY KEY (blob_id, layout_key)
+);
 
 CREATE TABLE IF NOT EXISTS region (
   id         INTEGER PRIMARY KEY,
@@ -397,6 +410,21 @@ void Store::ensure_optional_index_tables() {
       "  kind    INTEGER NOT NULL DEFAULT 0,"
       "  data    BLOB NOT NULL"
       ");");
+  exec_index(
+      "CREATE TABLE IF NOT EXISTS page_text_layer ("
+      "  blob_id INTEGER NOT NULL REFERENCES blob(id) ON DELETE CASCADE,"
+      "  page_1based INTEGER NOT NULL,"
+      "  layout_key TEXT NOT NULL DEFAULT '',"
+      "  data BLOB NOT NULL,"
+      "  PRIMARY KEY (blob_id, page_1based, layout_key)"
+      ");");
+  exec_index(
+      "CREATE TABLE IF NOT EXISTS document_outline ("
+      "  blob_id INTEGER NOT NULL REFERENCES blob(id) ON DELETE CASCADE,"
+      "  layout_key TEXT NOT NULL DEFAULT '',"
+      "  data BLOB NOT NULL,"
+      "  PRIMARY KEY (blob_id, layout_key)"
+      ");");
 }
 
 void Store::migrate_or_init_index() {
@@ -618,6 +646,138 @@ void Store::set_blob_status(std::int64_t id, BlobStatus status) {
   sqlite3_finalize(stmt);
 }
 
+
+
+void Store::put_page_text_layer(std::int64_t blob_id, int page_1based,
+                                std::string_view layout_key,
+                                std::span<const std::uint8_t> data) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          index_,
+          "INSERT INTO page_text_layer(blob_id, page_1based, layout_key, data) "
+          "VALUES(?1, ?2, ?3, ?4) "
+          "ON CONFLICT(blob_id, page_1based, layout_key) DO UPDATE SET "
+          "data = excluded.data;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare put_page_text_layer");
+  }
+  sqlite3_bind_int64(stmt, 1, blob_id);
+  sqlite3_bind_int(stmt, 2, page_1based);
+  sqlite3_bind_text(stmt, 3, layout_key.data(), static_cast<int>(layout_key.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_blob(stmt, 4, data.data(), static_cast<int>(data.size()),
+                    SQLITE_STATIC);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(index_, "step put_page_text_layer");
+  }
+  sqlite3_finalize(stmt);
+}
+
+std::optional<std::vector<std::uint8_t>> Store::get_page_text_layer(
+    std::int64_t blob_id, int page_1based, std::string_view layout_key) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          index_,
+          "SELECT data FROM page_text_layer WHERE blob_id = ?1 AND "
+          "page_1based = ?2 AND layout_key = ?3;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare get_page_text_layer");
+  }
+  sqlite3_bind_int64(stmt, 1, blob_id);
+  sqlite3_bind_int(stmt, 2, page_1based);
+  sqlite3_bind_text(stmt, 3, layout_key.data(), static_cast<int>(layout_key.size()),
+                    SQLITE_STATIC);
+  std::optional<std::vector<std::uint8_t>> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW &&
+      sqlite3_column_type(stmt, 0) != SQLITE_NULL) {
+    const auto* p = static_cast<const std::uint8_t*>(sqlite3_column_blob(stmt, 0));
+    const int n = sqlite3_column_bytes(stmt, 0);
+    if (p && n > 0) out = std::vector<std::uint8_t>(p, p + n);
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+void Store::put_document_outline(std::int64_t blob_id,
+                                 std::string_view layout_key,
+                                 std::span<const std::uint8_t> data) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          index_,
+          "INSERT INTO document_outline(blob_id, layout_key, data) "
+          "VALUES(?1, ?2, ?3) "
+          "ON CONFLICT(blob_id, layout_key) DO UPDATE SET data = excluded.data;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare put_document_outline");
+  }
+  sqlite3_bind_int64(stmt, 1, blob_id);
+  sqlite3_bind_text(stmt, 2, layout_key.data(), static_cast<int>(layout_key.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_blob(stmt, 3, data.data(), static_cast<int>(data.size()),
+                    SQLITE_STATIC);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(index_, "step put_document_outline");
+  }
+  sqlite3_finalize(stmt);
+}
+
+std::optional<std::vector<std::uint8_t>> Store::get_document_outline(
+    std::int64_t blob_id, std::string_view layout_key) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          index_,
+          "SELECT data FROM document_outline WHERE blob_id = ?1 AND "
+          "layout_key = ?2;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare get_document_outline");
+  }
+  sqlite3_bind_int64(stmt, 1, blob_id);
+  sqlite3_bind_text(stmt, 2, layout_key.data(), static_cast<int>(layout_key.size()),
+                    SQLITE_STATIC);
+  std::optional<std::vector<std::uint8_t>> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW &&
+      sqlite3_column_type(stmt, 0) != SQLITE_NULL) {
+    const auto* p = static_cast<const std::uint8_t*>(sqlite3_column_blob(stmt, 0));
+    const int n = sqlite3_column_bytes(stmt, 0);
+    if (p && n > 0) out = std::vector<std::uint8_t>(p, p + n);
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+std::vector<Store::LocatorRow> Store::list_locators_like(
+    std::string_view uri_like_pattern, int limit) const {
+  if (uri_like_pattern.empty()) return {};
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(index_,
+                         "SELECT id, uri, blob_id, size, mtime_ns, updated_at "
+                         "FROM locator WHERE uri LIKE ?1 ESCAPE '\\' "
+                         "ORDER BY uri LIMIT ?2;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare list_locators_like");
+  }
+  sqlite3_bind_text(stmt, 1, uri_like_pattern.data(),
+                    static_cast<int>(uri_like_pattern.size()), SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, limit < 0 ? 0 : limit);
+  std::vector<LocatorRow> out;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    LocatorRow r;
+    r.id = sqlite3_column_int64(stmt, 0);
+    r.uri = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    if (sqlite3_column_type(stmt, 2) != SQLITE_NULL)
+      r.blob_id = sqlite3_column_int64(stmt, 2);
+    if (sqlite3_column_type(stmt, 3) != SQLITE_NULL)
+      r.size = sqlite3_column_int64(stmt, 3);
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+      r.mtime_ns = sqlite3_column_int64(stmt, 4);
+    r.updated_at = sqlite3_column_int64(stmt, 5);
+    out.push_back(std::move(r));
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
 
 void Store::put_blob_lqip(std::int64_t blob_id, int kind,
                           std::span<const std::uint8_t> data) {

@@ -2,6 +2,30 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-279-text-outline-lqip-lists.** Durable text/outline; LIKE lists; broader LQIP.
+Prior: **278**.
+
+### Change
+- Store `page_text_layer` / `document_outline` tables (CREATE IF NOT EXISTS)
+- `Client::get/ensure_page_text_layer` and outline persist serialized payloads
+- `list_locators_like` + `list_locators_by_outer_path_prefix` (file:// URI approximation)
+- `ensure_lqip` uses `read_source_bytes` / buffer path for archive members when locator has blob_id
+
+### Apply
+```bash
+git pull /path/to/thumtoo-279-text-outline-lqip-lists.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **279**
+- [x] Full unit test suite passes
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-278-verify-features-restore-lists.** Audit + restore list_locators; fix ProbeSize warm.
 Prior: **277**.
 

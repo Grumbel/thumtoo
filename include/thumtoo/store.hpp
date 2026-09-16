@@ -134,6 +134,19 @@ class Store {
       std::int64_t blob_id) const;
   [[nodiscard]] std::optional<int> get_blob_lqip_kind(std::int64_t blob_id) const;
 
+  // --- page text / document outline (serialized payloads; keyed by blob) ---
+  void put_page_text_layer(std::int64_t blob_id, int page_1based,
+                           std::string_view layout_key,
+                           std::span<const std::uint8_t> data);
+  [[nodiscard]] std::optional<std::vector<std::uint8_t>> get_page_text_layer(
+      std::int64_t blob_id, int page_1based,
+      std::string_view layout_key) const;
+
+  void put_document_outline(std::int64_t blob_id, std::string_view layout_key,
+                            std::span<const std::uint8_t> data);
+  [[nodiscard]] std::optional<std::vector<std::uint8_t>> get_document_outline(
+      std::int64_t blob_id, std::string_view layout_key) const;
+
   // --- blob_hash ---
   /// Store digest (raw bytes). Replaces existing digest for (blob, algo).
   void put_hash(std::int64_t blob_id, HashAlgoId algo,
@@ -180,6 +193,9 @@ class Store {
   [[nodiscard]] std::vector<LocatorRow> list_locators(int limit = 100) const;
   [[nodiscard]] std::vector<LocatorRow> list_locators_by_uri_prefix(
       std::string_view uri_prefix, int limit = 100) const;
+  /// SQL LIKE on uri (caller supplies pattern; % and _ wildcards).
+  [[nodiscard]] std::vector<LocatorRow> list_locators_like(
+      std::string_view uri_like_pattern, int limit = 100) const;
   [[nodiscard]] std::vector<LocatorRow> list_locators_for_blob(
       std::int64_t blob_id, int limit = 100) const;
 
