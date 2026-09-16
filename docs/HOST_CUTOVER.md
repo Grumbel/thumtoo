@@ -90,7 +90,7 @@ Pair with biltoo ≥1007 (`scheduleSoftPixels`) for PreferCache when tiles exist
 |------|--------|
 | Library dual-path | **Removed** from Client (≥262) |
 | biltoo `data_root` | **Done** (biltoo-1004; XDG data root) |
-| biltoo tile-native PreferCache / filmstrip | **Partial** (1005 Prefer plateau; 1006–1007 `scheduleSoftPixels`) |
+| biltoo tile-native PreferCache / filmstrip | **OK** (≥1007 `scheduleSoftPixels`; docs biltoo-1012; needs thumtoo ≥280) |
 | Tiles-first (no durable soft levels) | **Always** (Client; ≥265 dead env removed) |
 | Top-level Store layout (`THUMTOO_STORE_ROOT`) | **Default on** (≥245; migrate ≥238; `test_store_root`) |
 | Full-from-tiles (EnsurePixels Full) | **On** when tile pyramid covers want (≥243) |

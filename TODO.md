@@ -2,6 +2,30 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-284-optional-lqip-outer-path.** EPUB/Handsum LQIP; locator outer_path.
+Prior: **283**.
+
+### Change
+- EPUB page LQIP via `epub_rasterize_page`
+- Handsum preferred when RGB available (ThumbHash fallback)
+- Store `locator.outer_path` / `member_path` (+ ALTER migrate); SQL list-by-outer_path
+- Client list_locators_by_outer_path_prefix uses real column with URI-prefix fallback
+
+### Apply
+```bash
+git pull /path/to/thumtoo-284-optional-lqip-outer-path.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **284**
+- [x] store / client / epub-text tests pass
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-283-readme-lqip-migrate.** README Store-only; migrate legacy blob_lqip shape.
 Prior: **282**.
 

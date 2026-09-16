@@ -390,6 +390,8 @@ Client::LocatorRow Client::locator_row_from_store(const Store::LocatorRow& sl) c
   if (sl.mtime_ns) {
     r.mtime_ns = std::optional<std::int64_t>(*sl.mtime_ns);
   }
+  if (sl.outer_path) r.outer_path = *sl.outer_path;
+  if (sl.member_path) r.member_path = *sl.member_path;
   if (auto m = meta_from_store(sl.uri)) {
     r.content_id = std::move(m->content_id);
   }
@@ -424,14 +426,22 @@ std::vector<Client::LocatorRow> Client::list_locators_by_uri_prefix(
 
 std::vector<Client::LocatorRow> Client::list_locators_by_outer_path_prefix(
     std::string_view path_prefix, int limit) const {
-  // Store has no outer_path column; approximate via file:// URI prefix.
   if (!store_ || path_prefix.empty()) return {};
-  std::error_code ec;
-  auto abs = std::filesystem::absolute(
-      std::filesystem::path(std::string(path_prefix)), ec);
-  if (ec) abs = std::filesystem::path(std::string(path_prefix));
-  const auto uri_pref = file_uri_from_path(abs.lexically_normal());
-  return list_locators_by_uri_prefix(uri_pref, limit);
+  std::vector<Client::LocatorRow> out;
+  for (const auto& sl :
+       store_->list_locators_by_outer_path_prefix(path_prefix, limit)) {
+    out.push_back(locator_row_from_store(sl));
+  }
+  // Also match file:// URI prefix for locators without outer_path filled yet.
+  if (out.empty()) {
+    std::error_code ec;
+    auto abs = std::filesystem::absolute(
+        std::filesystem::path(std::string(path_prefix)), ec);
+    if (ec) abs = std::filesystem::path(std::string(path_prefix));
+    return list_locators_by_uri_prefix(file_uri_from_path(abs.lexically_normal()),
+                                       limit);
+  }
+  return out;
 }
 
 std::vector<Client::LocatorRow> Client::list_locators_like(
@@ -776,6 +786,14 @@ std::optional<LqipKey> lqip_key_lookup(const Store& store, std::string_view uri)
       return LqipKey{*loc->blob_id, dj->page};
     return std::nullopt;
   }
+  if (auto ep = parse_epub_uri(uri)) {
+    if (auto loc = store.find_locator(uri); loc && loc->blob_id)
+      return LqipKey{*loc->blob_id, ep->page};
+    const auto fu = file_uri_from_path(ep->epub_path);
+    if (auto loc = store.find_locator(fu); loc && loc->blob_id)
+      return LqipKey{*loc->blob_id, ep->page};
+    return std::nullopt;
+  }
   if (auto loc = store.find_locator(uri); loc && loc->blob_id)
     return LqipKey{*loc->blob_id, 0};
   return std::nullopt;
@@ -793,6 +811,9 @@ std::optional<LqipKey> lqip_key_ensure(Store& store, std::string_view uri) {
   } else if (auto dj = parse_djvu_uri(uri)) {
     file = dj->djvu_path;
     page = dj->page;
+  } else if (auto ep = parse_epub_uri(uri)) {
+    file = ep->epub_path;
+    page = ep->page;
   } else if (auto path = path_from_file_uri(uri)) {
     file = *path;
   } else {
@@ -812,37 +833,71 @@ std::optional<LqipKey> lqip_key_ensure(Store& store, std::string_view uri) {
   }
   const auto fu = file_uri_from_path(file);
   (void)store.upsert_locator(fu, blob_id, file_size_bytes(file),
-                             file_mtime_ns(file));
+                             file_mtime_ns(file), file.string());
   return LqipKey{blob_id, page};
 }
 
-std::vector<std::uint8_t> encode_lqip_for_uri(std::string_view uri) {
+struct EncodedLqip {
+  int kind = kLqipKindNone;
+  std::vector<std::uint8_t> bytes;
+};
+
+EncodedLqip encode_lqip_from_rgb(const std::uint8_t* rgb, int w, int h) {
+  EncodedLqip out;
+  if (!rgb || w <= 0 || h <= 0) return out;
+  // Prefer Handsum (fixed 147 B) when encode succeeds; else ThumbHash.
+  auto hs = handsum_encode_rgb888(rgb, w, h);
+  if (!hs.empty()) {
+    out.kind = kLqipKindHandsum;
+    out.bytes = std::move(hs);
+    return out;
+  }
+  auto th = thumbhash_encode_rgb888(rgb, w, h, 32);
+  if (!th.empty()) {
+    out.kind = kLqipKindThumbHash;
+    out.bytes = std::move(th);
+  }
+  return out;
+}
+
+EncodedLqip encode_lqip_for_uri(std::string_view uri) {
   if (auto pdf = parse_pdf_uri(uri)) {
     auto r = pdf_rasterize_page(pdf->pdf_path, pdf->page, /*max_edge=*/32,
                                 pdf->backend);
     if (r && !r->rgb.empty())
-      return thumbhash_encode_rgb888(r->rgb.data(), r->width, r->height, 32);
+      return encode_lqip_from_rgb(r->rgb.data(), r->width, r->height);
     return {};
   }
   if (auto pimg = parse_pdf_image_uri(uri)) {
     auto r = pdf_rasterize_embedded_image(pimg->pdf_path, pimg->image,
                                           /*max_edge=*/32);
     if (r && !r->rgb.empty())
-      return thumbhash_encode_rgb888(r->rgb.data(), r->width, r->height, 32);
+      return encode_lqip_from_rgb(r->rgb.data(), r->width, r->height);
     return {};
   }
   if (auto dj = parse_djvu_uri(uri)) {
     auto r = djvu_rasterize_page(dj->djvu_path, dj->page, /*max_edge=*/32);
     if (r && !r->rgb.empty())
-      return thumbhash_encode_rgb888(r->rgb.data(), r->width, r->height, 32);
+      return encode_lqip_from_rgb(r->rgb.data(), r->width, r->height);
+    return {};
+  }
+  if (auto ep = parse_epub_uri(uri)) {
+    auto r = epub_rasterize_page(ep->epub_path, ep->page, ep->layout,
+                                 /*max_edge=*/32);
+    if (r && !r->rgb.empty())
+      return encode_lqip_from_rgb(r->rgb.data(), r->width, r->height);
     return {};
   }
   if (auto path = path_from_file_uri(uri);
       path && std::filesystem::is_regular_file(*path) && !is_archive_uri(uri) &&
-      !is_pdf_page_uri(uri) && !is_pdf_image_uri(uri)) {
-    return lqip_thumbhash_from_file(*path);
+      !is_pdf_page_uri(uri) && !is_pdf_image_uri(uri) &&
+      !is_epub_layout_uri(uri)) {
+    // File path: ThumbHash helper (internal downscale); Handsum needs RGB load.
+    EncodedLqip out;
+    out.bytes = lqip_thumbhash_from_file(*path);
+    if (!out.bytes.empty()) out.kind = kLqipKindThumbHash;
+    return out;
   }
-  // Archive member or other: source bytes via helper needs Client — handled below.
   return {};
 }
 
@@ -864,16 +919,18 @@ std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
   auto key = lqip_key_ensure(*store_, uri);
   if (!key) return std::nullopt;
 
-  std::vector<std::uint8_t> bytes = encode_lqip_for_uri(uri);
-  if (bytes.empty()) {
+  EncodedLqip enc = encode_lqip_for_uri(uri);
+  if (enc.bytes.empty()) {
     if (auto src = read_source_bytes(uri); src && !src->empty()) {
-      bytes = lqip_thumbhash_from_buffer(src->data(), src->size());
+      enc.bytes = lqip_thumbhash_from_buffer(src->data(), src->size());
+      if (!enc.bytes.empty()) enc.kind = kLqipKindThumbHash;
     }
   }
-  if (bytes.empty()) return std::nullopt;
-  store_->put_blob_lqip(key->blob_id, kLqipKindThumbHash, bytes,
-                        key->page_1based);
-  return bytes;
+  if (enc.bytes.empty()) return std::nullopt;
+  const int kind =
+      enc.kind != kLqipKindNone ? enc.kind : kLqipKindThumbHash;
+  store_->put_blob_lqip(key->blob_id, kind, enc.bytes, key->page_1based);
+  return enc.bytes;
 }
 
 
@@ -3328,7 +3385,7 @@ std::optional<DocBlobKey> doc_blob_key_ensure(Store& store,
   }
   const auto file_uri = file_uri_from_path(file);
   (void)store.upsert_locator(file_uri, blob_id, file_size_bytes(file),
-                             file_mtime_ns(file));
+                             file_mtime_ns(file), file.string());
   return DocBlobKey{blob_id, page, layout};
 }
 

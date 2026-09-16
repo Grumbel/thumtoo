@@ -180,6 +180,8 @@ class Store {
     std::optional<std::int64_t> blob_id;
     std::optional<std::int64_t> size;
     std::optional<std::int64_t> mtime_ns;
+    std::optional<std::string> outer_path;
+    std::optional<std::string> member_path;
     std::int64_t updated_at = 0;
   };
 
@@ -187,7 +189,9 @@ class Store {
   std::int64_t upsert_locator(std::string_view uri,
                               std::optional<std::int64_t> blob_id,
                               std::optional<std::int64_t> size,
-                              std::optional<std::int64_t> mtime_ns);
+                              std::optional<std::int64_t> mtime_ns,
+                              std::optional<std::string> outer_path = std::nullopt,
+                              std::optional<std::string> member_path = std::nullopt);
 
   void bind_locator_blob(std::string_view uri, std::int64_t blob_id);
 
@@ -198,6 +202,8 @@ class Store {
   /// SQL LIKE on uri (caller supplies pattern; % and _ wildcards).
   [[nodiscard]] std::vector<LocatorRow> list_locators_like(
       std::string_view uri_like_pattern, int limit = 100) const;
+  [[nodiscard]] std::vector<LocatorRow> list_locators_by_outer_path_prefix(
+      std::string_view path_prefix, int limit = 100) const;
   [[nodiscard]] std::vector<LocatorRow> list_locators_for_blob(
       std::int64_t blob_id, int limit = 100) const;
 
