@@ -2,6 +2,38 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-254-store-only-soak-notes.** Soak checklist; pairs with biltoo-1002.
+Prior: **253**.
+
+### Change
+- HOST_CUTOVER: soak with biltoo ≥ 1002 before defaulting STORE_ONLY
+
+### Soak command
+```bash
+export THUMTOO_STORE_ONLY=1
+# optional dedicated cache:
+# export XDG_CACHE_HOME=/tmp/biltoo-store-only-cache
+biltoo /path/to/images
+```
+
+### Next
+- Host confirms soak
+- Default STORE_ONLY; delete dual-write helpers
+
+### Apply
+```bash
+git pull /path/to/thumtoo-254-store-only-soak-notes.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **254**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-253-store-only-public-api-guards.** Null-safe public APIs under STORE_ONLY.
 Prior: **252**.
 

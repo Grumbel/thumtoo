@@ -70,8 +70,9 @@ tree); do not invent a second PreferCache retry loop.
    Store-only. `mirror_tiles_to_store` remains the durable tile write path.
 5. Public APIs null-safe under STORE_ONLY: `prepare_paths`, archive TOC,
    document page count, text/outline (session extract), `invalidate_tile`.
-6. Host soak → default STORE_ONLY → delete dual-write helpers.
-7. Migration: **no** ladder→tile conversion (PLAN non-goal); cold rebuild tiles.
+6. Host soak with **biltoo ≥ 1002** (`THUMTOO_STORE_ONLY=1`, dedicated cache).
+7. After soak confirm → default STORE_ONLY → delete dual-write helpers.
+8. Migration: **no** ladder→tile conversion (PLAN non-goal); cold rebuild tiles.
 
 Under tiles-first, EnsurePixels does not write durable `levels` for soft *or*
 full_native. Session encode + TileSynth (when the pyramid covers the want) supply
