@@ -2,6 +2,32 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-233-tiles-only-soak-ok.** TILES_ONLY soak confirmed working.
+Prior: **232**.
+
+### Change
+- HOST_CUTOVER §5: TILES_ONLY soak **works** (user report + biltoo ≥1007)
+- biltoo tile-native marked partial (1005–1007); drop-levels still explicit next step
+
+### Next
+- Broader soak (gallery, slideshow, PDF/archive, crop Full)
+- When ready: stop soft-level writes by default (or make TILES_ONLY the default)
+- Then drop legacy `index`/`blobs` soft ladder path and top-level Store layout
+
+### Apply
+```bash
+git pull /path/to/thumtoo-233-tiles-only-soak-ok.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **233**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-232-tiles-only-session-reply.** TILES_ONLY soft reply from session encode.
 Prior: **231**.
 

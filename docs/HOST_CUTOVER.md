@@ -79,7 +79,11 @@ Not required for dual-path production.
 | Item | State |
 |------|--------|
 | Library dual-path | **Done** (thumtoo-229) |
-| biltoo `data_root` | **Done** (biltoo-1002) |
-| biltoo tile-native PreferCache / filmstrip | **Open** |
-| Drop legacy levels / index | **Blocked** on host tile-native |
+| biltoo `data_root` | **Done** (biltoo-1004; XDG data root) |
+| biltoo tile-native PreferCache / filmstrip | **Partial** (1005 Prefer plateau; 1006–1007 `scheduleSoftPixels`) |
+| `THUMTOO_TILES_ONLY=1` soak | **Works** (reported 2026-09-16 with biltoo ≥1007) |
+| Drop legacy levels / index | **Next** after broader soak; keep default dual-path until then |
+
+Default production remains dual-path (soft levels still written). TILES_ONLY is the
+opt-in path to validate tiles-first hosts before removing level writes permanently.
 
