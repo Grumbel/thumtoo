@@ -117,13 +117,13 @@ int main() {
 
     meta = client->get_meta(uri);
     expect(meta && meta->status == ContentStatus::Ready, "status ready after pixels");
-    expect(client->db().count_levels() >= 1, "levels written after request_pixels");
-
-    auto px = client->get_pixels(uri, 256);
-    expect(px.has_value(), "get_pixels 256");
-    expect(px && !px->bytes.empty(), "cached pixel bytes");
-    expect(px && px->codec == "jxl", "cached codec jxl");
-    expect(px && px->max_edge <= 256, "edge <= 256");
+    // Tiles-first default (THUMTOO_SOFT_LEVELS unset): soft request replies from
+    // session encode and does not persist durable soft/overview levels.
+    expect(client->db().count_levels() == 0,
+           "tiles-first: no soft levels after request_pixels");
+    // No durable soft and no tiles yet → cache-only get_pixels is empty.
+    expect(!client->get_pixels(uri, 256).has_value(),
+           "tiles-first: no durable soft pixels until tiles or SOFT_LEVELS");
 
     expect(fs::exists(cache / "blobs.sqlite"), "blobs.sqlite present");
 
@@ -148,6 +148,8 @@ int main() {
     auto t0 = client->get_tile(uri, 0, 0, 0);
     expect(t0.has_value(), "get_tile cache hit");
     expect(t0 && t0->codec == "jpeg", "durable tile codec jpeg");
+    // TileSynth needs a complete scale (320×200 → two cells at scale 0);
+    // durable soft get_pixels is covered by test_soft_ladder with SOFT_LEVELS=1.
     auto cov = client->get_tile_coverage(uri);
     expect(cov.has_value(), "tile coverage");
     expect(cov && cov->size.width == W && cov->size.height == H, "coverage size");

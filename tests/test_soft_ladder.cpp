@@ -3,7 +3,8 @@
 
 /// Soft ladder vs tiles: only small ladder levels are durable; high-res is tiles.
 ///
-/// Contract:
+/// Contract (runs with THUMTOO_SOFT_LEVELS=1 so durable soft levels are written;
+/// tiles-first default otherwise skips put_level for soft/overview):
 /// * kMaxSoftLadderEdge (512) caps request_pixels / durable soft levels.
 /// * request_pixels(2048) must not leave a 2048 full-page level; long edge ≤ 512.
 /// * An existing 256 level must not short-circuit upgrade to 512.
@@ -133,6 +134,8 @@ std::optional<thumtoo::PixelLevel> wait_pixels(thumtoo::Client& c,
 }  // namespace
 
 int main() {
+  // Durable soft ladder behaviour under test; tiles-first default skips put_level.
+  setenv("THUMTOO_SOFT_LEVELS", "1", 1);
   const fs::path tmp =
       fs::temp_directory_path() / "thumtoo-test-soft-ladder";
   fs::remove_all(tmp);
