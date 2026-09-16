@@ -3012,6 +3012,49 @@ void Client::handle_probe_size_store_only(Job& job) {
       return;
     }
 
+    if (is_http_uri(job.uri)) {
+      if (!http_fetch_available()) {
+        reply_empty();
+        return;
+      }
+      auto bytes = fetch_http_cached(job.uri);
+      if (!bytes || bytes->empty()) {
+        reply_empty();
+        return;
+      }
+      auto probe = probe_image_buffer(bytes->data(), bytes->size(), "unknown");
+      if (!probe) {
+        reply_empty();
+        return;
+      }
+      const auto hex = sha256_bytes_hex(bytes->data(), bytes->size());
+      if (hex.empty()) {
+        reply_empty();
+        return;
+      }
+      auto digest = Store::parse_sha256_digest(hex);
+      if (!digest) {
+        reply_empty();
+        return;
+      }
+      const auto byte_size = static_cast<std::int64_t>(bytes->size());
+      std::int64_t blob_id = 0;
+      if (auto existing =
+              store_->find_blob_by_hash(HashAlgoId::Sha256, *digest)) {
+        blob_id = *existing;
+        store_->set_blob_size(blob_id, byte_size);
+        store_->set_blob_status(blob_id, BlobStatus::Ok);
+      } else {
+        blob_id = store_->insert_blob(byte_size, BlobStatus::Ok);
+        store_->put_hash(blob_id, HashAlgoId::Sha256, *digest);
+      }
+      store_->upsert_locator(job.uri, blob_id, byte_size, {});
+      (void)store_->ensure_image_media(blob_id, probe->size.width,
+                                       probe->size.height);
+      reply_size(probe->size);
+      return;
+    }
+
     auto path = path_from_file_uri(job.uri);
     if (!path || !std::filesystem::is_regular_file(*path)) {
       reply_empty();
@@ -3132,6 +3175,14 @@ void Client::handle_ensure_pixels_store_only(Job& job) {
         levels = build_ladder_buffer(bytes->data(), bytes->size(), content_id,
                                      kDefaultJxlQuality, edge_limit);
       }
+    }
+  } else if (is_http_uri(job.uri)) {
+    auto sm = meta_from_store(job.uri);
+    if (sm) content_id = sm->content_id;
+    auto bytes = fetch_http_cached(job.uri);
+    if (bytes && !bytes->empty() && !content_id.empty()) {
+      levels = build_ladder_buffer(bytes->data(), bytes->size(), content_id,
+                                   kDefaultJxlQuality, edge_limit);
     }
   } else if (auto path = path_from_file_uri(job.uri)) {
     if (std::filesystem::is_regular_file(*path)) {
@@ -4556,6 +4607,14 @@ void Client::handle_ensure_tiles_store_only(Job& job) {
                                         job.tile_scale, job.tile_x, job.tile_y,
                                         kDefaultTileQuality, dkey);
         }
+      }
+    } else if (is_http_uri(job.uri)) {
+      auto bytes = fetch_http_cached(job.uri);
+      if (bytes && !bytes->empty()) {
+        const std::string dkey = "h:" + std::string(job.uri);
+        cell = build_tile_cell_buffer(bytes->data(), bytes->size(),
+                                      job.tile_scale, job.tile_x, job.tile_y,
+                                      kDefaultTileQuality, dkey);
       }
     } else if (auto path = path_from_file_uri(job.uri)) {
       if (std::filesystem::is_regular_file(*path)) {

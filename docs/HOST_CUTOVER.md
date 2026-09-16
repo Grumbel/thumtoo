@@ -63,10 +63,10 @@ tree); do not invent a second PreferCache retry loop.
    **Auto-migrate (≥238):** on open, classic dual-path caches move top-level legacy
    schema files → `legacy/` and `store/` redesign files → cache root (skips if
    destinations already exist). Soak-confirmed with biltoo.
-3. **Store-only (`THUMTOO_STORE_ONLY=1`, ≥247–250):** no legacy Database/BlobStore.
-   Durable Store only. Covered: plain `file://` images, PDF/DjVu/EPUB pages,
-   archive members (probe, session pixels, tile cells). HTTP still dual-path.
-4. HTTP Store-only; remove dual-write helpers.
+3. **Store-only (`THUMTOO_STORE_ONLY=1`, ≥247–251):** no legacy Database/BlobStore.
+   Durable Store only for the common URI kinds (file, PDF, DjVu, EPUB, archive
+   members, HTTP images): probe, session pixels, tile cells.
+4. Remove dual-write helpers (`mirror_*`) once hosts stay on STORE_ONLY.
 5. Migration: **no** ladder→tile conversion (PLAN non-goal); cold rebuild tiles.
 
 Under tiles-first, EnsurePixels does not write durable `levels` for soft *or*
@@ -105,7 +105,7 @@ Pair with biltoo ≥1007 (`scheduleSoftPixels`) for PreferCache when tiles exist
 | Top-level Store layout (`THUMTOO_STORE_ROOT`) | **Default on** (≥245; migrate ≥238; soak OK; `test_store_root`) |
 | Full-from-tiles (EnsurePixels Full) | **On** when tile pyramid covers want (≥243) |
 | Tiles-first skips full_native levels | **On** (≥244; same env as soft) |
-| Store-only (`THUMTOO_STORE_ONLY`) | **Experimental** (≥247–250; file/PDF/DjVu/EPUB/archive) |
+| Store-only (`THUMTOO_STORE_ONLY`) | **Experimental** (≥247–251; file/PDF/DjVu/EPUB/archive/HTTP) |
 
 Soft ladder rows may still exist in older caches; new soft encodes no longer
 persist them unless soft levels are explicitly re-enabled.

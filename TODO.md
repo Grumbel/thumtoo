@@ -2,6 +2,30 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-251-store-only-http.** Store-only HTTP image URIs.
+Prior: **250**.
+
+### Change
+- Store-only probe/pixels/tiles for HTTP(S) image URLs (fetch cache + Store)
+
+### Next
+- Drop dual-write helpers (`mirror_*`) under STORE_ONLY / eventually always
+- Host soak of THUMTOO_STORE_ONLY=1
+
+### Apply
+```bash
+git pull /path/to/thumtoo-251-store-only-http.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **251**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-250-store-only-djvu-epub.** Store-only DjVu + EPUB pages.
 Prior: **249**.
 
