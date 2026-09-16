@@ -3,49 +3,53 @@ SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
-# Host cutover — dual-path Store → Store-only
+# Host cutover — Store-only Client
 
-**Audience:** biltoo (and other hosts) after thumtoo Phase E library dual-path.
+**Audience:** biltoo (and other hosts) after thumtoo Phase E.
 
 Library spine (0.1.0): see [PLAN.md](PLAN.md) success criteria and
 [API_MIGRATION.md](API_MIGRATION.md). This document is the **host** checklist
-before dropping legacy `Database` / durable soft `levels`.
+for tile-native behaviour on the Store-only Client (≥262).
 
 ---
 
-## 1. What hosts already get (dual-path)
+## 1. What hosts get (Store-only, ≥262)
 
 | Open args | Layout |
 |-----------|--------|
-| `Client::open(cache_root, executor, workers, data_root)` | Legacy `cache_root/index.sqlite` + `blobs.sqlite`; redesign under `cache_root/store/`; `user.sqlite` under `data_root` (XDG data) |
+| `Client::open(cache_root, executor, workers, data_root)` | Store at `cache_root/` (`index.sqlite` + `bulk.sqlite`); `user.sqlite` under `data_root` (XDG data). No legacy `Database` / `BlobStore`. |
 
-| Path | Dual-path behaviour |
-|------|---------------------|
-| Size probe | Legacy content/locator + Store blob/media/region mirror |
-| Tiles encode | Legacy BlobStore + Store `put_tile` |
-| Soft PreferCache | Soft levels if present; else TileSynth (legacy or Store tiles) |
-| Soft EnsurePixels | Skips soft-ladder **write** when tiles already cover |
-| Tags | Legacy `tags` + Store `blob_tag` for pure `sha256:` |
+| Path | Behaviour |
+|------|-----------|
+| Size probe | Store blob/media/region only |
+| Tiles encode | Store `put_tile` |
+| Soft PreferCache | TileSynth / session pixels when tiles cover |
+| Soft EnsurePixels | Session encode + TileSynth; **no** durable soft/`levels` writes |
+| Tags | Store `blob_tag` for pure `sha256:` / `blob:sha256:` |
 | Directory | `Client::refresh_directory_snapshot` / list → Store |
-| Archive TOC | Dual-write + Store read fallback |
+| Archive TOC | Store `container_member` |
 
-**biltoo:** pass `$XDG_DATA_HOME/thumtoo` as `data_root` (tip biltoo-1002).
+On-disk migrate (once, at open when `THUMTOO_STORE_ROOT` default on): classic
+dual-path trees move legacy files under `cache_root/legacy/` and redesign
+`store/` files up to the cache root. Covered by `test_store_root`.
+
+**biltoo:** pass `$XDG_DATA_HOME/thumtoo` as `data_root` (tip biltoo-1002+).
 
 ---
 
-## 2. Host tile-native (before dropping levels)
+## 2. Host tile-native checklist
 
-1. **Filmstrip / SoftOnly** — Prefer durable soft ladder **or** TileSynth reply
-   from `get_pixels(..., allow_tile_synth=true)` / `get_pixels_from_tiles`.
+1. **Filmstrip / SoftOnly** — Prefer TileSynth from
+   `get_pixels(..., allow_tile_synth=true)` / `get_pixels_from_tiles`.
    Do not require a soft `levels` row for “have pixels”.
-2. **PreferCache / Overview** — Treat TileSynth as a valid PreferCache delivery
-   (already true for thumtoo `get_pixels` default). Host climb SM must not
-   treat “no soft level row” as permanent miss when tiles cover.
-3. **Full / crop** — Keep full-native encode path; still may use legacy levels
-   until a full-level-from-tiles path exists (out of scope for first cutover).
+2. **PreferCache / Overview** — Treat TileSynth as a valid PreferCache delivery.
+   Host climb SM must not treat “no soft level row” as permanent miss when
+   tiles cover.
+3. **Full / crop** — Full EnsurePixels replies via session encode and/or
+   TileSynth when the pyramid covers the want.
 4. **Gallery** — Overview edge may be TileSynth; escalate to Full as today.
-5. **Verify** with cache wipe of legacy `levels` only (tiles remain): filmstrip
-   and PreferCache still paint within budget.
+5. **Verify** with a fresh Store cache (no legacy): filmstrip and PreferCache
+   still paint within budget.
 
 Normative climb ownership stays in biltoo
 [THUMTOO_HOST_CONTRACT.md](../../biltoo/docs/THUMTOO_HOST_CONTRACT.md) (external
@@ -53,45 +57,29 @@ tree); do not invent a second PreferCache retry loop.
 
 ---
 
-## 3. Drop legacy index (after tile-native ships)
+## 3. Library facts (post ≥262)
 
-1. ~~Stop writing durable soft `levels` / soft ladder~~ (**done** ≥234; default
-   tiles-first; `THUMTOO_SOFT_LEVELS=1` restores).
-2. **Top-level Store (default ≥245):** Store at `$cache/{index,bulk}.sqlite` and
-   legacy Database/BlobStore under `$cache/legacy/`. Opt out with
-   `THUMTOO_STORE_ROOT=0` for classic dual-path (`$cache/store/` + top-level legacy).
-   **Auto-migrate (≥238):** on open, classic dual-path caches move top-level legacy
-   schema files → `legacy/` and `store/` redesign files → cache root (skips if
-   destinations already exist). Soak-confirmed with biltoo.
-3. **Store-only (default ≥257):** no legacy Database/BlobStore. Opt out:
-   `THUMTOO_STORE_ONLY=0` for dual-path.
-   Durable Store only for the common URI kinds (file, PDF, DjVu, EPUB, archive
-   members, HTTP images): probe, session pixels, tile cells.
-4. Default STORE_ONLY (≥257). Dual-write probe only when `THUMTOO_STORE_ONLY=0`.
-5. `put_tiles_to_store` is the durable tile path (renamed from mirror_tiles).
-6. Public APIs null-safe without legacy: `prepare_paths`, archive TOC, etc.
-7. Migration: **no** ladder→tile conversion (PLAN non-goal); cold rebuild tiles.
+1. **`store_only_mode()` is always true** — Client never opens legacy
+   `Database` / `BlobStore`. `THUMTOO_STORE_ONLY` is ignored.
+2. **Dual-write is off** — `dual_write_to_store_enabled()` is always false.
+3. **`has_legacy()` is always false**; `Client::db()` throws if called.
+4. Durable tiles go through Store (`put_tile` / tile list APIs).
+5. Public APIs are null-safe without legacy: `prepare_paths`, archive TOC, etc.
+6. Migration: **no** ladder→tile conversion (PLAN non-goal); cold rebuild tiles.
 
-Under tiles-first, EnsurePixels does not write durable `levels` for soft *or*
-full_native. Session encode + TileSynth (when the pyramid covers the want) supply
-the reply. Opt in to durable levels with `THUMTOO_SOFT_LEVELS=1`.
+EnsurePixels does not write durable soft or full_native **levels**. Session
+encode + TileSynth supply the reply. Older caches may still contain soft
+ladder rows under `legacy/`; new work does not add them.
 
 ---
 
-## 4. Soft-level write policy (tiles-first default)
-
-**Default (thumtoo ≥ 234, extended ≥244):** **no durable `levels` writes** (soft,
-overview, or full_native). Tiles still persist. Full EnsurePixels replies via
-session encode and/or TileSynth when a pyramid covers the want. Restore durable
-levels with `THUMTOO_SOFT_LEVELS=1` or `THUMTOO_TILES_ONLY=0`.
+## 4. Environment variables
 
 | Variable | Effect |
 |----------|--------|
-| *(unset)* | Tiles-first — no soft/overview level writes |
-| **`THUMTOO_SOFT_LEVELS=1`** | Restore durable soft/overview/**full** level writes |
-| **`THUMTOO_TILES_ONLY=0`** | Same (explicit opt-out of tiles-first) |
-| **`THUMTOO_TILES_ONLY=1`** | Explicit tiles-first (same as default) |
-| **`THUMTOO_STORE_ROOT`** | Default **on**: Store at `$cache/`; legacy under `$cache/legacy/`. `=0` restores dual-path under `store/` |
+| **`THUMTOO_STORE_ROOT`** | Default **on**: Store at `$cache/`; on-disk migrate moves classic dual-path into `$cache/legacy/` + top-level Store. `=0` keeps redesign under `$cache/store/` (no top-level migrate). |
+| **`THUMTOO_STORE_ONLY`** | **Ignored** (≥262). Client is always Store-only. |
+| **`THUMTOO_SOFT_LEVELS`** / **`THUMTOO_TILES_ONLY`** | **Ignored** for Client writes (≥265). Durable soft/`levels` path removed with dual-path handlers. Tiles + session encode remain. |
 
 Pair with biltoo ≥1007 (`scheduleSoftPixels`) for PreferCache when tiles exist.
 
@@ -101,23 +89,20 @@ Pair with biltoo ≥1007 (`scheduleSoftPixels`) for PreferCache when tiles exist
 
 | Item | State |
 |------|--------|
-| Library dual-path | **Done** (thumtoo-229) |
+| Library dual-path | **Removed** from Client (≥262) |
 | biltoo `data_root` | **Done** (biltoo-1004; XDG data root) |
 | biltoo tile-native PreferCache / filmstrip | **Partial** (1005 Prefer plateau; 1006–1007 `scheduleSoftPixels`) |
-| Tiles-first soft writes (default) | **On** (thumtoo-234; opt out via `THUMTOO_SOFT_LEVELS=1`) |
-| Top-level Store layout (`THUMTOO_STORE_ROOT`) | **Default on** (≥245; migrate ≥238; soak OK; `test_store_root`) |
+| Tiles-first (no durable soft levels) | **Always** (Client; ≥265 dead env removed) |
+| Top-level Store layout (`THUMTOO_STORE_ROOT`) | **Default on** (≥245; migrate ≥238; `test_store_root`) |
 | Full-from-tiles (EnsurePixels Full) | **On** when tile pyramid covers want (≥243) |
-| Tiles-first skips full_native levels | **On** (≥244; same env as soft) |
-| Store-only (Client) | **Always** (≥262; no legacy Database open) |
-| Dual-path / legacy Client | **Removed** (≥262) |
+| Store-only (Client) | **Always** (≥262) |
 
-Soft ladder rows may still exist in older caches; new soft encodes no longer
-persist them unless soft levels are explicitly re-enabled.
+Legacy `Database` / `BlobStore` classes remain for tools/tests (`thumtoo-gc`,
+`test_database`). Client does not open them.
 
-Purge existing soft/overview levels (keep tiles + full_native):
+Purge leftover soft/overview levels from old dual-path caches:
 
 ```bash
 thumtoo-gc --cache "$XDG_CACHE_HOME/thumtoo" --soft-levels
 # or: thumtoo-gc --soft-levels --dry-run
 ```
-

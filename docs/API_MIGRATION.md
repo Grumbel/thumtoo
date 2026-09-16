@@ -5,22 +5,26 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # API migration — legacy Database → Store (Phase E)
 
-Status: **in progress** (dual-path). Normative schema: [DATABASE.md](DATABASE.md),
-plan: [PLAN.md](PLAN.md).
+Status: **complete for Client** (Store-only ≥262). Normative schema:
+[DATABASE.md](DATABASE.md), plan: [PLAN.md](PLAN.md), host notes:
+[HOST_CUTOVER.md](HOST_CUTOVER.md).
 
-## Layout during dual-path
+## Layout (default, `THUMTOO_STORE_ROOT` on)
 
 | Role | Path | Owner |
 |------|------|-------|
-| Legacy index (pixels, levels, tiles meta) | `$cache/index.sqlite` | `Database` |
-| Legacy blob files | `$cache/blobs/` | `BlobStore` |
-| Redesign index | `$cache/store/index.sqlite` | `Store` |
-| Redesign bulk (tile payloads, http_body) | `$cache/store/bulk.sqlite` | `Store` |
-| User overlays | `$data/user.sqlite` (default `$cache`) | `Store` |
+| Redesign index | `$cache/index.sqlite` | `Store` |
+| Redesign bulk (tile payloads, http_body) | `$cache/bulk.sqlite` | `Store` |
+| User overlays | `$data/user.sqlite` | `Store` |
+| On-disk legacy (migrated only) | `$cache/legacy/` | unused by Client |
 
-`Client::open(cache_root, …, data_root)` opens both. Production should pass
-`$XDG_DATA_HOME/thumtoo` (or equivalent) as `data_root` so user tags survive a
-cache wipe.
+`Client::open(cache_root, …, data_root)` opens **Store only**. Production should
+pass `$XDG_DATA_HOME/thumtoo` (or equivalent) as `data_root` so user tags
+survive a cache wipe.
+
+Classic dual-path trees are migrated once at open: top-level schema-4 files
+→ `legacy/`; redesign under `store/` → cache root. Opt out of that layout with
+`THUMTOO_STORE_ROOT=0` (Store stays under `$cache/store/`).
 
 ## Feature probe
 
@@ -30,58 +34,30 @@ cache wipe.
 #endif
 ```
 
-## What still uses legacy `Database`
+## What Client uses
 
-- Size / meta probe, soft ladder levels, tile encode path, document index,
-  archive TOC in the old tables, purge of pixel cache.
+- All probe / pixels / tiles / tags / directory / archive TOC paths go through
+  Store handlers (`*_store_only`).
+- `has_legacy()` is always false; `Client::db()` throws.
+- `store_only_mode()` always true; `dual_write_to_store_enabled()` always false.
 
-## What uses `Store` today
+## Legacy classes (tools / tests only)
 
-- Direct access via `Client::store()` (collections, bookmarks, links, …).
-- **Tags dual-write:** `add_tag` / `remove_tag` update legacy `tags` and, when
-  `content_id` is pure `sha256:<64hex>`, also `blob_tag` on `blob:sha256:…`.
-  `get_tags` returns the union of both.
-- **Probe mirror:** after a successful `request_size` probe (or cache hit with
-  known size), `mirror_probe_to_store`:
-  - pure `sha256:<hex>` → blob + hash + locator + `ensure_image_media`
-  - `sha256:<hex>:page:N` → same file blob + locator + document media + page region
-  - other composite ids (`:pdfimage:`, …) are skipped for now
-- **Tile dual-write:** `store_tiles` also calls `mirror_tiles_to_store` →
-  Store `put_tile` under the matching media/region (same id rules as probe).
-- **Tile read fallback:** `get_tile` / `has_tile` / `get_tile_coverage` and
-  TileSynth (`get_pixels_from_tiles`) fall back to Store when legacy has no
-  tile rows.
-- **Size/meta fallback:** `get_size` / `get_meta` use Store locator + image
-  media dims when legacy has no row (`meta_from_store`).
-- **Directory:** `Client::{find,list,replace,delete,refresh}_directory_*`
-  forward to Store (cache-first folder open).
-- **Archive:** `refresh_archive_toc` dual-writes Store `container_member` TOC;
-  member size probe attaches hashed member blob via `set_container_member_blob`.
-  `get_archive_entries` falls back to Store TOC when legacy is empty.
+`Database` and `BlobStore` remain for `thumtoo-gc`, `test_database`, and
+on-disk migrate fixtures. They are not opened by `Client`.
 
-## Next cutover steps
+## Cutover checklist (done)
 
-1. ~~Resolve locator → blob/hash on Store when probing~~ (pure image + page done).
-2. ~~Write new tiles to Store bulk~~ (dual-write from `store_tiles`). Soft
-   `EnsurePixels` skips durable soft-ladder encode when tiles already cover
-   the request edge (tiles-first).
-3. ~~Soft `get_pixels` assemble from Store tiles~~ (TileSynth via Store fallback).
-4. ~~Store size/meta fallback~~ (`get_size` / `get_meta`).
-5. ~~Soft/overview level writes off by default~~ (≥234; `THUMTOO_SOFT_LEVELS=1` restores).
-6. ~~Top-level Store path~~ (default ≥245: Store at `$cache/`, legacy under
-   `$cache/legacy/`; opt out `THUMTOO_STORE_ROOT=0`). Covered by `test_store_root`.
-7. ~~Full-from-tiles for Full EnsurePixels~~ when pyramid covers the request
-   (level_adequate); no longer blocks TileSynth solely because `full_native`.
-8. ~~Tiles-first skips durable full_native levels~~ (same default as soft; session
-   + tiles reply). Restore with `THUMTOO_SOFT_LEVELS=1`.
-9. ~~Store-only open (`THUMTOO_STORE_ONLY=1`)~~ — no legacy Database; Store-first
-   probe + session pixels for plain file images (`test_store_only`).
-10. Store-only tile encode; PDF/archive/probe parity; drop dual-write helpers.
-11. Hosts pass `$XDG_DATA_HOME/thumtoo` as `data_root` (biltoo does).
+1. ~~Dual-path Client open~~ → Store-only (≥262).
+2. ~~Probe / pixels / tiles dual handlers~~ → Store-only forwards (≥263).
+3. ~~Store size/meta fallback~~ (`get_size` / `get_meta`).
+4. ~~Tiles-first (no durable soft levels)~~ (always on Client; env no-ops ≥265).
+5. ~~Top-level Store path~~ (default ≥245; `test_store_root`).
+6. ~~Full-from-tiles for Full EnsurePixels~~ when pyramid covers the request.
+7. Hosts pass `$XDG_DATA_HOME/thumtoo` as `data_root` (biltoo does).
 
-Host checklist: [HOST_CUTOVER.md](HOST_CUTOVER.md).
-
-## Non-goals until hosts are ready
+## Non-goals
 
 - Migrating old ladder rows into tiles.
 - Sharing one SQLite file between schema 4 and schema 100.
+- Restoring Client dual-path via env (`THUMTOO_STORE_ONLY=0` is ignored).

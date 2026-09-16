@@ -2,6 +2,28 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-266-docs-store-only-cutover.** HOST_CUTOVER / API_MIGRATION / PLAN match ≥262.
+Prior: **265**.
+
+### Change
+- HOST_CUTOVER: permanent Store-only Client; env table (`STORE_ONLY` / `SOFT_LEVELS` ignored)
+- API_MIGRATION: status complete for Client; layout is top-level Store
+- PLAN Phase E + footer: no dual-path opt-out; next is host tile-native polish
+
+### Apply
+```bash
+git pull /path/to/thumtoo-266-docs-store-only-cutover.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **266**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-265-fix-store-root-migrate-blobs.** Seed legacy blobs in store_root migrate test.
 Prior: **264**.
 

@@ -128,14 +128,12 @@ Feature macros: new schema epoch; `TILES_ONLY`; user-store present.
 read/tag/explicit via `set_container_member_blob`); `ensure_document_media` /
 `ensure_page_region`.  
 **Phase D status:** complete (directory, user overlays, http_body, tile list).  
-**Phase E (library dual-path → Store-only default):** complete (≥257). Dual-path
-opt-out: `THUMTOO_STORE_ONLY=0`. Host cutover: [HOST_CUTOVER.md](HOST_CUTOVER.md).
-directory/archive dual-write; tile + size/meta + archive TOC read fallback;
-tiles-first soft encode. **Soft/overview level writes off by default** (≥234;
-`THUMTOO_SOFT_LEVELS=1` restores). See [API_MIGRATION.md](API_MIGRATION.md),
-[HOST_CUTOVER.md](HOST_CUTOVER.md).
-**Next:** drop legacy `levels` table / dual-write; top-level Store layout after
-hosts stay on tiles-first.
+**Phase E (library dual-path → Store-only):** complete (≥257 default; ≥262
+Client never opens legacy; ≥263 handlers Store-only only; ≥265 dead soft-level
+env removed). Host cutover: [HOST_CUTOVER.md](HOST_CUTOVER.md).
+See [API_MIGRATION.md](API_MIGRATION.md).
+**Next:** host tile-native polish (biltoo); optional prune of dead `if (db_)`
+branches inside Client; tools that still use `Database`/`BlobStore`.
 
 ### Phase B — images
 
@@ -203,7 +201,7 @@ Otherwise implement through Phase E.
 - [x] PDF page via `//page:N`; tiles keyed by page region (dual-write).  
 - [x] Directory list returns snapshot without mandatory FS walk on first paint (Client → Store).  
 - [x] Tags on `blob:sha256:` survive index/bulk delete (user.sqlite; Store-only tags).  
-- [x] No `levels` table in the new schema (Store epoch ≥ 100 is tiles-only; legacy levels remain on dual-path until host cutover).
+- [x] No `levels` table in the new schema (Store epoch ≥ 100 is tiles-only; Client no longer writes levels).
 
 ---
 
@@ -217,5 +215,5 @@ Otherwise implement through Phase E.
 
 ---
 
-*End of final plan. Library spine Store-only default landed (≥257); remaining
-work is dual-path deprecation and host tile-native polish.*
+*End of final plan. Library Client is Store-only (≥262). Remaining work is
+host tile-native polish and optional dead-code cleanup in Client.*
