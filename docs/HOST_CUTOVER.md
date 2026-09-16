@@ -64,13 +64,20 @@ tree); do not invent a second PreferCache retry loop.
 
 ---
 
-## 4. Optional test flag
+## 4. Soft-level write policy (tiles-first default)
 
-`THUMTOO_TILES_ONLY=1` — refuse durable soft/overview **level** writes. Tiles and
-`full_native` levels still persist. Soft EnsurePixels still encodes in memory
-when needed; replies fall back to TileSynth when tiles cover. Use with biltoo
-`scheduleSoftPixels` (PreferCache when tiles exist) for tiles-first soak tests.
-Not required for dual-path production.
+**Default (thumtoo ≥ 234):** soft/overview **levels are not written**. Tiles and
+`full_native` levels still persist. Soft EnsurePixels encodes in memory when
+needed and replies via session bytes or TileSynth.
+
+| Variable | Effect |
+|----------|--------|
+| *(unset)* | Tiles-first — no soft/overview level writes |
+| **`THUMTOO_SOFT_LEVELS=1`** | Restore durable soft/overview level writes |
+| **`THUMTOO_TILES_ONLY=0`** | Same as soft levels on (explicit opt-out of tiles-first) |
+| **`THUMTOO_TILES_ONLY=1`** | Explicit tiles-first (same as default) |
+
+Pair with biltoo ≥1007 (`scheduleSoftPixels`) for PreferCache when tiles exist.
 
 ---
 
@@ -81,9 +88,9 @@ Not required for dual-path production.
 | Library dual-path | **Done** (thumtoo-229) |
 | biltoo `data_root` | **Done** (biltoo-1004; XDG data root) |
 | biltoo tile-native PreferCache / filmstrip | **Partial** (1005 Prefer plateau; 1006–1007 `scheduleSoftPixels`) |
-| `THUMTOO_TILES_ONLY=1` soak | **Works** (reported 2026-09-16 with biltoo ≥1007) |
-| Drop legacy levels / index | **Next** after broader soak; keep default dual-path until then |
+| Tiles-first soft writes (default) | **On** (thumtoo-234; opt out via `THUMTOO_SOFT_LEVELS=1`) |
+| Drop legacy levels table / index open | **Next** — Store top-level layout; remove dual-write helpers |
 
-Default production remains dual-path (soft levels still written). TILES_ONLY is the
-opt-in path to validate tiles-first hosts before removing level writes permanently.
+Soft ladder rows may still exist in older caches; new soft encodes no longer
+persist them unless soft levels are explicitly re-enabled.
 

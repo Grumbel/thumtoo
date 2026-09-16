@@ -84,9 +84,20 @@ bool debug_enabled() {
   return env_flag_on("THUMTOO_DEBUG") || env_flag_on("BILTOO_THUMTOO_DEBUG");
 }
 
-/// Refuse durable soft/overview level writes (tiles + full_native still OK).
-/// Host test flag for dual-path cutover — see docs/HOST_CUTOVER.md.
-bool tiles_only_mode() { return env_flag_on("THUMTOO_TILES_ONLY"); }
+/// Default: skip durable soft/overview level writes (tiles + full_native OK).
+/// Escape hatches — see docs/HOST_CUTOVER.md:
+///   THUMTOO_SOFT_LEVELS=1  → write soft/overview levels again
+///   THUMTOO_TILES_ONLY=0   → same (force soft levels on)
+bool tiles_only_mode() {
+  if (env_flag_on("THUMTOO_SOFT_LEVELS")) return false;
+  const char* e = std::getenv("THUMTOO_TILES_ONLY");
+  if (e && e[0]) {
+    // Explicit off spellings force durable soft levels.
+    if (e[0] == '0' || e[0] == 'f' || e[0] == 'F' || e[0] == 'n' || e[0] == 'N')
+      return false;
+  }
+  return true;  // default tiles-first
+}
 
 std::FILE* debug_file() {
   static std::FILE* fp = []() -> std::FILE* {

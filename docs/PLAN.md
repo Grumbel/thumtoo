@@ -130,10 +130,11 @@ read/tag/explicit via `set_container_member_blob`); `ensure_document_media` /
 **Phase D status:** complete (directory, user overlays, http_body, tile list).  
 **Phase E (library dual-path):** complete for 0.1.0 spine — probe/tile/tag/
 directory/archive dual-write; tile + size/meta + archive TOC read fallback;
-tiles-first soft encode. Hosts still open legacy Database for soft levels until
-tile-native biltoo. See [API_MIGRATION.md](API_MIGRATION.md).
-**Next (post dual-path):** host tile-native rendering; drop legacy `levels` /
-`index.sqlite` after biltoo ships Store-only. Checklist: [HOST_CUTOVER.md](HOST_CUTOVER.md).
+tiles-first soft encode. **Soft/overview level writes off by default** (≥234;
+`THUMTOO_SOFT_LEVELS=1` restores). See [API_MIGRATION.md](API_MIGRATION.md),
+[HOST_CUTOVER.md](HOST_CUTOVER.md).
+**Next:** drop legacy `levels` table / dual-write; top-level Store layout after
+hosts stay on tiles-first.
 
 ### Phase B — images
 

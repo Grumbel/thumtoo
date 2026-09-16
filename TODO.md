@@ -2,6 +2,32 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-234-tiles-first-default.** Soft/overview levels off by default.
+Prior: **233**.
+
+### Change
+- `tiles_only_mode()` default **true** (tiles-first)
+- `THUMTOO_SOFT_LEVELS=1` or `THUMTOO_TILES_ONLY=0` restores durable soft levels
+- HOST_CUTOVER §4–5 updated for production default
+
+### Next
+- Drop legacy levels table / dual-write when hosts no longer need soft ladder rows
+- Move Store to top-level `$cache/` after legacy index gone
+
+### Apply
+```bash
+git pull /path/to/thumtoo-234-tiles-first-default.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **234**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-233-tiles-only-soak-ok.** TILES_ONLY soak confirmed working.
 Prior: **232**.
 
