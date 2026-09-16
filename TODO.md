@@ -2,6 +2,32 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-252-store-only-tags-gate-mirror.** Store-only tags; gate dual-write.
+Prior: **251**.
+
+### Change
+- `mirror_probe_to_store` no-ops under STORE_ONLY / without legacy
+- Tags get/add/remove work on Store when no legacy Database
+- `test_store_only` covers tag round-trip
+
+### Next
+- Host soak of THUMTOO_STORE_ONLY=1
+- Default STORE_ONLY after soak; delete dual-write helpers
+
+### Apply
+```bash
+git pull /path/to/thumtoo-252-store-only-tags-gate-mirror.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **252**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-251-store-only-http.** Store-only HTTP image URIs.
 Prior: **250**.
 

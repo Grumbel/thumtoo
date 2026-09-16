@@ -3600,7 +3600,8 @@ void Client::handle_probe_size(
 
 void Client::mirror_probe_to_store(std::string_view uri,
                                    const Database::ContentRow& row) {
-  if (!store_) return;
+  // STORE_ONLY probe writes Store directly; dual-write is dual-path only.
+  if (!store_ || store_only_mode() || !db_) return;
   if (row.status != ContentStatus::Ready &&
       row.status != ContentStatus::Incomplete) {
     return;
@@ -4351,6 +4352,7 @@ void Client::store_tiles(const std::string& content_id,
     tr.source = static_cast<int>(t.source);
     db_->upsert_tile(tr);
   }
+  // Always durable on Store (primary under STORE_ONLY; dual-write under dual-path).
   mirror_tiles_to_store(content_id, tiles);
 }
 
@@ -5158,15 +5160,24 @@ std::optional<std::string> blob_ref_from_content_id(std::string_view content_id)
 }  // namespace
 
 std::vector<std::string> Client::get_tags(std::string_view uri) const {
+  if (!db_) {
+    // STORE_ONLY: tags live on Store blob_ref only.
+    if (!store_) return {};
+    auto sloc = store_->find_locator(uri);
+    if (!sloc || !sloc->blob_id) return {};
+    auto bref = store_->blob_ref_sha256(*sloc->blob_id);
+    if (!bref) return {};
+    return store_->tags_for_blob_ref(*bref);
+  }
   auto loc = db_->find_locator(uri);
   if (!loc || !loc->content_id) return {};
   // Prefer union of legacy + Store so dual-write hosts see both during cutover.
   auto tags = db_->tags_for_content(*loc->content_id);
   if (auto bref = blob_ref_from_content_id(*loc->content_id)) {
     auto st = store_->tags_for_blob_ref(*bref);
-    for (const auto& t : st) {
-      if (std::find(tags.begin(), tags.end(), t) == tags.end()) {
-        tags.push_back(t);
+    for (const auto& tg : st) {
+      if (std::find(tags.begin(), tags.end(), tg) == tags.end()) {
+        tags.push_back(tg);
       }
     }
   }
@@ -5175,6 +5186,15 @@ std::vector<std::string> Client::get_tags(std::string_view uri) const {
 
 bool Client::add_tag(std::string_view uri, std::string_view tag,
                      std::string_view source) {
+  if (!db_) {
+    if (!store_) return false;
+    auto sloc = store_->find_locator(uri);
+    if (!sloc || !sloc->blob_id) return false;
+    auto bref = store_->blob_ref_sha256(*sloc->blob_id);
+    if (!bref) return false;
+    store_->add_blob_tag(*bref, tag, source);
+    return true;
+  }
   auto loc = db_->find_locator(uri);
   if (!loc || !loc->content_id) return false;
   db_->add_tag(*loc->content_id, tag, source);
@@ -5185,6 +5205,14 @@ bool Client::add_tag(std::string_view uri, std::string_view tag,
 }
 
 bool Client::remove_tag(std::string_view uri, std::string_view tag) {
+  if (!db_) {
+    if (!store_) return false;
+    auto sloc = store_->find_locator(uri);
+    if (!sloc || !sloc->blob_id) return false;
+    auto bref = store_->blob_ref_sha256(*sloc->blob_id);
+    if (!bref) return false;
+    return store_->remove_blob_tag(*bref, tag);
+  }
   auto loc = db_->find_locator(uri);
   if (!loc || !loc->content_id) return false;
   const bool legacy = db_->remove_tag(*loc->content_id, tag);

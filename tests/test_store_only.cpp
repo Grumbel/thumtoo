@@ -10,6 +10,7 @@
 #include "thumtoo/store.hpp"
 #include "thumtoo/uri.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -150,6 +151,16 @@ int main() {
   expect(client->has_tile(uri, 0, 0, 0), "has_tile after Store durable write");
   auto t0 = client->get_tile(uri, 0, 0, 0);
   expect(t0.has_value() && !t0->bytes.empty(), "get_tile from Store");
+
+  // Tags on Store only (no legacy).
+  expect(client->add_tag(uri, "store-only-tag"), "add_tag Store-only");
+  auto tags = client->get_tags(uri);
+  expect(std::find(tags.begin(), tags.end(), "store-only-tag") != tags.end(),
+         "get_tags sees Store tag");
+  expect(client->remove_tag(uri, "store-only-tag"), "remove_tag Store-only");
+  tags = client->get_tags(uri);
+  expect(std::find(tags.begin(), tags.end(), "store-only-tag") == tags.end(),
+         "tag removed");
 
   if (g_failures) {
     std::cerr << g_failures << " failure(s)\n";
