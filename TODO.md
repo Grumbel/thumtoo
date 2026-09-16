@@ -2,6 +2,30 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-287-fix-outer-path-index-order.** Create outer_path index after ALTER.
+Prior: **286**.
+
+### Change
+- Drop `CREATE INDEX idx_locator_outer_path` from `kIndexSchemaSql`
+- Index is only created in `ensure_optional_index_tables` after columns exist
+- Fixes old-schema open: schema SQL no longer fails with "no such column: outer_path"
+  before ALTER can run
+
+### Apply
+```bash
+git pull /path/to/thumtoo-287-fix-outer-path-index-order.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **287**
+- [x] `store` old-schema migrate test passes
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-286-fix-outer-path-migrate.** Ensure locator outer_path on open.
 Prior: **285**.
 

@@ -113,7 +113,8 @@ CREATE TABLE IF NOT EXISTS locator (
   member_path TEXT,
   updated_at  INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_locator_outer_path ON locator(outer_path);
+-- idx_locator_outer_path is created in ensure_optional_index_tables after
+-- outer_path is guaranteed present (pre-284 schema-100 indexes lack the column).
 CREATE INDEX IF NOT EXISTS idx_locator_blob ON locator(blob_id);
 CREATE TABLE IF NOT EXISTS codec (
   id   INTEGER PRIMARY KEY,
