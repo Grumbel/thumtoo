@@ -56,6 +56,7 @@ add_library(thumtoo
   src/store.cpp
   src/uri.cpp
   src/client.cpp
+  src/layout.cpp
   src/image.cpp
   src/debug_overlay.cpp
   src/archive.cpp

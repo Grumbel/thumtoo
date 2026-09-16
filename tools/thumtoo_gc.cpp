@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "thumtoo/blob_store.hpp"
+#include "thumtoo/layout.hpp"
 #include "thumtoo/database.hpp"
 #include "thumtoo/uri.hpp"
 
@@ -202,8 +203,8 @@ int main(int argc, char** argv) {
   }
 
   try {
-    auto db = thumtoo::Database::open(cache);
-    auto blobs = thumtoo::BlobStore::open(cache);
+    auto db = thumtoo::Database::open(thumtoo::legacy_db_root(cache));
+    auto blobs = thumtoo::BlobStore::open(thumtoo::legacy_db_root(cache));
 
     std::cout << "cache: " << cache << (dry_run ? " (dry-run)\n" : "\n");
 

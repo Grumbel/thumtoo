@@ -3,6 +3,7 @@
 
 #include "thumtoo/constants.hpp"
 #include "thumtoo/database.hpp"
+#include "thumtoo/layout.hpp"
 #include "thumtoo/status.hpp"
 #include "thumtoo/uri.hpp"
 
@@ -226,14 +227,19 @@ int main(int argc, char** argv) {
   }
 
   try {
-    auto db = thumtoo::Database::open(cache);
+    auto db = thumtoo::Database::open(thumtoo::legacy_db_root(cache));
     if (mode == "path") {
       return cmd_path(db, *path_query);
     }
     if (mode == "summary") {
-      std::cout << "cache_root:     " << db.cache_root() << "\n"
+      std::cout << "cache_root:     " << cache << "\n"
+                << "layout:         "
+                << (thumtoo::store_root_layout_enabled() ? "store-root" : "dual-path")
+                << "\n"
+                << "legacy_root:    " << db.cache_root() << "\n"
                 << "db_path:        " << db.db_path() << "\n"
                 << "blobs_path:     " << (db.cache_root() / "blobs.sqlite") << "\n"
+                << "store_root:     " << thumtoo::redesign_store_root(cache) << "\n"
                 << "schema_version: " << db.schema_version()
                 << " (build " << thumtoo::kSchemaVersion << ")\n";
       if (auto v = db.meta_get(thumtoo::kSchemaMetaLadderEdgesKey))

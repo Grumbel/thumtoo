@@ -2,6 +2,34 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-240-layout-helpers.** Shared layout.hpp; tools honor STORE_ROOT.
+Prior: **239**.
+
+### Change
+- `layout.hpp` / `layout.cpp`: store_root_layout_enabled, legacy_db_root,
+  redesign_store_root, migrate_dual_path_to_store_root
+- Client::open uses shared helpers
+- thumtoo-gc / thumtoo-status open legacy via legacy_db_root
+- status summary prints layout + store_root
+
+### Next
+- Soak STORE_ROOT with biltoo
+- Store-only Client
+
+### Apply
+```bash
+git pull /path/to/thumtoo-240-layout-helpers.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **240**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-239-fix-store-root-dbg.** Forward-declare dbg for STORE_ROOT migrate.
 Prior: **238**.
 
