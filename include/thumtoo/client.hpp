@@ -451,9 +451,6 @@ class Client {
   /// \param front true → LIFO (interactive tiles); false → FIFO (bulk).
   void enqueue(Job job, bool front = false);
   /// Dual-path: after a successful legacy probe, ensure Store locator/blob/media.
-  /// Dual-path only (`THUMTOO_STORE_ONLY=0`). No-op under default Store-only.
-  void mirror_probe_to_store(std::string_view uri,
-                             const Database::ContentRow& row);
   /// Dual-path: copy newly encoded tiles into Store bulk (by content_id hash).
   void put_tiles_to_store(const std::string& content_id,
                              const std::vector<TileBlob>& tiles);

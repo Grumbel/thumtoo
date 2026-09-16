@@ -245,33 +245,23 @@ std::unique_ptr<Client> Client::open(const std::filesystem::path& cache_root,
                                      Executor executor, unsigned worker_threads,
                                      const std::filesystem::path& data_root) {
   // Layouts (docs/HOST_CUTOVER.md / layout.hpp):
-  //  default (≥245): Store at cache_root/; legacy at cache_root/legacy/
-  //  STORE_ROOT=0:   legacy at cache_root/; Store at cache_root/store/
-  //  STORE_ONLY=1:   no legacy open; durable Store only (still migrate layout)
+  //  default: Store at cache_root/; migrate dual-path layouts when present
+  //  STORE_ROOT=0: Store under cache_root/store/
+  //  Legacy Database/BlobStore are no longer opened by Client.
   migrate_dual_path_to_store_root(cache_root);
-  const std::filesystem::path legacy_root = legacy_db_root(cache_root);
-  // STORE_ONLY: no legacy Database/BlobStore — Store is the only durable DB.
-  std::unique_ptr<Database> db;
-  std::unique_ptr<BlobStore> blobs;
-  if (!store_only_mode()) {
-    db = std::make_unique<Database>(Database::open(legacy_root));
-    blobs = std::make_unique<BlobStore>(BlobStore::open(legacy_root));
-  }
   Store::Paths sp;
   sp.cache_root = redesign_store_root(cache_root);
   sp.data_root = data_root.empty() ? cache_root : data_root;
   auto store = std::make_unique<Store>(Store::open(sp));
   if (debug_enabled()) {
-    dbg("Client::open cache=%s layout=%s store_only=%d legacy=%s store=%s data=%s",
+    dbg("Client::open cache=%s layout=%s store=%s data=%s",
         cache_root.string().c_str(),
-        store_root_layout_enabled() ? "store-root" : "dual-path",
-        store_only_mode() ? 1 : 0,
-        store_only_mode() ? "(none)" : legacy_root.string().c_str(),
+        store_root_layout_enabled() ? "store-root" : "nested-store/",
         sp.cache_root.string().c_str(),
         sp.data_root.string().c_str());
   }
   return std::unique_ptr<Client>(
-      new Client(std::move(db), std::move(blobs), std::move(store),
+      new Client(/*db=*/nullptr, /*blobs=*/nullptr, std::move(store),
                  std::move(executor), worker_threads));
 }
 
@@ -3359,7 +3349,6 @@ void Client::handle_probe_size(
           || row.status == ContentStatus::Incomplete)) {
     size_out = Size{*row.width, *row.height};
     // Backfill Store if dual-path open and rows were only on legacy DB.
-    mirror_probe_to_store(job.uri, row);
     // LQIP not generated here — attach durable blob if already backfilled.
     if (job.size_cb) {
       auto cb = std::move(job.size_cb);
@@ -3686,7 +3675,6 @@ void Client::handle_probe_size(
   db_->upsert_content(row);
 
   if (size_out) {
-    mirror_probe_to_store(job.uri, row);
   }
 
   // LQIP is not generated during size probe — only returned if already stored
@@ -3702,98 +3690,6 @@ void Client::handle_probe_size(
                     reply = std::move(reply)]() mutable {
       cb(std::move(uri), std::move(reply));
     });
-  }
-}
-
-void Client::mirror_probe_to_store(std::string_view uri,
-                                   const Database::ContentRow& row) {
-  // STORE_ONLY probe writes Store directly; dual-write is dual-path only.
-  if (!store_ || !dual_write_to_store_enabled() || !db_) return;
-  if (row.status != ContentStatus::Ready &&
-      row.status != ContentStatus::Incomplete) {
-    return;
-  }
-
-  constexpr std::string_view kSha = "sha256:";
-  if (!row.content_id.starts_with(kSha) ||
-      row.content_id.size() < kSha.size() + 64) {
-    return;
-  }
-
-  const std::string_view rest(row.content_id.data() + kSha.size(),
-                              row.content_id.size() - kSha.size());
-  // Pure image: sha256:<64hex>
-  // Document page: sha256:<64hex>:page:<n>
-  const std::string_view hex = rest.substr(0, 64);
-  for (char c : hex) {
-    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
-          (c >= 'A' && c <= 'F'))) {
-      return;
-    }
-  }
-
-  std::optional<int> page_1based;
-  if (rest.size() > 64) {
-    constexpr std::string_view kPage = ":page:";
-    if (rest.size() > 64 + kPage.size() &&
-        rest.substr(64, kPage.size()) == kPage) {
-      try {
-        page_1based = std::stoi(std::string(rest.substr(64 + kPage.size())));
-      } catch (...) {
-        return;
-      }
-      if (*page_1based < 1) return;
-    } else {
-      // pdfimage / other composite ids — skip Store mirror for now.
-      return;
-    }
-  }
-
-  auto digest = Store::parse_sha256_digest(hex);
-  if (!digest || digest->size() != 32) return;
-
-  std::optional<std::int64_t> byte_size;
-  std::optional<std::int64_t> mtime_ns;
-  if (auto loc = db_->find_locator(uri)) {
-    byte_size = loc->size;
-    mtime_ns = loc->mtime_ns;
-  }
-
-  try {
-    std::int64_t blob_id = 0;
-    if (auto existing =
-            store_->find_blob_by_hash(HashAlgoId::Sha256, *digest)) {
-      blob_id = *existing;
-      if (byte_size) store_->set_blob_size(blob_id, *byte_size);
-      store_->set_blob_status(blob_id, BlobStatus::Ok);
-    } else {
-      blob_id = store_->insert_blob(byte_size, BlobStatus::Ok);
-      store_->put_hash(blob_id, HashAlgoId::Sha256, *digest);
-    }
-
-    store_->upsert_locator(uri, blob_id, byte_size, mtime_ns);
-
-    if (page_1based) {
-      const auto media_id = store_->ensure_document_media(blob_id, {});
-      (void)store_->ensure_page_region(media_id, *page_1based);
-    } else if (row.width && row.height) {
-      (void)store_->ensure_image_media(blob_id, *row.width, *row.height);
-    }
-
-    // Archive member: attach hashed member blob to container TOC row.
-    if (auto arch = parse_archive_uri(uri);
-        arch && !arch->member_path.empty()) {
-      if (auto cid = ensure_store_container_blob(arch->archive_path)) {
-        store_->upsert_container_member(*cid, arch->member_path, false,
-                                        byte_size, blob_id);
-        store_->set_container_member_blob(*cid, arch->member_path, blob_id);
-      }
-    }
-  } catch (const std::exception& ex) {
-    if (debug_enabled()) {
-      dbg("mirror_probe_to_store failed uri=%.*s: %s",
-          static_cast<int>(uri.size()), uri.data(), ex.what());
-    }
   }
 }
 

@@ -2,6 +2,32 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-262-remove-legacy-client.** Client never opens legacy Database/BlobStore.
+Prior: **261**.
+
+### Change
+- `store_only_mode()` always true; dual-write always false
+- `Client::open` only opens Store; `mirror_probe_to_store` removed
+- Tests updated (soft_ladder session soft; store_root no legacy files)
+
+### Note
+- `Database` / `BlobStore` classes remain for direct tools/tests (`thumtoo-gc`,
+  `test_database`). Client dual-path is gone.
+
+### Apply
+```bash
+git pull /path/to/thumtoo-262-remove-legacy-client.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **262**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-261-plan-store-only-complete.** PLAN/DATABASE mark Store-only default done.
 Prior: **260**.
 

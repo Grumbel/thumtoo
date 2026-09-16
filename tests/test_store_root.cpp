@@ -53,9 +53,9 @@ bool file_nonempty(const fs::path& p) {
 
 int main() {
   setenv("THUMTOO_STORE_ROOT", "1", 1);
-  setenv("THUMTOO_STORE_ONLY", "0", 1);  // dual-path for legacy layout checks
+  unsetenv("THUMTOO_STORE_ONLY");
 
-  // --- A: fresh open places Store at cache root; legacy under legacy/ ---
+  // --- A: fresh open places Store at cache root; no legacy Client open ---
   {
     const fs::path cache = make_tmpdir("store-root-fresh");
     auto client = thumtoo::Client::open(cache);
@@ -64,11 +64,8 @@ int main() {
            "fresh: Store index at cache root");
     expect(file_nonempty(cache / "bulk.sqlite"),
            "fresh: Store bulk at cache root");
-    // Legacy open still creates files under legacy/ for dual-path.
-    expect(file_nonempty(cache / "legacy" / "index.sqlite"),
-           "fresh: legacy index under legacy/");
-    expect(file_nonempty(cache / "legacy" / "blobs.sqlite"),
-           "fresh: legacy blobs under legacy/");
+    expect(!client->has_legacy(), "fresh: no legacy Database");
+    expect(!fs::exists(cache / "legacy"), "fresh: no legacy/ from Client");
     expect(!fs::exists(cache / "store" / "index.sqlite"),
            "fresh: no store/ subdirectory index");
   }
@@ -99,11 +96,12 @@ int main() {
 
     auto client = thumtoo::Client::open(cache);
     expect(client != nullptr, "Client::open migrates dual-path");
+    expect(!client->has_legacy(), "migrate: Client has no legacy");
 
     expect(file_nonempty(cache / "legacy" / "index.sqlite"),
-           "migrate: legacy index under legacy/");
+           "migrate: legacy index under legacy/ (on disk)");
     expect(file_nonempty(cache / "legacy" / "blobs.sqlite"),
-           "migrate: legacy blobs under legacy/");
+           "migrate: legacy blobs under legacy/ (on disk)");
     expect(file_nonempty(cache / "index.sqlite"),
            "migrate: Store index at cache root");
     expect(file_nonempty(cache / "bulk.sqlite"),
@@ -139,11 +137,12 @@ int main() {
   // --- D: opt-out dual-path with THUMTOO_STORE_ROOT=0 ---
   {
     setenv("THUMTOO_STORE_ROOT", "0", 1);
-    setenv("THUMTOO_STORE_ONLY", "0", 1);
+    unsetenv("THUMTOO_STORE_ONLY");
     const fs::path cache = make_tmpdir("store-root-optout");
     auto client = thumtoo::Client::open(cache);
     expect(client != nullptr, "Client::open STORE_ROOT=0");
-    expect(file_nonempty(cache / "index.sqlite"), "opt-out: top legacy index");
+    expect(!client->has_legacy(), "opt-out: no legacy Database");
+    // Nested Store layout; no top-level legacy index from Client.
     expect(file_nonempty(cache / "store" / "index.sqlite"),
            "opt-out: Store under store/");
     expect(file_nonempty(cache / "store" / "bulk.sqlite"),

@@ -12,11 +12,10 @@ namespace thumtoo {
 /// (Store under cache_root/store/; legacy at cache_root).
 [[nodiscard]] bool store_root_layout_enabled();
 
-/// Default **on**: no legacy Database/BlobStore; durable Store only.
-/// Opt out (dual-path): THUMTOO_STORE_ONLY=0.
+/// Always true: Client never opens legacy Database/BlobStore.
 [[nodiscard]] bool store_only_mode();
 
-/// Dual-write legacy→Store for probe rows (false when store_only_mode()).
+/// Always false: dual-write removed with legacy Client path.
 [[nodiscard]] bool dual_write_to_store_enabled();
 
 [[nodiscard]] std::filesystem::path legacy_db_root(

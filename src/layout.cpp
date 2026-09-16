@@ -83,16 +83,11 @@ bool store_root_layout_enabled() {
 }
 
 bool store_only_mode() {
-  // Default: no legacy Database/BlobStore (soak-confirmed with biltoo).
-  // Opt out (dual-path): THUMTOO_STORE_ONLY=0.
-  const char* e = std::getenv("THUMTOO_STORE_ONLY");
-  if (!e || !e[0]) return true;
-  if (e[0] == '0' || e[0] == 'f' || e[0] == 'F' || e[0] == 'n' || e[0] == 'N')
-    return false;
+  // Legacy dual-path removed: Client never opens Database/BlobStore.
   return true;
 }
 
-bool dual_write_to_store_enabled() { return !store_only_mode(); }
+bool dual_write_to_store_enabled() { return false; }
 
 std::filesystem::path legacy_db_root(const std::filesystem::path& cache_root) {
   return store_root_layout_enabled() ? (cache_root / "legacy") : cache_root;

@@ -3,8 +3,7 @@
 
 /// Soft ladder vs tiles: only small ladder levels are durable; high-res is tiles.
 ///
-/// Contract (runs with THUMTOO_SOFT_LEVELS=1 so durable soft levels are written;
-/// tiles-first default otherwise skips put_level for soft/overview):
+/// Contract (session soft replies under Store-only; no durable legacy levels):
 /// * kMaxSoftLadderEdge (512) caps request_pixels / durable soft levels.
 /// * request_pixels(2048) must not leave a 2048 full-page level; long edge ≤ 512.
 /// * An existing 256 level must not short-circuit upgrade to 512.
@@ -135,9 +134,9 @@ std::optional<thumtoo::PixelLevel> wait_pixels(thumtoo::Client& c,
 
 int main() {
   // Durable soft ladder behaviour under test; tiles-first default skips put_level.
-  setenv("THUMTOO_SOFT_LEVELS", "1", 1);
-  // Durable soft levels require legacy Database.
-  setenv("THUMTOO_STORE_ONLY", "0", 1);
+  // Session soft replies under Store-only (no durable legacy levels).
+  unsetenv("THUMTOO_SOFT_LEVELS");
+  unsetenv("THUMTOO_STORE_ONLY");
   const fs::path tmp =
       fs::temp_directory_path() / "thumtoo-test-soft-ladder";
   fs::remove_all(tmp);
@@ -182,12 +181,11 @@ int main() {
               "2048 request returns full soft max");
   }
 
-  // 4) Cache-only get_pixels must not invent larger-than-soft levels.
+  // 4) Cache-only get_pixels: under tiles-first Store-only there is no durable
+  // soft level — empty is OK. If present, must stay soft-capped.
   if (auto cached = client->get_pixels(uri, 2048)) {
     expect_le(std::max(cached->width, cached->height),
               thumtoo::kMaxSoftLadderEdge, "get_pixels(2048) soft-capped");
-  } else {
-    expect(false, "get_pixels(2048) after request");
   }
 
   // 5) Sanity: tile path still available for high-res (one cell).

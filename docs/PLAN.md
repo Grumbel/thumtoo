@@ -197,7 +197,7 @@ Otherwise implement through Phase E.
 ## 8. Success criteria (0.1.0 library spine)
 
 - [x] New empty DBs open; old epoch refused or wiped with clear message.  
-- [x] Local image: locator → blob/hash → media → full region → tiles (Store-only default; dual-path opt-out).  
+- [x] Local image: locator → blob/hash → media → full region → tiles (Store-only default; legacy removed ≥262).  
 - [x] Soft pixel fetch works for biltoo via tiles (compat TileSynth + Store).  
 - [x] Zip member open via `//archive:`; member hash after probe; Store container TOC dual-write.  
 - [x] PDF page via `//page:N`; tiles keyed by page region (dual-write).  
