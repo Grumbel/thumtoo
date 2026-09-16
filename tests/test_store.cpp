@@ -311,6 +311,13 @@ int main() {
       expect(st.tiles_deleted >= 1, "forget tiles");
       expect(!store.find_locator(forget_uri), "forget locator gone");
       expect(!store.find_blob(bid), "forget blob gone");
+
+      // Orphan blob (no locator): purge_orphan_blobs
+      const auto orphan = store.insert_blob(7, thumtoo::BlobStatus::Ok);
+      expect(store.list_orphan_blob_ids().size() >= 1, "list orphans");
+      auto ost = store.purge_orphan_blobs(/*dry_run=*/false);
+      expect(ost.blobs_purged >= 1, "purge orphan count");
+      expect(!store.find_blob(orphan), "orphan blob gone");
     }
 
     // Re-create after deleting index+bulk (simulates operator cache wipe).

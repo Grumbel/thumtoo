@@ -7,7 +7,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 Status: **implemented** in `Store` (index + bulk + user) with dual-path Client
 cutover still in progress (see [API_MIGRATION.md](API_MIGRATION.md),
-[HOST_CUTOVER.md](HOST_CUTOVER.md)). Legacy `Database` / `BlobStore`
+[HOST_CUTOVER.md](HOST_CUTOVER.md)). The C++ `Database` / `BlobStore`
+classes are **deleted** (≥272); this document describes the redesign Store
+schema. Historical
 (`content_id` TEXT + `levels`) remain open until Store-only Client ships.
 
 **No migration** of old ladder rows into tiles. On epoch detect: warn / replace

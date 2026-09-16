@@ -35,7 +35,7 @@ void usage(const char* argv0) {
       << "Usage: " << argv0
       << " [--cache DIR] [--dry-run]\n"
       << "       [--uri URI]... [--path PATH]...\n"
-      << "       [--store-summary]\n"
+      << "       [--store-summary] [--orphans]\n"
       << "\n"
       << "Manual Store maintenance (no automatic eviction).\n"
       << "\n"
@@ -43,10 +43,11 @@ void usage(const char* argv0) {
       << "  --dry-run         Report only; do not delete\n"
       << "  --uri URI         Forget this location URI (locator + orphan blob/tiles)\n"
       << "  --path PATH       Forget file:// locator for this filesystem path\n"
+      << "  --orphans         Purge Store blobs with no locator references\n"
       << "  --store-summary   Print Store blob/locator/tile counts\n"
       << "\n"
-      << "Schema-4 ladder GC (--orphans / --soft-levels / …) was removed with\n"
-      << "the legacy Database. On-disk legacy/ trees are left untouched.\n";
+      << "Schema-4 ladder flags (--soft-levels / --dead-paths / --min-scale) were\n"
+      << "removed with the legacy Database. On-disk legacy/ trees are left untouched.\n";
 }
 
 void print_store_summary(const fs::path& cache) {
@@ -74,6 +75,7 @@ int main(int argc, char** argv) {
   fs::path cache = default_cache_root();
   bool dry_run = false;
   bool do_store_summary = false;
+  bool do_orphans = false;
   std::vector<std::string> uris;
   std::vector<fs::path> paths;
 
@@ -103,12 +105,14 @@ int main(int argc, char** argv) {
       do_store_summary = true;
       continue;
     }
-    // Reject retired ladder flags with a clear message.
-    if (a == "--orphans" || a == "--dead-paths" || a == "--soft-levels" ||
-        a == "--min-scale") {
+    if (a == "--orphans") {
+      do_orphans = true;
+      continue;
+    }
+    if (a == "--dead-paths" || a == "--soft-levels" || a == "--min-scale") {
       std::cerr << "thumtoo-gc: " << a
                 << " removed (schema-4 ladder GC is gone)\n"
-                << "  Use --uri / --path / --store-summary on the redesign Store.\n";
+                << "  Use --uri / --path / --orphans / --store-summary.\n";
       return 2;
     }
     std::cerr << "Unknown argument: " << a << "\n";
@@ -116,7 +120,7 @@ int main(int argc, char** argv) {
     return 2;
   }
 
-  if (!do_store_summary && uris.empty() && paths.empty()) {
+  if (!do_store_summary && !do_orphans && uris.empty() && paths.empty()) {
     usage(argv[0]);
     return 2;
   }
@@ -127,7 +131,7 @@ int main(int argc, char** argv) {
       print_store_summary(cache);
     }
 
-    if (uris.empty() && paths.empty()) {
+    if (uris.empty() && paths.empty() && !do_orphans) {
       return 0;
     }
 
@@ -140,26 +144,34 @@ int main(int argc, char** argv) {
       return 2;
     }
     auto store = thumtoo::Store::open(sp);
-    std::cout << "store forget:\n";
-    for (const auto& u : uris) {
-      auto st = store.forget_uri(u, dry_run);
-      std::cout << "  uri " << u
-                << (st.locator_removed ? " removed" : " miss")
-                << (st.blob_purged ? " (blob purged)" : "")
-                << " tiles=" << st.tiles_deleted
-                << (dry_run ? " (dry-run)\n" : "\n");
+    if (!uris.empty() || !paths.empty()) {
+      std::cout << "store forget:\n";
+      for (const auto& u : uris) {
+        auto st = store.forget_uri(u, dry_run);
+        std::cout << "  uri " << u
+                  << (st.locator_removed ? " removed" : " miss")
+                  << (st.blob_purged ? " (blob purged)" : "")
+                  << " tiles=" << st.tiles_deleted
+                  << (dry_run ? " (dry-run)\n" : "\n");
+      }
+      for (const auto& p : paths) {
+        std::error_code e2;
+        auto abs = fs::absolute(p, e2);
+        if (e2) abs = p;
+        const auto file_uri =
+            thumtoo::file_uri_from_path(abs.lexically_normal());
+        auto st = store.forget_uri(file_uri, dry_run);
+        std::cout << "  path " << p << " -> " << file_uri
+                  << (st.locator_removed ? " removed" : " miss")
+                  << (st.blob_purged ? " (blob purged)" : "")
+                  << " tiles=" << st.tiles_deleted
+                  << (dry_run ? " (dry-run)\n" : "\n");
+      }
     }
-    for (const auto& p : paths) {
-      std::error_code e2;
-      auto abs = fs::absolute(p, e2);
-      if (e2) abs = p;
-      const auto file_uri =
-          thumtoo::file_uri_from_path(abs.lexically_normal());
-      auto st = store.forget_uri(file_uri, dry_run);
-      std::cout << "  path " << p << " -> " << file_uri
-                << (st.locator_removed ? " removed" : " miss")
-                << (st.blob_purged ? " (blob purged)" : "")
-                << " tiles=" << st.tiles_deleted
+    if (do_orphans) {
+      auto ost = store.purge_orphan_blobs(dry_run);
+      std::cout << "orphan blobs: " << ost.blobs_purged
+                << " tiles=" << ost.tiles_deleted
                 << (dry_run ? " (dry-run)\n" : "\n");
     }
   } catch (const std::exception& e) {

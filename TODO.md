@@ -2,6 +2,30 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-273-docs-orphan-gc.** Docs match ≥272; Store orphan blob GC.
+Prior: **272**.
+
+### Change
+- Docs: API_MIGRATION / HOST_CUTOVER / PLAN / TAGS / DATABASE note Database deletion
+- `Store::list_orphan_blob_ids` / `purge_orphan_blobs`
+- `thumtoo-gc --orphans` purges unreferenced Store blobs
+- `test_store` covers orphan purge
+
+### Apply
+```bash
+git pull /path/to/thumtoo-273-docs-orphan-gc.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **273**
+- [x] Full unit test suite passes
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-272-drop-database-blobstore.** Schema-4 Database/BlobStore sources deleted.
 Prior: **271**.
 

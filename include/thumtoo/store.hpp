@@ -192,6 +192,19 @@ class Store {
   };
   [[nodiscard]] ForgetStats forget_uri(std::string_view uri, bool dry_run = false);
 
+  /// Blob ids with no locator rows (after forget_uri or partial deletes).
+  [[nodiscard]] std::vector<std::int64_t> list_orphan_blob_ids(
+      int limit = 100000) const;
+
+  /// Purge every orphan blob (tiles + media + blob). Returns blobs purged and
+  /// total tile_blob rows deleted.
+  struct OrphanPurgeStats {
+    std::int64_t blobs_purged = 0;
+    std::int64_t tiles_deleted = 0;
+  };
+  [[nodiscard]] OrphanPurgeStats purge_orphan_blobs(bool dry_run = false,
+                                                     int limit = 100000);
+
   [[nodiscard]] std::int64_t count_blobs() const;
   [[nodiscard]] std::int64_t count_locators() const;
 

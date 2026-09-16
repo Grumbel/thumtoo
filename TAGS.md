@@ -53,9 +53,8 @@ Client::get_tags(uri) -> [tag…]
 Client::add_tag(uri, tag, source="user") -> bool
 Client::remove_tag(uri, tag) -> bool
 
-Database::tags_for_content(content_id)
-Database::content_ids_for_tag(tag)
-Database::add_tag / remove_tag
+Store::tags_for_blob_ref / add_blob_tag / … (user.sqlite overlays)
+Client::get_tags / add_tag / remove_tag (URI → blob_ref)
 ```
 
 `source` is free text (`user`, `auto`, app id); not validated yet.

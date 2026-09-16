@@ -967,6 +967,44 @@ Store::ForgetStats Store::forget_uri(std::string_view uri, bool dry_run) {
   return st;
 }
 
+
+std::vector<std::int64_t> Store::list_orphan_blob_ids(int limit) const {
+  sqlite3_stmt* stmt = nullptr;
+  // blobs with no locator pointing at them
+  if (sqlite3_prepare_v2(
+          index_,
+          "SELECT b.id FROM blob b WHERE NOT EXISTS ("
+          "  SELECT 1 FROM locator l WHERE l.blob_id = b.id"
+          ") LIMIT ?1;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare list_orphan_blob_ids");
+  }
+  sqlite3_bind_int(stmt, 1, limit < 0 ? 0 : limit);
+  std::vector<std::int64_t> out;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    out.push_back(sqlite3_column_int64(stmt, 0));
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+Store::OrphanPurgeStats Store::purge_orphan_blobs(bool dry_run, int limit) {
+  OrphanPurgeStats st;
+  auto ids = list_orphan_blob_ids(limit);
+  st.blobs_purged = static_cast<std::int64_t>(ids.size());
+  if (dry_run) return st;
+  for (const auto id : ids) {
+    st.tiles_deleted += purge_blob_if_unreferenced(id);
+  }
+  // Recompute blobs_purged as how many actually vanished
+  std::int64_t gone = 0;
+  for (const auto id : ids) {
+    if (!find_blob(id)) ++gone;
+  }
+  st.blobs_purged = gone;
+  return st;
+}
+
 std::int64_t Store::count_blobs() const {
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(index_, "SELECT COUNT(*) FROM blob;", -1, &stmt,

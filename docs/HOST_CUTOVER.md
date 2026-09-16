@@ -97,12 +97,17 @@ Pair with biltoo ≥1007 (`scheduleSoftPixels`) for PreferCache when tiles exist
 | Full-from-tiles (EnsurePixels Full) | **On** when tile pyramid covers want (≥243) |
 | Store-only (Client) | **Always** (≥262) |
 
-Legacy `Database` / `BlobStore` classes remain for tools/tests (`thumtoo-gc`,
-`test_database`). Client does not open them.
+Legacy `Database` / `BlobStore` classes were **deleted** (≥272). Client never
+opened them after ≥262; tools are Store-only. On-disk `legacy/` trees may still
+be relocated by layout migrate but are otherwise ignored.
 
-Purge leftover soft/overview levels from old dual-path caches:
+Store maintenance:
 
 ```bash
-thumtoo-gc --cache "$XDG_CACHE_HOME/thumtoo" --soft-levels
-# or: thumtoo-gc --soft-levels --dry-run
+thumtoo-status --cache "$XDG_CACHE_HOME/thumtoo"
+thumtoo-gc --cache "$XDG_CACHE_HOME/thumtoo" --store-summary
+thumtoo-gc --cache "$XDG_CACHE_HOME/thumtoo" --uri 'file:///path/to/image.jpg'
+# optional: --dry-run
 ```
+
+Ladder flags (`--soft-levels`, `--orphans`, …) were removed with schema-4.
