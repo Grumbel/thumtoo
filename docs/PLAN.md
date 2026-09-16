@@ -191,13 +191,13 @@ Otherwise implement through Phase E.
 
 ## 8. Success criteria (0.1.0 library spine)
 
-- [ ] New empty DBs open; old epoch refused or wiped with clear message.  
-- [ ] Local image: locator → blob/hash → media → full region → tiles.  
-- [ ] Soft pixel fetch works for biltoo via tiles (compat or native).  
-- [ ] Zip member open via `//archive:`; member hash after full read/tag.  
-- [ ] PDF page via `//page:N`; tiles keyed by page region.  
-- [ ] Directory list returns snapshot without mandatory FS walk on first paint.  
-- [ ] Tags on `blob:sha256:` survive index/bulk delete.  
+- [x] New empty DBs open; old epoch refused or wiped with clear message.  
+- [x] Local image: locator → blob/hash → media → full region → tiles (dual-path).  
+- [x] Soft pixel fetch works for biltoo via tiles (compat TileSynth + Store).  
+- [ ] Zip member open via `//archive:`; member hash after full read/tag (legacy path; Store mirror optional).  
+- [x] PDF page via `//page:N`; tiles keyed by page region (dual-write).  
+- [x] Directory list returns snapshot without mandatory FS walk on first paint (Client → Store).  
+- [x] Tags on `blob:sha256:` survive index/bulk delete (user.sqlite + dual-write).  
 - [ ] No `levels` table in the new schema.
 
 ---

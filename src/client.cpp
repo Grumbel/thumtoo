@@ -277,6 +277,81 @@ std::optional<ContentMeta> Client::get_meta(std::string_view uri) const {
   return meta_from_store(uri);
 }
 
+void Client::replace_directory_snapshot(
+    const DirectorySnapshotRow& snap,
+    const std::vector<DirectoryEntryRow>& entries) {
+  if (!store_) return;
+  store_->replace_directory_snapshot(snap, entries);
+}
+
+std::optional<Client::DirectorySnapshotRow> Client::find_directory_snapshot(
+    std::string_view dir_uri) const {
+  if (!store_) return std::nullopt;
+  return store_->find_directory_snapshot(dir_uri);
+}
+
+std::vector<Client::DirectoryEntryRow> Client::list_directory_entries(
+    std::string_view dir_uri, int limit) const {
+  if (!store_) return {};
+  return store_->list_directory_entries(dir_uri, limit);
+}
+
+void Client::delete_directory_snapshot(std::string_view dir_uri) {
+  if (!store_) return;
+  store_->delete_directory_snapshot(dir_uri);
+}
+
+std::size_t Client::refresh_directory_snapshot(
+    const std::filesystem::path& dir_path) {
+  if (!store_) return 0;
+  std::error_code ec;
+  if (!std::filesystem::is_directory(dir_path, ec)) return 0;
+
+  const auto abs = std::filesystem::absolute(dir_path, ec);
+  if (ec) return 0;
+  const std::string dir_uri = file_uri_from_path(abs);
+
+  DirectorySnapshotRow snap;
+  snap.dir_uri = dir_uri;
+  snap.listed_at = 0;  // Store fills now
+  snap.incomplete = false;
+  {
+    auto ftime = std::filesystem::last_write_time(abs, ec);
+    if (!ec) {
+      const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                          ftime.time_since_epoch())
+                          .count();
+      snap.mtime_ns = static_cast<std::int64_t>(ns);
+    }
+  }
+
+  std::vector<DirectoryEntryRow> entries;
+  for (std::filesystem::directory_iterator it(abs, ec), end; !ec && it != end;
+       it.increment(ec)) {
+    const auto& entry = *it;
+    DirectoryEntryRow row;
+    row.dir_uri = dir_uri;
+    row.name = entry.path().filename().string();
+    std::error_code e2;
+    row.is_dir = entry.is_directory(e2);
+    if (!row.is_dir && entry.is_regular_file(e2)) {
+      row.size = static_cast<std::int64_t>(entry.file_size(e2));
+    }
+    auto ctime = entry.last_write_time(e2);
+    if (!e2) {
+      row.mtime_ns = static_cast<std::int64_t>(
+          std::chrono::duration_cast<std::chrono::nanoseconds>(
+              ctime.time_since_epoch())
+              .count());
+    }
+    row.child_uri = file_uri_from_path(entry.path());
+    entries.push_back(std::move(row));
+  }
+
+  store_->replace_directory_snapshot(snap, entries);
+  return entries.size();
+}
+
 std::vector<Database::LocatorRow> Client::list_locators(int limit) const {
   return db_->list_locators(limit);
 }

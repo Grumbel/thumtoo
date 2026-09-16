@@ -101,6 +101,24 @@ class Client {
   [[nodiscard]] std::optional<Size> get_size(std::string_view uri) const;
   [[nodiscard]] std::optional<ContentMeta> get_meta(std::string_view uri) const;
 
+  // --- directory snapshot (Store; cache-first folder open) ---
+  using DirectorySnapshotRow = Store::DirectorySnapshotRow;
+  using DirectoryEntryRow = Store::DirectoryEntryRow;
+
+  void replace_directory_snapshot(
+      const DirectorySnapshotRow& snap,
+      const std::vector<DirectoryEntryRow>& entries);
+  [[nodiscard]] std::optional<DirectorySnapshotRow> find_directory_snapshot(
+      std::string_view dir_uri) const;
+  [[nodiscard]] std::vector<DirectoryEntryRow> list_directory_entries(
+      std::string_view dir_uri, int limit = 100000) const;
+  void delete_directory_snapshot(std::string_view dir_uri);
+
+  /// Walk `dir_path` on the filesystem and write a Store snapshot for the
+  /// corresponding `file://` URI. Returns entry count; no-op without Store.
+  [[nodiscard]] std::size_t refresh_directory_snapshot(
+      const std::filesystem::path& dir_path);
+
   /// Cache-only: locator rows known to this cache (browse without source I/O).
   [[nodiscard]] std::vector<Database::LocatorRow> list_locators(int limit = 100) const;
   [[nodiscard]] std::optional<Database::LocatorRow> find_locator(
