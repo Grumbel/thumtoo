@@ -3334,6 +3334,9 @@ void Client::handle_ensure_pixels(
       : (job.overview ? std::min(reply_edge, kBatchMaxEdge)
                       : std::min(reply_edge, kMaxSoftLadderEdge));
 
+  // When THUMTOO_TILES_ONLY skips put_level, reply from this session encode.
+  std::optional<LevelBlob> session_best_level;
+
   if (auto loc_early = db_->find_locator(job.uri);
       loc_early && loc_early->content_id) {
     if (auto larger = db_->find_smallest_level_ge(
@@ -3433,6 +3436,9 @@ void Client::handle_ensure_pixels(
         if (!dup) levels.push_back(std::move(s));
       }
       for (const auto& lvl : levels) {
+        if (!session_best_level || lvl.max_edge > session_best_level->max_edge) {
+          session_best_level = lvl;
+        }
         // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
         if (!job.full_native && tiles_only_mode()) continue;
         blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
@@ -3482,6 +3488,9 @@ void Client::handle_ensure_pixels(
           for (auto& s : soft) levels.push_back(std::move(s));
         }
         for (const auto& lvl : levels) {
+          if (!session_best_level || lvl.max_edge > session_best_level->max_edge) {
+            session_best_level = lvl;
+          }
           // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
           if (!job.full_native && tiles_only_mode()) continue;
           blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
@@ -3517,6 +3526,9 @@ void Client::handle_ensure_pixels(
                                      raster->height, row.content_id,
                                      kDefaultJxlQuality, edge_limit);
       for (const auto& lvl : levels) {
+        if (!session_best_level || lvl.max_edge > session_best_level->max_edge) {
+          session_best_level = lvl;
+        }
         // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
         if (!job.full_native && tiles_only_mode()) continue;
         blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
@@ -3552,6 +3564,9 @@ void Client::handle_ensure_pixels(
                                      raster->height, row.content_id,
                                      kDefaultJxlQuality, edge_limit);
       for (const auto& lvl : levels) {
+        if (!session_best_level || lvl.max_edge > session_best_level->max_edge) {
+          session_best_level = lvl;
+        }
         // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
         if (!job.full_native && tiles_only_mode()) continue;
         blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
@@ -3589,6 +3604,9 @@ void Client::handle_ensure_pixels(
                                 kDefaultJxlQuality, edge_limit);
         int best_w = 0, best_h = 0;
         for (const auto& lvl : levels) {
+          if (!session_best_level || lvl.max_edge > session_best_level->max_edge) {
+            session_best_level = lvl;
+          }
           // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
           if (!job.full_native && tiles_only_mode()) continue;
           blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
@@ -3632,6 +3650,9 @@ void Client::handle_ensure_pixels(
           build_ladder_buffer(bytes->data(), bytes->size(), row.content_id,
                               kDefaultJxlQuality, edge_limit);
       for (const auto& lvl : levels) {
+        if (!session_best_level || lvl.max_edge > session_best_level->max_edge) {
+          session_best_level = lvl;
+        }
         // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
         if (!job.full_native && tiles_only_mode()) continue;
         blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
@@ -3667,6 +3688,9 @@ void Client::handle_ensure_pixels(
         auto levels = build_ladder(*path, row.content_id, kDefaultJxlQuality,
                                    edge_limit);
         for (const auto& lvl : levels) {
+          if (!session_best_level || lvl.max_edge > session_best_level->max_edge) {
+            session_best_level = lvl;
+          }
           // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
           if (!job.full_native && tiles_only_mode()) continue;
           blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
@@ -3700,6 +3724,18 @@ void Client::handle_ensure_pixels(
   // 2048 "Full" replies leaked after a real encode attempt.
   auto px = get_pixels(job.uri, job.max_edge, job.frame_idx,
                        /*allow_tile_synth=*/!job.full_native);
+  // TILES_ONLY: soft/overview levels were not persisted — reply from session encode.
+  if (!px && session_best_level && !job.full_native) {
+    PixelLevel out;
+    out.max_edge = session_best_level->max_edge;
+    out.frame_idx = session_best_level->frame_idx;
+    out.width = session_best_level->width;
+    out.height = session_best_level->height;
+    out.codec = session_best_level->codec;
+    out.bytes = std::move(session_best_level->bytes);
+    out.source = session_best_level->source;
+    px = std::move(out);
+  }
   if (debug_enabled()) {
     const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::steady_clock::now() - t0)
