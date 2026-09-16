@@ -2,6 +2,32 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-231-tiles-only-env.** THUMTOO_TILES_ONLY skips soft/overview level writes.
+Prior: **230**.
+
+### Change
+- `tiles_only_mode()` via `THUMTOO_TILES_ONLY=1`
+- Soft/overview `put_level` skipped; full_native + tiles unchanged
+- HOST_CUTOVER §4 documents the flag
+
+### Next
+- Host soak with biltoo ≥1007 + TILES_ONLY
+- Drop legacy levels write path after soak
+
+### Apply
+```bash
+git pull /path/to/thumtoo-231-tiles-only-env.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **231**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-230-host-cutover-doc.** Host cutover checklist after Phase E dual-path.
 Prior: **229**.
 

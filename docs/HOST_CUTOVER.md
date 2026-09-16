@@ -64,10 +64,13 @@ tree); do not invent a second PreferCache retry loop.
 
 ---
 
-## 4. Optional test flag (future)
+## 4. Optional test flag
 
-`THUMTOO_TILES_ONLY=1` may be added to refuse soft-level **writes** for hosts
-exercising tile-native. Not required for dual-path production.
+`THUMTOO_TILES_ONLY=1` — refuse durable soft/overview **level** writes. Tiles and
+`full_native` levels still persist. Soft EnsurePixels still encodes in memory
+when needed; replies fall back to TileSynth when tiles cover. Use with biltoo
+`scheduleSoftPixels` (PreferCache when tiles exist) for tiles-first soak tests.
+Not required for dual-path production.
 
 ---
 
