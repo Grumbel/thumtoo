@@ -2,6 +2,32 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-267-client-drop-legacy-members.** Client holds Store only; no Database/BlobStore.
+Prior: **266**.
+
+### Change
+- `Client` ctor/open: only `Store` (no `db_` / `blobs_` members)
+- Read paths (meta, pixels, tiles, tags, HTTP body, archive TOC) are Store-only
+- `has_legacy()` always false; `db()` always throws (biltoo already has Store branch)
+- LQIP / page text / outline: no durable legacy write (session extract only)
+- `purge_uri` / `purge_path` no-op on Client (legacy ladder GC stays in tools)
+- `Database` / `BlobStore` classes kept for `thumtoo-gc` / `test_database` / migrate seed
+
+### Apply
+```bash
+git pull /path/to/thumtoo-267-client-drop-legacy-members.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **267**
+- [x] Full unit test suite passes
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-266-docs-store-only-cutover.** HOST_CUTOVER / API_MIGRATION / PLAN match ≥262.
 Prior: **265**.
 

@@ -5,7 +5,6 @@
 
 #include "thumtoo/database.hpp"
 #include "thumtoo/archive.hpp"
-#include "thumtoo/blob_store.hpp"
 #include "thumtoo/executor.hpp"
 #include "thumtoo/store.hpp"
 #include "thumtoo/types.hpp"
@@ -82,21 +81,20 @@ class Client {
 
   /// \param worker_threads 0 → std::thread::hardware_concurrency() (min 1, max 32).
   /// \param data_root user.sqlite root (tags/collections). Empty → same as
-  ///        cache_root. Store layout: default `cache_root/store/`; with
-  ///        THUMTOO_STORE_ROOT=1 Store at `cache_root/` and legacy under
-  ///        `cache_root/legacy/` (HOST_CUTOVER.md).
+  ///        cache_root. Store layout: default Store at `cache_root/`; with
+  ///        THUMTOO_STORE_ROOT=0 nested under `cache_root/store/` (HOST_CUTOVER.md).
   static std::unique_ptr<Client> open(const std::filesystem::path& cache_root,
                                       Executor executor = {},
                                       unsigned worker_threads = 0,
                                       const std::filesystem::path& data_root = {});
 
-  /// Null when THUMTOO_STORE_ONLY (no legacy Database).
-  [[nodiscard]] bool has_legacy() const { return db_ != nullptr && blobs_ != nullptr; }
+  /// Always false: Client never opens legacy Database/BlobStore (≥262).
+  [[nodiscard]] bool has_legacy() const { return false; }
+  /// Always throws: legacy Database is not opened by Client.
   [[nodiscard]] Database& db();
   [[nodiscard]] const Database& db() const;
 
-  /// Redesign index/bulk/user (docs/PLAN.md Phase E dual-path). Pixels still use
-  /// db(); user overlays dual-write into store() when content_id is sha256.
+  /// Redesign index/bulk/user (Store-only).
   [[nodiscard]] Store& store() { return *store_; }
   [[nodiscard]] const Store& store() const { return *store_; }
 
@@ -399,8 +397,7 @@ class Client {
   bool remove_tag(std::string_view uri, std::string_view tag);
 
  private:
-  explicit Client(std::unique_ptr<Database> db,
-                  std::unique_ptr<BlobStore> blobs, std::unique_ptr<Store> store,
+  explicit Client(std::unique_ptr<Store> store,
                   Executor executor, unsigned worker_threads);
 
   /// Load/refresh TOC-ordered image members for FastBatch cursor (source I/O on miss).
@@ -450,8 +447,7 @@ class Client {
   void reply_cancelled_job(Job& job);
   /// \param front true → LIFO (interactive tiles); false → FIFO (bulk).
   void enqueue(Job job, bool front = false);
-  /// Dual-path: after a successful legacy probe, ensure Store locator/blob/media.
-  /// Dual-path: copy newly encoded tiles into Store bulk (by content_id hash).
+  /// Write newly encoded tiles into Store bulk (by content_id hash).
   void put_tiles_to_store(const std::string& content_id,
                              const std::vector<TileBlob>& tiles);
 
@@ -508,11 +504,6 @@ class Client {
   [[nodiscard]] std::optional<std::vector<std::uint8_t>> fetch_http_cached(
       std::string_view url);
 
-  [[nodiscard]] std::optional<PixelLevel> load_level(
-      const Database::LevelRow& row) const;
-
-  std::unique_ptr<Database> db_;
-  std::unique_ptr<BlobStore> blobs_;
   std::unique_ptr<Store> store_;
   Executor executor_;
 

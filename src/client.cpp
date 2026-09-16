@@ -14,7 +14,6 @@
 #include "thumtoo/djvu.hpp"
 #include "thumtoo/epub.hpp"
 #include "thumtoo/format.hpp"
-#include "thumtoo/blob_store.hpp"
 #include "thumtoo/layout.hpp"
 
 #include "thumtoo/debug_overlay.hpp"
@@ -38,38 +37,10 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <span>
 #include <cstring>
 
 namespace thumtoo {
-
-namespace {
-void store_lqip_if_missing(Database& db, const std::string& content_id,
-                           const std::filesystem::path* path,
-                           const std::uint8_t* rgb, int w, int h,
-                           const std::uint8_t* file_bytes = nullptr,
-                           std::size_t file_size = 0) {
-  if (content_id.empty()) return;
-  // Any durable LQIP is enough — do not re-encode (Handsum upgrade used to
-  // re-decode the source on every EnsureLqip and starved the worker).
-  if (db.get_lqip(content_id)) {
-    return;
-  }
-  std::vector<std::uint8_t> hash;
-  if (rgb && w > 0 && h > 0) {
-    hash = lqip_thumbhash_from_rgb888(rgb, w, h);
-  } else if (path) {
-    hash = lqip_thumbhash_from_file(*path);
-  } else if (file_bytes && file_size > 0) {
-    hash = lqip_thumbhash_from_buffer(file_bytes, file_size);
-  }
-  if (!hash.empty()) {
-    int kind = (hash.size() >= 2 && hash[0] == 0xFE && (hash[1] & 0xFE) == 0xD6)
-                   ? kLqipKindHandsum
-                   : kLqipKindThumbHash;
-    db.set_lqip(content_id, kind, hash);
-  }
-}
-}  // namespace
 
 namespace {
 
@@ -175,13 +146,9 @@ std::optional<std::int64_t> file_mtime_ns(const std::filesystem::path& p) {
 
 }  // namespace
 
-Client::Client(std::unique_ptr<Database> db, std::unique_ptr<BlobStore> blobs,
-               std::unique_ptr<Store> store, Executor executor,
+Client::Client(std::unique_ptr<Store> store, Executor executor,
                unsigned worker_threads)
-    : db_(std::move(db)),
-      blobs_(std::move(blobs)),
-      store_(std::move(store)),
-      executor_(std::move(executor)) {
+    : store_(std::move(store)), executor_(std::move(executor)) {
   if (debug_enabled()) {
     dbg("Client constructed — THUMTOO_DEBUG active (stderr task traces on)");
   }
@@ -211,19 +178,13 @@ Client::~Client() {
 }
 
 Database& Client::db() {
-  if (!db_) {
-    throw std::runtime_error(
-        "Client::db: no legacy Database (THUMTOO_STORE_ONLY)");
-  }
-  return *db_;
+  throw std::runtime_error(
+      "Client::db: legacy Database is not opened (Store-only Client)");
 }
 
 const Database& Client::db() const {
-  if (!db_) {
-    throw std::runtime_error(
-        "Client::db: no legacy Database (THUMTOO_STORE_ONLY)");
-  }
-  return *db_;
+  throw std::runtime_error(
+      "Client::db: legacy Database is not opened (Store-only Client)");
 }
 
 std::unique_ptr<Client> Client::open(const std::filesystem::path& cache_root,
@@ -246,8 +207,7 @@ std::unique_ptr<Client> Client::open(const std::filesystem::path& cache_root,
         sp.data_root.string().c_str());
   }
   return std::unique_ptr<Client>(
-      new Client(/*db=*/nullptr, /*blobs=*/nullptr, std::move(store),
-                 std::move(executor), worker_threads));
+      new Client(std::move(store), std::move(executor), worker_threads));
 }
 
 std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
@@ -346,13 +306,6 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
 }
 
 std::optional<Size> Client::get_size(std::string_view uri) const {
-  if (db_) {
-    auto m = db_->meta_for_uri(uri);
-    if (m && m->size && m->status != ContentStatus::Failed &&
-        m->status != ContentStatus::Unsupported) {
-      return m->size;
-    }
-  }
   if (auto sm = meta_from_store(uri)) {
     return sm->size;
   }
@@ -360,9 +313,6 @@ std::optional<Size> Client::get_size(std::string_view uri) const {
 }
 
 std::optional<ContentMeta> Client::get_meta(std::string_view uri) const {
-  if (db_) {
-    if (auto m = db_->meta_for_uri(uri)) return m;
-  }
   return meta_from_store(uri);
 }
 
@@ -441,41 +391,40 @@ std::size_t Client::refresh_directory_snapshot(
   return entries.size();
 }
 
-std::vector<Database::LocatorRow> Client::list_locators(int limit) const {
-  if (!db_) return {};
-  return db_->list_locators(limit);
+std::vector<Database::LocatorRow> Client::list_locators(int /*limit*/) const {
+  return {};
 }
 
 std::optional<Database::LocatorRow> Client::find_locator(std::string_view uri) const {
-  if (!db_) return std::nullopt;
-  return db_->find_locator(uri);
+  if (!store_) return std::nullopt;
+  auto sl = store_->find_locator(uri);
+  if (!sl) return std::nullopt;
+  Database::LocatorRow r;
+  r.uri = sl->uri;
+  r.size = sl->size;
+  r.mtime_ns = sl->mtime_ns;
+  if (auto m = meta_from_store(uri)) r.content_id = m->content_id;
+  return r;
 }
 
 std::vector<Database::LocatorRow> Client::list_locators_by_uri_prefix(
-    std::string_view uri_prefix, int limit) const {
-  if (!db_) return {};
-  return db_->list_locators_by_uri_prefix(uri_prefix, limit);
+    std::string_view /*uri_prefix*/, int /*limit*/) const {
+  return {};
 }
 
 std::vector<Database::LocatorRow> Client::list_locators_by_outer_path_prefix(
-    std::string_view path_prefix, int limit) const {
-  if (!db_) return {};
-  return db_->list_locators_by_outer_path_prefix(path_prefix, limit);
+    std::string_view /*path_prefix*/, int /*limit*/) const {
+  return {};
 }
 
 std::vector<Database::LocatorRow> Client::list_locators_like(
-    std::string_view uri_like_pattern, int limit) const {
-  if (!db_) return {};
-  return db_->list_locators_like(uri_like_pattern, limit);
+    std::string_view /*uri_like_pattern*/, int /*limit*/) const {
+  return {};
 }
 
 std::optional<std::string> Client::resolve_content_id(std::string_view uri) const {
   if (is_content_id_uri(uri)) {
     return std::string(uri);
-  }
-  if (db_) {
-    auto loc = db_->find_locator(uri);
-    if (loc && loc->content_id) return *loc->content_id;
   }
   if (auto sm = meta_from_store(uri)) return sm->content_id;
   return std::nullopt;
@@ -483,9 +432,6 @@ std::optional<std::string> Client::resolve_content_id(std::string_view uri) cons
 
 std::vector<Database::LocatorRow> Client::list_uris_for_content_id(
     std::string_view content_id, int limit) const {
-  if (db_) {
-    return db_->list_locators_for_content_id(content_id, limit);
-  }
   if (!store_ || content_id.empty()) return {};
   // STORE_ONLY: content_id "sha256:<hex>" or "sha256:<hex>:page:N" → Store blob.
   constexpr std::string_view kSha = "sha256:";
@@ -513,10 +459,7 @@ std::vector<Database::LocatorRow> Client::list_uris_for_content_id(
 
 std::optional<ContentMeta> Client::get_meta_for_content_id(
     std::string_view content_id) const {
-  if (db_) {
-    if (auto m = db_->meta_for_content_id(content_id)) return m;
-  }
-  // STORE_ONLY: pure sha256 content_id → first Store locator for that blob.
+  // Pure sha256 content_id → first Store locator for that blob.
   if (!store_) return std::nullopt;
   constexpr std::string_view kSha = "sha256:";
   if (!content_id.starts_with(kSha) || content_id.size() < kSha.size() + 64) {
@@ -592,27 +535,11 @@ void maybe_overlay_pixels(std::optional<PixelLevel>& px, std::string_view uri,
 }
 }  // namespace
 
-std::optional<PixelLevel> Client::load_level(
-    const Database::LevelRow& row) const {
-  auto data = blobs_->get_level(row.content_id, row.max_edge, row.frame_idx);
-  if (!data || data->empty()) return std::nullopt;
-  PixelLevel out;
-  out.max_edge = row.max_edge;
-  out.frame_idx = row.frame_idx;
-  if (row.width) out.width = *row.width;
-  if (row.height) out.height = *row.height;
-  if (row.codec) out.codec = *row.codec;
-  out.bytes = std::move(*data);
-  out.source = static_cast<PixelSource>(row.source);
-  return out;
-}
-
 std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
                                              int frame_idx,
                                              bool allow_tile_synth) const {
-  std::optional<ContentMeta> meta;
-  if (db_) meta = db_->meta_for_uri(uri);
-  if (!meta) meta = meta_from_store(uri);
+  (void)frame_idx;
+  auto meta = meta_from_store(uri);
   if (!meta) {
     if (debug_enabled()) {
       dbg("get_pixels MISS uri=%s edge=%d (no meta)", std::string(uri).c_str(),
@@ -620,29 +547,7 @@ std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
     }
     return std::nullopt;
   }
-  // //pdfimage: is a native-resolution extract — prefer the largest stored level
-  // over a soft-preview edge. Soft max_edge is for photo filmstrips; scan embeds
-  // should not stay stuck on 256 after size probe reports the real dimensions.
-  // pdfimage: prefer TileSynth from Store (no durable soft levels on Client).
-  std::optional<Database::LevelRow> row;
-  if (db_) row = db_->find_best_level(meta->content_id, max_edge, frame_idx);
-  if (row) {
-    auto px = load_level(*row);
-    if (px && pixels_cover_edge(*px, max_edge)) {
-      if (debug_enabled()) {
-        dbg("get_pixels HIT uri=%s edge=%d src=%s level=%dx%d db_edge=%d",
-            std::string(uri).c_str(), max_edge,
-            std::string(to_string(px->source)).c_str(), px->width, px->height,
-            row->max_edge);
-      }
-      maybe_overlay_pixels(px, uri, max_edge);
-      return px;
-    }
-  }
-  // Soft missing or short: optional TileSynth (PreferCache / overview).
-  // SoftOnly and request_pixels must NOT take this path — compositing every
-  // JPEG cell + re-encoding is sequential and multi-second per image when the
-  // soft ladder is absent but tiles exist (feels "single-threaded" in Gallery).
+  // Prefer TileSynth when allowed (PreferCache / overview / filmstrip).
   if (allow_tile_synth) {
     const int want = max_edge > 0 ? max_edge : kMaxSoftLadderEdge;
     if (auto from_tiles = get_pixels_from_tiles(uri, want)) {
@@ -655,19 +560,8 @@ std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
       return from_tiles;
     }
   }
-  if (row) {
-    auto px = load_level(*row);
-    if (debug_enabled()) {
-      dbg("get_pixels SHORT uri=%s edge=%d src=%s level=%dx%d db_edge=%d",
-          std::string(uri).c_str(), max_edge,
-          px ? std::string(to_string(px->source)).c_str() : "?",
-          px ? px->width : 0, px ? px->height : 0, row->max_edge);
-    }
-    maybe_overlay_pixels(px, uri, max_edge);
-    return px;
-  }
   if (debug_enabled()) {
-    dbg("get_pixels MISS uri=%s edge=%d (no level)", std::string(uri).c_str(),
+    dbg("get_pixels MISS uri=%s edge=%d (no tiles)", std::string(uri).c_str(),
         max_edge);
   }
   return std::nullopt;
@@ -677,25 +571,19 @@ std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
 std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
                                                         int max_edge) const {
   image_library_init();
-  std::optional<ContentMeta> meta;
-  if (db_) meta = db_->meta_for_uri(uri);
-  if (!meta) meta = meta_from_store(uri);
+  auto meta = meta_from_store(uri);
   if (!meta || !meta->size) return std::nullopt;
   const int nw = meta->size->width;
   const int nh = meta->size->height;
   if (nw <= 0 || nh <= 0) return std::nullopt;
 
   int min_s = 0, max_s = 0;
-  bool have_scales = db_ && db_->tile_min_max_scale(meta->content_id, min_s, max_s);
-  if (!have_scales) {
-    // Dual-path: tiles may live only on Store after dual-write.
-    auto tgt = store_tile_target_for_content_id(meta->content_id);
-    if (!tgt) return std::nullopt;
-    auto scales = store_->list_tile_scales(tgt->media_id, tgt->region_id);
-    if (scales.empty()) return std::nullopt;
-    min_s = scales.front();
-    max_s = scales.back();
-  }
+  auto tgt = store_tile_target_for_content_id(meta->content_id);
+  if (!tgt) return std::nullopt;
+  auto scales = store_->list_tile_scales(tgt->media_id, tgt->region_id);
+  if (scales.empty()) return std::nullopt;
+  min_s = scales.front();
+  max_s = scales.back();
 
   const int want = max_edge > 0 ? max_edge : kBatchMaxEdge;
   // Prefer coarsest scale whose long edge still covers `want` (fewer tiles).
@@ -837,119 +725,16 @@ std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
 }
 
 std::optional<std::vector<std::uint8_t>> Client::get_lqip(
-    std::string_view uri) const {
-  if (!db_) return std::nullopt;
-  auto loc = db_->find_locator(uri);
-  if (!loc || !loc->content_id) return std::nullopt;
-  return db_->get_lqip(*loc->content_id);
+    std::string_view /*uri*/) const {
+  // LQIP lived on legacy Database; Store has no LQIP table yet.
+  return std::nullopt;
 }
 
 std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
-    std::string_view uri) {
-  // Cache hit: never upgrade or re-decode. Hosts only need *some* LQIP blob.
-  if (auto existing = get_lqip(uri)) {
-    return existing;
-  }
-  if (!db_) return std::nullopt;
-  auto loc = db_->find_locator(uri);
-  if (!loc || !loc->content_id) {
-    return std::nullopt;
-  }
-  const std::string& cid = *loc->content_id;
-
-  // Prefer a durable soft/full ladder level already in the blob store. Decoding
-  // a small JXL/JPEG preview is far cheaper than reopening the source file or
-  // rasterizing a PDF page solely for Handsum.
-  {
-    auto levels = db_->list_levels(cid, /*limit=*/64);
-    const Database::LevelRow* best = nullptr;
-    for (const auto& lr : levels) {
-      if (lr.frame_idx != 0) continue;
-      // Smallest positive edge first (enough for ThumbHash/Handsum).
-      if (!best || lr.max_edge < best->max_edge) best = &lr;
-    }
-    if (best) {
-      if (auto data = blobs_->get_level(cid, best->max_edge, best->frame_idx)) {
-        if (data && !data->empty()) {
-          // lqip_thumbhash_from_buffer uses vips_thumbnail_buffer (JXL/JPEG/…).
-          store_lqip_if_missing(*db_, cid, nullptr, nullptr, 0, 0, data->data(),
-                                data->size());
-          if (auto got = get_lqip(uri)) {
-            return got;
-          }
-        }
-      }
-    }
-  }
-
-  // PDF / DjVu pages: never feed the container path to Vips/Magick — that
-  // decodes the whole document (or wrong page) and can lock the UI for minutes.
-  // Rasterize only this page at a tiny edge for Handsum.
-  constexpr int kLqipPageEdge = 64;
-  if (auto pdf = parse_pdf_uri(std::string(uri))) {
-    if (auto raster =
-            pdf_rasterize_page(pdf->pdf_path, pdf->page, kLqipPageEdge,
-                                pdf->backend)) {
-      if (!raster->rgb.empty()) {
-        store_lqip_if_missing(*db_, cid, nullptr, raster->rgb.data(),
-                              raster->width, raster->height);
-      }
-    }
-    return get_lqip(uri);
-  }
-  if (auto pimg = parse_pdf_image_uri(std::string(uri))) {
-    if (auto raster_opt = thumtoo::pdf_rasterize_embedded_image(
-            pimg->pdf_path, pimg->image, kLqipPageEdge)) {
-      const PdfRaster& raster = *raster_opt;
-      if (!raster.rgb.empty()) {
-        store_lqip_if_missing(*db_, cid, nullptr, raster.rgb.data(),
-                              raster.width, raster.height);
-      }
-    }
-    return get_lqip(uri);
-  }
-  if (auto dj = parse_djvu_uri(std::string(uri))) {
-    if (auto raster =
-            djvu_rasterize_page(dj->djvu_path, dj->page, kLqipPageEdge)) {
-      if (!raster->rgb.empty()) {
-        store_lqip_if_missing(*db_, cid, nullptr, raster->rgb.data(),
-                              raster->width, raster->height);
-      }
-    }
-    return get_lqip(uri);
-  }
-  if (auto ep = parse_epub_uri(std::string(uri))) {
-    if (auto raster =
-            epub_rasterize_page(ep->epub_path, ep->page, ep->layout,
-                                kLqipPageEdge)) {
-      if (!raster->rgb.empty()) {
-        store_lqip_if_missing(*db_, cid, nullptr, raster->rgb.data(),
-                              raster->width, raster->height);
-      }
-    }
-    return get_lqip(uri);
-  }
-
-  if (auto arch = parse_archive_uri(std::string(uri))) {
-    if (!arch->member_path.empty()) {
-      if (auto bytes = member_bytes(arch->archive_path, arch->member_path,
-                                    std::nullopt)) {
-        store_lqip_if_missing(*db_, cid, nullptr, nullptr, 0, 0, bytes->data(),
-                              bytes->size());
-      }
-    }
-    return get_lqip(uri);
-  }
-
-  // Plain file:// image only (no //page: / //archive:).
-  if (auto path = path_from_file_uri(uri)) {
-    if (std::filesystem::is_regular_file(*path) && !is_pdf_page_uri(uri) &&
-        !is_pdf_image_uri(uri) && !is_archive_uri(uri)) {
-      store_lqip_if_missing(*db_, cid, &*path, nullptr, 0, 0);
-    }
-  }
-  return get_lqip(uri);
+    std::string_view /*uri*/) {
+  return std::nullopt;
 }
+
 
 void Client::request_pixels(std::string uri, int max_edge, PixelsCallback cb,
                             int frame_idx) {
@@ -979,48 +764,6 @@ void Client::request_pixels(std::string uri, int max_edge, PixelsCallback cb,
   }
   // Ensure locator exists (same as request_size) so EnsurePixels → ProbeSize
   // can resolve //pdfimage: / //page: without a prior scheduleProbe race.
-  if (db_ && !db_->find_locator(uri)) {
-    Database::LocatorRow loc;
-    loc.uri = uri;
-    loc.content_id = make_provisional_id();
-    if (auto pdf = parse_pdf_uri(uri)) {
-      loc.outer_path = pdf->pdf_path.string();
-      loc.member_path = std::to_string(pdf->page);
-      loc.size = file_size_bytes(pdf->pdf_path);
-      loc.mtime_ns = file_mtime_ns(pdf->pdf_path);
-    } else if (auto pimg = parse_pdf_image_uri(uri)) {
-      loc.outer_path = pimg->pdf_path.string();
-      loc.member_path = "pdfimage:" + std::to_string(pimg->image);
-      loc.size = file_size_bytes(pimg->pdf_path);
-      loc.mtime_ns = file_mtime_ns(pimg->pdf_path);
-    } else if (auto dj = parse_djvu_uri(uri)) {
-      loc.outer_path = dj->djvu_path.string();
-      loc.member_path = std::to_string(dj->page);
-      loc.size = file_size_bytes(dj->djvu_path);
-      loc.mtime_ns = file_mtime_ns(dj->djvu_path);
-    } else if (auto ep = parse_epub_uri(uri)) {
-      loc.outer_path = ep->epub_path.string();
-      loc.member_path = std::to_string(ep->page);
-      loc.size = file_size_bytes(ep->epub_path);
-      loc.mtime_ns = file_mtime_ns(ep->epub_path);
-    } else if (auto arch = parse_archive_uri(uri)) {
-      loc.outer_path = arch->archive_path.string();
-      loc.member_path = arch->member_path;
-      loc.size = file_size_bytes(arch->archive_path);
-      loc.mtime_ns = file_mtime_ns(arch->archive_path);
-    } else if (auto path = path_from_file_uri(uri)) {
-      loc.outer_path = path->string();
-      loc.size = file_size_bytes(*path);
-      loc.mtime_ns = file_mtime_ns(*path);
-    } else if (is_http_uri(uri)) {
-      loc.outer_path = std::string(uri);
-    }
-    Database::ContentRow content;
-    content.content_id = *loc.content_id;
-    content.status = ContentStatus::Pending;
-    db_->upsert_content(content);
-    db_->upsert_locator(loc);
-  }
   Job job;
   job.kind = JobKind::EnsurePixels;
   job.uri = std::move(uri);
@@ -1060,48 +803,6 @@ void Client::request_overview_pixels(std::string uri, int max_edge,
     }
   }
   // Ensure locator (same path as request_pixels).
-  if (db_ && !db_->find_locator(uri)) {
-    Database::LocatorRow loc;
-    loc.uri = uri;
-    loc.content_id = make_provisional_id();
-    if (auto pdf = parse_pdf_uri(uri)) {
-      loc.outer_path = pdf->pdf_path.string();
-      loc.member_path = std::to_string(pdf->page);
-      loc.size = file_size_bytes(pdf->pdf_path);
-      loc.mtime_ns = file_mtime_ns(pdf->pdf_path);
-    } else if (auto pimg = parse_pdf_image_uri(uri)) {
-      loc.outer_path = pimg->pdf_path.string();
-      loc.member_path = "pdfimage:" + std::to_string(pimg->image);
-      loc.size = file_size_bytes(pimg->pdf_path);
-      loc.mtime_ns = file_mtime_ns(pimg->pdf_path);
-    } else if (auto dj = parse_djvu_uri(uri)) {
-      loc.outer_path = dj->djvu_path.string();
-      loc.member_path = std::to_string(dj->page);
-      loc.size = file_size_bytes(dj->djvu_path);
-      loc.mtime_ns = file_mtime_ns(dj->djvu_path);
-    } else if (auto ep = parse_epub_uri(uri)) {
-      loc.outer_path = ep->epub_path.string();
-      loc.member_path = std::to_string(ep->page);
-      loc.size = file_size_bytes(ep->epub_path);
-      loc.mtime_ns = file_mtime_ns(ep->epub_path);
-    } else if (auto arch = parse_archive_uri(uri)) {
-      loc.outer_path = arch->archive_path.string();
-      loc.member_path = arch->member_path;
-      loc.size = file_size_bytes(arch->archive_path);
-      loc.mtime_ns = file_mtime_ns(arch->archive_path);
-    } else if (auto path = path_from_file_uri(uri)) {
-      loc.outer_path = path->string();
-      loc.size = file_size_bytes(*path);
-      loc.mtime_ns = file_mtime_ns(*path);
-    } else if (is_http_uri(uri)) {
-      loc.outer_path = std::string(uri);
-    }
-    Database::ContentRow crow;
-    crow.content_id = *loc.content_id;
-    crow.status = ContentStatus::Pending;
-    db_->upsert_content(crow);
-    db_->upsert_locator(loc);
-  }
   Job job;
   job.kind = JobKind::EnsurePixels;
   job.uri = std::move(uri);
@@ -1113,18 +814,10 @@ void Client::request_overview_pixels(std::string uri, int max_edge,
 }
 
 bool Client::has_tile(std::string_view uri, int scale, int x, int y) const {
-  std::optional<std::string> content_id;
-  if (db_) {
-    if (auto meta = db_->meta_for_uri(uri)) {
-      content_id = meta->content_id;
-      if (db_->find_tile(*content_id, scale, x, y).has_value()) return true;
-    }
-  }
-  if (!content_id) {
-    if (auto sm = meta_from_store(uri)) content_id = sm->content_id;
-  }
-  if (!content_id) return false;
-  if (auto tgt = store_tile_target_for_content_id(*content_id)) {
+  auto sm = meta_from_store(uri);
+  if (!sm) return false;
+  const std::string& content_id = sm->content_id;
+  if (auto tgt = store_tile_target_for_content_id(content_id)) {
     return store_->has_tile(tgt->media_id, tgt->region_id, scale, x, y);
   }
   return false;
@@ -1132,35 +825,9 @@ bool Client::has_tile(std::string_view uri, int scale, int x, int y) const {
 
 std::optional<TileBlob> Client::get_tile(std::string_view uri, int scale, int x,
                                          int y) const {
-  std::optional<std::string> content_id;
-  if (db_) {
-    if (auto meta = db_->meta_for_uri(uri)) {
-      content_id = meta->content_id;
-      if (auto row = db_->find_tile(*content_id, scale, x, y)) {
-        auto bytes = blobs_->get_tile(*content_id, scale, x, y);
-        if (bytes) {
-          TileBlob t;
-          t.scale = scale;
-          t.x = x;
-          t.y = y;
-          if (row->width) t.width = *row->width;
-          if (row->height) t.height = *row->height;
-          if (row->codec) t.codec = *row->codec;
-          else t.codec = kDefaultTileCodec;
-          t.bytes = std::move(*bytes);
-          t.source = static_cast<TileSource>(row->source);
-          debug_overlay_tile(t, uri);
-          return t;
-        }
-      }
-    }
-  }
-  if (!content_id) {
-    if (auto sm = meta_from_store(uri)) content_id = sm->content_id;
-  }
-  if (!content_id) return std::nullopt;
-  // Dual-path / Store-only: tiles on redesign Store.
-  if (auto tgt = store_tile_target_for_content_id(*content_id)) {
+  auto sm = meta_from_store(uri);
+  if (!sm) return std::nullopt;
+  if (auto tgt = store_tile_target_for_content_id(sm->content_id)) {
     auto bytes =
         store_->get_tile_data(tgt->media_id, tgt->region_id, scale, x, y);
     if (!bytes) return std::nullopt;
@@ -1247,18 +914,12 @@ std::optional<Client::StoreTileTarget> Client::store_tile_target_for_content_id(
 std::optional<TileCoverage> Client::get_tile_coverage(
     std::string_view uri) const {
   std::optional<ContentMeta> meta;
-  if (db_) meta = db_->meta_for_uri(uri);
-  if (!meta) meta = meta_from_store(uri);
+    if (!meta) meta = meta_from_store(uri);
   if (!meta) return std::nullopt;
   TileCoverage cov;
   if (meta->size) cov.size = *meta->size;
   int min_s = 0;
   int max_s = 0;
-  if (db_ && db_->tile_min_max_scale(meta->content_id, min_s, max_s)) {
-    cov.min_scale = min_s;
-    cov.max_scale = max_s;
-    return cov;
-  }
   if (auto tgt = store_tile_target_for_content_id(meta->content_id)) {
     auto scales = store_->list_tile_scales(tgt->media_id, tgt->region_id);
     if (!scales.empty()) {
@@ -1323,31 +984,6 @@ void Client::request_full_pixels(std::string uri, int max_edge,
     }
   }
   // Ensure locator (same as overview / soft).
-  if (db_ && !db_->find_locator(uri)) {
-    Database::LocatorRow loc;
-    loc.uri = uri;
-    loc.content_id = make_provisional_id();
-    if (auto path = path_from_file_uri(uri)) {
-      loc.outer_path = path->string();
-      loc.size = file_size_bytes(*path);
-      loc.mtime_ns = file_mtime_ns(*path);
-    } else if (auto arch = parse_archive_uri(uri)) {
-      loc.outer_path = arch->archive_path.string();
-      loc.member_path = arch->member_path;
-      loc.size = file_size_bytes(arch->archive_path);
-      loc.mtime_ns = file_mtime_ns(arch->archive_path);
-    } else if (auto pdf = parse_pdf_uri(uri)) {
-      loc.outer_path = pdf->pdf_path.string();
-      loc.member_path = std::to_string(pdf->page);
-      loc.size = file_size_bytes(pdf->pdf_path);
-      loc.mtime_ns = file_mtime_ns(pdf->pdf_path);
-    }
-    Database::ContentRow content;
-    content.content_id = *loc.content_id;
-    content.status = ContentStatus::Pending;
-    db_->upsert_content(content);
-    db_->upsert_locator(loc);
-  }
   Job job;
   job.kind = JobKind::EnsurePixels;
   job.uri = std::move(uri);
@@ -1409,12 +1045,10 @@ void Client::request_raster(RasterRequest req, PixelsCallback cb) {
 }
 
 
-void Client::invalidate_tile(std::string_view uri, int scale, int x, int y) {
-  if (!db_ || !blobs_) return;
-  if (auto meta = db_->meta_for_uri(uri)) {
-    db_->delete_tile(meta->content_id, scale, x, y);
-    blobs_->delete_tile(meta->content_id, scale, x, y);
-  }
+void Client::invalidate_tile(std::string_view /*uri*/, int /*scale*/, int /*x*/,
+                             int /*y*/) {
+  // Store has region-level delete only; single-cell invalidation is a no-op
+  // until a per-tile delete lands on Store.
 }
 
 void Client::request_tile(std::string uri, int scale, int x, int y,
@@ -1717,17 +1351,23 @@ std::optional<std::vector<std::uint8_t>> Client::fetch_http_cached(
       return it->second;
     }
   }
-  // Durable cache (survives process restart).
-  if (blobs_) {
-    if (auto disk = blobs_->get_http_body(key, kHttpCacheTtlSeconds)) {
-      std::lock_guard lock(http_cache_mu_);
-      if (http_cache_bytes_ + disk->size() > kHttpCacheMaxBytes) {
-        http_cache_.clear();
-        http_cache_bytes_ = 0;
+  // Durable cache (survives process restart) via Store bulk.
+  if (store_) {
+    if (auto row = store_->get_http_body(key)) {
+      const auto now = static_cast<std::int64_t>(
+          std::chrono::duration_cast<std::chrono::seconds>(
+              std::chrono::system_clock::now().time_since_epoch())
+              .count());
+      if (row->fetched_at + kHttpCacheTtlSeconds >= now && !row->data.empty()) {
+        std::lock_guard lock(http_cache_mu_);
+        if (http_cache_bytes_ + row->data.size() > kHttpCacheMaxBytes) {
+          http_cache_.clear();
+          http_cache_bytes_ = 0;
+        }
+        http_cache_bytes_ += row->data.size();
+        http_cache_.emplace(key, row->data);
+        return row->data;
       }
-      http_cache_bytes_ += disk->size();
-      http_cache_.emplace(key, *disk);
-      return disk;
     }
   }
   auto bytes = http_get_bytes(url, kArchiveMaxMemberUncompressedBytes);
@@ -1735,11 +1375,12 @@ std::optional<std::vector<std::uint8_t>> Client::fetch_http_cached(
   using namespace std::chrono;
   const auto now =
       duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
-  if (blobs_) {
+  if (store_) {
     try {
-      blobs_->put_http_body(key, bytes->data(), bytes->size(), now);
+      store_->put_http_body(
+          key, std::span<const std::uint8_t>(bytes->data(), bytes->size()),
+          static_cast<std::int64_t>(now));
     } catch (...) {
-      // Disk full / SQLite error: still return in-memory body.
     }
   }
   {
@@ -1774,50 +1415,6 @@ void Client::request_size(std::string uri, SizeCallback cb) {
   }
 
   // Ensure locator exists (provisional content) so cache-first browse sees it.
-  if (db_ && !db_->find_locator(uri)) {
-    Database::LocatorRow loc;
-    loc.uri = uri;
-    loc.content_id = make_provisional_id();
-    if (auto pdf = parse_pdf_uri(uri)) {
-      loc.outer_path = pdf->pdf_path.string();
-      loc.member_path = std::to_string(pdf->page);
-      loc.size = file_size_bytes(pdf->pdf_path);
-      loc.mtime_ns = file_mtime_ns(pdf->pdf_path);
-    } else if (auto pimg = parse_pdf_image_uri(uri)) {
-      loc.outer_path = pimg->pdf_path.string();
-      loc.member_path = "pdfimage:" + std::to_string(pimg->image);
-      loc.size = file_size_bytes(pimg->pdf_path);
-      loc.mtime_ns = file_mtime_ns(pimg->pdf_path);
-    } else if (auto dj = parse_djvu_uri(uri)) {
-      loc.outer_path = dj->djvu_path.string();
-      loc.member_path = std::to_string(dj->page);
-      loc.size = file_size_bytes(dj->djvu_path);
-      loc.mtime_ns = file_mtime_ns(dj->djvu_path);
-    } else if (auto ep = parse_epub_uri(uri)) {
-      loc.outer_path = ep->epub_path.string();
-      loc.member_path = std::to_string(ep->page);
-      loc.size = file_size_bytes(ep->epub_path);
-      loc.mtime_ns = file_mtime_ns(ep->epub_path);
-    } else if (auto arch = parse_archive_uri(uri)) {
-      loc.outer_path = arch->archive_path.string();
-      loc.member_path = arch->member_path;
-      loc.size = file_size_bytes(arch->archive_path);
-      loc.mtime_ns = file_mtime_ns(arch->archive_path);
-    } else if (auto path = path_from_file_uri(uri)) {
-      loc.outer_path = path->string();
-      loc.size = file_size_bytes(*path);
-      loc.mtime_ns = file_mtime_ns(*path);
-    } else if (is_http_uri(uri)) {
-      // Network location — size/mtime filled after download.
-      loc.outer_path = std::string(uri);
-    }
-    Database::ContentRow content;
-    content.content_id = *loc.content_id;
-    content.status = ContentStatus::Pending;
-    db_->upsert_content(content);
-    db_->upsert_locator(loc);
-  }
-
   Job job;
   job.kind = JobKind::ProbeSize;
   job.uri = std::move(uri);
@@ -1828,45 +1425,6 @@ void Client::request_size(std::string uri, SizeCallback cb) {
 size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
                              SizeCallback on_each) {
   // STORE_ONLY: no provisional locators — enqueue request_size for unknowns.
-  if (!db_) {
-    size_t n = 0;
-    for (const auto& p : paths) {
-      std::error_code ec;
-      auto abs = std::filesystem::absolute(p, ec);
-      if (ec) continue;
-      if (!std::filesystem::is_regular_file(abs, ec) || ec) continue;
-      if (is_likely_archive_path(abs)) {
-        auto entries = refresh_archive_toc(abs);
-        for (const auto& e : entries) {
-          if (e.member_path.empty()) continue;
-          const auto uri = archive_uri(abs, e.member_path);
-          if (auto sm = meta_from_store(uri); sm && sm->size) {
-            if (on_each) {
-              SizeReply r;
-              r.size = sm->size;
-              on_each(uri, std::move(r));
-            }
-            continue;
-          }
-          request_size(uri, on_each);
-          ++n;
-        }
-        continue;
-      }
-      const auto uri = file_uri_from_path(abs);
-      if (auto sm = meta_from_store(uri); sm && sm->size) {
-        if (on_each) {
-          SizeReply r;
-          r.size = sm->size;
-          on_each(uri, std::move(r));
-        }
-        continue;
-      }
-      request_size(uri, on_each);
-      ++n;
-    }
-    return n;
-  }
   // Collect URIs that need a probe first so callers know the job total before
   // any completion callbacks fire (worker may run concurrently).
   struct Pending {
@@ -1880,15 +1438,6 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
 
   auto enqueue_plain = [&](const std::filesystem::path& abs) {
     const auto uri = file_uri_from_path(abs);
-    if (auto existing = db_->find_locator(uri)) {
-      if (auto meta = db_->meta_for_uri(uri)) {
-        if (meta->status == ContentStatus::Ready && meta->size) return;
-      }
-      Pending item;
-      item.uri = uri;
-      pending.push_back(std::move(item));
-      return;
-    }
     Pending item;
     item.uri = uri;
     item.need_register = true;
@@ -1905,15 +1454,6 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
   auto enqueue_archive_member = [&](const std::filesystem::path& abs,
                                     const Database::ArchiveEntryRow& entry) {
     const auto uri = archive_uri(abs, entry.member_path);
-    if (auto existing = db_->find_locator(uri)) {
-      if (auto meta = db_->meta_for_uri(uri)) {
-        if (meta->status == ContentStatus::Ready && meta->size) return;
-      }
-      Pending item;
-      item.uri = uri;
-      pending.push_back(std::move(item));
-      return;
-    }
     Pending item;
     item.uri = uri;
     item.need_register = true;
@@ -1957,15 +1497,6 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
         const int n = std::min(*count, kMaxPreparePages);
         for (int page = 1; page <= n; ++page) {
           const auto uri = pdf_page_uri(abs, page);
-          if (auto existing = db_->find_locator(uri)) {
-            if (auto meta = db_->meta_for_uri(uri)) {
-              if (meta->status == ContentStatus::Ready && meta->size) continue;
-            }
-            Pending item;
-            item.uri = uri;
-            pending.push_back(std::move(item));
-            continue;
-          }
           Pending item;
           item.uri = uri;
           item.need_register = true;
@@ -1990,15 +1521,6 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
         const int n = std::min(*count, kMaxPreparePages);
         for (int page = 1; page <= n; ++page) {
           const auto uri = djvu_page_uri(abs, page);
-          if (auto existing = db_->find_locator(uri)) {
-            if (auto meta = db_->meta_for_uri(uri)) {
-              if (meta->status == ContentStatus::Ready && meta->size) continue;
-            }
-            Pending item;
-            item.uri = uri;
-            pending.push_back(std::move(item));
-            continue;
-          }
           Pending item;
           item.uri = uri;
           item.need_register = true;
@@ -2025,15 +1547,6 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
         const int n = std::min(*count, kMaxPreparePages);
         for (int page = 1; page <= n; ++page) {
           const auto uri = epub_page_uri(abs, page, layout);
-          if (auto existing = db_->find_locator(uri)) {
-            if (auto meta = db_->meta_for_uri(uri)) {
-              if (meta->status == ContentStatus::Ready && meta->size) continue;
-            }
-            Pending item;
-            item.uri = uri;
-            pending.push_back(std::move(item));
-            continue;
-          }
           Pending item;
           item.uri = uri;
           item.need_register = true;
@@ -2055,10 +1568,7 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
   }
 
   for (auto& item : pending) {
-    if (item.need_register) {
-      db_->upsert_content(item.content);
-      db_->upsert_locator(item.loc);
-    }
+    (void)item.need_register;  // Store probe registers on size job
     request_size(item.uri, on_each);
   }
   return pending.size();
@@ -2068,14 +1578,8 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
 std::vector<Database::ArchiveEntryRow> Client::get_archive_entries(
     std::string_view archive_uri) const {
   std::vector<Database::ArchiveEntryRow> rows;
-  if (db_) {
-    rows = db_->list_archive_entries(archive_uri);
-    if (!rows.empty() || !store_) return rows;
-  } else if (!store_) {
-    return rows;
-  }
 
-  // Store container_member when legacy TOC is empty / STORE_ONLY.
+  // Store container_member TOC.
   auto resolve_container = [&]() -> std::optional<std::int64_t> {
     if (auto loc = store_->find_locator(archive_uri)) {
       if (loc->blob_id) return *loc->blob_id;
@@ -2126,10 +1630,6 @@ std::vector<Database::ArchiveEntryRow> Client::refresh_archive_toc(
     r.uncompressed_size = m.uncompressed_size;
     rows.push_back(std::move(r));
   }
-  if (db_) {
-    db_->replace_archive_entries(uri, rows);
-  }
-
   // Store container_member TOC (no member hash until probe/read).
   if (auto cid = ensure_store_container_blob(archive_path)) {
     try {
@@ -2178,20 +1678,7 @@ std::optional<int> Client::refresh_document_index(
       break;
   }
   if (!count || *count <= 0) return std::nullopt;
-
-  Database::DocumentIndexRow row;
-  row.document_uri = file_uri_from_path(use.lexically_normal());
-  row.layout_key = std::move(layout_key);
-  row.page_count = *count;
-  row.size = file_size_bytes(use);
-  row.mtime_ns = file_mtime_ns(use);
-  row.indexed_at = static_cast<std::int64_t>(
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::system_clock::now().time_since_epoch())
-          .count());
-  if (db_) {
-    db_->put_document_index(row);
-  }
+  (void)layout_key;
   return count;
 }
 
@@ -2208,20 +1695,6 @@ std::optional<int> Client::document_page_count(
   std::string layout_key;
   if (kind == DocumentKind::Epub) {
     layout_key = format_epub_layout_params(epub_layout);
-  }
-  const auto uri = file_uri_from_path(use.lexically_normal());
-  const auto size = file_size_bytes(use);
-  const auto mtime = file_mtime_ns(use);
-
-  if (db_) {
-    if (auto cached = db_->get_document_index(uri, layout_key)) {
-      const bool size_ok = !size || !cached->size || *size == *cached->size;
-      const bool mtime_ok =
-          !mtime || !cached->mtime_ns || *mtime == *cached->mtime_ns;
-      if (cached->page_count > 0 && size_ok && mtime_ok) {
-        return cached->page_count;
-      }
-    }
   }
   return refresh_document_index(use, kind, layout ? layout : &epub_layout);
 }
@@ -2377,101 +1850,14 @@ std::size_t Client::cancel_uri(std::string_view uri) {
   return dropped.size();
 }
 
-namespace {
-
-Database::PurgeStats purge_uris_impl(Database& db, BlobStore& blobs,
-                                     const std::vector<std::string>& uris,
-                                     bool dry_run) {
-  Database::PurgeStats stats;
-  for (const auto& uri : uris) {
-    if (uri.empty()) {
-      continue;
-    }
-    auto loc = db.find_locator(uri);
-    if (!loc) {
-      continue;
-    }
-    stats.removed_uris.push_back(uri);
-    const std::optional<std::string> cid = loc->content_id;
-    if (dry_run) {
-      continue;
-    }
-    db.delete_locator(uri);
-    if (!cid || cid->empty()) {
-      continue;
-    }
-    // Only purge content when no locator still points at it.
-    const auto remaining = db.list_locators_for_content_id(*cid, 1);
-    if (!remaining.empty()) {
-      continue;
-    }
-    stats.tiles_deleted += blobs.delete_tiles_for_content(*cid);
-    stats.levels_deleted += blobs.delete_levels_for_content(*cid);
-    db.purge_content_metadata(*cid);
-    stats.purged_content_ids.push_back(*cid);
-  }
-  return stats;
+Database::PurgeStats Client::purge_uri(std::string_view /*uri*/, bool /*dry_run*/) {
+  // Legacy ladder purge only; Store GC is separate (thumtoo-gc tools path).
+  return {};
 }
 
-}  // namespace
-
-Database::PurgeStats Client::purge_uri(std::string_view uri, bool dry_run) {
-  if (uri.empty()) {
-    return {};
-  }
-  if (!dry_run) {
-    cancel_uri(uri);
-  }
-  return purge_uris_impl(*db_, *blobs_, {std::string(uri)}, dry_run);
-}
-
-Database::PurgeStats Client::purge_path(const std::filesystem::path& path,
-                                        bool dry_run) {
-  Database::PurgeStats stats;
-  if (path.empty()) {
-    return stats;
-  }
-  std::error_code ec;
-  std::filesystem::path abs = path;
-  if (!abs.is_absolute()) {
-    abs = std::filesystem::absolute(path, ec);
-    if (ec) {
-      abs = path;
-    }
-  }
-  const std::string path_s = abs.lexically_normal().string();
-
-  // Collect unique URIs: exact outer_path + file:/// form.
-  std::vector<std::string> uris;
-  auto add_unique = [&](const std::string& u) {
-    if (u.empty()) return;
-    for (const auto& e : uris) {
-      if (e == u) return;
-    }
-    uris.push_back(u);
-  };
-
-  for (const auto& loc : db_->list_locators_for_outer_path(path_s)) {
-    add_unique(loc.uri);
-  }
-  // Also accept non-normalized / relative outer_path as stored.
-  if (path_s != path.string()) {
-    for (const auto& loc : db_->list_locators_for_outer_path(path.string())) {
-      add_unique(loc.uri);
-    }
-  }
-  const std::string file_uri = file_uri_from_path(abs);
-  add_unique(file_uri);
-  if (auto loc = db_->find_locator(file_uri)) {
-    add_unique(loc->uri);
-  }
-
-  if (!dry_run) {
-    for (const auto& u : uris) {
-      cancel_uri(u);
-    }
-  }
-  return purge_uris_impl(*db_, *blobs_, uris, dry_run);
+Database::PurgeStats Client::purge_path(const std::filesystem::path& /*path*/,
+                                        bool /*dry_run*/) {
+  return {};
 }
 
 std::uint64_t Client::set_interest(std::vector<InterestItem> items) {
@@ -2687,17 +2073,7 @@ void Client::worker_main() {
         for (size_t i = 0; i < batch.size(); ++i) {
           auto& j = batch[i];
           // Size already known → handle_probe_size returns without source bytes.
-          if (auto meta = db_->meta_for_uri(j.uri);
-              meta && meta->size && meta->size->width > 0 && meta->size->height > 0) {
-            need_extract[i] = 0;
-            try {
-              handle_probe_size(j, std::nullopt);
-            } catch (...) {
-            }
-            std::lock_guard lock(mu_);
-            --inflight_;
           }
-        }
       }
 
       // Prefer in-process extract cache (filled by a prior pass) so we do not
@@ -3326,23 +2702,6 @@ void Client::handle_ensure_pixels(
 
 void Client::store_tiles(const std::string& content_id,
                          const std::vector<TileBlob>& tiles) {
-  for (const auto& t : tiles) {
-    if (!blobs_ || !db_) continue;
-    blobs_->put_tile(content_id, t.scale, t.x, t.y, t.width, t.height, t.codec,
-                     kDefaultTileQuality, t.bytes.data(), t.bytes.size());
-    Database::TileRow tr;
-    tr.content_id = content_id;
-    tr.scale = t.scale;
-    tr.x = t.x;
-    tr.y = t.y;
-    tr.width = t.width;
-    tr.height = t.height;
-    tr.codec = t.codec;
-    tr.quality = kDefaultTileQuality;
-    tr.source = static_cast<int>(t.source);
-    db_->upsert_tile(tr);
-  }
-  // Durable tile write to redesign Store (legacy tiles written above when present).
   put_tiles_to_store(content_id, tiles);
 }
 
@@ -3440,22 +2799,8 @@ void Client::put_tiles_to_store(const std::string& content_id,
   }
 }
 
-void Client::invalidate_q1_levels(const std::string& content_id) {
-  if (content_id.empty() || !db_ || !blobs_) return;
-  // Keep Embedded + Full; drop FastScale JpegShrink overviews once Q2 exists.
-  constexpr int kJpegShrink = static_cast<int>(PixelSource::JpegShrink);
-  auto rows = db_->list_levels(content_id, /*limit=*/64);
-  for (const auto& row : rows) {
-    if (row.source != kJpegShrink) continue;
-    try {
-      blobs_->delete_level(content_id, row.max_edge, row.frame_idx);
-    } catch (...) {
-    }
-    try {
-      db_->delete_level(content_id, row.max_edge, row.frame_idx);
-    } catch (...) {
-    }
-  }
+void Client::invalidate_q1_levels(const std::string& /*content_id*/) {
+  // Soft/overview levels are not written on Store-only Client.
 }
 
 namespace {
@@ -3708,203 +3053,56 @@ void Client::handle_ensure_tiles(
 }
 
 
-namespace {
-
-/// Legacy content_id "sha256:<hex>" → Store blob ref "blob:sha256:<hex>".
-std::optional<std::string> blob_ref_from_content_id(std::string_view content_id) {
-  constexpr std::string_view kSha = "sha256:";
-  if (content_id.size() == kSha.size() + 64 && content_id.starts_with(kSha)) {
-    return std::string("blob:") + std::string(content_id);
-  }
-  return std::nullopt;
-}
-
-}  // namespace
-
 std::vector<std::string> Client::get_tags(std::string_view uri) const {
-  if (!db_) {
-    // STORE_ONLY: tags live on Store blob_ref only.
-    if (!store_) return {};
-    auto sloc = store_->find_locator(uri);
-    if (!sloc || !sloc->blob_id) return {};
-    auto bref = store_->blob_ref_sha256(*sloc->blob_id);
-    if (!bref) return {};
-    return store_->tags_for_blob_ref(*bref);
-  }
-  auto loc = db_->find_locator(uri);
-  if (!loc || !loc->content_id) return {};
-  // Prefer union of legacy + Store so dual-write hosts see both during cutover.
-  auto tags = db_->tags_for_content(*loc->content_id);
-  if (auto bref = blob_ref_from_content_id(*loc->content_id)) {
-    auto st = store_->tags_for_blob_ref(*bref);
-    for (const auto& tg : st) {
-      if (std::find(tags.begin(), tags.end(), tg) == tags.end()) {
-        tags.push_back(tg);
-      }
-    }
-  }
-  return tags;
+  if (!store_) return {};
+  auto sloc = store_->find_locator(uri);
+  if (!sloc || !sloc->blob_id) return {};
+  auto bref = store_->blob_ref_sha256(*sloc->blob_id);
+  if (!bref) return {};
+  return store_->tags_for_blob_ref(*bref);
 }
 
 bool Client::add_tag(std::string_view uri, std::string_view tag,
                      std::string_view source) {
-  if (!db_) {
-    if (!store_) return false;
-    auto sloc = store_->find_locator(uri);
-    if (!sloc || !sloc->blob_id) return false;
-    auto bref = store_->blob_ref_sha256(*sloc->blob_id);
-    if (!bref) return false;
-    store_->add_blob_tag(*bref, tag, source);
-    return true;
-  }
-  auto loc = db_->find_locator(uri);
-  if (!loc || !loc->content_id) return false;
-  db_->add_tag(*loc->content_id, tag, source);
-  if (auto bref = blob_ref_from_content_id(*loc->content_id)) {
-    store_->add_blob_tag(*bref, tag, source);
-  }
+  if (!store_ || tag.empty()) return false;
+  auto sloc = store_->find_locator(uri);
+  if (!sloc || !sloc->blob_id) return false;
+  auto bref = store_->blob_ref_sha256(*sloc->blob_id);
+  if (!bref) return false;
+  store_->add_blob_tag(*bref, tag, source);
   return true;
 }
 
 bool Client::remove_tag(std::string_view uri, std::string_view tag) {
-  if (!db_) {
-    if (!store_) return false;
-    auto sloc = store_->find_locator(uri);
-    if (!sloc || !sloc->blob_id) return false;
-    auto bref = store_->blob_ref_sha256(*sloc->blob_id);
-    if (!bref) return false;
-    return store_->remove_blob_tag(*bref, tag);
-  }
-  auto loc = db_->find_locator(uri);
-  if (!loc || !loc->content_id) return false;
-  const bool legacy = db_->remove_tag(*loc->content_id, tag);
-  bool redesigned = false;
-  if (auto bref = blob_ref_from_content_id(*loc->content_id)) {
-    redesigned = store_->remove_blob_tag(*bref, tag);
-  }
-  return legacy || redesigned;
+  if (!store_ || tag.empty()) return false;
+  auto sloc = store_->find_locator(uri);
+  if (!sloc || !sloc->blob_id) return false;
+  auto bref = store_->blob_ref_sha256(*sloc->blob_id);
+  if (!bref) return false;
+  return store_->remove_blob_tag(*bref, tag);
 }
 
-
-namespace {
-
-std::string layout_key_for_uri(std::string_view uri) {
-  if (auto epub = thumtoo::parse_epub_uri(uri)) {
-    return thumtoo::format_epub_layout_params(epub->layout);
-  }
-  return {};
-}
-
-int page_for_uri(std::string_view uri) {
-  if (auto epub = thumtoo::parse_epub_uri(uri)) return epub->page;
-  if (auto djvu = thumtoo::parse_djvu_uri(uri)) return djvu->page;
-  if (auto pdf = thumtoo::parse_pdf_uri(uri)) return pdf->page;
-  return 0;
-}
-
-/// Prefer locator content_id; fall back to document file locator without page pipe.
-std::optional<std::string> content_id_for_text_uri(thumtoo::Client& client,
-                                                   std::string_view uri) {
-  if (auto id = client.resolve_content_id(uri)) return id;
-  // Try bare file path locator (page URIs may not be hashed yet).
-  if (auto pdf = thumtoo::parse_pdf_uri(uri)) {
-    const auto base = thumtoo::file_uri_from_path(pdf->pdf_path);
-    return client.resolve_content_id(base);
-  }
-  if (auto djvu = thumtoo::parse_djvu_uri(uri)) {
-    const auto base = thumtoo::file_uri_from_path(djvu->djvu_path);
-    return client.resolve_content_id(base);
-  }
-  if (auto epub = thumtoo::parse_epub_uri(uri)) {
-    const auto base = thumtoo::file_uri_from_path(epub->epub_path);
-    return client.resolve_content_id(base);
-  }
-  return std::nullopt;
-}
-
-}  // namespace
 
 std::optional<PageTextLayer> Client::get_page_text_layer(
-    std::string_view uri) const {
-  if (!db_) return std::nullopt;
-  const int page = page_for_uri(uri);
-  if (page < 1) return std::nullopt;
-  std::optional<std::string> id;
-  auto try_loc = [&](std::string_view u) {
-    if (auto loc = db_->find_locator(u)) {
-      if (loc->content_id) id = *loc->content_id;
-    }
-  };
-  try_loc(uri);
-  if (!id) {
-    if (auto pdf = parse_pdf_uri(uri))
-      try_loc(file_uri_from_path(pdf->pdf_path));
-    else if (auto djvu = parse_djvu_uri(uri))
-      try_loc(file_uri_from_path(djvu->djvu_path));
-    else if (auto epub = parse_epub_uri(uri))
-      try_loc(file_uri_from_path(epub->epub_path));
-  }
-  if (!id) return std::nullopt;
-  const auto key = layout_key_for_uri(uri);
-  auto blob = db_->find_text_layer(*id, page, key);
-  if (!blob) return std::nullopt;
-  return deserialize_page_text_layer(*blob);
+    std::string_view /*uri*/) const {
+  return std::nullopt;
 }
 
 std::optional<PageTextLayer> Client::ensure_page_text_layer(
     std::string_view uri) {
   if (auto hit = get_page_text_layer(uri)) return hit;
-  auto layer = extract_page_text_layer(uri);
-  if (!layer) return std::nullopt;
-  if (!db_) return layer;  // session-only under STORE_ONLY
-  const int page = page_for_uri(uri);
-  auto id = content_id_for_text_uri(*this, uri);
-  if (id && page >= 1) {
-    auto payload = serialize_page_text_layer(*layer);
-    db_->upsert_text_layer(*id, page, layer->layout_key, layer->page_bounds.x0,
-                           layer->page_bounds.y0, layer->page_bounds.x1,
-                           layer->page_bounds.y1, payload);
-  }
-  return layer;
+  // Session-only: no durable text layer store on redesign schema yet.
+  return extract_page_text_layer(uri);
 }
 
 std::optional<DocumentOutline> Client::get_document_outline(
-    std::string_view uri) const {
-  if (!db_) return std::nullopt;
-  std::optional<std::string> id;
-  auto try_loc = [&](std::string_view u) {
-    if (auto loc = db_->find_locator(u)) {
-      if (loc->content_id) id = *loc->content_id;
-    }
-  };
-  try_loc(uri);
-  if (!id) {
-    if (auto pdf = parse_pdf_uri(uri))
-      try_loc(file_uri_from_path(pdf->pdf_path));
-    else if (auto djvu = parse_djvu_uri(uri))
-      try_loc(file_uri_from_path(djvu->djvu_path));
-    else if (auto epub = parse_epub_uri(uri))
-      try_loc(file_uri_from_path(epub->epub_path));
-  }
-  if (!id) return std::nullopt;
-  const auto key = layout_key_for_uri(uri);
-  auto blob = db_->find_document_outline(*id, key);
-  if (!blob) return std::nullopt;
-  return deserialize_document_outline(*blob);
+    std::string_view /*uri*/) const {
+  return std::nullopt;
 }
 
 std::optional<DocumentOutline> Client::ensure_document_outline(
     std::string_view uri) {
-  if (auto hit = get_document_outline(uri)) return hit;
-  auto outline = extract_document_outline(uri);
-  if (!outline) return std::nullopt;
-  if (!db_) return outline;  // session-only under STORE_ONLY
-  auto id = content_id_for_text_uri(*this, uri);
-  if (id) {
-    auto payload = serialize_document_outline(*outline);
-    db_->upsert_document_outline(*id, layout_key_for_uri(uri), payload);
-  }
-  return outline;
+  return extract_document_outline(uri);
 }
 
 
