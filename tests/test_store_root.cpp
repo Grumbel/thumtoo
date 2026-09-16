@@ -50,6 +50,58 @@ bool file_nonempty(const fs::path& p) {
   return fs::is_regular_file(p, ec) && fs::file_size(p, ec) > 0;
 }
 
+/// Minimal schema_meta seed for classic dual-path files (no Database/BlobStore).
+void seed_schema_meta(const fs::path& db_path, int version) {
+  std::error_code ec;
+  fs::create_directories(db_path.parent_path(), ec);
+  sqlite3* db = nullptr;
+  if (sqlite3_open(db_path.string().c_str(), &db) != SQLITE_OK) {
+    if (db) sqlite3_close(db);
+    expect(false, "seed open sqlite");
+    return;
+  }
+  char* err = nullptr;
+  // DELETE journal avoids leftover -wal that could confuse exists checks.
+  sqlite3_exec(db, "PRAGMA journal_mode=DELETE;", nullptr, nullptr, &err);
+  if (err) {
+    sqlite3_free(err);
+    err = nullptr;
+  }
+  sqlite3_exec(db,
+               "CREATE TABLE IF NOT EXISTS schema_meta("
+               "key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+               nullptr, nullptr, &err);
+  if (err) {
+    sqlite3_free(err);
+    err = nullptr;
+  }
+  const std::string sql =
+      "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('schema_version', '" +
+      std::to_string(version) + "');";
+  sqlite3_exec(db, sql.c_str(), nullptr, nullptr, &err);
+  if (err) sqlite3_free(err);
+  sqlite3_exec(db, "PRAGMA wal_checkpoint(TRUNCATE);", nullptr, nullptr, nullptr);
+  sqlite3_close(db);
+}
+
+void dump_tree(const fs::path& root, const char* label) {
+  std::error_code ec;
+  std::cerr << "  [" << label << "] " << root << "\n";
+  if (!fs::exists(root, ec)) {
+    std::cerr << "    (missing)\n";
+    return;
+  }
+  for (const auto& e : fs::recursive_directory_iterator(root, ec)) {
+    std::cerr << "    " << e.path().lexically_relative(root).string();
+    if (e.is_regular_file(ec)) {
+      std::cerr << " (" << fs::file_size(e.path(), ec) << " B)";
+    } else if (e.is_directory(ec)) {
+      std::cerr << "/";
+    }
+    std::cerr << "\n";
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -75,31 +127,8 @@ int main() {
     const fs::path cache = make_tmpdir("store-root-migrate");
     // Seed legacy at top (schema < 100) without Database/BlobStore classes.
     {
-      auto seed_meta = [](const fs::path& db_path, int version) {
-        sqlite3* db = nullptr;
-        if (sqlite3_open(db_path.string().c_str(), &db) != SQLITE_OK) {
-          if (db) sqlite3_close(db);
-          expect(false, "seed open sqlite");
-          return;
-        }
-        char* err = nullptr;
-        sqlite3_exec(db,
-                     "CREATE TABLE IF NOT EXISTS schema_meta("
-                     "key TEXT PRIMARY KEY, value TEXT NOT NULL);",
-                     nullptr, nullptr, &err);
-        if (err) {
-          sqlite3_free(err);
-          err = nullptr;
-        }
-        const std::string sql =
-            "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('schema_version', '" +
-            std::to_string(version) + "');";
-        sqlite3_exec(db, sql.c_str(), nullptr, nullptr, &err);
-        if (err) sqlite3_free(err);
-        sqlite3_close(db);
-      };
-      seed_meta(cache / "index.sqlite", thumtoo::kSchemaVersion);
-      seed_meta(cache / "blobs.sqlite", thumtoo::kSchemaVersion);
+      seed_schema_meta(cache / "index.sqlite", thumtoo::kSchemaVersion);
+      seed_schema_meta(cache / "blobs.sqlite", thumtoo::kSchemaVersion);
       expect(file_nonempty(cache / "index.sqlite"), "seed legacy index.sqlite");
       expect(file_nonempty(cache / "blobs.sqlite"), "seed legacy blobs.sqlite");
     }
@@ -122,10 +151,15 @@ int main() {
     auto client = thumtoo::Client::open(cache);
     expect(client != nullptr, "Client::open migrates dual-path");
 
-    expect(file_nonempty(cache / "legacy" / "index.sqlite"),
-           "migrate: legacy index under legacy/ (on disk)");
-    expect(file_nonempty(cache / "legacy" / "blobs.sqlite"),
-           "migrate: legacy blobs under legacy/ (on disk)");
+    const bool legacy_index_ok =
+        file_nonempty(cache / "legacy" / "index.sqlite");
+    const bool legacy_blobs_ok =
+        file_nonempty(cache / "legacy" / "blobs.sqlite");
+    expect(legacy_index_ok, "migrate: legacy index under legacy/ (on disk)");
+    expect(legacy_blobs_ok, "migrate: legacy blobs under legacy/ (on disk)");
+    if (!legacy_index_ok || !legacy_blobs_ok) {
+      dump_tree(cache, "post-migrate cache tree");
+    }
     expect(file_nonempty(cache / "index.sqlite"),
            "migrate: Store index at cache root");
     expect(file_nonempty(cache / "bulk.sqlite"),

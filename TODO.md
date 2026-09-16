@@ -2,6 +2,29 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-285-fix-store-root-blobs-migrate.** Harden dual-path blobs relocate.
+Prior: **284**.
+
+### Change
+- `rename_sqlite_bundle`: copy+remove fallback when rename fails; move `-journal` too
+- Recovery: if `legacy/index.sqlite` exists and top `blobs.sqlite` remains, move it
+- `test_store_root` B: durable schema_meta seed (DELETE journal); dump tree on migrate fail
+
+### Apply
+```bash
+git pull /path/to/thumtoo-285-fix-store-root-blobs-migrate.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **285**
+- [x] `store_root` migrate: legacy index + blobs under `legacy/`
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-284-optional-lqip-outer-path.** EPUB/Handsum LQIP; locator outer_path.
 Prior: **283**.
 

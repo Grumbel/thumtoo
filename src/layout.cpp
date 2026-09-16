@@ -43,6 +43,9 @@ std::optional<int> probe_index_schema_version(
   return out;
 }
 
+/// Move stem (+ optional -wal/-shm) from from_base to to_base. No-op if source
+/// is missing or destination already exists. Falls back to copy+remove when
+/// rename fails (cross-device, some sandbox layouts).
 void rename_sqlite_bundle(const std::filesystem::path& from_base,
                           const std::filesystem::path& to_base,
                           const char* stem) {
@@ -50,15 +53,28 @@ void rename_sqlite_bundle(const std::filesystem::path& from_base,
   std::error_code ec;
   const fs::path from = from_base / stem;
   const fs::path to = to_base / stem;
-  if (!fs::exists(from, ec)) return;
+  if (!fs::is_regular_file(from, ec)) return;
   if (fs::exists(to, ec)) return;
   fs::create_directories(to_base, ec);
+  ec.clear();
   fs::rename(from, to, ec);
-  for (const char* suf : {"-wal", "-shm"}) {
+  if (ec) {
+    ec.clear();
+    fs::copy_file(from, to, fs::copy_options::none, ec);
+    if (!ec) {
+      fs::remove(from, ec);
+    }
+  }
+  for (const char* suf : {"-wal", "-shm", "-journal"}) {
     const fs::path f2 = fs::path(from.string() + suf);
     const fs::path t2 = fs::path(to.string() + suf);
-    if (fs::exists(f2, ec) && !fs::exists(t2, ec)) {
-      fs::rename(f2, t2, ec);
+    if (!fs::exists(f2, ec) || fs::exists(t2, ec)) continue;
+    ec.clear();
+    fs::rename(f2, t2, ec);
+    if (ec) {
+      ec.clear();
+      fs::copy_file(f2, t2, fs::copy_options::none, ec);
+      if (!ec) fs::remove(f2, ec);
     }
   }
 }
@@ -87,18 +103,33 @@ void migrate_dual_path_to_store_root(const std::filesystem::path& cache_root) {
   if (!store_root_layout_enabled()) return;
   namespace fs = std::filesystem;
   const fs::path top_index = cache_root / "index.sqlite";
+  const fs::path top_blobs = cache_root / "blobs.sqlite";
   const fs::path store_dir = cache_root / "store";
   const fs::path store_index = store_dir / "index.sqlite";
   const fs::path legacy_dir = cache_root / "legacy";
   const fs::path legacy_index = legacy_dir / "index.sqlite";
+  const fs::path legacy_blobs = legacy_dir / "blobs.sqlite";
 
   auto top_ver = probe_index_schema_version(top_index);
   auto store_ver = probe_index_schema_version(store_index);
   auto legacy_ver = probe_index_schema_version(legacy_index);
 
+  // Classic dual-path (schema < 100) at cache root → park under legacy/.
+  // Move index and blobs together so a partial rename cannot leave blobs at top.
   if (top_ver && *top_ver < kStoreIndexSchemaVersion && !legacy_ver) {
     rename_sqlite_bundle(cache_root, legacy_dir, "index.sqlite");
     rename_sqlite_bundle(cache_root, legacy_dir, "blobs.sqlite");
+  }
+
+  // Recovery: legacy index already present but classic blobs still at top
+  // (interrupted migrate or earlier tip that only moved index).
+  {
+    std::error_code ec;
+    if (fs::is_regular_file(legacy_index, ec) &&
+        fs::is_regular_file(top_blobs, ec) &&
+        !fs::exists(legacy_blobs, ec)) {
+      rename_sqlite_bundle(cache_root, legacy_dir, "blobs.sqlite");
+    }
   }
 
   top_ver = probe_index_schema_version(top_index);
