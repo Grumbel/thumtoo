@@ -57,12 +57,12 @@ tree); do not invent a second PreferCache retry loop.
 
 1. ~~Stop writing durable soft `levels` / soft ladder~~ (**done** ≥234; default
    tiles-first; `THUMTOO_SOFT_LEVELS=1` restores).
-2. **Top-level Store (experimental ≥237):** `THUMTOO_STORE_ROOT=1` places Store at
-   `$cache/{index,bulk}.sqlite` and legacy Database/BlobStore under
-   `$cache/legacy/`. Default remains dual-path (`$cache/store/` + top-level legacy).
+2. **Top-level Store (default ≥245):** Store at `$cache/{index,bulk}.sqlite` and
+   legacy Database/BlobStore under `$cache/legacy/`. Opt out with
+   `THUMTOO_STORE_ROOT=0` for classic dual-path (`$cache/store/` + top-level legacy).
    **Auto-migrate (≥238):** on open, classic dual-path caches move top-level legacy
    schema files → `legacy/` and `store/` redesign files → cache root (skips if
-   destinations already exist).
+   destinations already exist). Soak-confirmed with biltoo.
 3. Remove dual-write helpers (`mirror_*`) and legacy `Database` open (Store-only).
 4. Migration: **no** ladder→tile conversion (PLAN non-goal); cold rebuild tiles.
 
@@ -85,7 +85,7 @@ levels with `THUMTOO_SOFT_LEVELS=1` or `THUMTOO_TILES_ONLY=0`.
 | **`THUMTOO_SOFT_LEVELS=1`** | Restore durable soft/overview/**full** level writes |
 | **`THUMTOO_TILES_ONLY=0`** | Same (explicit opt-out of tiles-first) |
 | **`THUMTOO_TILES_ONLY=1`** | Explicit tiles-first (same as default) |
-| **`THUMTOO_STORE_ROOT=1`** | Store at `$cache/`; legacy under `$cache/legacy/` |
+| **`THUMTOO_STORE_ROOT`** | Default **on**: Store at `$cache/`; legacy under `$cache/legacy/`. `=0` restores dual-path under `store/` |
 
 Pair with biltoo ≥1007 (`scheduleSoftPixels`) for PreferCache when tiles exist.
 
@@ -99,10 +99,10 @@ Pair with biltoo ≥1007 (`scheduleSoftPixels`) for PreferCache when tiles exist
 | biltoo `data_root` | **Done** (biltoo-1004; XDG data root) |
 | biltoo tile-native PreferCache / filmstrip | **Partial** (1005 Prefer plateau; 1006–1007 `scheduleSoftPixels`) |
 | Tiles-first soft writes (default) | **On** (thumtoo-234; opt out via `THUMTOO_SOFT_LEVELS=1`) |
-| Top-level Store layout (`THUMTOO_STORE_ROOT`) | **Experimental** (≥237; migrate ≥238; `test_store_root`) |
+| Top-level Store layout (`THUMTOO_STORE_ROOT`) | **Default on** (≥245; migrate ≥238; soak OK; `test_store_root`) |
 | Full-from-tiles (EnsurePixels Full) | **On** when tile pyramid covers want (≥243) |
 | Tiles-first skips full_native levels | **On** (≥244; same env as soft) |
-| Drop legacy Database open (Store-only) | **Next** after STORE_ROOT soak |
+| Drop legacy Database open (Store-only) | **Next** |
 
 Soft ladder rows may still exist in older caches; new soft encodes no longer
 persist them unless soft levels are explicitly re-enabled.

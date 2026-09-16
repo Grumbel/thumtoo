@@ -73,7 +73,14 @@ void rename_sqlite_bundle(const std::filesystem::path& from_base,
 
 }  // namespace
 
-bool store_root_layout_enabled() { return env_flag_on("THUMTOO_STORE_ROOT"); }
+bool store_root_layout_enabled() {
+  // Default: top-level Store layout (soak-confirmed). Opt out: THUMTOO_STORE_ROOT=0.
+  const char* e = std::getenv("THUMTOO_STORE_ROOT");
+  if (!e || !e[0]) return true;
+  if (e[0] == '0' || e[0] == 'f' || e[0] == 'F' || e[0] == 'n' || e[0] == 'N')
+    return false;
+  return true;
+}
 
 std::filesystem::path legacy_db_root(const std::filesystem::path& cache_root) {
   return store_root_layout_enabled() ? (cache_root / "legacy") : cache_root;

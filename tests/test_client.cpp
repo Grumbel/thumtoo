@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "thumtoo/client.hpp"
+#include "thumtoo/layout.hpp"
 #include "thumtoo/constants.hpp"
 #include "thumtoo/image.hpp"
 #include "thumtoo/uri.hpp"
@@ -125,7 +126,9 @@ int main() {
     expect(!client->get_pixels(uri, 256).has_value(),
            "tiles-first: no durable soft pixels until tiles or SOFT_LEVELS");
 
-    expect(fs::exists(cache / "blobs.sqlite"), "blobs.sqlite present");
+    // Default STORE_ROOT: legacy blobs under cache/legacy/.
+    expect(fs::exists(legacy_db_root(cache) / "blobs.sqlite"),
+           "blobs.sqlite present");
 
     // --- grid tiles (Phase 4) ---
     expect(!client->has_tile(uri, 0, 0, 0), "has_tile false before request");

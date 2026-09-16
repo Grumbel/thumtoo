@@ -68,9 +68,8 @@ cache wipe.
 3. ~~Soft `get_pixels` assemble from Store tiles~~ (TileSynth via Store fallback).
 4. ~~Store size/meta fallback~~ (`get_size` / `get_meta`).
 5. ~~Soft/overview level writes off by default~~ (≥234; `THUMTOO_SOFT_LEVELS=1` restores).
-6. ~~Top-level Store path~~ (`THUMTOO_STORE_ROOT=1` → Store at `$cache/`, legacy
-   under `$cache/legacy/`; default still `store/` dual-path).
-   Covered by `test_store_root` (fresh layout + dual-path migrate).
+6. ~~Top-level Store path~~ (default ≥245: Store at `$cache/`, legacy under
+   `$cache/legacy/`; opt out `THUMTOO_STORE_ROOT=0`). Covered by `test_store_root`.
 7. ~~Full-from-tiles for Full EnsurePixels~~ when pyramid covers the request
    (level_adequate); no longer blocks TileSynth solely because `full_native`.
 8. ~~Tiles-first skips durable full_native levels~~ (same default as soft; session

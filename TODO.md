@@ -2,6 +2,32 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-245-store-root-default.** Top-level Store layout is the default.
+Prior: **244**.
+
+### Change
+- `store_root_layout_enabled()` defaults **on**; opt out with `THUMTOO_STORE_ROOT=0`
+- `test_store_root`: default + opt-out cases; `test_client` uses `legacy_db_root`
+- HOST_CUTOVER / API_MIGRATION: soak-confirmed, default on
+
+### Next
+- Store-only Client (skip legacy Database/BlobStore open)
+- Hosts: drop explicit `THUMTOO_STORE_ROOT=1` if set
+
+### Apply
+```bash
+git pull /path/to/thumtoo-245-store-root-default.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **245**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-244-tiles-first-no-full-levels.** Tiles-first skips full_native levels too.
 Prior: **243**.
 

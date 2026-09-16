@@ -228,8 +228,8 @@ std::unique_ptr<Client> Client::open(const std::filesystem::path& cache_root,
                                      Executor executor, unsigned worker_threads,
                                      const std::filesystem::path& data_root) {
   // Layouts (docs/HOST_CUTOVER.md / layout.hpp):
-  //  default:     legacy at cache_root/; Store at cache_root/store/
-  //  STORE_ROOT:  Store at cache_root/; legacy at cache_root/legacy/
+  //  default (≥245): Store at cache_root/; legacy at cache_root/legacy/
+  //  STORE_ROOT=0:   legacy at cache_root/; Store at cache_root/store/
   migrate_dual_path_to_store_root(cache_root);
   const std::filesystem::path legacy_root = legacy_db_root(cache_root);
   auto db = std::make_unique<Database>(Database::open(legacy_root));

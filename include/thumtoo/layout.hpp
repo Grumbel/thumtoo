@@ -7,8 +7,9 @@
 
 namespace thumtoo {
 
-/// THUMTOO_STORE_ROOT=1 → Store at cache_root; legacy under cache_root/legacy/.
-/// Default dual-path: Store under cache_root/store/; legacy at cache_root.
+/// Top-level Store layout (default): Store at cache_root; legacy under
+/// cache_root/legacy/. Opt out with THUMTOO_STORE_ROOT=0 for classic dual-path
+/// (Store under cache_root/store/; legacy at cache_root).
 [[nodiscard]] bool store_root_layout_enabled();
 
 [[nodiscard]] std::filesystem::path legacy_db_root(

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-/// THUMTOO_STORE_ROOT layout + dual-path → top-level Store migration.
+/// Top-level Store layout (default) + dual-path migrate + STORE_ROOT=0 opt-out.
 
 #include "thumtoo/client.hpp"
 #include "thumtoo/constants.hpp"
@@ -118,18 +118,34 @@ int main() {
            "post-migrate store schema");
   }
 
-  // --- C: default layout unchanged when STORE_ROOT unset ---
+  // --- C: default (env unset) is top-level Store layout ---
   {
     unsetenv("THUMTOO_STORE_ROOT");
     const fs::path cache = make_tmpdir("store-root-default");
     auto client = thumtoo::Client::open(cache);
     expect(client != nullptr, "Client::open default");
-    expect(file_nonempty(cache / "index.sqlite"), "default: top legacy index");
+    expect(file_nonempty(cache / "index.sqlite"),
+           "default: Store index at cache root");
+    expect(file_nonempty(cache / "bulk.sqlite"),
+           "default: Store bulk at cache root");
+    expect(file_nonempty(cache / "legacy" / "index.sqlite"),
+           "default: legacy under legacy/");
+    expect(!fs::exists(cache / "store" / "index.sqlite"),
+           "default: no store/ subdirectory");
+  }
+
+  // --- D: opt-out dual-path with THUMTOO_STORE_ROOT=0 ---
+  {
+    setenv("THUMTOO_STORE_ROOT", "0", 1);
+    const fs::path cache = make_tmpdir("store-root-optout");
+    auto client = thumtoo::Client::open(cache);
+    expect(client != nullptr, "Client::open STORE_ROOT=0");
+    expect(file_nonempty(cache / "index.sqlite"), "opt-out: top legacy index");
     expect(file_nonempty(cache / "store" / "index.sqlite"),
-           "default: Store under store/");
+           "opt-out: Store under store/");
     expect(file_nonempty(cache / "store" / "bulk.sqlite"),
-           "default: bulk under store/");
-    expect(!fs::exists(cache / "legacy"), "default: no legacy/ dir");
+           "opt-out: bulk under store/");
+    expect(!fs::exists(cache / "legacy"), "opt-out: no legacy/ dir");
   }
 
   if (g_failures) {
