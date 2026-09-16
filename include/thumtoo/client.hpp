@@ -82,8 +82,9 @@ class Client {
 
   /// \param worker_threads 0 → std::thread::hardware_concurrency() (min 1, max 32).
   /// \param data_root user.sqlite root (tags/collections). Empty → same as
-  ///        cache_root. Redesign Store lives under cache_root/store/ so it does
-  ///        not collide with the legacy index.sqlite still used for pixels.
+  ///        cache_root. Store layout: default `cache_root/store/`; with
+  ///        THUMTOO_STORE_ROOT=1 Store at `cache_root/` and legacy under
+  ///        `cache_root/legacy/` (HOST_CUTOVER.md).
   static std::unique_ptr<Client> open(const std::filesystem::path& cache_root,
                                       Executor executor = {},
                                       unsigned worker_threads = 0,

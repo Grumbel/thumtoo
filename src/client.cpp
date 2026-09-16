@@ -99,6 +99,10 @@ bool tiles_only_mode() {
   return true;  // default tiles-first
 }
 
+/// Experimental: Store at cache_root; legacy Database+BlobStore under cache_root/legacy/.
+/// Default dual-path keeps Store under cache_root/store/ (no collision with schema 1–4).
+bool store_root_layout() { return env_flag_on("THUMTOO_STORE_ROOT"); }
+
 std::FILE* debug_file() {
   static std::FILE* fp = []() -> std::FILE* {
     const char* xdg = std::getenv("XDG_CACHE_HOME");
@@ -225,15 +229,25 @@ Client::~Client() {
 std::unique_ptr<Client> Client::open(const std::filesystem::path& cache_root,
                                      Executor executor, unsigned worker_threads,
                                      const std::filesystem::path& data_root) {
-  auto db = std::make_unique<Database>(Database::open(cache_root));
-  auto blobs = std::make_unique<BlobStore>(BlobStore::open(cache_root));
-  // Dual-path: redesign Store must not share legacy index.sqlite (schema 1–4).
-  // Layout: cache_root/store/{index,bulk}.sqlite ; user under data_root (or
-  // cache_root when data_root is empty).
+  // Layouts (docs/HOST_CUTOVER.md):
+  //  default:     legacy at cache_root/; Store at cache_root/store/
+  //  STORE_ROOT:  Store at cache_root/; legacy at cache_root/legacy/
+  //               (top-level Store files; no schema clash with legacy 1–4)
+  const bool root_store = store_root_layout();
+  const std::filesystem::path legacy_root =
+      root_store ? (cache_root / "legacy") : cache_root;
+  auto db = std::make_unique<Database>(Database::open(legacy_root));
+  auto blobs = std::make_unique<BlobStore>(BlobStore::open(legacy_root));
   Store::Paths sp;
-  sp.cache_root = cache_root / "store";
+  sp.cache_root = root_store ? cache_root : (cache_root / "store");
   sp.data_root = data_root.empty() ? cache_root : data_root;
   auto store = std::make_unique<Store>(Store::open(sp));
+  if (debug_enabled()) {
+    dbg("Client::open cache=%s layout=%s legacy=%s store=%s data=%s",
+        cache_root.string().c_str(), root_store ? "store-root" : "dual-path",
+        legacy_root.string().c_str(), sp.cache_root.string().c_str(),
+        sp.data_root.string().c_str());
+  }
   return std::unique_ptr<Client>(
       new Client(std::move(db), std::move(blobs), std::move(store),
                  std::move(executor), worker_threads));
