@@ -3382,7 +3382,7 @@ void Client::handle_ensure_pixels(
             if (!session_best_level || lvl->max_edge > session_best_level->max_edge) {
               session_best_level = *lvl;
             }
-            if (job.full_native || !tiles_only_mode()) {
+            if (!tiles_only_mode()) {
               blobs_->put_level(cid, lvl->max_edge, lvl->frame_idx, lvl->width,
                                 lvl->height, lvl->codec, lvl->quality,
                                 lvl->bytes.data(), lvl->bytes.size());
@@ -3480,8 +3480,8 @@ void Client::handle_ensure_pixels(
         if (!session_best_level || lvl.max_edge > session_best_level->max_edge) {
           session_best_level = lvl;
         }
-        // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
-        if (!job.full_native && tiles_only_mode()) continue;
+        // THUMTOO_TILES_ONLY / tiles-first: skip all durable levels (tiles remain).
+        if (tiles_only_mode()) continue;  // no durable levels (soft or full)
         blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
                           lvl.width, lvl.height, lvl.codec, lvl.quality,
                           lvl.bytes.data(), lvl.bytes.size());
@@ -3532,8 +3532,8 @@ void Client::handle_ensure_pixels(
           if (!session_best_level || lvl.max_edge > session_best_level->max_edge) {
             session_best_level = lvl;
           }
-          // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
-          if (!job.full_native && tiles_only_mode()) continue;
+          // THUMTOO_TILES_ONLY / tiles-first: skip all durable levels (tiles remain).
+          if (tiles_only_mode()) continue;  // no durable levels (soft or full)
           blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
                             lvl.width, lvl.height, lvl.codec, lvl.quality,
                             lvl.bytes.data(), lvl.bytes.size());
@@ -3570,8 +3570,8 @@ void Client::handle_ensure_pixels(
         if (!session_best_level || lvl.max_edge > session_best_level->max_edge) {
           session_best_level = lvl;
         }
-        // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
-        if (!job.full_native && tiles_only_mode()) continue;
+        // THUMTOO_TILES_ONLY / tiles-first: skip all durable levels (tiles remain).
+        if (tiles_only_mode()) continue;  // no durable levels (soft or full)
         blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
                           lvl.width, lvl.height, lvl.codec, lvl.quality,
                           lvl.bytes.data(), lvl.bytes.size());
@@ -3608,8 +3608,8 @@ void Client::handle_ensure_pixels(
         if (!session_best_level || lvl.max_edge > session_best_level->max_edge) {
           session_best_level = lvl;
         }
-        // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
-        if (!job.full_native && tiles_only_mode()) continue;
+        // THUMTOO_TILES_ONLY / tiles-first: skip all durable levels (tiles remain).
+        if (tiles_only_mode()) continue;  // no durable levels (soft or full)
         blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
                           lvl.width, lvl.height, lvl.codec, lvl.quality,
                           lvl.bytes.data(), lvl.bytes.size());
@@ -3648,8 +3648,8 @@ void Client::handle_ensure_pixels(
           if (!session_best_level || lvl.max_edge > session_best_level->max_edge) {
             session_best_level = lvl;
           }
-          // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
-          if (!job.full_native && tiles_only_mode()) continue;
+          // THUMTOO_TILES_ONLY / tiles-first: skip all durable levels (tiles remain).
+          if (tiles_only_mode()) continue;  // no durable levels (soft or full)
           blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
                              lvl.width, lvl.height, lvl.codec, lvl.quality,
                              lvl.bytes.data(), lvl.bytes.size());
@@ -3694,8 +3694,8 @@ void Client::handle_ensure_pixels(
         if (!session_best_level || lvl.max_edge > session_best_level->max_edge) {
           session_best_level = lvl;
         }
-        // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
-        if (!job.full_native && tiles_only_mode()) continue;
+        // THUMTOO_TILES_ONLY / tiles-first: skip all durable levels (tiles remain).
+        if (tiles_only_mode()) continue;  // no durable levels (soft or full)
         blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
                            lvl.width, lvl.height, lvl.codec, lvl.quality,
                            lvl.bytes.data(), lvl.bytes.size());
@@ -3732,8 +3732,8 @@ void Client::handle_ensure_pixels(
           if (!session_best_level || lvl.max_edge > session_best_level->max_edge) {
             session_best_level = lvl;
           }
-          // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
-          if (!job.full_native && tiles_only_mode()) continue;
+          // THUMTOO_TILES_ONLY / tiles-first: skip all durable levels (tiles remain).
+          if (tiles_only_mode()) continue;  // no durable levels (soft or full)
           blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
                              lvl.width, lvl.height, lvl.codec, lvl.quality,
                              lvl.bytes.data(), lvl.bytes.size());

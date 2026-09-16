@@ -66,25 +66,24 @@ tree); do not invent a second PreferCache retry loop.
 3. Remove dual-write helpers (`mirror_*`) and legacy `Database` open (Store-only).
 4. Migration: **no** ladder→tile conversion (PLAN non-goal); cold rebuild tiles.
 
-`full_native` still *may* write legacy `levels` when no tile pyramid covers the
-request. When a complete tile scale covers the Full want, EnsurePixels replies
-via TileSynth (full-from-tiles) and skips a soft/full ladder encode for that job.
-Soft/overview no longer grow the levels table by default.
+Under tiles-first, EnsurePixels does not write durable `levels` for soft *or*
+full_native. Session encode + TileSynth (when the pyramid covers the want) supply
+the reply. Opt in to durable levels with `THUMTOO_SOFT_LEVELS=1`.
 
 ---
 
 ## 4. Soft-level write policy (tiles-first default)
 
-**Default (thumtoo ≥ 234):** soft/overview **levels are not written**. Tiles still
-persist. `full_native` levels still write when no tile pyramid covers the request;
-otherwise Full EnsurePixels uses TileSynth (full-from-tiles, ≥243). Soft encodes
-in memory when needed and replies via session bytes or TileSynth.
+**Default (thumtoo ≥ 234, extended ≥244):** **no durable `levels` writes** (soft,
+overview, or full_native). Tiles still persist. Full EnsurePixels replies via
+session encode and/or TileSynth when a pyramid covers the want. Restore durable
+levels with `THUMTOO_SOFT_LEVELS=1` or `THUMTOO_TILES_ONLY=0`.
 
 | Variable | Effect |
 |----------|--------|
 | *(unset)* | Tiles-first — no soft/overview level writes |
-| **`THUMTOO_SOFT_LEVELS=1`** | Restore durable soft/overview level writes |
-| **`THUMTOO_TILES_ONLY=0`** | Same as soft levels on (explicit opt-out of tiles-first) |
+| **`THUMTOO_SOFT_LEVELS=1`** | Restore durable soft/overview/**full** level writes |
+| **`THUMTOO_TILES_ONLY=0`** | Same (explicit opt-out of tiles-first) |
 | **`THUMTOO_TILES_ONLY=1`** | Explicit tiles-first (same as default) |
 | **`THUMTOO_STORE_ROOT=1`** | Store at `$cache/`; legacy under `$cache/legacy/` |
 
@@ -102,6 +101,7 @@ Pair with biltoo ≥1007 (`scheduleSoftPixels`) for PreferCache when tiles exist
 | Tiles-first soft writes (default) | **On** (thumtoo-234; opt out via `THUMTOO_SOFT_LEVELS=1`) |
 | Top-level Store layout (`THUMTOO_STORE_ROOT`) | **Experimental** (≥237; migrate ≥238; `test_store_root`) |
 | Full-from-tiles (EnsurePixels Full) | **On** when tile pyramid covers want (≥243) |
+| Tiles-first skips full_native levels | **On** (≥244; same env as soft) |
 | Drop legacy Database open (Store-only) | **Next** after STORE_ROOT soak |
 
 Soft ladder rows may still exist in older caches; new soft encodes no longer

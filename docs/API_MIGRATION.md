@@ -73,8 +73,10 @@ cache wipe.
    Covered by `test_store_root` (fresh layout + dual-path migrate).
 7. ~~Full-from-tiles for Full EnsurePixels~~ when pyramid covers the request
    (level_adequate); no longer blocks TileSynth solely because `full_native`.
-8. Drop legacy Database/BlobStore open (Store-only Client).
-9. Hosts pass `$XDG_DATA_HOME/thumtoo` as `data_root` (biltoo does).
+8. ~~Tiles-first skips durable full_native levels~~ (same default as soft; session
+   + tiles reply). Restore with `THUMTOO_SOFT_LEVELS=1`.
+9. Drop legacy Database/BlobStore open (Store-only Client).
+10. Hosts pass `$XDG_DATA_HOME/thumtoo` as `data_root` (biltoo does).
 
 Host checklist: [HOST_CUTOVER.md](HOST_CUTOVER.md).
 

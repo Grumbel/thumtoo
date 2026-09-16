@@ -2,6 +2,32 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-244-tiles-first-no-full-levels.** Tiles-first skips full_native levels too.
+Prior: **243**.
+
+### Change
+- `tiles_only_mode()`: no durable put_level for soft *or* full_native
+- Full still replies via session encode / TileSynth (full-from-tiles)
+- HOST_CUTOVER / API_MIGRATION updated
+
+### Next
+- Store-only Client (legacy open optional / skipped)
+- Soak STORE_ROOT with biltoo
+
+### Apply
+```bash
+git pull /path/to/thumtoo-244-tiles-first-no-full-levels.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **244**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-243-full-from-tiles.** Full EnsurePixels accepts TileSynth when adequate.
 Prior: **242**.
 
