@@ -57,9 +57,11 @@ tree); do not invent a second PreferCache retry loop.
 
 1. ~~Stop writing durable soft `levels` / soft ladder~~ (**done** ≥234; default
    tiles-first; `THUMTOO_SOFT_LEVELS=1` restores).
-2. Open Store at top-level `$cache/index.sqlite` + `bulk.sqlite` (epoch ≥ 100);
-   remove `cache_root/store/` subdirectory layout.
-3. Remove dual-write helpers (`mirror_*`) and legacy `Database` open.
+2. **Top-level Store (experimental ≥237):** `THUMTOO_STORE_ROOT=1` places Store at
+   `$cache/{index,bulk}.sqlite` and legacy Database/BlobStore under
+   `$cache/legacy/`. Default remains dual-path (`$cache/store/` + top-level legacy).
+   Do not mix layouts on one cache dir without migrating files.
+3. Remove dual-write helpers (`mirror_*`) and legacy `Database` open (Store-only).
 4. Migration: **no** ladder→tile conversion (PLAN non-goal); cold rebuild tiles.
 
 `full_native` levels still use the legacy `levels` table until a full-from-tiles
@@ -79,6 +81,7 @@ needed and replies via session bytes or TileSynth.
 | **`THUMTOO_SOFT_LEVELS=1`** | Restore durable soft/overview level writes |
 | **`THUMTOO_TILES_ONLY=0`** | Same as soft levels on (explicit opt-out of tiles-first) |
 | **`THUMTOO_TILES_ONLY=1`** | Explicit tiles-first (same as default) |
+| **`THUMTOO_STORE_ROOT=1`** | Store at `$cache/`; legacy under `$cache/legacy/` |
 
 Pair with biltoo ≥1007 (`scheduleSoftPixels`) for PreferCache when tiles exist.
 
@@ -92,7 +95,8 @@ Pair with biltoo ≥1007 (`scheduleSoftPixels`) for PreferCache when tiles exist
 | biltoo `data_root` | **Done** (biltoo-1004; XDG data root) |
 | biltoo tile-native PreferCache / filmstrip | **Partial** (1005 Prefer plateau; 1006–1007 `scheduleSoftPixels`) |
 | Tiles-first soft writes (default) | **On** (thumtoo-234; opt out via `THUMTOO_SOFT_LEVELS=1`) |
-| Drop legacy levels table / index open | **Next** — Store top-level layout; remove dual-write helpers |
+| Top-level Store layout (`THUMTOO_STORE_ROOT`) | **Experimental** (thumtoo-237) |
+| Drop legacy Database open (Store-only) | **Next** after STORE_ROOT soak |
 
 Soft ladder rows may still exist in older caches; new soft encodes no longer
 persist them unless soft levels are explicitly re-enabled.

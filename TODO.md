@@ -2,6 +2,32 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-237-store-root-layout.** THUMTOO_STORE_ROOT experimental layout.
+Prior: **236**.
+
+### Change
+- `THUMTOO_STORE_ROOT=1`: Store at `cache_root/`; legacy Database+BlobStore at
+  `cache_root/legacy/` (no schema clash)
+- Default unchanged: Store under `cache_root/store/`, legacy at top-level
+
+### Next
+- Soak STORE_ROOT with biltoo; migrate existing dual-path caches if desired
+- Store-only Client (no legacy open) after full_native has a non-levels path
+
+### Apply
+```bash
+git pull /path/to/thumtoo-237-store-root-layout.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **237**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-236-gc-soft-levels.** thumtoo-gc --soft-levels purges soft ladder rows.
 Prior: **235**.
 
