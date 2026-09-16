@@ -41,6 +41,8 @@ Classic dual-path trees are migrated once at open: top-level schema-4 files
 - `has_legacy()` and `Client::db()` were removed (≥268 / ≥274).
 - Layout helpers `store_only_mode` / `dual_write_to_store_enabled` were removed (≥275).
 - Store GC: `forget_uri`, `forget_uri_prefix`, `purge_orphan_blobs` (≥270–275).
+- Durable LQIP (`blob_lqip`, page-aware ≥280); text/outline tables (≥279).
+- `list_locators` / `list_locators_by_uri_prefix` / `list_locators_like` (≥278–279).
 
 ## Schema-4 classes (deleted ≥272)
 

@@ -406,16 +406,44 @@ void Store::seed_lookups() {
 }
 
 void Store::ensure_optional_index_tables() {
-  exec_index(
-      "CREATE TABLE IF NOT EXISTS blob_lqip ("
-      "  blob_id INTEGER NOT NULL REFERENCES blob(id) ON DELETE CASCADE,"
-      "  page_1based INTEGER NOT NULL DEFAULT 0,"
-      "  kind    INTEGER NOT NULL DEFAULT 0,"
-      "  data    BLOB NOT NULL,"
-      "  PRIMARY KEY (blob_id, page_1based)"
-      ");");
-  // Older single-key blob_lqip (blob_id PK only): leave in place if present;
-  // new writes go to the composite-key form. Reads try composite first.
+  // Prefer composite-key blob_lqip. If a legacy single-column table exists
+  // (blob_id PK only), rebuild it and copy page-0 rows.
+  {
+    sqlite3_stmt* st = nullptr;
+    const bool has_page =
+        sqlite3_prepare_v2(index_, "SELECT page_1based FROM blob_lqip LIMIT 0;",
+                           -1, &st, nullptr) == SQLITE_OK;
+    if (st) sqlite3_finalize(st);
+    if (!has_page) {
+      // Table missing or legacy shape — migrate via rename when present.
+      sqlite3_exec(index_, "ALTER TABLE blob_lqip RENAME TO blob_lqip_legacy;",
+                   nullptr, nullptr, nullptr);
+      exec_index(
+          "CREATE TABLE IF NOT EXISTS blob_lqip ("
+          "  blob_id INTEGER NOT NULL REFERENCES blob(id) ON DELETE CASCADE,"
+          "  page_1based INTEGER NOT NULL DEFAULT 0,"
+          "  kind INTEGER NOT NULL DEFAULT 0,"
+          "  data BLOB NOT NULL,"
+          "  PRIMARY KEY (blob_id, page_1based)"
+          ");");
+      sqlite3_exec(
+          index_,
+          "INSERT OR IGNORE INTO blob_lqip(blob_id, page_1based, kind, data) "
+          "SELECT blob_id, 0, kind, data FROM blob_lqip_legacy;",
+          nullptr, nullptr, nullptr);
+      sqlite3_exec(index_, "DROP TABLE IF EXISTS blob_lqip_legacy;", nullptr,
+                   nullptr, nullptr);
+    } else {
+      exec_index(
+          "CREATE TABLE IF NOT EXISTS blob_lqip ("
+          "  blob_id INTEGER NOT NULL REFERENCES blob(id) ON DELETE CASCADE,"
+          "  page_1based INTEGER NOT NULL DEFAULT 0,"
+          "  kind INTEGER NOT NULL DEFAULT 0,"
+          "  data BLOB NOT NULL,"
+          "  PRIMARY KEY (blob_id, page_1based)"
+          ");");
+    }
+  }
   exec_index(
       "CREATE TABLE IF NOT EXISTS page_text_layer ("
       "  blob_id INTEGER NOT NULL REFERENCES blob(id) ON DELETE CASCADE,"

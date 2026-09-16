@@ -13,11 +13,12 @@ re-decode the same files on every session.
 It is a **library first** (optional D-Bus service later). It is **not** an
 image viewer and **not** a full file manager.
 
-**Cache-first, source-read-only:** all durable data lives under
-`$XDG_CACHE_HOME/thumtoo/`. Source trees are never modified (no xattrs, no
-sidecars). Browse paths can run from cache alone until detail or refresh needs
-source I/O. Content hashes couple previews and tags to file bytes across
-renames; http(s) URLs are a later extension.
+**Cache-first, source-read-only:** durable data lives under
+`$XDG_CACHE_HOME/thumtoo/` (Store `index.sqlite` / `bulk.sqlite`; optional
+relocated pre-cutover files under `legacy/`). Tags and user data use
+`$XDG_DATA_HOME/thumtoo/` when the host passes `data_root`. Source trees are
+never modified. Content hashes couple tiles and tags to file bytes across
+renames.
 
 | Concern | thumtoo | Not thumtoo |
 |---------|---------|-------------|
@@ -46,10 +47,14 @@ Sister docs inside those trees (when present): biltoo `DOMAIN.md` / `IDENTITY.md
 
 ## Status
 
-**Phases 1–2 done; Phase 4 tiles available.** WAL SQLite index + `blobs.sqlite`
-ladder (JXL) and optional Galapix-style 256² JPEG tiles. Build with CMake or
-`nix develop`. Details: [TODO.md](TODO.md), [TILES.md](TILES.md).
-Biltoo: [INTEGRATION.md](INTEGRATION.md). Galapix: [INTEGRATION_GALAPIX.md](INTEGRATION_GALAPIX.md).
+**Store-only (schema ≥ 100).** Durable index is redesign Store (`index.sqlite` +
+`bulk.sqlite` at the cache root by default). Schema-4 ladder `Database` /
+`BlobStore` sources are gone. Soft previews are session/tiles-first; durable
+tiles, tags, directory snapshots, LQIP, and text/outline live on Store.
+
+Build with CMake or `nix develop`. Host cutover: [docs/HOST_CUTOVER.md](docs/HOST_CUTOVER.md).
+Details: [TODO.md](TODO.md), [TILES.md](TILES.md), [ARCHITECTURE.md](ARCHITECTURE.md).
+Biltoo: [INTEGRATION.md](INTEGRATION.md).
 
 ## Name
 
@@ -60,8 +65,8 @@ preview ladder, archive listing helpers)—not only 128² file-manager icons.
 
 ```bash
 cmake -B build && cmake --build build && ctest --test-dir build
-./build/thumtoo-status --cache ~/.cache/thumtoo summary
-./build/thumtoo-archive list /path/to/book.cbz
+./build/thumtoo-status --cache ~/.cache/thumtoo
+./build/thumtoo-gc --cache ~/.cache/thumtoo --store-summary
 ```
 
 Use `nix develop` for the toolchain: **libvips** and **libjxl** are required (no stb/codec fallbacks). See `flake.nix`.

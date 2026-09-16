@@ -2,6 +2,29 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-283-readme-lqip-migrate.** README Store-only; migrate legacy blob_lqip shape.
+Prior: **282**.
+
+### Change
+- README status/cache/tools reflect Store-only (no blobs.sqlite ladder)
+- API_MIGRATION notes LQIP / text / list APIs
+- On open: upgrade single-column `blob_lqip` → `(blob_id, page_1based)` with page-0 copy
+
+### Apply
+```bash
+git pull /path/to/thumtoo-283-readme-lqip-migrate.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **283**
+- [x] store tests pass
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-282-locator-row-init.** Fix -Wmaybe-uninitialized on list_locators.
 Prior: **281**.
 
