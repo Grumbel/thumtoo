@@ -2,6 +2,28 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-295-status-path-tiles.** Rich path status: tiles/LQIP/missing.
+Prior: **293**.
+
+### Change
+- `thumtoo-status path URI|PATH`: LQIP, min/max scale, per-scale have/expected/missing
+- Document opaque `mtime_ticks` (file_clock fingerprint; may be negative — not Unix ns)
+- Optional wall-clock `file_mtime` when path resolves
+
+### Apply
+```bash
+git pull /path/to/thumtoo-295-status-path-tiles.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **295**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-293-tiles-before-probe-starve.** Interactive tiles beat ProbeSize claim.
 Prior: **292**.
 
