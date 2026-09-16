@@ -128,7 +128,8 @@ Feature macros: new schema epoch; `TILES_ONLY`; user-store present.
 read/tag/explicit via `set_container_member_blob`); `ensure_document_media` /
 `ensure_page_region`.  
 **Phase D status:** complete (directory, user overlays, http_body, tile list).  
-**Phase E (library dual-path):** complete for 0.1.0 spine — probe/tile/tag/
+**Phase E (library dual-path → Store-only default):** complete (≥257). Dual-path
+opt-out: `THUMTOO_STORE_ONLY=0`. Host cutover: [HOST_CUTOVER.md](HOST_CUTOVER.md).
 directory/archive dual-write; tile + size/meta + archive TOC read fallback;
 tiles-first soft encode. **Soft/overview level writes off by default** (≥234;
 `THUMTOO_SOFT_LEVELS=1` restores). See [API_MIGRATION.md](API_MIGRATION.md),
@@ -196,12 +197,12 @@ Otherwise implement through Phase E.
 ## 8. Success criteria (0.1.0 library spine)
 
 - [x] New empty DBs open; old epoch refused or wiped with clear message.  
-- [x] Local image: locator → blob/hash → media → full region → tiles (dual-path).  
+- [x] Local image: locator → blob/hash → media → full region → tiles (Store-only default; dual-path opt-out).  
 - [x] Soft pixel fetch works for biltoo via tiles (compat TileSynth + Store).  
 - [x] Zip member open via `//archive:`; member hash after probe; Store container TOC dual-write.  
 - [x] PDF page via `//page:N`; tiles keyed by page region (dual-write).  
 - [x] Directory list returns snapshot without mandatory FS walk on first paint (Client → Store).  
-- [x] Tags on `blob:sha256:` survive index/bulk delete (user.sqlite + dual-write).  
+- [x] Tags on `blob:sha256:` survive index/bulk delete (user.sqlite; Store-only tags).  
 - [x] No `levels` table in the new schema (Store epoch ≥ 100 is tiles-only; legacy levels remain on dual-path until host cutover).
 
 ---
@@ -216,4 +217,5 @@ Otherwise implement through Phase E.
 
 ---
 
-*End of final plan. Next step: implement Phase A.*
+*End of final plan. Library spine Store-only default landed (≥257); remaining
+work is dual-path deprecation and host tile-native polish.*

@@ -2,6 +2,33 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-261-plan-store-only-complete.** PLAN/DATABASE mark Store-only default done.
+Prior: **260**.
+
+### Change
+- PLAN Phase E + success criteria: Store-only default
+- DATABASE.md status; HOST_CUTOVER dual-path opt-out row
+- `mirror_probe_to_store` documented as dual-path only
+
+### Next
+- Dual-path deprecation window; then remove mirror_probe
+- Store GC / maintenance tools when needed
+- Host tile-native polish (biltoo)
+
+### Apply
+```bash
+git pull /path/to/thumtoo-261-plan-store-only-complete.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **261**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-260-store-meta-ready.** Store meta Ready when durable tiles exist.
 Prior: **259**.
 

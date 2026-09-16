@@ -109,6 +109,7 @@ Pair with biltoo ≥1007 (`scheduleSoftPixels`) for PreferCache when tiles exist
 | Full-from-tiles (EnsurePixels Full) | **On** when tile pyramid covers want (≥243) |
 | Tiles-first skips full_native levels | **On** (≥244; same env as soft) |
 | Store-only (`THUMTOO_STORE_ONLY`) | **Default on** (≥257; opt out `=0`) |
+| Dual-path (`THUMTOO_STORE_ONLY=0`) | **Opt-out only** (soft levels / dual-write) |
 
 Soft ladder rows may still exist in older caches; new soft encodes no longer
 persist them unless soft levels are explicitly re-enabled.
