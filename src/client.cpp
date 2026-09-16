@@ -715,14 +715,53 @@ std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
 }
 
 std::optional<std::vector<std::uint8_t>> Client::get_lqip(
-    std::string_view /*uri*/) const {
-  // LQIP lived on legacy Database; Store has no LQIP table yet.
-  return std::nullopt;
+    std::string_view uri) const {
+  if (!store_ || uri.empty()) return std::nullopt;
+  auto loc = store_->find_locator(uri);
+  if (!loc || !loc->blob_id) return std::nullopt;
+  return store_->get_blob_lqip(*loc->blob_id);
 }
 
 std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
-    std::string_view /*uri*/) {
-  return std::nullopt;
+    std::string_view uri) {
+  if (!store_ || uri.empty()) return std::nullopt;
+  if (auto hit = get_lqip(uri)) return hit;
+
+  auto loc = store_->find_locator(uri);
+  // Need a blob_id to attach LQIP; probe soft path may have created one.
+  if (!loc || !loc->blob_id) {
+    // Plain file:// image: hash + locator on demand.
+    auto path = path_from_file_uri(uri);
+    if (!path || !std::filesystem::is_regular_file(*path)) return std::nullopt;
+    auto bytes = lqip_thumbhash_from_file(*path);
+    if (bytes.empty()) return std::nullopt;
+    // Create blob row for this file if missing.
+    const auto hex = sha256_file_hex(*path);
+    if (hex.empty()) return std::nullopt;
+    auto digest = Store::parse_sha256_digest(hex);
+    if (!digest) return std::nullopt;
+    std::int64_t blob_id = 0;
+    if (auto existing = store_->find_blob_by_hash(HashAlgoId::Sha256, *digest)) {
+      blob_id = *existing;
+    } else {
+      blob_id = store_->insert_blob(file_size_bytes(*path), BlobStatus::Ok);
+      store_->put_hash(blob_id, HashAlgoId::Sha256, *digest);
+    }
+    (void)store_->upsert_locator(uri, blob_id, file_size_bytes(*path),
+                                 file_mtime_ns(*path));
+    store_->put_blob_lqip(blob_id, kLqipKindThumbHash, bytes);
+    return bytes;
+  }
+
+  // Have blob: prefer encode from file when URI is file://, else skip.
+  std::vector<std::uint8_t> bytes;
+  if (auto path = path_from_file_uri(uri);
+      path && std::filesystem::is_regular_file(*path)) {
+    bytes = lqip_thumbhash_from_file(*path);
+  }
+  if (bytes.empty()) return std::nullopt;
+  store_->put_blob_lqip(*loc->blob_id, kLqipKindThumbHash, bytes);
+  return bytes;
 }
 
 

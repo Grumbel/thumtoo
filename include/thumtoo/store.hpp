@@ -127,6 +127,13 @@ class Store {
   void set_blob_size(std::int64_t id, std::int64_t size);
   void set_blob_status(std::int64_t id, BlobStatus status);
 
+  // --- blob_lqip (durable ThumbHash/Handsum placeholder; keyed by blob) ---
+  void put_blob_lqip(std::int64_t blob_id, int kind,
+                     std::span<const std::uint8_t> data);
+  [[nodiscard]] std::optional<std::vector<std::uint8_t>> get_blob_lqip(
+      std::int64_t blob_id) const;
+  [[nodiscard]] std::optional<int> get_blob_lqip_kind(std::int64_t blob_id) const;
+
   // --- blob_hash ---
   /// Store digest (raw bytes). Replaces existing digest for (blob, algo).
   void put_hash(std::int64_t blob_id, HashAlgoId algo,
@@ -578,6 +585,7 @@ class Store {
   void exec_bulk(const char* sql) const;
   void exec_user(const char* sql) const;
   void migrate_or_init_index();
+  void ensure_optional_index_tables();
   void migrate_or_init_bulk();
   void migrate_or_init_user();
   void seed_lookups();

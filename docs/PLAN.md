@@ -136,8 +136,8 @@ See [API_MIGRATION.md](API_MIGRATION.md).
 forget-uri / uri-prefix / orphan GC; layout helpers cleaned. DESIGN ladder
 sections are archival.
 
-**Next:** host tile-native polish (biltoo PreferCache / filmstrip); optional
-Store features (durable LQIP, richer directory GC).
+**Next:** host tile-native polish (biltoo PreferCache / filmstrip); richer
+directory GC. Durable LQIP on Store: tip **277** (`blob_lqip`).
 
 ### Phase B — images
 

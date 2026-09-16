@@ -2,6 +2,30 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-277-store-durable-lqip.** Durable ThumbHash LQIP on Store blob_lqip.
+Prior: **276**.
+
+### Change
+- `blob_lqip` table (CREATE IF NOT EXISTS; no schema version bump)
+- `Store::{put,get}_blob_lqip` / `get_blob_lqip_kind`
+- `Client::get_lqip` / `ensure_lqip` for `file://` images (ThumbHash via `lqip_thumbhash_from_file`)
+- Existing schema-100 caches gain the table on open
+
+### Apply
+```bash
+git pull /path/to/thumtoo-277-store-durable-lqip.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **277**
+- [x] store / client / store_only tests pass
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-276-cutover-docs-purge-prefix.** Phase E docs closed; Client::purge_uri_prefix.
 Prior: **275**.
 

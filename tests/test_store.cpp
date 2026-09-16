@@ -332,6 +332,17 @@ int main() {
         expect(store.find_locator("file:///tmp/other.jpg").has_value(),
                "other kept");
       }
+
+      // blob_lqip durable placeholder
+      {
+        const auto bid = store.insert_blob(3, thumtoo::BlobStatus::Ok);
+        const std::vector<std::uint8_t> hash = {1, 2, 3, 4, 5};
+        store.put_blob_lqip(bid, 1, hash);
+        auto got = store.get_blob_lqip(bid);
+        expect(got && *got == hash, "lqip roundtrip");
+        expect(store.get_blob_lqip_kind(bid) && *store.get_blob_lqip_kind(bid) == 1,
+               "lqip kind");
+      }
     }
 
     // Re-create after deleting index+bulk (simulates operator cache wipe).
