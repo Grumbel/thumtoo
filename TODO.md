@@ -2,6 +2,31 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-253-store-only-public-api-guards.** Null-safe public APIs under STORE_ONLY.
+Prior: **252**.
+
+### Change
+- `prepare_paths` Store-only branch (no provisional locators)
+- Archive TOC / document index / text / outline / invalidate_tile safe without legacy
+
+### Next
+- Host soak: `THUMTOO_STORE_ONLY=1` with biltoo
+- After soak: default STORE_ONLY; delete `mirror_*` dual-write
+
+### Apply
+```bash
+git pull /path/to/thumtoo-253-store-only-public-api-guards.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **253**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-252-store-only-tags-gate-mirror.** Store-only tags; gate dual-write.
 Prior: **251**.
 

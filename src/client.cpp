@@ -1405,10 +1405,11 @@ void Client::request_raster(RasterRequest req, PixelsCallback cb) {
 
 
 void Client::invalidate_tile(std::string_view uri, int scale, int x, int y) {
-  auto meta = db_->meta_for_uri(uri);
-  if (!meta) return;
-  db_->delete_tile(meta->content_id, scale, x, y);
-  blobs_->delete_tile(meta->content_id, scale, x, y);
+  if (!db_ || !blobs_) return;
+  if (auto meta = db_->meta_for_uri(uri)) {
+    db_->delete_tile(meta->content_id, scale, x, y);
+    blobs_->delete_tile(meta->content_id, scale, x, y);
+  }
 }
 
 void Client::request_tile(std::string uri, int scale, int x, int y,
@@ -1821,6 +1822,46 @@ void Client::request_size(std::string uri, SizeCallback cb) {
 
 size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
                              SizeCallback on_each) {
+  // STORE_ONLY: no provisional locators — enqueue request_size for unknowns.
+  if (!db_) {
+    size_t n = 0;
+    for (const auto& p : paths) {
+      std::error_code ec;
+      auto abs = std::filesystem::absolute(p, ec);
+      if (ec) continue;
+      if (!std::filesystem::is_regular_file(abs, ec) || ec) continue;
+      if (is_likely_archive_path(abs)) {
+        auto entries = refresh_archive_toc(abs);
+        for (const auto& e : entries) {
+          if (e.member_path.empty()) continue;
+          const auto uri = archive_uri(abs, e.member_path);
+          if (auto sm = meta_from_store(uri); sm && sm->size) {
+            if (on_each) {
+              SizeReply r;
+              r.size = sm->size;
+              on_each(uri, std::move(r));
+            }
+            continue;
+          }
+          request_size(uri, on_each);
+          ++n;
+        }
+        continue;
+      }
+      const auto uri = file_uri_from_path(abs);
+      if (auto sm = meta_from_store(uri); sm && sm->size) {
+        if (on_each) {
+          SizeReply r;
+          r.size = sm->size;
+          on_each(uri, std::move(r));
+        }
+        continue;
+      }
+      request_size(uri, on_each);
+      ++n;
+    }
+    return n;
+  }
   // Collect URIs that need a probe first so callers know the job total before
   // any completion callbacks fire (worker may run concurrently).
   struct Pending {
@@ -2021,10 +2062,15 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
 
 std::vector<Database::ArchiveEntryRow> Client::get_archive_entries(
     std::string_view archive_uri) const {
-  auto rows = db_->list_archive_entries(archive_uri);
-  if (!rows.empty() || !store_) return rows;
+  std::vector<Database::ArchiveEntryRow> rows;
+  if (db_) {
+    rows = db_->list_archive_entries(archive_uri);
+    if (!rows.empty() || !store_) return rows;
+  } else if (!store_) {
+    return rows;
+  }
 
-  // Dual-path: Store container_member when legacy TOC is empty.
+  // Store container_member when legacy TOC is empty / STORE_ONLY.
   auto resolve_container = [&]() -> std::optional<std::int64_t> {
     if (auto loc = store_->find_locator(archive_uri)) {
       if (loc->blob_id) return *loc->blob_id;
@@ -2075,9 +2121,11 @@ std::vector<Database::ArchiveEntryRow> Client::refresh_archive_toc(
     r.uncompressed_size = m.uncompressed_size;
     rows.push_back(std::move(r));
   }
-  db_->replace_archive_entries(uri, rows);
+  if (db_) {
+    db_->replace_archive_entries(uri, rows);
+  }
 
-  // Dual-path: Store container_member TOC (no member hash until probe/read).
+  // Store container_member TOC (no member hash until probe/read).
   if (auto cid = ensure_store_container_blob(archive_path)) {
     try {
       std::vector<Store::ContainerMemberRow> members;
@@ -2136,7 +2184,9 @@ std::optional<int> Client::refresh_document_index(
       std::chrono::duration_cast<std::chrono::milliseconds>(
           std::chrono::system_clock::now().time_since_epoch())
           .count());
-  db_->put_document_index(row);
+  if (db_) {
+    db_->put_document_index(row);
+  }
   return count;
 }
 
@@ -2158,11 +2208,14 @@ std::optional<int> Client::document_page_count(
   const auto size = file_size_bytes(use);
   const auto mtime = file_mtime_ns(use);
 
-  if (auto cached = db_->get_document_index(uri, layout_key)) {
-    const bool size_ok = !size || !cached->size || *size == *cached->size;
-    const bool mtime_ok = !mtime || !cached->mtime_ns || *mtime == *cached->mtime_ns;
-    if (cached->page_count > 0 && size_ok && mtime_ok) {
-      return cached->page_count;
+  if (db_) {
+    if (auto cached = db_->get_document_index(uri, layout_key)) {
+      const bool size_ok = !size || !cached->size || *size == *cached->size;
+      const bool mtime_ok =
+          !mtime || !cached->mtime_ns || *mtime == *cached->mtime_ns;
+      if (cached->page_count > 0 && size_ok && mtime_ok) {
+        return cached->page_count;
+      }
     }
   }
   return refresh_document_index(use, kind, layout ? layout : &epub_layout);
@@ -5264,6 +5317,7 @@ std::optional<std::string> content_id_for_text_uri(thumtoo::Client& client,
 
 std::optional<PageTextLayer> Client::get_page_text_layer(
     std::string_view uri) const {
+  if (!db_) return std::nullopt;
   const int page = page_for_uri(uri);
   if (page < 1) return std::nullopt;
   std::optional<std::string> id;
@@ -5293,6 +5347,7 @@ std::optional<PageTextLayer> Client::ensure_page_text_layer(
   if (auto hit = get_page_text_layer(uri)) return hit;
   auto layer = extract_page_text_layer(uri);
   if (!layer) return std::nullopt;
+  if (!db_) return layer;  // session-only under STORE_ONLY
   const int page = page_for_uri(uri);
   auto id = content_id_for_text_uri(*this, uri);
   if (id && page >= 1) {
@@ -5306,6 +5361,7 @@ std::optional<PageTextLayer> Client::ensure_page_text_layer(
 
 std::optional<DocumentOutline> Client::get_document_outline(
     std::string_view uri) const {
+  if (!db_) return std::nullopt;
   std::optional<std::string> id;
   auto try_loc = [&](std::string_view u) {
     if (auto loc = db_->find_locator(u)) {
@@ -5333,6 +5389,7 @@ std::optional<DocumentOutline> Client::ensure_document_outline(
   if (auto hit = get_document_outline(uri)) return hit;
   auto outline = extract_document_outline(uri);
   if (!outline) return std::nullopt;
+  if (!db_) return outline;  // session-only under STORE_ONLY
   auto id = content_id_for_text_uri(*this, uri);
   if (id) {
     auto payload = serialize_document_outline(*outline);

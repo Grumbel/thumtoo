@@ -68,8 +68,10 @@ tree); do not invent a second PreferCache retry loop.
    members, HTTP images): probe, session pixels, tile cells.
 4. Dual-write (`mirror_probe_to_store`) skipped under STORE_ONLY; tags are
    Store-only. `mirror_tiles_to_store` remains the durable tile write path.
-5. Delete dual-write helpers after hosts default to STORE_ONLY.
-6. Migration: **no** ladder→tile conversion (PLAN non-goal); cold rebuild tiles.
+5. Public APIs null-safe under STORE_ONLY: `prepare_paths`, archive TOC,
+   document page count, text/outline (session extract), `invalidate_tile`.
+6. Host soak → default STORE_ONLY → delete dual-write helpers.
+7. Migration: **no** ladder→tile conversion (PLAN non-goal); cold rebuild tiles.
 
 Under tiles-first, EnsurePixels does not write durable `levels` for soft *or*
 full_native. Session encode + TileSynth (when the pyramid covers the want) supply
@@ -107,7 +109,7 @@ Pair with biltoo ≥1007 (`scheduleSoftPixels`) for PreferCache when tiles exist
 | Top-level Store layout (`THUMTOO_STORE_ROOT`) | **Default on** (≥245; migrate ≥238; soak OK; `test_store_root`) |
 | Full-from-tiles (EnsurePixels Full) | **On** when tile pyramid covers want (≥243) |
 | Tiles-first skips full_native levels | **On** (≥244; same env as soft) |
-| Store-only (`THUMTOO_STORE_ONLY`) | **Experimental** (≥247–252; tags Store-only; dual-write gated) |
+| Store-only (`THUMTOO_STORE_ONLY`) | **Soak-ready** (≥247–253; public APIs null-safe) |
 
 Soft ladder rows may still exist in older caches; new soft encodes no longer
 persist them unless soft levels are explicitly re-enabled.
