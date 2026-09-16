@@ -1,5 +1,28 @@
 # TODO / agent handoff
 
+## Status (2026-09-16)
+
+**Tip: thumtoo-208-blob-overlay-brainstorm.** Design note: blob identity, overlays, hypertia.
+Prior: **207**.
+
+### Change
+- Add `docs/BLOB_AND_OVERLAY.md` — consolidated brainstorm (no code):
+  integer blob ids, `blob_hash`, media/region, member hashing, tiles vs levels,
+  dirtoo coverage, Memex trails, hypertia/UI/curl examples, IPFS/IPLD borrow.
+- No schema migration; discussion only.
+
+### Apply
+```bash
+git pull /path/to/thumtoo-208-blob-overlay-brainstorm.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **208**
+
+---
+
+# TODO / agent handoff
+
 ## Status (2026-09-14)
 
 **Tip: thumtoo-207-exif-autorot-display-size.** EXIF orientation is a decode contract.
