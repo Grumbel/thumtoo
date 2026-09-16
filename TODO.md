@@ -2,6 +2,31 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-235-cutover-soft-writes-done.** Mark soft-level write stop in cutover docs.
+Prior: **234**.
+
+### Change
+- HOST_CUTOVER §3.1 checked off (tiles-first default)
+- API_MIGRATION next steps: soft writes done; Store-only open still pending
+
+### Next
+- Store-only Client open (no legacy Database) behind a flag, or top-level Store paths
+- Remove dual-write helpers after Store-only is default
+
+### Apply
+```bash
+git pull /path/to/thumtoo-235-cutover-soft-writes-done.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **235**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-234-tiles-first-default.** Soft/overview levels off by default.
 Prior: **233**.
 

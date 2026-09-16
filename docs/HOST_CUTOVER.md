@@ -55,12 +55,15 @@ tree); do not invent a second PreferCache retry loop.
 
 ## 3. Drop legacy index (after tile-native ships)
 
-1. Stop writing durable soft `levels` / `blobs` soft ladder (thumtoo flag or
-   compile-time once hosts verified).
+1. ~~Stop writing durable soft `levels` / soft ladder~~ (**done** ≥234; default
+   tiles-first; `THUMTOO_SOFT_LEVELS=1` restores).
 2. Open Store at top-level `$cache/index.sqlite` + `bulk.sqlite` (epoch ≥ 100);
    remove `cache_root/store/` subdirectory layout.
 3. Remove dual-write helpers (`mirror_*`) and legacy `Database` open.
 4. Migration: **no** ladder→tile conversion (PLAN non-goal); cold rebuild tiles.
+
+`full_native` levels still use the legacy `levels` table until a full-from-tiles
+path exists. Soft/overview no longer grow that table by default.
 
 ---
 

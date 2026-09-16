@@ -67,8 +67,10 @@ cache wipe.
    the request edge (tiles-first).
 3. ~~Soft `get_pixels` assemble from Store tiles~~ (TileSynth via Store fallback).
 4. ~~Store size/meta fallback~~ (`get_size` / `get_meta`).
-5. Drop legacy `index.sqlite` after biltoo ships on Store-only open.
-6. Move redesign files to top-level `$cache/index.sqlite` + `bulk.sqlite` once
+5. ~~Soft/overview level writes off by default~~ (≥234; `THUMTOO_SOFT_LEVELS=1` restores).
+6. Drop legacy `index.sqlite` after Store-only open (still dual-path layout under
+   `cache_root/store/` until then).
+7. Move redesign files to top-level `$cache/index.sqlite` + `bulk.sqlite` once
    legacy is gone (epoch already ≥ 100). Hosts pass `$XDG_DATA_HOME/thumtoo`
    as `data_root` (biltoo does).
 
