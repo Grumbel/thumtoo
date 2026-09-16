@@ -105,6 +105,10 @@ bool tiles_only_mode() {
 /// Default dual-path keeps Store under cache_root/store/ (no collision with schema 1–4).
 bool store_root_layout() { return env_flag_on("THUMTOO_STORE_ROOT"); }
 
+// Defined later in this TU (uses debug_file); forward-declare for migrate helpers.
+void dbg(const char* fmt, ...);
+
+
 std::optional<int> probe_index_schema_version(const std::filesystem::path& index_path) {
   namespace fs = std::filesystem;
   std::error_code ec;
