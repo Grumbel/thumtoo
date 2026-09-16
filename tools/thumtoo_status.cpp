@@ -228,7 +228,52 @@ int main(int argc, char** argv) {
   }
 
   try {
-    auto db = thumtoo::Database::open(thumtoo::legacy_db_root(cache));
+    const bool store_only = thumtoo::store_only_mode();
+    const auto legacy_root = thumtoo::legacy_db_root(cache);
+    const bool legacy_present =
+        fs::exists(legacy_root / "index.sqlite") ||
+        fs::exists(legacy_root / "blobs.sqlite");
+
+    if (store_only || !legacy_present) {
+      if (mode == "summary") {
+        std::cout << "cache_root:     " << cache << "\n"
+                  << "layout:         "
+                  << (thumtoo::store_root_layout_enabled() ? "store-root"
+                                                            : "dual-path")
+                  << "\n"
+                  << "store_only:     " << (store_only ? "yes" : "no") << "\n"
+                  << "legacy_root:    " << legacy_root
+                  << (legacy_present ? "\n" : " (absent)\n")
+                  << "store_root:     " << thumtoo::redesign_store_root(cache)
+                  << "\n";
+        try {
+          thumtoo::Store::Paths sp;
+          sp.cache_root = thumtoo::redesign_store_root(cache);
+          sp.data_root = cache;
+          auto store = thumtoo::Store::open(sp);
+          std::cout << "--- store ---\n"
+                    << "store schema:   " << store.index_schema_version()
+                    << "\n"
+                    << "store blobs:    " << store.count_blobs() << "\n"
+                    << "store locators: " << store.count_locators() << "\n"
+                    << "store media:    " << store.count_media() << "\n"
+                    << "store regions:  " << store.count_regions() << "\n"
+                    << "store tiles:    " << store.count_tiles() << "\n"
+                    << "store dir snaps:"
+                    << store.count_directory_snapshots() << "\n";
+        } catch (const std::exception& e) {
+          std::cout << "--- store ---\n"
+                    << "store:          (unavailable: " << e.what() << ")\n";
+        }
+        return 0;
+      }
+      std::cerr << "thumtoo-status: mode '" << mode
+                << "' needs a legacy index; cache is Store-only "
+                << "(THUMTOO_STORE_ONLY=" << (store_only ? "1" : "0") << ")\n";
+      return 2;
+    }
+
+    auto db = thumtoo::Database::open(legacy_root);
     if (mode == "path") {
       return cmd_path(db, *path_query);
     }

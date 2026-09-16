@@ -2,6 +2,31 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-255-store-only-tools.** status/gc work without legacy under STORE_ONLY.
+Prior: **254**.
+
+### Change
+- `thumtoo-status summary` reports Store-only caches (no legacy open)
+- `thumtoo-gc` exits clearly under `THUMTOO_STORE_ONLY=1`
+
+### Next
+- Host soak confirmation
+- Default STORE_ONLY; delete dual-write helpers
+
+### Apply
+```bash
+git pull /path/to/thumtoo-255-store-only-tools.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **255**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-254-store-only-soak-notes.** Soak checklist; pairs with biltoo-1002.
 Prior: **253**.
 

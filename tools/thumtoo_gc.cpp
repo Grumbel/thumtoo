@@ -203,6 +203,11 @@ int main(int argc, char** argv) {
   }
 
   try {
+    if (thumtoo::store_only_mode()) {
+      std::cerr << "thumtoo-gc: THUMTOO_STORE_ONLY=1 — legacy GC is not applicable\n"
+                << "  (Store maintenance tools not yet available)\n";
+      return 2;
+    }
     auto db = thumtoo::Database::open(thumtoo::legacy_db_root(cache));
     auto blobs = thumtoo::BlobStore::open(thumtoo::legacy_db_root(cache));
 
