@@ -38,10 +38,36 @@ enum class BlobStatus : int {
   Error = 3,
 };
 
-/// Redesign index/bulk/user stores (docs/DATABASE.md, docs/PLAN.md Phase A).
+/// media.kind values (docs/DATABASE.md).
+enum class MediaKind : int {
+  Unknown = 0,
+  Image = 1,
+  Document = 2,
+  Video = 3,
+  Audio = 4,
+};
+
+/// region.kind values.
+enum class RegionKind : int {
+  Full = 0,     ///< Single-frame image (mandatory for image media)
+  Page = 1,     ///< Document page (key = 1-based page number string)
+  Fragment = 2, ///< e.g. HTML id (future)
+  TimeRange = 3,
+};
+
+/// media.status / similar.
+enum class MediaStatus : int {
+  Unknown = 0,
+  Ready = 1,
+  Pending = 2,
+  Error = 3,
+  Unsupported = 4,
+};
+
+/// Redesign index/bulk/user stores (docs/DATABASE.md, docs/PLAN.md).
 ///
 /// Legacy Client still uses Database + BlobStore. This type is the new spine:
-/// integer blob ids, blob_hash digests, locators, three-file layout.
+/// integer blob ids, blob_hash digests, locators, media/region/tiles.
 /// Not thread-safe; one writer discipline at a higher layer.
 class Store {
  public:
@@ -149,6 +175,104 @@ class Store {
 
   [[nodiscard]] std::int64_t count_blobs() const;
   [[nodiscard]] std::int64_t count_locators() const;
+
+  // --- media ---
+  struct MediaRow {
+    std::int64_t id = 0;
+    std::int64_t blob_id = 0;
+    MediaKind kind = MediaKind::Unknown;
+    std::optional<int> width;
+    std::optional<int> height;
+    std::optional<std::int64_t> duration_ms;
+    std::optional<int> page_count;
+    std::optional<int> still_count;
+    MediaStatus status = MediaStatus::Unknown;
+    std::optional<std::string> error_code;
+    std::int64_t updated_at = 0;
+  };
+
+  /// Insert media for blob+kind. Fails if (blob_id, kind) already exists.
+  [[nodiscard]] std::int64_t insert_media(std::int64_t blob_id, MediaKind kind,
+                                          std::optional<int> width = {},
+                                          std::optional<int> height = {},
+                                          MediaStatus status = MediaStatus::Unknown);
+
+  /// Ensure image media + full region exist for blob; returns media_id.
+  /// Creates media(kind=image) and region(kind=full, key="") if missing.
+  [[nodiscard]] std::int64_t ensure_image_media(std::int64_t blob_id,
+                                                std::optional<int> width = {},
+                                                std::optional<int> height = {});
+
+  [[nodiscard]] std::optional<MediaRow> find_media(std::int64_t media_id) const;
+  [[nodiscard]] std::optional<MediaRow> find_media_for_blob(
+      std::int64_t blob_id, MediaKind kind) const;
+
+  void set_media_size(std::int64_t media_id, int width, int height);
+  void set_media_page_count(std::int64_t media_id, int page_count);
+  void set_media_status(std::int64_t media_id, MediaStatus status,
+                        std::optional<std::string_view> error_code = {});
+
+  // --- region ---
+  struct RegionRow {
+    std::int64_t id = 0;
+    std::int64_t media_id = 0;
+    RegionKind kind = RegionKind::Full;
+    std::string key;
+    std::optional<int> ordinal;
+  };
+
+  [[nodiscard]] std::int64_t insert_region(std::int64_t media_id, RegionKind kind,
+                                           std::string_view key,
+                                           std::optional<int> ordinal = {});
+
+  /// Find or create region; returns region_id.
+  [[nodiscard]] std::int64_t ensure_region(std::int64_t media_id, RegionKind kind,
+                                           std::string_view key,
+                                           std::optional<int> ordinal = {});
+
+  [[nodiscard]] std::optional<RegionRow> find_region(std::int64_t region_id) const;
+  [[nodiscard]] std::optional<RegionRow> find_region_by_key(
+      std::int64_t media_id, RegionKind kind, std::string_view key) const;
+
+  /// Full region for image media (kind=full, key empty).
+  [[nodiscard]] std::optional<RegionRow> find_full_region(
+      std::int64_t media_id) const;
+
+  // --- tile (index metadata + bulk payload) ---
+  struct TileRow {
+    std::int64_t media_id = 0;
+    std::int64_t region_id = 0;
+    int scale = 0;
+    int x = 0;
+    int y = 0;
+    int width = 0;
+    int height = 0;
+    CodecId codec_id = CodecId::Jpeg;
+    std::optional<int> quality;
+  };
+
+  /// Upsert tile metadata (index) and payload (bulk).
+  void put_tile(const TileRow& meta, std::span<const std::uint8_t> data);
+
+  [[nodiscard]] bool has_tile(std::int64_t media_id, std::int64_t region_id,
+                              int scale, int x, int y) const;
+
+  /// Index metadata only (no payload).
+  [[nodiscard]] std::optional<TileRow> find_tile_meta(std::int64_t media_id,
+                                                     std::int64_t region_id,
+                                                     int scale, int x,
+                                                     int y) const;
+
+  /// Payload from bulk DB; nullopt if missing.
+  [[nodiscard]] std::optional<std::vector<std::uint8_t>> get_tile_data(
+      std::int64_t media_id, std::int64_t region_id, int scale, int x,
+      int y) const;
+
+  void delete_tiles_for_region(std::int64_t media_id, std::int64_t region_id);
+
+  [[nodiscard]] std::int64_t count_tiles() const;
+  [[nodiscard]] std::int64_t count_media() const;
+  [[nodiscard]] std::int64_t count_regions() const;
 
  private:
   Store(sqlite3* index, sqlite3* bulk, sqlite3* user,

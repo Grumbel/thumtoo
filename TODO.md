@@ -2,6 +2,29 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-215-store-phase-b.** Store Phase B: media, region, tiles.
+Prior: **214**.
+
+### Change
+- media / region / tile tables on index; tile_blob payload API
+- `ensure_image_media`, `ensure_region`, `put_tile` / `get_tile_data`
+- Tile PK (media_id, region_id, scale, x, y); full region for images
+- test_store extended
+
+### Apply
+```bash
+git pull /path/to/thumtoo-215-store-phase-b.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **215**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-214-store-phase-a.** Phase A Store: three DBs, blob/hash/locator.
 Prior: **213**.
 

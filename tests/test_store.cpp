@@ -83,6 +83,49 @@ int main() {
 
       auto locs = store.list_locators_for_blob(blob_id);
       expect(locs.size() == 1 && locs[0].uri == uri, "list locators");
+
+      // Phase B: image media + full region + tile
+      const auto media_id = store.ensure_image_media(blob_id, 800, 600);
+      expect(media_id >= 1, "media id");
+      expect(store.ensure_image_media(blob_id, 800, 600) == media_id,
+             "ensure image idempotent");
+      auto media = store.find_media(media_id);
+      expect(media && media->kind == thumtoo::MediaKind::Image, "media kind");
+      expect(media && media->width && *media->width == 800, "media width");
+      auto full = store.find_full_region(media_id);
+      expect(full.has_value(), "full region");
+      expect(full && full->kind == thumtoo::RegionKind::Full, "region full");
+      expect(store.count_regions() == 1, "one region");
+
+      thumtoo::Store::TileRow tile;
+      tile.media_id = media_id;
+      tile.region_id = full->id;
+      tile.scale = 0;
+      tile.x = 0;
+      tile.y = 0;
+      tile.width = 256;
+      tile.height = 256;
+      tile.codec_id = thumtoo::CodecId::Jpeg;
+      tile.quality = 85;
+      const std::vector<std::uint8_t> payload = {0xff, 0xd8, 0x00, 0x01, 0x02};
+      store.put_tile(tile, payload);
+      expect(store.has_tile(media_id, full->id, 0, 0, 0), "has tile");
+      auto meta = store.find_tile_meta(media_id, full->id, 0, 0, 0);
+      expect(meta && meta->width == 256, "tile meta width");
+      auto data = store.get_tile_data(media_id, full->id, 0, 0, 0);
+      expect(data && *data == payload, "tile payload");
+      expect(store.count_tiles() == 1, "one tile");
+
+      // Document page region (no tiles required)
+      const auto doc_blob = store.insert_blob(999, thumtoo::BlobStatus::Ok);
+      const auto doc_media = store.insert_media(
+          doc_blob, thumtoo::MediaKind::Document, {}, {},
+          thumtoo::MediaStatus::Ready);
+      store.set_media_page_count(doc_media, 10);
+      const auto page_r =
+          store.ensure_region(doc_media, thumtoo::RegionKind::Page, "3", 3);
+      auto page = store.find_region(page_r);
+      expect(page && page->key == "3", "page region key");
     }
 
     // Re-open preserves rows
