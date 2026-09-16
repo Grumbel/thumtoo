@@ -830,8 +830,11 @@ std::vector<TileBlob> cut_pyramid_from_vips(VipsImage* full, int min_scale,
     int w = src_w;
     int h = src_h;
     while (w > kTileSize || h > kTileSize) {
-      w = (w + 1) / 2;
-      h = (h + 1) / 2;
+      // Floor half — same rule as dim_at_tile_scale / vips_shrink 2.0.
+      w = w / 2;
+      h = h / 2;
+      if (w < 1) w = 1;
+      if (h < 1) h = 1;
       ++computed_max;
     }
   }

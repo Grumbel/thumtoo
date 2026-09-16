@@ -101,6 +101,25 @@ inline constexpr int kEpubLayoutDpi = 144;
 
 /// Grid tiles (Phase 4 / Galapix-compatible). See TILES.md.
 inline constexpr int kTileSize = 256;
+
+/// Dimension at pyramid @p scale matching successive integer factor-2 shrink
+/// (Galapix / vips_shrink 2.0: floor-half each step). Not ceil(n / 2^scale),
+/// which drifts by ~1px at coarse scales vs the encode path.
+[[nodiscard]] inline int dim_at_tile_scale(int n, int scale) noexcept {
+  if (n <= 0) {
+    return 0;
+  }
+  if (scale <= 0) {
+    return n;
+  }
+  for (int i = 0; i < scale; ++i) {
+    n /= 2;
+    if (n <= 0) {
+      return 0;
+    }
+  }
+  return n;
+}
 inline constexpr int kDefaultTileQuality = 80;
 /// PDF live/durable cells: text rings badly at Q=80 when zoomed; use higher.
 inline constexpr int kPdfTileQuality = 95;

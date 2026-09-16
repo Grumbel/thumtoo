@@ -2,6 +2,30 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-291-tile-scale-floor-dims.** TileSynth dims match successive floor half.
+Prior: **290**.
+
+### Change
+- `dim_at_tile_scale(n, s)`: successive `n/=2` (Galapix / vips_shrink 2.0), not ceil(n/2^s)
+- TileSynth + tile grid full_w/h use it (was +1px drift at coarse scales)
+- Pyramid `computed_max` depth loop uses floor half for the same rule
+- `test_pixels_from_tiles`: 1000@scale4 → 62 (not ceil 63)
+
+### Apply
+```bash
+git pull /path/to/thumtoo-291-tile-scale-floor-dims.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **291**
+- [x] No ceil `(n + (1<<s)-1)>>s` for image tile level size
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-290-outer-path-probe-drop-store-root-optout.** Probe outer_path; always top-level Store.
 Prior: **289**.
 

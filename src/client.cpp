@@ -615,14 +615,15 @@ std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
   // Prefer coarsest scale whose long edge still covers `want` (fewer tiles).
   int best_s = min_s;
   for (int s = min_s; s <= max_s; ++s) {
-    const int long_at_s = (std::max(nw, nh) + ((1 << s) - 1)) >> s;
+    const int long_at_s = std::max(dim_at_tile_scale(nw, s),
+                                   dim_at_tile_scale(nh, s));
     if (long_at_s >= (want * 9) / 10) {
       best_s = s;
     }
   }
 
-  const int sw = (nw + ((1 << best_s) - 1)) >> best_s;
-  const int sh = (nh + ((1 << best_s) - 1)) >> best_s;
+  const int sw = dim_at_tile_scale(nw, best_s);
+  const int sh = dim_at_tile_scale(nh, best_s);
   const int nx = (sw + kTileSize - 1) / kTileSize;
   const int ny = (sh + kTileSize - 1) / kTileSize;
   if (nx <= 0 || ny <= 0 || nx * ny > 4096) {
@@ -3297,8 +3298,8 @@ void Client::handle_ensure_tiles_store(Job& job) {
   }
   std::vector<TileBlob> tiles;
   for (int scale = min_scale; scale <= max_scale; ++scale) {
-    const int full_w = (sm->size->width + ((1 << scale) - 1)) >> scale;
-    const int full_h = (sm->size->height + ((1 << scale) - 1)) >> scale;
+    const int full_w = dim_at_tile_scale(sm->size->width, scale);
+    const int full_h = dim_at_tile_scale(sm->size->height, scale);
     const int nx = (full_w + kTileSize - 1) / kTileSize;
     const int ny = (full_h + kTileSize - 1) / kTileSize;
     for (int ty = 0; ty < ny; ++ty) {

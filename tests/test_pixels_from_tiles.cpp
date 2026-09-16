@@ -47,6 +47,12 @@ int main() {
   expect(kBatchMaxEdge == 1024, "kBatchMaxEdge");
   expect(static_cast<int>(PixelSource::TileSynth) == 4, "TileSynth enum");
 
+  // Floor-half scale dims (not ceil): 1000 → 500 → 250 → 125 → 62 …
+  expect(dim_at_tile_scale(1000, 0) == 1000, "scale0 native");
+  expect(dim_at_tile_scale(1000, 1) == 500, "scale1 floor");
+  expect(dim_at_tile_scale(1000, 4) == 62, "scale4 floor not ceil 63");
+  expect(dim_at_tile_scale(1000, 4) != ((1000 + 15) >> 4), "differs from ceil");
+
   client.reset();
   fs::remove_all(root);
 
