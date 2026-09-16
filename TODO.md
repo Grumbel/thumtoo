@@ -2,6 +2,27 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-259-fix-client-store-only.** Fix test_client under default STORE_ONLY.
+Prior: **258**.
+
+### Change
+- `list_uris_for_content_id` resolves via Store when no legacy
+- test_client: Incomplete status under Store-only after session soft pixels
+
+### Apply
+```bash
+git pull /path/to/thumtoo-259-fix-client-store-only.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **259**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-258-put-tiles-rename.** put_tiles_to_store; docs for default STORE_ONLY.
 Prior: **257**.
 

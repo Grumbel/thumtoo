@@ -119,7 +119,15 @@ int main() {
     expect(called_px, "request_pixels callback");
 
     meta = client->get_meta(uri);
-    expect(meta && meta->status == ContentStatus::Ready, "status ready after pixels");
+    // Dual-path marks Ready after durable encode; Store-only stays Incomplete
+    // under tiles-first (session soft reply, no durable soft levels).
+    if (client->has_legacy()) {
+      expect(meta && meta->status == ContentStatus::Ready,
+             "status ready after pixels");
+    } else {
+      expect(meta && meta->status == ContentStatus::Incomplete,
+             "Store-only incomplete after session soft pixels");
+    }
     // Tiles-first default (THUMTOO_SOFT_LEVELS unset): soft request replies from
     // session encode and does not persist durable soft/overview levels.
     if (client->has_legacy()) {

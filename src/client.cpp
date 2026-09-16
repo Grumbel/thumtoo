@@ -494,8 +494,32 @@ std::optional<std::string> Client::resolve_content_id(std::string_view uri) cons
 
 std::vector<Database::LocatorRow> Client::list_uris_for_content_id(
     std::string_view content_id, int limit) const {
-  if (!db_) return {};
-  return db_->list_locators_for_content_id(content_id, limit);
+  if (db_) {
+    return db_->list_locators_for_content_id(content_id, limit);
+  }
+  if (!store_ || content_id.empty()) return {};
+  // STORE_ONLY: content_id "sha256:<hex>" or "sha256:<hex>:page:N" → Store blob.
+  constexpr std::string_view kSha = "sha256:";
+  if (!content_id.starts_with(kSha) || content_id.size() < kSha.size() + 64) {
+    return {};
+  }
+  const std::string_view hex = content_id.substr(kSha.size(), 64);
+  auto digest = Store::parse_sha256_digest(hex);
+  if (!digest) return {};
+  auto blob_id = store_->find_blob_by_hash(HashAlgoId::Sha256, *digest);
+  if (!blob_id) return {};
+  auto store_locs = store_->list_locators_for_blob(*blob_id, limit);
+  std::vector<Database::LocatorRow> out;
+  out.reserve(store_locs.size());
+  for (const auto& sl : store_locs) {
+    Database::LocatorRow r;
+    r.uri = sl.uri;
+    r.content_id = std::string(content_id.substr(0, kSha.size() + 64));
+    r.size = sl.size;
+    r.mtime_ns = sl.mtime_ns;
+    out.push_back(std::move(r));
+  }
+  return out;
 }
 
 std::optional<ContentMeta> Client::get_meta_for_content_id(

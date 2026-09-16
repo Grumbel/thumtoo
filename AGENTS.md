@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-258-put-tiles-rename**. Next bundle: **259**.
+Latest agent handoff: **TODO.md → thumtoo-259-fix-client-store-only**. Next bundle: **260**.
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code
 here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 
