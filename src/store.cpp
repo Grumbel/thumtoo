@@ -881,6 +881,72 @@ std::optional<Store::LocatorRow> Store::find_locator(
   return out;
 }
 
+
+std::vector<Store::LocatorRow> Store::list_locators(int limit) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(index_,
+                         "SELECT id, uri, blob_id, size, mtime_ns, updated_at "
+                         "FROM locator ORDER BY id LIMIT ?1;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare list_locators");
+  }
+  sqlite3_bind_int(stmt, 1, limit < 0 ? 0 : limit);
+  std::vector<LocatorRow> out;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    LocatorRow r;
+    r.id = sqlite3_column_int64(stmt, 0);
+    r.uri = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    if (sqlite3_column_type(stmt, 2) != SQLITE_NULL)
+      r.blob_id = sqlite3_column_int64(stmt, 2);
+    if (sqlite3_column_type(stmt, 3) != SQLITE_NULL)
+      r.size = sqlite3_column_int64(stmt, 3);
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+      r.mtime_ns = sqlite3_column_int64(stmt, 4);
+    r.updated_at = sqlite3_column_int64(stmt, 5);
+    out.push_back(std::move(r));
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+std::vector<Store::LocatorRow> Store::list_locators_by_uri_prefix(
+    std::string_view uri_prefix, int limit) const {
+  if (uri_prefix.empty()) return {};
+  std::string pattern;
+  pattern.reserve(uri_prefix.size() * 2 + 1);
+  for (char ch : uri_prefix) {
+    if (ch == '%' || ch == '_' || ch == '\\') pattern.push_back('\\');
+    pattern.push_back(ch);
+  }
+  pattern.push_back('%');
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(index_,
+                         "SELECT id, uri, blob_id, size, mtime_ns, updated_at "
+                         "FROM locator WHERE uri LIKE ?1 ESCAPE '\\' "
+                         "ORDER BY uri LIMIT ?2;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare list_locators_by_uri_prefix");
+  }
+  sqlite3_bind_text(stmt, 1, pattern.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 2, limit < 0 ? 0 : limit);
+  std::vector<LocatorRow> out;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    LocatorRow r;
+    r.id = sqlite3_column_int64(stmt, 0);
+    r.uri = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    if (sqlite3_column_type(stmt, 2) != SQLITE_NULL)
+      r.blob_id = sqlite3_column_int64(stmt, 2);
+    if (sqlite3_column_type(stmt, 3) != SQLITE_NULL)
+      r.size = sqlite3_column_int64(stmt, 3);
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+      r.mtime_ns = sqlite3_column_int64(stmt, 4);
+    r.updated_at = sqlite3_column_int64(stmt, 5);
+    out.push_back(std::move(r));
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
 std::vector<Store::LocatorRow> Store::list_locators_for_blob(
     std::int64_t blob_id, int limit) const {
   sqlite3_stmt* stmt = nullptr;

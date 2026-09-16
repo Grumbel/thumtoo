@@ -381,8 +381,18 @@ std::size_t Client::refresh_directory_snapshot(
   return entries.size();
 }
 
-std::vector<Client::LocatorRow> Client::list_locators(int /*limit*/) const {
-  return {};
+std::vector<Client::LocatorRow> Client::list_locators(int limit) const {
+  if (!store_) return {};
+  std::vector<Client::LocatorRow> out;
+  for (const auto& sl : store_->list_locators(limit)) {
+    Client::LocatorRow r;
+    r.uri = sl.uri;
+    r.size = sl.size;
+    r.mtime_ns = sl.mtime_ns;
+    if (auto m = meta_from_store(sl.uri)) r.content_id = m->content_id;
+    out.push_back(std::move(r));
+  }
+  return out;
 }
 
 std::optional<Client::LocatorRow> Client::find_locator(std::string_view uri) const {
@@ -398,8 +408,18 @@ std::optional<Client::LocatorRow> Client::find_locator(std::string_view uri) con
 }
 
 std::vector<Client::LocatorRow> Client::list_locators_by_uri_prefix(
-    std::string_view /*uri_prefix*/, int /*limit*/) const {
-  return {};
+    std::string_view uri_prefix, int limit) const {
+  if (!store_ || uri_prefix.empty()) return {};
+  std::vector<Client::LocatorRow> out;
+  for (const auto& sl : store_->list_locators_by_uri_prefix(uri_prefix, limit)) {
+    Client::LocatorRow r;
+    r.uri = sl.uri;
+    r.size = sl.size;
+    r.mtime_ns = sl.mtime_ns;
+    if (auto m = meta_from_store(sl.uri)) r.content_id = m->content_id;
+    out.push_back(std::move(r));
+  }
+  return out;
 }
 
 std::vector<Client::LocatorRow> Client::list_locators_by_outer_path_prefix(
@@ -942,13 +962,10 @@ std::optional<Client::StoreTileTarget> Client::store_tile_target_for_content_id(
 
 std::optional<TileCoverage> Client::get_tile_coverage(
     std::string_view uri) const {
-  std::optional<ContentMeta> meta;
-    if (!meta) meta = meta_from_store(uri);
+  auto meta = meta_from_store(uri);
   if (!meta) return std::nullopt;
   TileCoverage cov;
   if (meta->size) cov.size = *meta->size;
-  int min_s = 0;
-  int max_s = 0;
   if (auto tgt = store_tile_target_for_content_id(meta->content_id)) {
     auto scales = store_->list_tile_scales(tgt->media_id, tgt->region_id);
     if (!scales.empty()) {
@@ -2129,7 +2146,16 @@ void Client::worker_main() {
         for (size_t i = 0; i < batch.size(); ++i) {
           auto& j = batch[i];
           // Size already known → handle_probe_size returns without source bytes.
+          if (auto sz = get_size(j.uri); sz && sz->width > 0 && sz->height > 0) {
+            need_extract[i] = 0;
+            try {
+              handle_probe_size(j, std::nullopt);
+            } catch (...) {
+            }
+            std::lock_guard lock(mu_);
+            --inflight_;
           }
+        }
       }
 
       // Prefer in-process extract cache (filled by a prior pass) so we do not

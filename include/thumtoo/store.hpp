@@ -177,6 +177,9 @@ class Store {
   void bind_locator_blob(std::string_view uri, std::int64_t blob_id);
 
   [[nodiscard]] std::optional<LocatorRow> find_locator(std::string_view uri) const;
+  [[nodiscard]] std::vector<LocatorRow> list_locators(int limit = 100) const;
+  [[nodiscard]] std::vector<LocatorRow> list_locators_by_uri_prefix(
+      std::string_view uri_prefix, int limit = 100) const;
   [[nodiscard]] std::vector<LocatorRow> list_locators_for_blob(
       std::int64_t blob_id, int limit = 100) const;
 

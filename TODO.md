@@ -2,6 +2,48 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-278-verify-features-restore-lists.** Audit + restore list_locators; fix ProbeSize warm.
+Prior: **277**.
+
+### Verification (legacy gone)
+- No `src/database.cpp`, `src/blob_store.cpp`, headers, or CMake refs
+- No `Client::db` / `has_legacy` / `store_only_mode` / `dual_write`
+
+### User-visible feature matrix
+| Feature | Status |
+|---------|--------|
+| open / Store layout + migrate | OK |
+| get_size / get_meta / request_size | OK (Store) |
+| get/request pixels (soft + tiles) | OK |
+| get/request tiles / pyramid | OK |
+| tags (get/add/remove) | OK (user.sqlite) |
+| directory snapshots | OK |
+| archive TOC | OK |
+| LQIP file:// | OK (277 durable) |
+| purge_uri / path / prefix | OK |
+| list_locators / by_uri_prefix | **Restored** (278) |
+| list_locators_by_outer_path / like | Empty (no outer_path on Store) |
+| get_page_text_layer / outline | Cache miss; ensure_* still extracts (session-only) |
+
+### Fix
+- Archive batch ProbeSize warm used empty loop after Database removal — restored via `get_size`
+- `get_tile_coverage` unused min_s/max_s removed
+
+### Apply
+```bash
+git pull /path/to/thumtoo-278-verify-features-restore-lists.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **278**
+- [x] Full unit test suite passes
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-277-store-durable-lqip.** Durable ThumbHash LQIP on Store blob_lqip.
 Prior: **276**.
 
