@@ -2,6 +2,28 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-297-tile-cache-hit-fast.** Warm tiles skip worker queue.
+Prior: **296**.
+
+### Change
+- `request_tile`: durable Store hit → Executor callback immediately (like size probe)
+- `request_tiles`: reply hits immediately; only enqueue misses
+- Second open should feel much closer to size-probe speed for pre-warmed pyramids
+
+### Apply
+```bash
+git pull /path/to/thumtoo-297-tile-cache-hit-fast.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **297**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-296-prepare-verbose-man.** Verbose prepare phases + man pages.
 Prior: **295**.
 

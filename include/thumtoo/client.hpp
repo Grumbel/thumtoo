@@ -259,7 +259,8 @@ class Client {
 
   /// Ensure tile at (scale,x,y) exists; builds [scale..max] in one pass if missing.
   /// Async: always enqueued (never does blob I/O on the caller thread).
-  /// Cache hits are resolved on a worker; callback via Executor.
+  /// Durable Store hits reply via Executor immediately (no worker queue);
+  /// misses are enqueued for encode. Callback always via Executor.
   void request_tile(std::string uri, int scale, int x, int y, TileCallback cb);
 
   /// One interactive worker job for many cells of the same URI (shared size

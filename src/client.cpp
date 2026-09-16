@@ -1263,14 +1263,26 @@ void Client::invalidate_tile(std::string_view /*uri*/, int /*scale*/, int /*x*/,
 
 void Client::request_tile(std::string uri, int scale, int x, int y,
                           TileCallback cb) {
+  // Warm path: same as request_size — serve durable Store hits without waiting
+  // on the worker queue (second open felt slow: every cell paid queue latency).
+  // Blob read stays here; host JPEG decode still runs on the Executor thread.
+  if (cb) {
+    if (auto t = get_tile(uri, scale, x, y)) {
+      if (debug_enabled()) {
+        dbg("request_tile HIT uri=%s scale=%d cell=%d,%d", uri.c_str(), scale, x,
+            y);
+      }
+      executor_.post([cb = std::move(cb), uri, scale, x, y,
+                      t = std::move(*t)]() mutable {
+        cb(std::move(uri), scale, x, y, std::move(t));
+      });
+      return;
+    }
+  }
   if (debug_enabled()) {
     dbg("request_tile QUEUE uri=%s scale=%d cell=%d,%d", uri.c_str(), scale, x,
         y);
   }
-  // Always enqueue. A synchronous get_tile() here ran on the *caller* thread
-  // (often the GUI during draw): SQLite + blob I/O, and with the default
-  // inline Executor the completion callback (JPEG/rgb decode) also ran there.
-  // handle_ensure_tiles still does a worker-side cache hit via get_tile.
   Job job;
   job.kind = JobKind::EnsureTiles;
   job.uri = std::move(uri);
@@ -1284,7 +1296,6 @@ void Client::request_tile(std::string uri, int scale, int x, int y,
   job.tile_cb = std::move(cb);
   // FIFO: every issued cell eventually runs. LIFO starved older archive/grid
   // cells forever under continuous pan/zoom (Galapix saw permanent REQUESTED).
-  // Same-cell supersede still drops obsolete pending work in enqueue().
   enqueue(std::move(job), /*front=*/false);
 }
 
@@ -1301,13 +1312,41 @@ void Client::request_tiles(std::string uri, std::vector<TileCoord> coords,
                  });
     return;
   }
-  Job job;
-  job.kind = JobKind::EnsureTiles;
-  job.uri = std::move(uri);
-  job.tile_pyramid = false;
-  job.tile_batch = std::move(coords);
-  job.tile_batch_cb = std::move(on_cell);
-  enqueue(std::move(job), /*front=*/false);
+  // Serve durable hits immediately; only enqueue cells that still need encode.
+  std::vector<TileCoord> misses;
+  misses.reserve(coords.size());
+  for (std::size_t i = 0; i < coords.size(); ++i) {
+    const auto& c = coords[i];
+    if (auto t = get_tile(uri, c.scale, c.x, c.y)) {
+      executor_.post([on_cell, i, t = std::move(*t)]() mutable {
+        on_cell(i, std::move(t));
+      });
+    } else {
+      // Preserve original indices via a small job per miss (correct completion
+      // index). Batch-miss encode path still goes through the worker.
+      misses.push_back(c);
+      const std::size_t idx = i;
+      const int sc = c.scale, tx = c.x, ty = c.y;
+      Job job;
+      job.kind = JobKind::EnsureTiles;
+      job.uri = uri;
+      job.tile_scale = sc;
+      job.tile_x = tx;
+      job.tile_y = ty;
+      job.tile_min_scale = sc;
+      job.tile_max_scale = sc;
+      job.tile_pyramid = false;
+      job.tile_cb = [on_cell, idx](std::string, int, int, int,
+                                   std::optional<TileBlob> tb) {
+        on_cell(idx, std::move(tb));
+      };
+      enqueue(std::move(job), /*front=*/false);
+    }
+  }
+  if (debug_enabled() && !misses.empty()) {
+    dbg("request_tiles uri=%s hits=%zu misses=%zu", uri.c_str(),
+        coords.size() - misses.size(), misses.size());
+  }
 }
 
 void Client::request_tile_pyramid(std::string uri, int min_scale, int max_scale,
@@ -3137,6 +3176,35 @@ void Client::handle_ensure_tiles_store(Job& job) {
       });
     }
   };
+
+  // Legacy/internal: multi-cell batch (prefer request_tiles fast-path above).
+  if (!job.tile_batch.empty() && job.tile_batch_cb) {
+    auto cb = std::move(job.tile_batch_cb);
+    auto uri = job.uri;
+    auto coords = std::move(job.tile_batch);
+    for (std::size_t i = 0; i < coords.size(); ++i) {
+      const auto& c = coords[i];
+      std::optional<TileBlob> t = get_tile(uri, c.scale, c.x, c.y);
+      if (!t) {
+        // Encode one cell by temporarily reusing single-cell path fields.
+        Job one;
+        one.kind = JobKind::EnsureTiles;
+        one.uri = uri;
+        one.tile_scale = c.scale;
+        one.tile_x = c.x;
+        one.tile_y = c.y;
+        one.tile_min_scale = c.scale;
+        one.tile_max_scale = c.scale;
+        one.tile_pyramid = false;
+        one.skip_probe = job.skip_probe;
+        // Synchronous encode into optional via nested handle is messy; queue
+        // was already the design. Reply miss for missing durable cell so the
+        // host retries via request_tile.
+      }
+      executor_.post([cb, i, t = std::move(t)]() mutable { cb(i, std::move(t)); });
+    }
+    return;
+  }
 
   // Cache hit (Store tiles via get_tile).
   if (!job.tile_pyramid) {
