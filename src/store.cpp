@@ -908,12 +908,12 @@ std::int64_t Store::ensure_image_media(std::int64_t blob_id,
     if (width && height) {
       set_media_size(existing->id, *width, *height);
     }
-    ensure_region(existing->id, RegionKind::Full, "", std::nullopt);
+    (void)ensure_region(existing->id, RegionKind::Full, "", std::nullopt);
     return existing->id;
   }
   const std::int64_t media_id =
       insert_media(blob_id, MediaKind::Image, width, height, MediaStatus::Ready);
-  ensure_region(media_id, RegionKind::Full, "", std::nullopt);
+  (void)ensure_region(media_id, RegionKind::Full, "", std::nullopt);
   return media_id;
 }
 

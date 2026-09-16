@@ -2,6 +2,27 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-225-nodiscard-warnings.** Silence ensure_region / add_link_edge nodiscard.
+Prior: **224**.
+
+### Change
+- `(void)ensure_region(...)` in `ensure_image_media`
+- `(void)add_link_edge(...)` in test_store re-add path
+
+### Apply
+```bash
+git pull /path/to/thumtoo-225-nodiscard-warnings.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **225**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-224-meta-from-store.** Phase E: get_size/get_meta fall back to Store.
 Prior: **223**.
 

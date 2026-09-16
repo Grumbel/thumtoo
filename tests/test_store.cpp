@@ -240,7 +240,7 @@ int main() {
       expect(store.remove_link_edge(edge), "remove link");
       expect(store.list_links_from(bref).empty(), "no links");
       // re-add for wipe survival
-      store.add_link_edge(bref, other, std::string_view{"see-also"});
+      (void)store.add_link_edge(bref, other, std::string_view{"see-also"});
 
       // Annotation + http_body
       const std::vector<std::uint8_t> geom = {1, 2, 3};
