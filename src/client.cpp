@@ -305,6 +305,44 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
     return cm;
   }
 
+  if (auto dj = parse_djvu_uri(uri)) {
+    auto media =
+        store_->find_media_for_blob(*loc->blob_id, MediaKind::Document);
+    if (!media) return std::nullopt;
+    auto region = store_->find_region_by_key(
+        media->id, RegionKind::Page, std::to_string(dj->page));
+    if (!region) return std::nullopt;
+    cm.content_id += ":page:" + std::to_string(dj->page);
+    cm.format = "djvu";
+    cm.status = ContentStatus::Incomplete;
+    if (auto layout = djvu_page_layout_size(dj->djvu_path, dj->page)) {
+      cm.size = *layout;
+    } else if (media->width && media->height) {
+      cm.size = Size{*media->width, *media->height};
+    }
+    return cm;
+  }
+
+  if (auto ep = parse_epub_uri(uri)) {
+    auto media =
+        store_->find_media_for_blob(*loc->blob_id, MediaKind::Document);
+    if (!media) return std::nullopt;
+    auto region = store_->find_region_by_key(
+        media->id, RegionKind::Page, std::to_string(ep->page));
+    if (!region) return std::nullopt;
+    // Tile target key is sha256:…:page:N (same as PDF/DjVu).
+    cm.content_id += ":page:" + std::to_string(ep->page);
+    cm.format = "epub";
+    cm.status = ContentStatus::Incomplete;
+    if (auto layout =
+            epub_page_layout_size(ep->epub_path, ep->page, ep->layout)) {
+      cm.size = *layout;
+    } else if (media->width && media->height) {
+      cm.size = Size{*media->width, *media->height};
+    }
+    return cm;
+  }
+
   if (auto media =
           store_->find_media_for_blob(*loc->blob_id, MediaKind::Image)) {
     if (media->width && media->height) {
@@ -2843,6 +2881,87 @@ void Client::handle_probe_size_store_only(Job& job) {
       return;
     }
 
+    if (auto dj = parse_djvu_uri(job.uri)) {
+      if (!std::filesystem::is_regular_file(dj->djvu_path)) {
+        reply_empty();
+        return;
+      }
+      auto layout = djvu_page_layout_size(dj->djvu_path, dj->page);
+      if (!layout) {
+        reply_empty();
+        return;
+      }
+      const auto hex = sha256_file_hex(dj->djvu_path);
+      if (hex.empty()) {
+        reply_empty();
+        return;
+      }
+      auto digest = Store::parse_sha256_digest(hex);
+      if (!digest) {
+        reply_empty();
+        return;
+      }
+      const auto byte_size = file_size_bytes(dj->djvu_path);
+      const auto mtime = file_mtime_ns(dj->djvu_path);
+      std::int64_t blob_id = 0;
+      if (auto existing =
+              store_->find_blob_by_hash(HashAlgoId::Sha256, *digest)) {
+        blob_id = *existing;
+        if (byte_size) store_->set_blob_size(blob_id, *byte_size);
+        store_->set_blob_status(blob_id, BlobStatus::Ok);
+      } else {
+        blob_id = store_->insert_blob(byte_size, BlobStatus::Ok);
+        store_->put_hash(blob_id, HashAlgoId::Sha256, *digest);
+      }
+      store_->upsert_locator(job.uri, blob_id, byte_size, mtime);
+      const auto media_id = store_->ensure_document_media(blob_id, {});
+      (void)store_->ensure_page_region(media_id, dj->page);
+      store_->set_media_size(media_id, layout->width, layout->height);
+      reply_size(*layout);
+      return;
+    }
+
+    if (auto ep = parse_epub_uri(job.uri)) {
+      if (!std::filesystem::is_regular_file(ep->epub_path)) {
+        reply_empty();
+        return;
+      }
+      auto layout =
+          epub_page_layout_size(ep->epub_path, ep->page, ep->layout);
+      if (!layout) {
+        reply_empty();
+        return;
+      }
+      const auto hex = sha256_file_hex(ep->epub_path);
+      if (hex.empty()) {
+        reply_empty();
+        return;
+      }
+      auto digest = Store::parse_sha256_digest(hex);
+      if (!digest) {
+        reply_empty();
+        return;
+      }
+      const auto byte_size = file_size_bytes(ep->epub_path);
+      const auto mtime = file_mtime_ns(ep->epub_path);
+      std::int64_t blob_id = 0;
+      if (auto existing =
+              store_->find_blob_by_hash(HashAlgoId::Sha256, *digest)) {
+        blob_id = *existing;
+        if (byte_size) store_->set_blob_size(blob_id, *byte_size);
+        store_->set_blob_status(blob_id, BlobStatus::Ok);
+      } else {
+        blob_id = store_->insert_blob(byte_size, BlobStatus::Ok);
+        store_->put_hash(blob_id, HashAlgoId::Sha256, *digest);
+      }
+      store_->upsert_locator(job.uri, blob_id, byte_size, mtime);
+      const auto media_id = store_->ensure_document_media(blob_id, {});
+      (void)store_->ensure_page_region(media_id, ep->page);
+      store_->set_media_size(media_id, layout->width, layout->height);
+      reply_size(*layout);
+      return;
+    }
+
     if (auto arch = parse_archive_uri(job.uri)) {
       if (arch->member_path.empty()) {
         reply_empty();
@@ -2983,6 +3102,23 @@ void Client::handle_ensure_pixels_store_only(Job& job) {
     if (sm) content_id = sm->content_id;
     auto raster = pdf_rasterize_page(pdf->pdf_path, pdf->page, edge_limit,
                                      pdf->backend);
+    if (raster && !raster->rgb.empty() && !content_id.empty()) {
+      levels = build_ladder_rgb(raster->rgb.data(), raster->width, raster->height,
+                                content_id, kDefaultJxlQuality, edge_limit);
+    }
+  } else if (auto dj = parse_djvu_uri(job.uri)) {
+    auto sm = meta_from_store(job.uri);
+    if (sm) content_id = sm->content_id;
+    auto raster = djvu_rasterize_page(dj->djvu_path, dj->page, edge_limit);
+    if (raster && !raster->rgb.empty() && !content_id.empty()) {
+      levels = build_ladder_rgb(raster->rgb.data(), raster->width, raster->height,
+                                content_id, kDefaultJxlQuality, edge_limit);
+    }
+  } else if (auto ep = parse_epub_uri(job.uri)) {
+    auto sm = meta_from_store(job.uri);
+    if (sm) content_id = sm->content_id;
+    auto raster = epub_rasterize_page(ep->epub_path, ep->page, ep->layout,
+                                      edge_limit);
     if (raster && !raster->rgb.empty() && !content_id.empty()) {
       levels = build_ladder_rgb(raster->rgb.data(), raster->width, raster->height,
                                 content_id, kDefaultJxlQuality, edge_limit);
@@ -4358,6 +4494,54 @@ void Client::handle_ensure_tiles_store_only(Job& job) {
         live.height = raster->height;
         live.codec = kTileCodecRgb888;
         live.source = TileSource::PdfRegion;
+        live.bytes = std::move(raster->rgb);
+        reply_one(std::move(live));
+        return;
+      }
+    } else if (auto dj = parse_djvu_uri(job.uri)) {
+      auto raster = djvu_render_tile_cell(dj->djvu_path, dj->page, job.tile_scale,
+                                          job.tile_x, job.tile_y);
+      if (raster && !raster->rgb.empty()) {
+        if (job.tile_scale >= kPdfMinDurableTileScale) {
+          if (auto jpeg = encode_tile_cell_rgb(
+                  raster->rgb.data(), raster->width, raster->height,
+                  job.tile_scale, job.tile_x, job.tile_y, kPdfTileQuality)) {
+            jpeg->source = TileSource::DjvuRegion;
+            store_tiles(content_id, std::vector<TileBlob>{*jpeg});
+          }
+        }
+        TileBlob live;
+        live.scale = job.tile_scale;
+        live.x = job.tile_x;
+        live.y = job.tile_y;
+        live.width = raster->width;
+        live.height = raster->height;
+        live.codec = kTileCodecRgb888;
+        live.source = TileSource::DjvuRegion;
+        live.bytes = std::move(raster->rgb);
+        reply_one(std::move(live));
+        return;
+      }
+    } else if (auto ep = parse_epub_uri(job.uri)) {
+      auto raster = epub_render_tile_cell(ep->epub_path, ep->page, ep->layout,
+                                          job.tile_scale, job.tile_x, job.tile_y);
+      if (raster && !raster->rgb.empty()) {
+        if (job.tile_scale >= kPdfMinDurableTileScale) {
+          if (auto jpeg = encode_tile_cell_rgb(
+                  raster->rgb.data(), raster->width, raster->height,
+                  job.tile_scale, job.tile_x, job.tile_y, kPdfTileQuality)) {
+            jpeg->source = TileSource::Full;
+            store_tiles(content_id, std::vector<TileBlob>{*jpeg});
+          }
+        }
+        TileBlob live;
+        live.scale = job.tile_scale;
+        live.x = job.tile_x;
+        live.y = job.tile_y;
+        live.width = raster->width;
+        live.height = raster->height;
+        live.codec = kTileCodecRgb888;
+        live.source = TileSource::Full;
         live.bytes = std::move(raster->rgb);
         reply_one(std::move(live));
         return;

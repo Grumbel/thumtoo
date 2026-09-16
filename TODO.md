@@ -2,6 +2,31 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-250-store-only-djvu-epub.** Store-only DjVu + EPUB pages.
+Prior: **249**.
+
+### Change
+- Store-only probe/pixels/tiles for DjVu and EPUB page URIs
+- `meta_from_store` reports layout size for djvu/epub pages
+
+### Next
+- HTTP Store-only probe/pixels
+- Drop dual-write helpers when hosts use STORE_ONLY
+
+### Apply
+```bash
+git pull /path/to/thumtoo-250-store-only-djvu-epub.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **250**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-249-store-only-pdf-archive.** Store-only PDF + archive member paths.
 Prior: **248**.
 
