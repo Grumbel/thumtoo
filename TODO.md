@@ -2,6 +2,31 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-238-store-root-migrate.** Auto-migrate dual-path → STORE_ROOT on open.
+Prior: **237**.
+
+### Change
+- On `THUMTOO_STORE_ROOT=1`, move legacy schema `<100` files to `legacy/` and
+  redesign `store/` files to cache root when destinations are free
+
+### Next
+- Soak STORE_ROOT + migration with biltoo
+- Store-only Client (no legacy open)
+
+### Apply
+```bash
+git pull /path/to/thumtoo-238-store-root-migrate.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **238**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-237-store-root-layout.** THUMTOO_STORE_ROOT experimental layout.
 Prior: **236**.
 

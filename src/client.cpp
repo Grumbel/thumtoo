@@ -15,6 +15,8 @@
 #include "thumtoo/epub.hpp"
 #include "thumtoo/format.hpp"
 #include "thumtoo/blob_store.hpp"
+
+#include "sqlite3.h"
 #include "thumtoo/debug_overlay.hpp"
 
 #include <vips/vips.h>
@@ -102,6 +104,104 @@ bool tiles_only_mode() {
 /// Experimental: Store at cache_root; legacy Database+BlobStore under cache_root/legacy/.
 /// Default dual-path keeps Store under cache_root/store/ (no collision with schema 1–4).
 bool store_root_layout() { return env_flag_on("THUMTOO_STORE_ROOT"); }
+
+std::optional<int> probe_index_schema_version(const std::filesystem::path& index_path) {
+  namespace fs = std::filesystem;
+  std::error_code ec;
+  if (!fs::is_regular_file(index_path, ec)) return std::nullopt;
+  sqlite3* db = nullptr;
+  if (sqlite3_open_v2(index_path.string().c_str(), &db, SQLITE_OPEN_READONLY,
+                      nullptr) != SQLITE_OK) {
+    if (db) sqlite3_close(db);
+    return std::nullopt;
+  }
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "SELECT value FROM schema_meta WHERE key = ?1;";
+  std::optional<int> out;
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+    sqlite3_bind_text(stmt, 1, kSchemaMetaVersionKey, -1, SQLITE_STATIC);
+    if (sqlite3_step(stmt) == SQLITE_ROW &&
+        sqlite3_column_type(stmt, 0) != SQLITE_NULL) {
+      try {
+        out = std::stoi(reinterpret_cast<const char*>(
+            sqlite3_column_text(stmt, 0)));
+      } catch (...) {
+      }
+    }
+    sqlite3_finalize(stmt);
+  }
+  sqlite3_close(db);
+  return out;
+}
+
+void rename_sqlite_bundle(const std::filesystem::path& from_base,
+                          const std::filesystem::path& to_base,
+                          const char* stem) {
+  namespace fs = std::filesystem;
+  std::error_code ec;
+  const fs::path from = from_base / stem;
+  const fs::path to = to_base / stem;
+  if (!fs::exists(from, ec)) return;
+  if (fs::exists(to, ec)) {
+    if (debug_enabled()) {
+      dbg("STORE_ROOT migrate skip %s: destination exists", stem);
+    }
+    return;
+  }
+  fs::create_directories(to_base, ec);
+  fs::rename(from, to, ec);
+  if (ec && debug_enabled()) {
+    dbg("STORE_ROOT migrate rename %s failed: %s", stem, ec.message().c_str());
+  }
+  for (const char* suf : {"-wal", "-shm"}) {
+    const fs::path f2 = fs::path(from.string() + suf);
+    const fs::path t2 = fs::path(to.string() + suf);
+    if (fs::exists(f2, ec) && !fs::exists(t2, ec)) {
+      fs::rename(f2, t2, ec);
+    }
+  }
+}
+
+/// When THUMTOO_STORE_ROOT=1 on a classic dual-path cache: move legacy schema
+/// files to legacy/ and redesign store/ files to cache top-level.
+void migrate_dual_path_to_store_root(const std::filesystem::path& cache_root) {
+  if (!store_root_layout()) return;
+  namespace fs = std::filesystem;
+  const fs::path top_index = cache_root / "index.sqlite";
+  const fs::path store_dir = cache_root / "store";
+  const fs::path store_index = store_dir / "index.sqlite";
+  const fs::path legacy_dir = cache_root / "legacy";
+  const fs::path legacy_index = legacy_dir / "index.sqlite";
+
+  auto top_ver = probe_index_schema_version(top_index);
+  auto store_ver = probe_index_schema_version(store_index);
+  auto legacy_ver = probe_index_schema_version(legacy_index);
+
+  // 1) Top-level legacy (schema < 100) → cache_root/legacy/
+  if (top_ver && *top_ver < kStoreIndexSchemaVersion && !legacy_ver) {
+    if (debug_enabled()) {
+      dbg("STORE_ROOT migrate: legacy schema %d → legacy/", *top_ver);
+    }
+    rename_sqlite_bundle(cache_root, legacy_dir, "index.sqlite");
+    rename_sqlite_bundle(cache_root, legacy_dir, "blobs.sqlite");
+    top_ver = probe_index_schema_version(top_index);
+  }
+
+  // 2) store/ redesign (schema ≥ 100) → cache_root/ when top is free
+  top_ver = probe_index_schema_version(top_index);
+  if (store_ver && *store_ver >= kStoreIndexSchemaVersion &&
+      !top_ver) {
+    if (debug_enabled()) {
+      dbg("STORE_ROOT migrate: store/ schema %d → cache root", *store_ver);
+    }
+    rename_sqlite_bundle(store_dir, cache_root, "index.sqlite");
+    rename_sqlite_bundle(store_dir, cache_root, "bulk.sqlite");
+  } else if (store_ver && top_ver && *top_ver >= kStoreIndexSchemaVersion &&
+             debug_enabled()) {
+    dbg("STORE_ROOT migrate: top already has Store schema %d; leave store/",
+        *top_ver);
+  }
+}
 
 std::FILE* debug_file() {
   static std::FILE* fp = []() -> std::FILE* {
@@ -234,6 +334,9 @@ std::unique_ptr<Client> Client::open(const std::filesystem::path& cache_root,
   //  STORE_ROOT:  Store at cache_root/; legacy at cache_root/legacy/
   //               (top-level Store files; no schema clash with legacy 1–4)
   const bool root_store = store_root_layout();
+  if (root_store) {
+    migrate_dual_path_to_store_root(cache_root);
+  }
   const std::filesystem::path legacy_root =
       root_store ? (cache_root / "legacy") : cache_root;
   auto db = std::make_unique<Database>(Database::open(legacy_root));

@@ -60,7 +60,9 @@ tree); do not invent a second PreferCache retry loop.
 2. **Top-level Store (experimental ≥237):** `THUMTOO_STORE_ROOT=1` places Store at
    `$cache/{index,bulk}.sqlite` and legacy Database/BlobStore under
    `$cache/legacy/`. Default remains dual-path (`$cache/store/` + top-level legacy).
-   Do not mix layouts on one cache dir without migrating files.
+   **Auto-migrate (≥238):** on open, classic dual-path caches move top-level legacy
+   schema files → `legacy/` and `store/` redesign files → cache root (skips if
+   destinations already exist).
 3. Remove dual-write helpers (`mirror_*`) and legacy `Database` open (Store-only).
 4. Migration: **no** ladder→tile conversion (PLAN non-goal); cold rebuild tiles.
 
