@@ -1627,7 +1627,8 @@ void Client::request_size(std::string uri, SizeCallback cb) {
   job.kind = JobKind::ProbeSize;
   job.uri = std::move(uri);
   job.size_cb = std::move(cb);
-  enqueue(std::move(job));
+  // Size is the layout pass — run ahead of EnsurePixels / tiles / LQIP.
+  enqueue(std::move(job), /*front=*/true);
 }
 
 size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
@@ -2199,6 +2200,21 @@ void Client::worker_main() {
       }
       if (queue_.empty()) {
         continue;
+      }
+      // Prefer ProbeSize over soft/tiles so layout settles before thumbnails.
+      {
+        auto probe_it = queue_.end();
+        for (auto it = queue_.begin(); it != queue_.end(); ++it) {
+          if (it->kind == JobKind::ProbeSize) {
+            probe_it = it;
+            break;
+          }
+        }
+        if (probe_it != queue_.end() && probe_it != queue_.begin()) {
+          Job probe = std::move(*probe_it);
+          queue_.erase(probe_it);
+          queue_.push_front(std::move(probe));
+        }
       }
       // Do not claim a new FocusFull while one is already running (cap).
       if (queue_.front().kind == JobKind::EnsureTiles &&

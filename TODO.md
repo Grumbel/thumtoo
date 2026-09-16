@@ -2,6 +2,27 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-292-probe-size-priority.** ProbeSize runs ahead of soft/tiles.
+Prior: **291**.
+
+### Change
+- `request_size` enqueues `front=true`
+- Worker claim prefers any pending `ProbeSize` over EnsurePixels/tiles
+
+### Apply
+```bash
+git pull /path/to/thumtoo-292-probe-size-priority.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **292**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-291-tile-scale-floor-dims.** TileSynth dims match successive floor half.
 Prior: **290**.
 
