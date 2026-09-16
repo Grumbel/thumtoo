@@ -383,6 +383,97 @@ class Store {
   [[nodiscard]] std::vector<std::string> blob_refs_for_tag(
       std::string_view tag_name, int limit = 1000) const;
 
+  // --- user collections / sets (dirtoo FileSet direction) ---
+  struct CollectionRow {
+    std::int64_t id = 0;
+    std::optional<std::string> label;
+    std::optional<std::string> color;
+    std::int64_t created_at = 0;
+    std::int64_t updated_at = 0;
+  };
+
+  struct CollectionMemberRow {
+    std::int64_t collection_id = 0;
+    std::string blob_ref;
+    std::optional<int> ordinal;
+    std::optional<std::string> path_key;
+  };
+
+  [[nodiscard]] std::int64_t create_collection(
+      std::optional<std::string_view> label = {},
+      std::optional<std::string_view> color = {});
+
+  [[nodiscard]] std::optional<CollectionRow> find_collection(
+      std::int64_t id) const;
+
+  void set_collection_label(std::int64_t id, std::optional<std::string_view> label);
+  void set_collection_color(std::int64_t id, std::optional<std::string_view> color);
+
+  /// Insert or replace membership (PRIMARY KEY collection_id + blob_ref).
+  void upsert_collection_member(std::int64_t collection_id,
+                                std::string_view blob_ref,
+                                std::optional<int> ordinal = {},
+                                std::optional<std::string_view> path_key = {});
+
+  bool remove_collection_member(std::int64_t collection_id,
+                                std::string_view blob_ref);
+
+  [[nodiscard]] std::vector<CollectionMemberRow> list_collection_members(
+      std::int64_t collection_id, int limit = 100000) const;
+
+  /// CASCADE deletes members.
+  void delete_collection(std::int64_t id);
+
+  [[nodiscard]] std::int64_t count_collections() const;
+
+  // --- user bookmarks ---
+  struct BookmarkRow {
+    std::int64_t id = 0;
+    std::string target_ref;
+    std::optional<std::string> title;
+    std::int64_t created_at = 0;
+    std::int64_t updated_at = 0;
+  };
+
+  [[nodiscard]] std::int64_t create_bookmark(
+      std::string_view target_ref, std::optional<std::string_view> title = {});
+
+  [[nodiscard]] std::optional<BookmarkRow> find_bookmark(std::int64_t id) const;
+
+  void set_bookmark_title(std::int64_t id, std::optional<std::string_view> title);
+
+  void delete_bookmark(std::int64_t id);
+
+  [[nodiscard]] std::vector<BookmarkRow> list_bookmarks_for_target(
+      std::string_view target_ref, int limit = 1000) const;
+
+  [[nodiscard]] std::int64_t count_bookmarks() const;
+
+  // --- user link edges (trails; source defaults to 2 = user) ---
+  struct LinkEdgeRow {
+    std::int64_t id = 0;
+    std::string from_ref;
+    std::string to_ref;
+    std::optional<std::string> rel;
+    int source = 2;  // 2 = user (docs/DATABASE.md)
+    std::int64_t created_at = 0;
+  };
+
+  /// Insert or ignore on UNIQUE (from_ref, to_ref, rel, source). Returns id of
+  /// existing or new row.
+  [[nodiscard]] std::int64_t add_link_edge(std::string_view from_ref,
+                                           std::string_view to_ref,
+                                           std::optional<std::string_view> rel = {},
+                                           int source = 2);
+
+  bool remove_link_edge(std::int64_t id);
+
+  [[nodiscard]] std::vector<LinkEdgeRow> list_links_from(
+      std::string_view from_ref, int limit = 1000) const;
+
+  [[nodiscard]] std::vector<LinkEdgeRow> list_links_to(std::string_view to_ref,
+                                                      int limit = 1000) const;
+
  private:
   Store(sqlite3* index, sqlite3* bulk, sqlite3* user,
         std::filesystem::path cache_root, std::filesystem::path data_root,

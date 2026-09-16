@@ -1933,4 +1933,523 @@ std::vector<std::string> Store::blob_refs_for_tag(std::string_view tag_name,
   return out;
 }
 
+std::int64_t Store::create_collection(std::optional<std::string_view> label,
+                                      std::optional<std::string_view> color) {
+  const std::int64_t now = now_unix_s();
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "INSERT INTO collection(label, color, created_at, updated_at) "
+          "VALUES(?1,?2,?3,?4);",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare create_collection");
+  }
+  if (label) {
+    sqlite3_bind_text(stmt, 1, label->data(), static_cast<int>(label->size()),
+                      SQLITE_STATIC);
+  } else {
+    sqlite3_bind_null(stmt, 1);
+  }
+  if (color) {
+    sqlite3_bind_text(stmt, 2, color->data(), static_cast<int>(color->size()),
+                      SQLITE_STATIC);
+  } else {
+    sqlite3_bind_null(stmt, 2);
+  }
+  sqlite3_bind_int64(stmt, 3, now);
+  sqlite3_bind_int64(stmt, 4, now);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(user_, "step create_collection");
+  }
+  const std::int64_t id = sqlite3_last_insert_rowid(user_);
+  sqlite3_finalize(stmt);
+  return id;
+}
+
+std::optional<Store::CollectionRow> Store::find_collection(
+    std::int64_t id) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "SELECT id, label, color, created_at, updated_at FROM collection "
+          "WHERE id = ?1;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare find_collection");
+  }
+  sqlite3_bind_int64(stmt, 1, id);
+  std::optional<CollectionRow> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    CollectionRow r;
+    r.id = sqlite3_column_int64(stmt, 0);
+    if (sqlite3_column_type(stmt, 1) != SQLITE_NULL) {
+      r.label = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    }
+    if (sqlite3_column_type(stmt, 2) != SQLITE_NULL) {
+      r.color = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+    }
+    r.created_at = sqlite3_column_int64(stmt, 3);
+    r.updated_at = sqlite3_column_int64(stmt, 4);
+    out = std::move(r);
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+void Store::set_collection_label(std::int64_t id,
+                                 std::optional<std::string_view> label) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "UPDATE collection SET label = ?1, updated_at = ?2 WHERE id = ?3;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare set_collection_label");
+  }
+  if (label) {
+    sqlite3_bind_text(stmt, 1, label->data(), static_cast<int>(label->size()),
+                      SQLITE_STATIC);
+  } else {
+    sqlite3_bind_null(stmt, 1);
+  }
+  sqlite3_bind_int64(stmt, 2, now_unix_s());
+  sqlite3_bind_int64(stmt, 3, id);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(user_, "step set_collection_label");
+  }
+  sqlite3_finalize(stmt);
+}
+
+void Store::set_collection_color(std::int64_t id,
+                                 std::optional<std::string_view> color) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "UPDATE collection SET color = ?1, updated_at = ?2 WHERE id = ?3;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare set_collection_color");
+  }
+  if (color) {
+    sqlite3_bind_text(stmt, 1, color->data(), static_cast<int>(color->size()),
+                      SQLITE_STATIC);
+  } else {
+    sqlite3_bind_null(stmt, 1);
+  }
+  sqlite3_bind_int64(stmt, 2, now_unix_s());
+  sqlite3_bind_int64(stmt, 3, id);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(user_, "step set_collection_color");
+  }
+  sqlite3_finalize(stmt);
+}
+
+void Store::upsert_collection_member(std::int64_t collection_id,
+                                     std::string_view blob_ref,
+                                     std::optional<int> ordinal,
+                                     std::optional<std::string_view> path_key) {
+  if (blob_ref.empty()) {
+    throw std::invalid_argument("upsert_collection_member: empty blob_ref");
+  }
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "INSERT INTO collection_member(collection_id, blob_ref, ordinal, "
+          "path_key) VALUES(?1,?2,?3,?4) "
+          "ON CONFLICT(collection_id, blob_ref) DO UPDATE SET "
+          "ordinal = excluded.ordinal, path_key = excluded.path_key;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare upsert_collection_member");
+  }
+  sqlite3_bind_int64(stmt, 1, collection_id);
+  sqlite3_bind_text(stmt, 2, blob_ref.data(), static_cast<int>(blob_ref.size()),
+                    SQLITE_STATIC);
+  if (ordinal) {
+    sqlite3_bind_int(stmt, 3, *ordinal);
+  } else {
+    sqlite3_bind_null(stmt, 3);
+  }
+  if (path_key) {
+    sqlite3_bind_text(stmt, 4, path_key->data(),
+                      static_cast<int>(path_key->size()), SQLITE_STATIC);
+  } else {
+    sqlite3_bind_null(stmt, 4);
+  }
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(user_, "step upsert_collection_member");
+  }
+  sqlite3_finalize(stmt);
+}
+
+bool Store::remove_collection_member(std::int64_t collection_id,
+                                     std::string_view blob_ref) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "DELETE FROM collection_member WHERE collection_id = ?1 AND "
+          "blob_ref = ?2;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare remove_collection_member");
+  }
+  sqlite3_bind_int64(stmt, 1, collection_id);
+  sqlite3_bind_text(stmt, 2, blob_ref.data(), static_cast<int>(blob_ref.size()),
+                    SQLITE_STATIC);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(user_, "step remove_collection_member");
+  }
+  const int changes = sqlite3_changes(user_);
+  sqlite3_finalize(stmt);
+  return changes > 0;
+}
+
+std::vector<Store::CollectionMemberRow> Store::list_collection_members(
+    std::int64_t collection_id, int limit) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "SELECT collection_id, blob_ref, ordinal, path_key "
+          "FROM collection_member WHERE collection_id = ?1 "
+          "ORDER BY ordinal IS NULL, ordinal, blob_ref LIMIT ?2;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare list_collection_members");
+  }
+  sqlite3_bind_int64(stmt, 1, collection_id);
+  sqlite3_bind_int(stmt, 2, limit);
+  std::vector<CollectionMemberRow> out;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    CollectionMemberRow r;
+    r.collection_id = sqlite3_column_int64(stmt, 0);
+    r.blob_ref = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    if (sqlite3_column_type(stmt, 2) != SQLITE_NULL) {
+      r.ordinal = sqlite3_column_int(stmt, 2);
+    }
+    if (sqlite3_column_type(stmt, 3) != SQLITE_NULL) {
+      r.path_key = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+    }
+    out.push_back(std::move(r));
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+void Store::delete_collection(std::int64_t id) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(user_, "DELETE FROM collection WHERE id = ?1;", -1,
+                         &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare delete_collection");
+  }
+  sqlite3_bind_int64(stmt, 1, id);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(user_, "step delete_collection");
+  }
+  sqlite3_finalize(stmt);
+}
+
+std::int64_t Store::count_collections() const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(user_, "SELECT COUNT(*) FROM collection;", -1, &stmt,
+                         nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare count_collections");
+  }
+  std::int64_t n = 0;
+  if (sqlite3_step(stmt) == SQLITE_ROW) n = sqlite3_column_int64(stmt, 0);
+  sqlite3_finalize(stmt);
+  return n;
+}
+
+std::int64_t Store::create_bookmark(std::string_view target_ref,
+                                    std::optional<std::string_view> title) {
+  if (target_ref.empty()) {
+    throw std::invalid_argument("create_bookmark: empty target_ref");
+  }
+  const std::int64_t now = now_unix_s();
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "INSERT INTO bookmark(target_ref, title, created_at, updated_at) "
+          "VALUES(?1,?2,?3,?4);",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare create_bookmark");
+  }
+  sqlite3_bind_text(stmt, 1, target_ref.data(),
+                    static_cast<int>(target_ref.size()), SQLITE_STATIC);
+  if (title) {
+    sqlite3_bind_text(stmt, 2, title->data(), static_cast<int>(title->size()),
+                      SQLITE_STATIC);
+  } else {
+    sqlite3_bind_null(stmt, 2);
+  }
+  sqlite3_bind_int64(stmt, 3, now);
+  sqlite3_bind_int64(stmt, 4, now);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(user_, "step create_bookmark");
+  }
+  const std::int64_t id = sqlite3_last_insert_rowid(user_);
+  sqlite3_finalize(stmt);
+  return id;
+}
+
+std::optional<Store::BookmarkRow> Store::find_bookmark(std::int64_t id) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "SELECT id, target_ref, title, created_at, updated_at FROM bookmark "
+          "WHERE id = ?1;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare find_bookmark");
+  }
+  sqlite3_bind_int64(stmt, 1, id);
+  std::optional<BookmarkRow> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    BookmarkRow r;
+    r.id = sqlite3_column_int64(stmt, 0);
+    r.target_ref =
+        reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    if (sqlite3_column_type(stmt, 2) != SQLITE_NULL) {
+      r.title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+    }
+    r.created_at = sqlite3_column_int64(stmt, 3);
+    r.updated_at = sqlite3_column_int64(stmt, 4);
+    out = std::move(r);
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+void Store::set_bookmark_title(std::int64_t id,
+                               std::optional<std::string_view> title) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "UPDATE bookmark SET title = ?1, updated_at = ?2 WHERE id = ?3;", -1,
+          &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare set_bookmark_title");
+  }
+  if (title) {
+    sqlite3_bind_text(stmt, 1, title->data(), static_cast<int>(title->size()),
+                      SQLITE_STATIC);
+  } else {
+    sqlite3_bind_null(stmt, 1);
+  }
+  sqlite3_bind_int64(stmt, 2, now_unix_s());
+  sqlite3_bind_int64(stmt, 3, id);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(user_, "step set_bookmark_title");
+  }
+  sqlite3_finalize(stmt);
+}
+
+void Store::delete_bookmark(std::int64_t id) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(user_, "DELETE FROM bookmark WHERE id = ?1;", -1,
+                         &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare delete_bookmark");
+  }
+  sqlite3_bind_int64(stmt, 1, id);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(user_, "step delete_bookmark");
+  }
+  sqlite3_finalize(stmt);
+}
+
+std::vector<Store::BookmarkRow> Store::list_bookmarks_for_target(
+    std::string_view target_ref, int limit) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "SELECT id, target_ref, title, created_at, updated_at FROM bookmark "
+          "WHERE target_ref = ?1 ORDER BY id LIMIT ?2;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare list_bookmarks_for_target");
+  }
+  sqlite3_bind_text(stmt, 1, target_ref.data(),
+                    static_cast<int>(target_ref.size()), SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, limit);
+  std::vector<BookmarkRow> out;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    BookmarkRow r;
+    r.id = sqlite3_column_int64(stmt, 0);
+    r.target_ref =
+        reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    if (sqlite3_column_type(stmt, 2) != SQLITE_NULL) {
+      r.title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+    }
+    r.created_at = sqlite3_column_int64(stmt, 3);
+    r.updated_at = sqlite3_column_int64(stmt, 4);
+    out.push_back(std::move(r));
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+std::int64_t Store::count_bookmarks() const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(user_, "SELECT COUNT(*) FROM bookmark;", -1, &stmt,
+                         nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare count_bookmarks");
+  }
+  std::int64_t n = 0;
+  if (sqlite3_step(stmt) == SQLITE_ROW) n = sqlite3_column_int64(stmt, 0);
+  sqlite3_finalize(stmt);
+  return n;
+}
+
+std::int64_t Store::add_link_edge(std::string_view from_ref,
+                                  std::string_view to_ref,
+                                  std::optional<std::string_view> rel,
+                                  int source) {
+  if (from_ref.empty() || to_ref.empty()) {
+    throw std::invalid_argument("add_link_edge: empty from_ref or to_ref");
+  }
+  {
+    sqlite3_stmt* find = nullptr;
+    if (rel) {
+      if (sqlite3_prepare_v2(
+              user_,
+              "SELECT id FROM link_edge WHERE from_ref = ?1 AND to_ref = ?2 "
+              "AND rel = ?3 AND source = ?4;",
+              -1, &find, nullptr) != SQLITE_OK) {
+        throw_sqlite(user_, "prepare add_link_edge find");
+      }
+      sqlite3_bind_text(find, 1, from_ref.data(),
+                        static_cast<int>(from_ref.size()), SQLITE_STATIC);
+      sqlite3_bind_text(find, 2, to_ref.data(), static_cast<int>(to_ref.size()),
+                        SQLITE_STATIC);
+      sqlite3_bind_text(find, 3, rel->data(), static_cast<int>(rel->size()),
+                        SQLITE_STATIC);
+      sqlite3_bind_int(find, 4, source);
+    } else {
+      if (sqlite3_prepare_v2(
+              user_,
+              "SELECT id FROM link_edge WHERE from_ref = ?1 AND to_ref = ?2 "
+              "AND rel IS NULL AND source = ?3;",
+              -1, &find, nullptr) != SQLITE_OK) {
+        throw_sqlite(user_, "prepare add_link_edge find null rel");
+      }
+      sqlite3_bind_text(find, 1, from_ref.data(),
+                        static_cast<int>(from_ref.size()), SQLITE_STATIC);
+      sqlite3_bind_text(find, 2, to_ref.data(), static_cast<int>(to_ref.size()),
+                        SQLITE_STATIC);
+      sqlite3_bind_int(find, 3, source);
+    }
+    if (sqlite3_step(find) == SQLITE_ROW) {
+      const std::int64_t id = sqlite3_column_int64(find, 0);
+      sqlite3_finalize(find);
+      return id;
+    }
+    sqlite3_finalize(find);
+  }
+
+  const std::int64_t now = now_unix_s();
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "INSERT INTO link_edge(from_ref, to_ref, rel, source, created_at) "
+          "VALUES(?1,?2,?3,?4,?5);",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare add_link_edge");
+  }
+  sqlite3_bind_text(stmt, 1, from_ref.data(), static_cast<int>(from_ref.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 2, to_ref.data(), static_cast<int>(to_ref.size()),
+                    SQLITE_STATIC);
+  if (rel) {
+    sqlite3_bind_text(stmt, 3, rel->data(), static_cast<int>(rel->size()),
+                      SQLITE_STATIC);
+  } else {
+    sqlite3_bind_null(stmt, 3);
+  }
+  sqlite3_bind_int(stmt, 4, source);
+  sqlite3_bind_int64(stmt, 5, now);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(user_, "step add_link_edge");
+  }
+  const std::int64_t id = sqlite3_last_insert_rowid(user_);
+  sqlite3_finalize(stmt);
+  return id;
+}
+
+bool Store::remove_link_edge(std::int64_t id) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(user_, "DELETE FROM link_edge WHERE id = ?1;", -1,
+                         &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare remove_link_edge");
+  }
+  sqlite3_bind_int64(stmt, 1, id);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(user_, "step remove_link_edge");
+  }
+  const int changes = sqlite3_changes(user_);
+  sqlite3_finalize(stmt);
+  return changes > 0;
+}
+
+std::vector<Store::LinkEdgeRow> Store::list_links_from(std::string_view from_ref,
+                                                       int limit) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "SELECT id, from_ref, to_ref, rel, source, created_at FROM link_edge "
+          "WHERE from_ref = ?1 ORDER BY id LIMIT ?2;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare list_links_from");
+  }
+  sqlite3_bind_text(stmt, 1, from_ref.data(), static_cast<int>(from_ref.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, limit);
+  std::vector<LinkEdgeRow> out;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    LinkEdgeRow r;
+    r.id = sqlite3_column_int64(stmt, 0);
+    r.from_ref = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    r.to_ref = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+    if (sqlite3_column_type(stmt, 3) != SQLITE_NULL) {
+      r.rel = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+    }
+    r.source = sqlite3_column_int(stmt, 4);
+    r.created_at = sqlite3_column_int64(stmt, 5);
+    out.push_back(std::move(r));
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+std::vector<Store::LinkEdgeRow> Store::list_links_to(std::string_view to_ref,
+                                                     int limit) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "SELECT id, from_ref, to_ref, rel, source, created_at FROM link_edge "
+          "WHERE to_ref = ?1 ORDER BY id LIMIT ?2;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare list_links_to");
+  }
+  sqlite3_bind_text(stmt, 1, to_ref.data(), static_cast<int>(to_ref.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, limit);
+  std::vector<LinkEdgeRow> out;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    LinkEdgeRow r;
+    r.id = sqlite3_column_int64(stmt, 0);
+    r.from_ref = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    r.to_ref = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+    if (sqlite3_column_type(stmt, 3) != SQLITE_NULL) {
+      r.rel = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+    }
+    r.source = sqlite3_column_int(stmt, 4);
+    r.created_at = sqlite3_column_int64(stmt, 5);
+    out.push_back(std::move(r));
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
 }  // namespace thumtoo

@@ -202,6 +202,41 @@ int main() {
       expect(store.remove_blob_tag(bref, "vacation"), "remove tag");
       expect(store.tags_for_blob_ref(bref).size() == 1, "one tag left");
       expect(store.tags_for_blob_ref(bref)[0] == "favorite", "favorite remains");
+
+      // Phase D: collections, bookmarks, link edges
+      const auto coll =
+          store.create_collection(std::string_view{"Album"}, std::string_view{"#f00"});
+      expect(coll >= 1, "collection id");
+      expect(store.count_collections() == 1, "one collection");
+      store.upsert_collection_member(coll, bref, 0, std::string_view{"/tmp/a.jpg"});
+      store.upsert_collection_member(coll, bref, 1);  // update ordinal
+      auto members = store.list_collection_members(coll);
+      expect(members.size() == 1 && members[0].ordinal && *members[0].ordinal == 1,
+             "collection member upsert");
+      expect(store.remove_collection_member(coll, bref), "remove member");
+      expect(store.list_collection_members(coll).empty(), "no members");
+      store.upsert_collection_member(coll, bref, 0);
+
+      const auto bm =
+          store.create_bookmark(bref, std::string_view{"Chapter 1"});
+      expect(store.count_bookmarks() == 1, "one bookmark");
+      auto bmrow = store.find_bookmark(bm);
+      expect(bmrow && bmrow->title && *bmrow->title == "Chapter 1", "bm title");
+      store.set_bookmark_title(bm, std::string_view{"Ch. 1"});
+      expect(store.list_bookmarks_for_target(bref).size() == 1, "list bm");
+
+      const std::string other = "blob:sha256:" + std::string(64, 'a');
+      const auto edge =
+          store.add_link_edge(bref, other, std::string_view{"see-also"});
+      expect(store.add_link_edge(bref, other, std::string_view{"see-also"}) ==
+                 edge,
+             "link idempotent");
+      expect(store.list_links_from(bref).size() == 1, "links from");
+      expect(store.list_links_to(other).size() == 1, "links to");
+      expect(store.remove_link_edge(edge), "remove link");
+      expect(store.list_links_from(bref).empty(), "no links");
+      // re-add for wipe survival
+      store.add_link_edge(bref, other, std::string_view{"see-also"});
     }
 
     // Re-open preserves rows
@@ -210,16 +245,18 @@ int main() {
       expect(store.count_blobs() == 4, "reopen blobs");
       expect(store.count_locators() == 1, "reopen locators");
       expect(store.count_directory_snapshots() == 1, "reopen dir snap");
-      // User tags still present
       std::vector<std::uint8_t> digest(32);
       for (int i = 0; i < 32; ++i)
         digest[static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(i + 1);
       auto bref = thumtoo::Store::format_blob_ref_sha256(digest);
       expect(store.tags_for_blob_ref(bref).size() == 1, "reopen tags");
+      expect(store.count_collections() == 1, "reopen collections");
+      expect(store.count_bookmarks() == 1, "reopen bookmarks");
+      expect(store.list_links_from(bref).size() == 1, "reopen links");
     }
 
     // Re-create after deleting index+bulk (simulates operator cache wipe).
-    // User DB must keep tags.
+    // User DB must keep tags / collections / bookmarks / links.
     {
       fs::remove(dir / "index.sqlite");
       fs::remove(dir / "bulk.sqlite");
@@ -234,6 +271,9 @@ int main() {
       auto bref = thumtoo::Store::format_blob_ref_sha256(digest);
       expect(store.tags_for_blob_ref(bref).size() == 1, "tags survive wipe");
       expect(store.tags_for_blob_ref(bref)[0] == "favorite", "favorite survives");
+      expect(store.count_collections() == 1, "collections survive wipe");
+      expect(store.count_bookmarks() == 1, "bookmarks survive wipe");
+      expect(store.list_links_from(bref).size() == 1, "links survive wipe");
     }
   } catch (const std::exception& ex) {
     std::cerr << "exception: " << ex.what() << '\n';

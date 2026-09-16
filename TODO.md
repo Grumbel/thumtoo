@@ -2,6 +2,35 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-218-store-phase-d-user-sets.** Store Phase D: collections, bookmarks, links.
+Prior: **217**.
+
+### Change
+- User APIs: `create_collection` / members / delete; `create_bookmark` /
+  list-by-target; `add_link_edge` / list from·to / remove.
+- Tests: membership upsert, link idempotency, user rows survive index+bulk wipe.
+- PLAN.md Phase D marked complete for directory + user overlays (annotation /
+  http_body still optional).
+
+### Not in this tip
+- annotation write API
+- HTTPS → http_body
+- Client wiring to Store (Phase E)
+
+### Apply
+```bash
+git pull /path/to/thumtoo-218-store-phase-d-user-sets.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **218**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-217-store-phase-d-dir-tags.** Store Phase D (partial): directory + tags.
 Prior: **216**.
 
