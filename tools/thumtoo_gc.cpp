@@ -230,14 +230,53 @@ int main(int argc, char** argv) {
     }
 
     const auto legacy_root = thumtoo::legacy_db_root(cache);
-    if (!legacy_files_present(legacy_root)) {
-      std::cerr << "thumtoo-gc: no legacy index/blobs under " << legacy_root
-                << "\n"
-                << "  (Client is Store-only; ladder GC applies only to old "
-                   "caches)\n"
-                << "  Try: " << argv[0] << " --cache " << cache
-                << " --store-summary\n";
-      return want_legacy && !do_store_summary ? 2 : 0;
+    const bool have_legacy = legacy_files_present(legacy_root);
+
+    // Store forget for --uri / --path when redesign index exists.
+    if (!uris.empty() || !paths.empty()) {
+      thumtoo::Store::Paths sp;
+      sp.cache_root = thumtoo::redesign_store_root(cache);
+      sp.data_root = cache;
+      std::error_code ec;
+      if (fs::is_regular_file(sp.cache_root / "index.sqlite", ec)) {
+        auto store = thumtoo::Store::open(sp);
+        std::cout << "store forget:\n";
+        for (const auto& u : uris) {
+          auto st = store.forget_uri(u, dry_run);
+          std::cout << "  uri " << u
+                    << (st.locator_removed ? " removed" : " miss")
+                    << (st.blob_purged ? " (blob purged)" : "")
+                    << " tiles=" << st.tiles_deleted
+                    << (dry_run ? " (dry-run)\n" : "\n");
+        }
+        for (const auto& p : paths) {
+          std::error_code e2;
+          auto abs = fs::absolute(p, e2);
+          if (e2) abs = p;
+          const auto file_uri =
+              thumtoo::file_uri_from_path(abs.lexically_normal());
+          auto st = store.forget_uri(file_uri, dry_run);
+          std::cout << "  path " << p << " -> " << file_uri
+                    << (st.locator_removed ? " removed" : " miss")
+                    << (st.blob_purged ? " (blob purged)" : "")
+                    << " tiles=" << st.tiles_deleted
+                    << (dry_run ? " (dry-run)\n" : "\n");
+        }
+        if (!have_legacy && !do_orphans && !do_dead && !do_soft_levels &&
+            min_scale < 0) {
+          return 0;
+        }
+      }
+    }
+
+    if (!have_legacy) {
+      if (do_orphans || do_dead || do_soft_levels || min_scale >= 0) {
+        std::cerr << "thumtoo-gc: no legacy index/blobs under " << legacy_root
+                  << "\n"
+                  << "  (ladder flags need schema-4 files)\n";
+        return 2;
+      }
+      return 0;
     }
 
     auto db = thumtoo::Database::open(legacy_root);

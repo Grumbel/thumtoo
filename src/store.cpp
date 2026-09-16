@@ -843,6 +843,130 @@ std::vector<Store::LocatorRow> Store::list_locators_for_blob(
   return out;
 }
 
+
+std::optional<std::int64_t> Store::delete_locator(std::string_view uri) {
+  auto existing = find_locator(uri);
+  if (!existing) return std::nullopt;
+  const auto blob_id = existing->blob_id;
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(index_, "DELETE FROM locator WHERE uri = ?1;", -1,
+                         &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare delete_locator");
+  }
+  sqlite3_bind_text(stmt, 1, uri.data(), static_cast<int>(uri.size()),
+                    SQLITE_STATIC);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(index_, "step delete_locator");
+  }
+  sqlite3_finalize(stmt);
+  return blob_id;
+}
+
+std::int64_t Store::delete_locators_with_uri_prefix(std::string_view uri_prefix) {
+  if (uri_prefix.empty()) return 0;
+  sqlite3_stmt* stmt = nullptr;
+  // Literal prefix: uri >= prefix AND uri < prefix with last char bumped is
+  // fragile; use LIKE with escaped %/_ in prefix + '%'.
+  std::string pattern;
+  pattern.reserve(uri_prefix.size() * 2 + 1);
+  for (char c : uri_prefix) {
+    if (c == '%' || c == '_' || c == '\\') pattern.push_back('\\');
+    pattern.push_back(c);
+  }
+  pattern.push_back('%');
+  if (sqlite3_prepare_v2(index_,
+                         "DELETE FROM locator WHERE uri LIKE ?1 ESCAPE '\\';",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare delete_locators_with_uri_prefix");
+  }
+  sqlite3_bind_text(stmt, 1, pattern.c_str(), -1, SQLITE_TRANSIENT);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(index_, "step delete_locators_with_uri_prefix");
+  }
+  const auto n = static_cast<std::int64_t>(sqlite3_changes(index_));
+  sqlite3_finalize(stmt);
+  return n;
+}
+
+std::int64_t Store::purge_blob_if_unreferenced(std::int64_t blob_id) {
+  // Still referenced?
+  auto locs = list_locators_for_blob(blob_id, 1);
+  if (!locs.empty()) return 0;
+
+  // Collect media ids for bulk tile cleanup before CASCADE delete.
+  std::vector<std::int64_t> media_ids;
+  {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(index_, "SELECT id FROM media WHERE blob_id = ?1;",
+                           -1, &stmt, nullptr) != SQLITE_OK) {
+      throw_sqlite(index_, "prepare purge media list");
+    }
+    sqlite3_bind_int64(stmt, 1, blob_id);
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+      media_ids.push_back(sqlite3_column_int64(stmt, 0));
+    }
+    sqlite3_finalize(stmt);
+  }
+
+  std::int64_t tiles = 0;
+  for (const auto mid : media_ids) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(bulk_, "DELETE FROM tile_blob WHERE media_id = ?1;",
+                           -1, &stmt, nullptr) != SQLITE_OK) {
+      throw_sqlite(bulk_, "prepare purge tile_blob");
+    }
+    sqlite3_bind_int64(stmt, 1, mid);
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+      sqlite3_finalize(stmt);
+      throw_sqlite(bulk_, "step purge tile_blob");
+    }
+    tiles += sqlite3_changes(bulk_);
+    sqlite3_finalize(stmt);
+  }
+
+  // blob_hash and media/region/tile index cascade via FK when blob deleted.
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(index_, "DELETE FROM blob WHERE id = ?1;", -1, &stmt,
+                         nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare purge blob");
+  }
+  sqlite3_bind_int64(stmt, 1, blob_id);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(index_, "step purge blob");
+  }
+  sqlite3_finalize(stmt);
+  return tiles;
+}
+
+Store::ForgetStats Store::forget_uri(std::string_view uri, bool dry_run) {
+  ForgetStats st;
+  auto loc = find_locator(uri);
+  if (!loc) return st;
+  st.locator_removed = true;
+  const auto blob_id = loc->blob_id;
+  if (dry_run) {
+    if (blob_id) {
+      auto remaining = list_locators_for_blob(*blob_id, 2);
+      // Would purge if this is the only locator.
+      if (remaining.size() <= 1) st.blob_purged = true;
+    }
+    return st;
+  }
+  (void)delete_locator(uri);
+  if (blob_id) {
+    const auto tiles = purge_blob_if_unreferenced(*blob_id);
+    if (tiles > 0 || !find_blob(*blob_id)) {
+      // find_blob gone => purged
+      st.blob_purged = !find_blob(*blob_id).has_value();
+      st.tiles_deleted = tiles;
+    }
+  }
+  return st;
+}
+
 std::int64_t Store::count_blobs() const {
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(index_, "SELECT COUNT(*) FROM blob;", -1, &stmt,

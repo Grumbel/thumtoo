@@ -2,6 +2,30 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-270-store-forget-uri.** Store::forget_uri + Client purge + gc Store path.
+Prior: **269**.
+
+### Change
+- `Store::{delete_locator,delete_locators_with_uri_prefix,purge_blob_if_unreferenced,forget_uri}`
+- `Client::purge_uri` / `purge_path` call Store forget
+- `thumtoo-gc --uri/--path` forgets on redesign Store when index exists
+- `test_store` covers forget_uri purge of locator + blob + tiles
+
+### Apply
+```bash
+git pull /path/to/thumtoo-270-store-forget-uri.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **270**
+- [x] test_store + suite pass
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-269-client-pod-types.** Client PODs replace Database::LocatorRow in public API.
 Prior: **268**.
 

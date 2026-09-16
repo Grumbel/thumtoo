@@ -115,6 +115,7 @@ int main() {
       auto data = store.get_tile_data(media_id, full->id, 0, 0, 0);
       expect(data && *data == payload, "tile payload");
       expect(store.count_tiles() == 1, "one tile");
+
       auto tile_rows = store.list_tiles_for_region(media_id, full->id);
       expect(tile_rows.size() == 1 && tile_rows[0].scale == 0, "list tiles");
       auto scales = store.list_tile_scales(media_id, full->id);
@@ -279,6 +280,37 @@ int main() {
       expect(store.count_collections() == 1, "reopen collections");
       expect(store.count_bookmarks() == 1, "reopen bookmarks");
       expect(store.list_links_from(bref).size() == 1, "reopen links");
+    }
+
+    // forget_uri: dedicated locator so other fixtures stay intact
+    {
+      auto store = thumtoo::Store::open(dir);
+      const std::string forget_uri = "file:///tmp/forget-me.jpg";
+      std::vector<std::uint8_t> dig(32, 0xab);
+      const auto bid = store.insert_blob(10, thumtoo::BlobStatus::Ok);
+      store.put_hash(bid, thumtoo::HashAlgoId::Sha256, dig);
+      (void)store.upsert_locator(forget_uri, bid, 10, 1);
+      const auto mid = store.ensure_image_media(bid, 16, 16);
+      auto full = store.find_full_region(mid);
+      expect(full.has_value(), "forget fixture region");
+      thumtoo::Store::TileRow tr;
+      tr.media_id = mid;
+      tr.region_id = full->id;
+      tr.scale = 0;
+      tr.x = 0;
+      tr.y = 0;
+      tr.width = 16;
+      tr.height = 16;
+      tr.codec_id = thumtoo::CodecId::Jpeg;
+      const std::vector<std::uint8_t> pay = {1, 2, 3};
+      store.put_tile(tr, pay);
+      auto dry = store.forget_uri(forget_uri, true);
+      expect(dry.locator_removed && dry.blob_purged, "dry forget");
+      auto st = store.forget_uri(forget_uri, false);
+      expect(st.locator_removed && st.blob_purged, "forget purged");
+      expect(st.tiles_deleted >= 1, "forget tiles");
+      expect(!store.find_locator(forget_uri), "forget locator gone");
+      expect(!store.find_blob(bid), "forget blob gone");
     }
 
     // Re-create after deleting index+bulk (simulates operator cache wipe).

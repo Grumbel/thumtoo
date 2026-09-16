@@ -1829,14 +1829,36 @@ std::size_t Client::cancel_uri(std::string_view uri) {
   return dropped.size();
 }
 
-Client::PurgeStats Client::purge_uri(std::string_view /*uri*/, bool /*dry_run*/) {
-  // Legacy ladder purge only; Store GC is separate (thumtoo-gc tools path).
-  return {};
+Client::PurgeStats Client::purge_uri(std::string_view uri, bool dry_run) {
+  PurgeStats out;
+  if (!store_ || uri.empty()) return out;
+  auto st = store_->forget_uri(uri, dry_run);
+  if (st.locator_removed) out.removed_uris.emplace_back(uri);
+  if (st.blob_purged) out.purged_content_ids.emplace_back(std::string(uri));
+  out.tiles_deleted = st.tiles_deleted;
+  return out;
 }
 
-Client::PurgeStats Client::purge_path(const std::filesystem::path& /*path*/,
-                                        bool /*dry_run*/) {
-  return {};
+Client::PurgeStats Client::purge_path(const std::filesystem::path& path,
+                                      bool dry_run) {
+  PurgeStats out;
+  if (!store_ || path.empty()) return out;
+  std::error_code ec;
+  auto abs = std::filesystem::absolute(path, ec);
+  if (ec) abs = path;
+  const auto file_uri = file_uri_from_path(abs.lexically_normal());
+  auto st = store_->forget_uri(file_uri, dry_run);
+  if (st.locator_removed) out.removed_uris.push_back(file_uri);
+  if (st.blob_purged) out.purged_content_ids.push_back(file_uri);
+  out.tiles_deleted = st.tiles_deleted;
+  // Also drop archive-root style URI for the same path.
+  const auto arch = archive_uri(abs);
+  if (arch != file_uri) {
+    auto st2 = store_->forget_uri(arch, dry_run);
+    if (st2.locator_removed) out.removed_uris.push_back(arch);
+    out.tiles_deleted += st2.tiles_deleted;
+  }
+  return out;
 }
 
 std::uint64_t Client::set_interest(std::vector<InterestItem> items) {

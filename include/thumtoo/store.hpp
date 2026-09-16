@@ -173,6 +173,25 @@ class Store {
   [[nodiscard]] std::vector<LocatorRow> list_locators_for_blob(
       std::int64_t blob_id, int limit = 100) const;
 
+  /// Delete locator by URI. Returns bound blob_id if any (for orphan check).
+  [[nodiscard]] std::optional<std::int64_t> delete_locator(std::string_view uri);
+
+  /// Delete locators whose uri starts with prefix (literal prefix, not SQL LIKE).
+  [[nodiscard]] std::int64_t delete_locators_with_uri_prefix(
+      std::string_view uri_prefix);
+
+  /// If no locators reference blob_id, delete media/tiles/hash/blob (and bulk
+  /// tile payloads). Returns number of tile_blob rows removed from bulk.
+  [[nodiscard]] std::int64_t purge_blob_if_unreferenced(std::int64_t blob_id);
+
+  /// Forget one URI: delete locator, then purge blob if unreferenced.
+  struct ForgetStats {
+    bool locator_removed = false;
+    bool blob_purged = false;
+    std::int64_t tiles_deleted = 0;
+  };
+  [[nodiscard]] ForgetStats forget_uri(std::string_view uri, bool dry_run = false);
+
   [[nodiscard]] std::int64_t count_blobs() const;
   [[nodiscard]] std::int64_t count_locators() const;
 
