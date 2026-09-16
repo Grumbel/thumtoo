@@ -116,6 +116,15 @@ CREATE TABLE IF NOT EXISTS codec (
   id   INTEGER PRIMARY KEY,
   name TEXT NOT NULL UNIQUE
 );
+CREATE TABLE IF NOT EXISTS container_member (
+  container_id       INTEGER NOT NULL REFERENCES blob(id) ON DELETE CASCADE,
+  member_path        TEXT NOT NULL,
+  is_directory       INTEGER NOT NULL DEFAULT 0,
+  uncompressed_size  INTEGER,
+  blob_id            INTEGER REFERENCES blob(id) ON DELETE SET NULL,
+  PRIMARY KEY (container_id, member_path)
+);
+CREATE INDEX IF NOT EXISTS idx_container_member_blob ON container_member(blob_id);
 CREATE TABLE IF NOT EXISTS media (
   id           INTEGER PRIMARY KEY,
   blob_id      INTEGER NOT NULL REFERENCES blob(id) ON DELETE CASCADE,
@@ -1313,6 +1322,192 @@ std::int64_t Store::count_regions() const {
   if (sqlite3_step(stmt) == SQLITE_ROW) n = sqlite3_column_int64(stmt, 0);
   sqlite3_finalize(stmt);
   return n;
+}
+
+void Store::upsert_container_member(std::int64_t container_id,
+                                    std::string_view member_path,
+                                    bool is_directory,
+                                    std::optional<std::int64_t> uncompressed_size,
+                                    std::optional<std::int64_t> blob_id) {
+  sqlite3_stmt* stmt = nullptr;
+  // Preserve existing blob_id when caller passes nullopt (TOC refresh without hash).
+  if (sqlite3_prepare_v2(
+          index_,
+          "INSERT INTO container_member(container_id, member_path, is_directory, "
+          "uncompressed_size, blob_id) VALUES(?1, ?2, ?3, ?4, ?5) "
+          "ON CONFLICT(container_id, member_path) DO UPDATE SET "
+          "is_directory = excluded.is_directory, "
+          "uncompressed_size = COALESCE(excluded.uncompressed_size, "
+          "container_member.uncompressed_size), "
+          "blob_id = COALESCE(excluded.blob_id, container_member.blob_id);",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare upsert_container_member");
+  }
+  sqlite3_bind_int64(stmt, 1, container_id);
+  sqlite3_bind_text(stmt, 2, member_path.data(),
+                    static_cast<int>(member_path.size()), SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 3, is_directory ? 1 : 0);
+  if (uncompressed_size) {
+    sqlite3_bind_int64(stmt, 4, *uncompressed_size);
+  } else {
+    sqlite3_bind_null(stmt, 4);
+  }
+  if (blob_id) {
+    sqlite3_bind_int64(stmt, 5, *blob_id);
+  } else {
+    sqlite3_bind_null(stmt, 5);
+  }
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(index_, "step upsert_container_member");
+  }
+  sqlite3_finalize(stmt);
+}
+
+void Store::replace_container_members(
+    std::int64_t container_id, const std::vector<ContainerMemberRow>& members) {
+  exec_index("BEGIN IMMEDIATE;");
+  try {
+    sqlite3_stmt* del = nullptr;
+    if (sqlite3_prepare_v2(index_,
+                           "DELETE FROM container_member WHERE container_id = ?1;",
+                           -1, &del, nullptr) != SQLITE_OK) {
+      throw_sqlite(index_, "prepare replace_container_members delete");
+    }
+    sqlite3_bind_int64(del, 1, container_id);
+    if (sqlite3_step(del) != SQLITE_DONE) {
+      sqlite3_finalize(del);
+      throw_sqlite(index_, "step replace_container_members delete");
+    }
+    sqlite3_finalize(del);
+    for (const auto& m : members) {
+      upsert_container_member(container_id, m.member_path, m.is_directory,
+                              m.uncompressed_size, m.blob_id);
+    }
+    exec_index("COMMIT;");
+  } catch (...) {
+    exec_index("ROLLBACK;");
+    throw;
+  }
+}
+
+std::vector<Store::ContainerMemberRow> Store::list_container_members(
+    std::int64_t container_id, int limit) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(index_,
+                         "SELECT container_id, member_path, is_directory, "
+                         "uncompressed_size, blob_id FROM container_member "
+                         "WHERE container_id = ?1 ORDER BY member_path LIMIT ?2;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare list_container_members");
+  }
+  sqlite3_bind_int64(stmt, 1, container_id);
+  sqlite3_bind_int(stmt, 2, limit);
+  std::vector<ContainerMemberRow> out;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    ContainerMemberRow r;
+    r.container_id = sqlite3_column_int64(stmt, 0);
+    r.member_path =
+        reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    r.is_directory = sqlite3_column_int(stmt, 2) != 0;
+    if (sqlite3_column_type(stmt, 3) != SQLITE_NULL) {
+      r.uncompressed_size = sqlite3_column_int64(stmt, 3);
+    }
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL) {
+      r.blob_id = sqlite3_column_int64(stmt, 4);
+    }
+    out.push_back(std::move(r));
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+std::optional<Store::ContainerMemberRow> Store::find_container_member(
+    std::int64_t container_id, std::string_view member_path) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(index_,
+                         "SELECT container_id, member_path, is_directory, "
+                         "uncompressed_size, blob_id FROM container_member "
+                         "WHERE container_id = ?1 AND member_path = ?2;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare find_container_member");
+  }
+  sqlite3_bind_int64(stmt, 1, container_id);
+  sqlite3_bind_text(stmt, 2, member_path.data(),
+                    static_cast<int>(member_path.size()), SQLITE_STATIC);
+  std::optional<ContainerMemberRow> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    ContainerMemberRow r;
+    r.container_id = sqlite3_column_int64(stmt, 0);
+    r.member_path =
+        reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    r.is_directory = sqlite3_column_int(stmt, 2) != 0;
+    if (sqlite3_column_type(stmt, 3) != SQLITE_NULL) {
+      r.uncompressed_size = sqlite3_column_int64(stmt, 3);
+    }
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL) {
+      r.blob_id = sqlite3_column_int64(stmt, 4);
+    }
+    out = std::move(r);
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+void Store::set_container_member_blob(std::int64_t container_id,
+                                      std::string_view member_path,
+                                      std::int64_t member_blob_id) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(index_,
+                         "UPDATE container_member SET blob_id = ?1 "
+                         "WHERE container_id = ?2 AND member_path = ?3;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare set_container_member_blob");
+  }
+  sqlite3_bind_int64(stmt, 1, member_blob_id);
+  sqlite3_bind_int64(stmt, 2, container_id);
+  sqlite3_bind_text(stmt, 3, member_path.data(),
+                    static_cast<int>(member_path.size()), SQLITE_STATIC);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(index_, "step set_container_member_blob");
+  }
+  sqlite3_finalize(stmt);
+}
+
+std::int64_t Store::count_container_members(std::int64_t container_id) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(index_,
+                         "SELECT COUNT(*) FROM container_member "
+                         "WHERE container_id = ?1;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare count_container_members");
+  }
+  sqlite3_bind_int64(stmt, 1, container_id);
+  std::int64_t n = 0;
+  if (sqlite3_step(stmt) == SQLITE_ROW) n = sqlite3_column_int64(stmt, 0);
+  sqlite3_finalize(stmt);
+  return n;
+}
+
+std::int64_t Store::ensure_document_media(std::int64_t blob_id,
+                                          std::optional<int> page_count) {
+  if (auto existing = find_media_for_blob(blob_id, MediaKind::Document)) {
+    if (page_count) set_media_page_count(existing->id, *page_count);
+    return existing->id;
+  }
+  const std::int64_t media_id = insert_media(
+      blob_id, MediaKind::Document, {}, {}, MediaStatus::Ready);
+  if (page_count) set_media_page_count(media_id, *page_count);
+  return media_id;
+}
+
+std::int64_t Store::ensure_page_region(std::int64_t media_id, int page_1based) {
+  if (page_1based < 1) {
+    throw std::invalid_argument("ensure_page_region: page must be >= 1");
+  }
+  const std::string key = std::to_string(page_1based);
+  return ensure_region(media_id, RegionKind::Page, key, page_1based);
 }
 
 }  // namespace thumtoo

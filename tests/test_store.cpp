@@ -126,6 +126,31 @@ int main() {
           store.ensure_region(doc_media, thumtoo::RegionKind::Page, "3", 3);
       auto page = store.find_region(page_r);
       expect(page && page->key == "3", "page region key");
+
+      // Phase C: container members (TOC without hash) + document helpers
+      const auto zip_blob = store.insert_blob(50, thumtoo::BlobStatus::Ok);
+      store.upsert_container_member(zip_blob, "a.jpg", false, 1000, {});
+      store.upsert_container_member(zip_blob, "subdir/", true, {}, {});
+      expect(store.count_container_members(zip_blob) == 2, "two members");
+      auto mem = store.find_container_member(zip_blob, "a.jpg");
+      expect(mem && !mem->blob_id, "member unhashed");
+      const auto member_blob =
+          store.insert_blob(1000, thumtoo::BlobStatus::Ok);
+      store.set_container_member_blob(zip_blob, "a.jpg", member_blob);
+      mem = store.find_container_member(zip_blob, "a.jpg");
+      expect(mem && mem->blob_id && *mem->blob_id == member_blob,
+             "member hashed");
+
+      // TOC refresh preserves hash via upsert coalesce when blob_id omitted
+      store.upsert_container_member(zip_blob, "a.jpg", false, 1000, {});
+      mem = store.find_container_member(zip_blob, "a.jpg");
+      expect(mem && mem->blob_id && *mem->blob_id == member_blob,
+             "hash preserved on toc upsert");
+
+      const auto dmedia = store.ensure_document_media(doc_blob, 5);
+      expect(dmedia == doc_media, "ensure document idempotent");
+      const auto p1 = store.ensure_page_region(dmedia, 1);
+      expect(store.find_region(p1)->key == "1", "page 1 key");
     }
 
     // Re-open preserves rows

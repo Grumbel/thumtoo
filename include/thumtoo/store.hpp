@@ -274,6 +274,48 @@ class Store {
   [[nodiscard]] std::int64_t count_media() const;
   [[nodiscard]] std::int64_t count_regions() const;
 
+  // --- container_member (archive TOC; hash only on full read / tag / explicit) ---
+  struct ContainerMemberRow {
+    std::int64_t container_id = 0;
+    std::string member_path;
+    bool is_directory = false;
+    std::optional<std::int64_t> uncompressed_size;
+    std::optional<std::int64_t> blob_id;  // set when member bytes are hashed
+  };
+
+  /// Upsert one TOC entry. Does not hash; blob_id only set if provided.
+  void upsert_container_member(std::int64_t container_id,
+                               std::string_view member_path, bool is_directory,
+                               std::optional<std::int64_t> uncompressed_size,
+                               std::optional<std::int64_t> blob_id = {});
+
+  /// Replace all members for a container (transactional). Used on TOC refresh.
+  void replace_container_members(std::int64_t container_id,
+                                 const std::vector<ContainerMemberRow>& members);
+
+  [[nodiscard]] std::vector<ContainerMemberRow> list_container_members(
+      std::int64_t container_id, int limit = 100000) const;
+
+  [[nodiscard]] std::optional<ContainerMemberRow> find_container_member(
+      std::int64_t container_id, std::string_view member_path) const;
+
+  /// After hashing member bytes: attach blob_id to the TOC row.
+  void set_container_member_blob(std::int64_t container_id,
+                                 std::string_view member_path,
+                                 std::int64_t member_blob_id);
+
+  [[nodiscard]] std::int64_t count_container_members(
+      std::int64_t container_id) const;
+
+  // --- documents (page regions; tiles optional until rasterized) ---
+  /// Ensure document media for blob; optionally set page_count.
+  [[nodiscard]] std::int64_t ensure_document_media(
+      std::int64_t blob_id, std::optional<int> page_count = {});
+
+  /// Ensure region for 1-based page number (key = decimal string).
+  [[nodiscard]] std::int64_t ensure_page_region(std::int64_t media_id,
+                                               int page_1based);
+
  private:
   Store(sqlite3* index, sqlite3* bulk, sqlite3* user,
         std::filesystem::path cache_root, std::filesystem::path data_root,

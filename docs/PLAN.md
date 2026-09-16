@@ -123,9 +123,11 @@ Feature macros: new schema epoch; `TILES_ONLY`; user-store present.
 3. `blob` / `blob_hash` / `locator` + URI parse (`//archive:`, `//page:`).
 
 **Status:** A done (`Store` open, blob/hash/locator).  
-**Phase B status:** media + region(full/page) + tile index/bulk on `Store`
-(`ensure_image_media`, `put_tile` / `get_tile_data`). Legacy Client unchanged.
-Next: Phase C archives/documents (container_member, page tiles path).
+**Phase B status:** media + region + tiles on `Store`.  
+**Phase C status:** `container_member` TOC + optional member blob_id (hash on
+read/tag/explicit via `set_container_member_blob`); `ensure_document_media` /
+`ensure_page_region`. Legacy Client unchanged. Next: Phase D directory
+snapshots + user tags.
 
 ### Phase B — images
 

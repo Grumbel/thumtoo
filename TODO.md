@@ -2,6 +2,28 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-216-store-phase-c.** Store Phase C: container_member, document pages.
+Prior: **215**.
+
+### Change
+- container_member TOC; set_container_member_blob after hash
+- replace_container_members; ensure_document_media / ensure_page_region
+- Hash policy: TOC does not hash; preserve blob_id on upsert without new id
+
+### Apply
+```bash
+git pull /path/to/thumtoo-216-store-phase-c.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **216**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-215-store-phase-b.** Store Phase B: media, region, tiles.
 Prior: **214**.
 
