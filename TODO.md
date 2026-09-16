@@ -2,6 +2,27 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-264-rewrite-test-client.** Store-only client test (Ready after tiles).
+Prior: **263**.
+
+### Change
+- Rewrite `test_client` for Store-only: Incomplete after probe/soft, Ready after tiles
+- Assert `list_uris_for_content_id` + `read_source_bytes(content-id)`
+
+### Apply
+```bash
+git pull /path/to/thumtoo-264-rewrite-test-client.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **264**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-263-collapse-legacy-handlers.** Probe/pixels/tiles only via Store handlers.
 Prior: **262**.
 

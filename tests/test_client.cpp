@@ -84,8 +84,10 @@ int main() {
   {
     image_library_init();
     auto client = Client::open(cache);
+    expect(!client->has_legacy(), "Client has no legacy Database");
     expect(!client->get_size(uri).has_value(), "no size before request");
 
+    // --- probe ---
     bool called = false;
     std::optional<Size> got;
     client->request_size(uri, [&](std::string, SizeReply r) {
@@ -93,17 +95,19 @@ int main() {
       got = r.size;
     });
     client->drain();
-    expect(called, "callback invoked");
+    expect(called, "size callback invoked");
     expect(got.has_value(), "size present");
     expect(got && got->width == W && got->height == H, "native size");
 
     auto meta = client->get_meta(uri);
-    expect(meta.has_value(), "meta present");
-    // Size probe does not encode the display ladder.
-    expect(meta && meta->status == ContentStatus::Incomplete, "status incomplete after size");
+    expect(meta.has_value(), "meta after probe");
+    expect(meta && meta->status == ContentStatus::Incomplete,
+           "Incomplete after probe (no tiles yet)");
     expect(meta && meta->content_id.find("sha256:") == 0, "sha256 content id");
-    expect(!client->get_pixels(uri, 256).has_value(), "no pixels until request_pixels");
+    expect(!client->get_pixels(uri, 256).has_value(),
+           "no durable pixels until tiles");
 
+    // --- session soft pixels (tiles-first: not durable) ---
     bool called_px = false;
     client->request_pixels(uri, 128, [&](std::string, int, std::optional<PixelLevel> p) {
       called_px = true;
@@ -114,54 +118,55 @@ int main() {
     });
     client->drain();
     expect(called_px, "request_pixels callback");
-
     meta = client->get_meta(uri);
-    // Dual-path marks Ready after durable encode; Store-only stays Incomplete
-    // under tiles-first (session soft reply, no durable soft levels).
     expect(meta && meta->status == ContentStatus::Incomplete,
-           "incomplete after session soft pixels (tiles-first)");
-    // Tiles-first default (THUMTOO_SOFT_LEVELS unset): soft request replies from
-    // session encode and does not persist durable soft/overview levels.
-    // No durable soft and no tiles yet → cache-only get_pixels is empty.
+           "still Incomplete after session soft (no tiles)");
     expect(!client->get_pixels(uri, 256).has_value(),
-           "tiles-first: no durable soft pixels until tiles or SOFT_LEVELS");
-
-    // Default STORE_ONLY: no legacy blobs file.
+           "no durable soft under tiles-first");
     expect(!fs::exists(cache / "legacy"), "no legacy/ directory");
 
-    // --- grid tiles (Phase 4) ---
+    // --- durable grid tiles ---
     expect(!client->has_tile(uri, 0, 0, 0), "has_tile false before request");
-    expect(!client->get_tile(uri, 0, 0, 0).has_value(), "no tile before request");
     bool called_tile = false;
     client->request_tile(uri, 0, 0, 0,
                          [&](std::string, int scale, int x, int y,
-                             std::optional<TileBlob> t) {
+                             std::optional<TileBlob> tb) {
                            called_tile = true;
                            expect(scale == 0 && x == 0 && y == 0, "tile coords");
-                           expect(t.has_value(), "request_tile data");
-                           expect(t && !t->bytes.empty(), "tile bytes");
-                           expect(t && t->codec == "rgb888", "tile codec rgb888");
-                           expect(t && t->width > 0 && t->height > 0, "tile dims");
+                           expect(tb.has_value(), "request_tile data");
+                           expect(tb && !tb->bytes.empty(), "tile bytes");
+                           expect(tb && tb->codec == "rgb888", "tile codec rgb888");
+                           expect(tb && tb->width > 0 && tb->height > 0, "tile dims");
                          });
     client->drain();
     expect(called_tile, "request_tile callback");
-    expect(client->has_tile(uri, 0, 0, 0), "tile present after request");
     expect(client->has_tile(uri, 0, 0, 0), "has_tile after request");
     auto t0 = client->get_tile(uri, 0, 0, 0);
     expect(t0.has_value(), "get_tile cache hit");
     expect(t0 && t0->codec == "jpeg", "durable tile codec jpeg");
-    // TileSynth needs a complete scale (320×200 → two cells at scale 0);
-    // durable soft get_pixels is covered by test_soft_ladder with SOFT_LEVELS=1.
+
+    meta = client->get_meta(uri);
+    expect(meta && meta->status == ContentStatus::Ready,
+           "Ready after durable tiles");
+
     auto cov = client->get_tile_coverage(uri);
     expect(cov.has_value(), "tile coverage");
     expect(cov && cov->size.width == W && cov->size.height == H, "coverage size");
     expect(cov && cov->max_scale >= cov->min_scale, "coverage scales");
 
+    // --- source bytes by file URI and by content-id ---
     auto bytes = client->read_source_bytes(uri);
     expect(bytes.has_value() && !bytes->empty(), "read_source_bytes file");
     auto cid = client->resolve_content_id(uri);
     expect(cid.has_value(), "resolve_content_id after probe");
+    expect(cid && cid->find("sha256:") == 0, "content-id prefix");
     if (cid) {
+      auto locs = client->list_uris_for_content_id(*cid);
+      expect(!locs.empty(), "list_uris_for_content_id non-empty");
+      if (!locs.empty()) {
+        expect(locs.front().uri == uri || locs.front().uri.find("file:") == 0,
+               "locator uri is file");
+      }
       auto by_id = client->read_source_bytes(*cid);
       expect(by_id.has_value() && by_id->size() == bytes->size(),
              "read_source_bytes via content-id");
