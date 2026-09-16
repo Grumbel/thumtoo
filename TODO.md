@@ -2,6 +2,32 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-247-store-only-no-legacy.** STORE_ONLY skips legacy open entirely.
+Prior: **246**.
+
+### Change
+- `THUMTOO_STORE_ONLY=1`: no Database/BlobStore; `has_legacy()` / `db()` throws
+- Store-first probe + session EnsurePixels for plain `file://` images
+- Guards on get_size/meta/tile/pixels/locators; `test_store_only` updated
+
+### Next
+- Store-only tile encode; PDF/archive probe parity
+- Drop dual-write helpers when hosts stay on STORE_ONLY
+
+### Apply
+```bash
+git pull /path/to/thumtoo-247-store-only-no-legacy.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **247**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-246-store-only-ephemeral.** THUMTOO_STORE_ONLY in-memory legacy.
 Prior: **245**.
 

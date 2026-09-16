@@ -35,6 +35,7 @@
 #include <random>
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <cstring>
@@ -224,6 +225,22 @@ Client::~Client() {
   }
 }
 
+Database& Client::db() {
+  if (!db_) {
+    throw std::runtime_error(
+        "Client::db: no legacy Database (THUMTOO_STORE_ONLY)");
+  }
+  return *db_;
+}
+
+const Database& Client::db() const {
+  if (!db_) {
+    throw std::runtime_error(
+        "Client::db: no legacy Database (THUMTOO_STORE_ONLY)");
+  }
+  return *db_;
+}
+
 std::unique_ptr<Client> Client::open(const std::filesystem::path& cache_root,
                                      Executor executor, unsigned worker_threads,
                                      const std::filesystem::path& data_root) {
@@ -232,14 +249,10 @@ std::unique_ptr<Client> Client::open(const std::filesystem::path& cache_root,
   //  STORE_ROOT=0:   legacy at cache_root/; Store at cache_root/store/
   migrate_dual_path_to_store_root(cache_root);
   const std::filesystem::path legacy_root = legacy_db_root(cache_root);
-  // STORE_ONLY: process-private in-memory legacy (no index/blobs on disk).
-  // Durable pixels/meta live on the redesign Store under the cache root.
+  // STORE_ONLY: no legacy Database/BlobStore — Store is the only durable DB.
   std::unique_ptr<Database> db;
   std::unique_ptr<BlobStore> blobs;
-  if (store_only_mode()) {
-    db = std::make_unique<Database>(Database::open_memory());
-    blobs = std::make_unique<BlobStore>(BlobStore::open_memory());
-  } else {
+  if (!store_only_mode()) {
     db = std::make_unique<Database>(Database::open(legacy_root));
     blobs = std::make_unique<BlobStore>(BlobStore::open(legacy_root));
   }
@@ -252,7 +265,7 @@ std::unique_ptr<Client> Client::open(const std::filesystem::path& cache_root,
         cache_root.string().c_str(),
         store_root_layout_enabled() ? "store-root" : "dual-path",
         store_only_mode() ? 1 : 0,
-        store_only_mode() ? ":memory:" : legacy_root.string().c_str(),
+        store_only_mode() ? "(none)" : legacy_root.string().c_str(),
         sp.cache_root.string().c_str(),
         sp.data_root.string().c_str());
   }
@@ -298,10 +311,12 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
 }
 
 std::optional<Size> Client::get_size(std::string_view uri) const {
-  auto m = db_->meta_for_uri(uri);
-  if (m && m->size && m->status != ContentStatus::Failed &&
-      m->status != ContentStatus::Unsupported) {
-    return m->size;
+  if (db_) {
+    auto m = db_->meta_for_uri(uri);
+    if (m && m->size && m->status != ContentStatus::Failed &&
+        m->status != ContentStatus::Unsupported) {
+      return m->size;
+    }
   }
   if (auto sm = meta_from_store(uri)) {
     return sm->size;
@@ -310,7 +325,9 @@ std::optional<Size> Client::get_size(std::string_view uri) const {
 }
 
 std::optional<ContentMeta> Client::get_meta(std::string_view uri) const {
-  if (auto m = db_->meta_for_uri(uri)) return m;
+  if (db_) {
+    if (auto m = db_->meta_for_uri(uri)) return m;
+  }
   return meta_from_store(uri);
 }
 
@@ -390,25 +407,30 @@ std::size_t Client::refresh_directory_snapshot(
 }
 
 std::vector<Database::LocatorRow> Client::list_locators(int limit) const {
+  if (!db_) return {};
   return db_->list_locators(limit);
 }
 
 std::optional<Database::LocatorRow> Client::find_locator(std::string_view uri) const {
+  if (!db_) return std::nullopt;
   return db_->find_locator(uri);
 }
 
 std::vector<Database::LocatorRow> Client::list_locators_by_uri_prefix(
     std::string_view uri_prefix, int limit) const {
+  if (!db_) return {};
   return db_->list_locators_by_uri_prefix(uri_prefix, limit);
 }
 
 std::vector<Database::LocatorRow> Client::list_locators_by_outer_path_prefix(
     std::string_view path_prefix, int limit) const {
+  if (!db_) return {};
   return db_->list_locators_by_outer_path_prefix(path_prefix, limit);
 }
 
 std::vector<Database::LocatorRow> Client::list_locators_like(
     std::string_view uri_like_pattern, int limit) const {
+  if (!db_) return {};
   return db_->list_locators_like(uri_like_pattern, limit);
 }
 
@@ -416,18 +438,23 @@ std::optional<std::string> Client::resolve_content_id(std::string_view uri) cons
   if (is_content_id_uri(uri)) {
     return std::string(uri);
   }
-  auto loc = db_->find_locator(uri);
-  if (!loc || !loc->content_id) return std::nullopt;
-  return *loc->content_id;
+  if (db_) {
+    auto loc = db_->find_locator(uri);
+    if (loc && loc->content_id) return *loc->content_id;
+  }
+  if (auto sm = meta_from_store(uri)) return sm->content_id;
+  return std::nullopt;
 }
 
 std::vector<Database::LocatorRow> Client::list_uris_for_content_id(
     std::string_view content_id, int limit) const {
+  if (!db_) return {};
   return db_->list_locators_for_content_id(content_id, limit);
 }
 
 std::optional<ContentMeta> Client::get_meta_for_content_id(
     std::string_view content_id) const {
+  if (!db_) return std::nullopt;
   return db_->meta_for_content_id(content_id);
 }
 
@@ -509,7 +536,9 @@ std::optional<PixelLevel> Client::load_level(
 std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
                                              int frame_idx,
                                              bool allow_tile_synth) const {
-  auto meta = db_->meta_for_uri(uri);
+  std::optional<ContentMeta> meta;
+  if (db_) meta = db_->meta_for_uri(uri);
+  if (!meta) meta = meta_from_store(uri);
   if (!meta) {
     if (debug_enabled()) {
       dbg("get_pixels MISS uri=%s edge=%d (no meta)", std::string(uri).c_str(),
@@ -521,6 +550,7 @@ std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
   // over a soft-preview edge. Soft max_edge is for photo filmstrips; scan embeds
   // should not stay stuck on 256 after size probe reports the real dimensions.
   if (is_pdf_image_uri(uri)) {
+    if (!db_) return std::nullopt;
     auto levels = db_->list_levels(meta->content_id, 64);
     const Database::LevelRow* best = nullptr;
     for (const auto& lr : levels) {
@@ -544,7 +574,8 @@ std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
     }
     return std::nullopt;
   }
-  auto row = db_->find_best_level(meta->content_id, max_edge, frame_idx);
+  std::optional<Database::LevelRow> row;
+  if (db_) row = db_->find_best_level(meta->content_id, max_edge, frame_idx);
   if (row) {
     auto px = load_level(*row);
     if (px && pixels_cover_edge(*px, max_edge)) {
@@ -596,14 +627,17 @@ std::optional<PixelLevel> Client::get_pixels(std::string_view uri, int max_edge,
 std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
                                                         int max_edge) const {
   image_library_init();
-  auto meta = db_->meta_for_uri(uri);
+  std::optional<ContentMeta> meta;
+  if (db_) meta = db_->meta_for_uri(uri);
+  if (!meta) meta = meta_from_store(uri);
   if (!meta || !meta->size) return std::nullopt;
   const int nw = meta->size->width;
   const int nh = meta->size->height;
   if (nw <= 0 || nh <= 0) return std::nullopt;
 
   int min_s = 0, max_s = 0;
-  if (!db_->tile_min_max_scale(meta->content_id, min_s, max_s)) {
+  bool have_scales = db_ && db_->tile_min_max_scale(meta->content_id, min_s, max_s);
+  if (!have_scales) {
     // Dual-path: tiles may live only on Store after dual-write.
     auto tgt = store_tile_target_for_content_id(meta->content_id);
     if (!tgt) return std::nullopt;
@@ -754,6 +788,7 @@ std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
 
 std::optional<std::vector<std::uint8_t>> Client::get_lqip(
     std::string_view uri) const {
+  if (!db_) return std::nullopt;
   auto loc = db_->find_locator(uri);
   if (!loc || !loc->content_id) return std::nullopt;
   return db_->get_lqip(*loc->content_id);
@@ -765,6 +800,7 @@ std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
   if (auto existing = get_lqip(uri)) {
     return existing;
   }
+  if (!db_) return std::nullopt;
   auto loc = db_->find_locator(uri);
   if (!loc || !loc->content_id) {
     return std::nullopt;
@@ -893,7 +929,7 @@ void Client::request_pixels(std::string uri, int max_edge, PixelsCallback cb,
   }
   // Ensure locator exists (same as request_size) so EnsurePixels → ProbeSize
   // can resolve //pdfimage: / //page: without a prior scheduleProbe race.
-  if (!db_->find_locator(uri)) {
+  if (db_ && !db_->find_locator(uri)) {
     Database::LocatorRow loc;
     loc.uri = uri;
     loc.content_id = make_provisional_id();
@@ -974,7 +1010,7 @@ void Client::request_overview_pixels(std::string uri, int max_edge,
     }
   }
   // Ensure locator (same path as request_pixels).
-  if (!db_->find_locator(uri)) {
+  if (db_ && !db_->find_locator(uri)) {
     Database::LocatorRow loc;
     loc.uri = uri;
     loc.content_id = make_provisional_id();
@@ -1027,10 +1063,18 @@ void Client::request_overview_pixels(std::string uri, int max_edge,
 }
 
 bool Client::has_tile(std::string_view uri, int scale, int x, int y) const {
-  auto meta = db_->meta_for_uri(uri);
-  if (!meta) return false;
-  if (db_->find_tile(meta->content_id, scale, x, y).has_value()) return true;
-  if (auto tgt = store_tile_target_for_content_id(meta->content_id)) {
+  std::optional<std::string> content_id;
+  if (db_) {
+    if (auto meta = db_->meta_for_uri(uri)) {
+      content_id = meta->content_id;
+      if (db_->find_tile(*content_id, scale, x, y).has_value()) return true;
+    }
+  }
+  if (!content_id) {
+    if (auto sm = meta_from_store(uri)) content_id = sm->content_id;
+  }
+  if (!content_id) return false;
+  if (auto tgt = store_tile_target_for_content_id(*content_id)) {
     return store_->has_tile(tgt->media_id, tgt->region_id, scale, x, y);
   }
   return false;
@@ -1038,27 +1082,35 @@ bool Client::has_tile(std::string_view uri, int scale, int x, int y) const {
 
 std::optional<TileBlob> Client::get_tile(std::string_view uri, int scale, int x,
                                          int y) const {
-  auto meta = db_->meta_for_uri(uri);
-  if (!meta) return std::nullopt;
-  if (auto row = db_->find_tile(meta->content_id, scale, x, y)) {
-    auto bytes = blobs_->get_tile(meta->content_id, scale, x, y);
-    if (bytes) {
-      TileBlob t;
-      t.scale = scale;
-      t.x = x;
-      t.y = y;
-      if (row->width) t.width = *row->width;
-      if (row->height) t.height = *row->height;
-      if (row->codec) t.codec = *row->codec;
-      else t.codec = kDefaultTileCodec;
-      t.bytes = std::move(*bytes);
-      t.source = static_cast<TileSource>(row->source);
-      debug_overlay_tile(t, uri);
-      return t;
+  std::optional<std::string> content_id;
+  if (db_) {
+    if (auto meta = db_->meta_for_uri(uri)) {
+      content_id = meta->content_id;
+      if (auto row = db_->find_tile(*content_id, scale, x, y)) {
+        auto bytes = blobs_->get_tile(*content_id, scale, x, y);
+        if (bytes) {
+          TileBlob t;
+          t.scale = scale;
+          t.x = x;
+          t.y = y;
+          if (row->width) t.width = *row->width;
+          if (row->height) t.height = *row->height;
+          if (row->codec) t.codec = *row->codec;
+          else t.codec = kDefaultTileCodec;
+          t.bytes = std::move(*bytes);
+          t.source = static_cast<TileSource>(row->source);
+          debug_overlay_tile(t, uri);
+          return t;
+        }
+      }
     }
   }
-  // Dual-path: tiles may exist only on Store after dual-write or Store-only encode.
-  if (auto tgt = store_tile_target_for_content_id(meta->content_id)) {
+  if (!content_id) {
+    if (auto sm = meta_from_store(uri)) content_id = sm->content_id;
+  }
+  if (!content_id) return std::nullopt;
+  // Dual-path / Store-only: tiles on redesign Store.
+  if (auto tgt = store_tile_target_for_content_id(*content_id)) {
     auto bytes =
         store_->get_tile_data(tgt->media_id, tgt->region_id, scale, x, y);
     if (!bytes) return std::nullopt;
@@ -1144,13 +1196,15 @@ std::optional<Client::StoreTileTarget> Client::store_tile_target_for_content_id(
 
 std::optional<TileCoverage> Client::get_tile_coverage(
     std::string_view uri) const {
-  auto meta = db_->meta_for_uri(uri);
+  std::optional<ContentMeta> meta;
+  if (db_) meta = db_->meta_for_uri(uri);
+  if (!meta) meta = meta_from_store(uri);
   if (!meta) return std::nullopt;
   TileCoverage cov;
   if (meta->size) cov.size = *meta->size;
   int min_s = 0;
   int max_s = 0;
-  if (db_->tile_min_max_scale(meta->content_id, min_s, max_s)) {
+  if (db_ && db_->tile_min_max_scale(meta->content_id, min_s, max_s)) {
     cov.min_scale = min_s;
     cov.max_scale = max_s;
     return cov;
@@ -1219,7 +1273,7 @@ void Client::request_full_pixels(std::string uri, int max_edge,
     }
   }
   // Ensure locator (same as overview / soft).
-  if (!db_->find_locator(uri)) {
+  if (db_ && !db_->find_locator(uri)) {
     Database::LocatorRow loc;
     loc.uri = uri;
     loc.content_id = make_provisional_id();
@@ -1669,7 +1723,7 @@ void Client::request_size(std::string uri, SizeCallback cb) {
   }
 
   // Ensure locator exists (provisional content) so cache-first browse sees it.
-  if (!db_->find_locator(uri)) {
+  if (db_ && !db_->find_locator(uri)) {
     Database::LocatorRow loc;
     loc.uri = uri;
     loc.content_id = make_provisional_id();
@@ -2707,10 +2761,171 @@ void Client::handle_ensure_lqip(Job& job) {
   (void)ensure_lqip(job.uri);
 }
 
+
+void Client::handle_probe_size_store_only(Job& job) {
+  auto reply_empty = [&]() {
+    if (!job.size_cb) return;
+    auto cb = std::move(job.size_cb);
+    auto uri = job.uri;
+    executor_.post([cb = std::move(cb), uri = std::move(uri)]() mutable {
+      cb(std::move(uri), SizeReply{});
+    });
+  };
+  if (!store_) {
+    reply_empty();
+    return;
+  }
+  // Cache hit on Store.
+  if (auto sm = meta_from_store(job.uri); sm && sm->size) {
+    if (job.size_cb) {
+      auto cb = std::move(job.size_cb);
+      auto uri = job.uri;
+      SizeReply reply;
+      reply.size = sm->size;
+      executor_.post([cb = std::move(cb), uri = std::move(uri),
+                      reply = std::move(reply)]() mutable {
+        cb(std::move(uri), std::move(reply));
+      });
+    }
+    return;
+  }
+  auto path = path_from_file_uri(job.uri);
+  if (!path || !std::filesystem::is_regular_file(*path)) {
+    reply_empty();
+    return;
+  }
+  auto probe = probe_image_file(*path);
+  if (!probe) {
+    reply_empty();
+    return;
+  }
+  const auto hex = sha256_file_hex(*path);
+  if (hex.empty()) {
+    reply_empty();
+    return;
+  }
+  try {
+    auto digest = Store::parse_sha256_digest(hex);
+    if (!digest) {
+      reply_empty();
+      return;
+    }
+    const auto byte_size = file_size_bytes(*path);
+    const auto mtime = file_mtime_ns(*path);
+    std::int64_t blob_id = 0;
+    if (auto existing = store_->find_blob_by_hash(HashAlgoId::Sha256, *digest)) {
+      blob_id = *existing;
+      if (byte_size) store_->set_blob_size(blob_id, *byte_size);
+      store_->set_blob_status(blob_id, BlobStatus::Ok);
+    } else {
+      blob_id = store_->insert_blob(byte_size, BlobStatus::Ok);
+      store_->put_hash(blob_id, HashAlgoId::Sha256, *digest);
+    }
+    store_->upsert_locator(job.uri, blob_id, byte_size, mtime);
+    (void)store_->ensure_image_media(blob_id, probe->size.width,
+                                     probe->size.height);
+  } catch (const std::exception& ex) {
+    if (debug_enabled()) {
+      dbg("handle_probe_size_store_only: %s", ex.what());
+    }
+    reply_empty();
+    return;
+  }
+  if (job.size_cb) {
+    auto cb = std::move(job.size_cb);
+    auto uri = job.uri;
+    SizeReply reply;
+    reply.size = probe->size;
+    executor_.post([cb = std::move(cb), uri = std::move(uri),
+                    reply = std::move(reply)]() mutable {
+      cb(std::move(uri), std::move(reply));
+    });
+  }
+}
+
+void Client::handle_ensure_pixels_store_only(Job& job) {
+  auto reply = [&](std::optional<PixelLevel> px) {
+    if (!job.pixels_cb) return;
+    auto cb = std::move(job.pixels_cb);
+    auto uri = job.uri;
+    const int edge = job.max_edge;
+    executor_.post([cb = std::move(cb), uri = std::move(uri), edge,
+                    px = std::move(px)]() mutable {
+      cb(std::move(uri), edge, std::move(px));
+    });
+  };
+
+  // Prefer existing tiles / Store meta.
+  if (auto px = get_pixels(job.uri, job.max_edge, job.frame_idx,
+                           /*allow_tile_synth=*/true)) {
+    reply(std::move(px));
+    return;
+  }
+
+  // Ensure Store meta (size) exists.
+  {
+    Job probe;
+    probe.kind = JobKind::ProbeSize;
+    probe.uri = job.uri;
+    handle_probe_size_store_only(probe);
+  }
+
+  if (auto px = get_pixels(job.uri, job.max_edge, job.frame_idx,
+                           /*allow_tile_synth=*/true)) {
+    reply(std::move(px));
+    return;
+  }
+
+  auto path = path_from_file_uri(job.uri);
+  if (!path || !std::filesystem::is_regular_file(*path)) {
+    reply(std::nullopt);
+    return;
+  }
+
+  const int edge_limit =
+      job.full_native
+          ? std::min(job.max_edge > 0 ? job.max_edge : kFullMaxEdge, kFullMaxEdge)
+          : std::min(job.max_edge > 0 ? job.max_edge : kMaxSoftLadderEdge,
+                     kMaxSoftLadderEdge);
+
+  const auto hex = sha256_file_hex(*path);
+  if (hex.empty()) {
+    reply(std::nullopt);
+    return;
+  }
+  const std::string content_id =
+      std::string(kContentIdSha256Prefix) + hex;
+
+  auto levels =
+      build_ladder(*path, content_id, kDefaultJxlQuality, edge_limit);
+  if (levels.empty()) {
+    reply(std::nullopt);
+    return;
+  }
+  // Session reply from best level; durable pixels only via Store tiles later.
+  LevelBlob& best = levels.front();
+  for (auto& lvl : levels) {
+    if (lvl.max_edge > best.max_edge) best = lvl;
+  }
+  PixelLevel out;
+  out.max_edge = best.max_edge;
+  out.frame_idx = best.frame_idx;
+  out.width = best.width;
+  out.height = best.height;
+  out.codec = best.codec;
+  out.bytes = std::move(best.bytes);
+  out.source = best.source;
+  reply(std::move(out));
+}
+
 void Client::handle_probe_size(
     Job& job,
     const std::optional<std::vector<std::uint8_t>>& preextracted) {
   global_build_stats().probes_done.fetch_add(1, std::memory_order_relaxed);
+  if (!db_) {
+    handle_probe_size_store_only(job);
+    return;
+  }
   auto loc = db_->find_locator(job.uri);
   if (!loc || !loc->content_id) {
     if (job.size_cb) {
@@ -3216,6 +3431,10 @@ void Client::handle_ensure_pixels(
   if (debug_enabled()) {
     dbg("EnsurePixels START uri=%s max_edge=%d frame=%d", job.uri.c_str(),
         job.max_edge, job.frame_idx);
+  }
+  if (!db_) {
+    handle_ensure_pixels_store_only(job);
+    return;
   }
 
   // Cached level is enough only if *decoded pixels* cover the request (or are
@@ -3822,6 +4041,7 @@ void Client::handle_ensure_pixels(
 void Client::store_tiles(const std::string& content_id,
                          const std::vector<TileBlob>& tiles) {
   for (const auto& t : tiles) {
+    if (!blobs_ || !db_) continue;
     blobs_->put_tile(content_id, t.scale, t.x, t.y, t.width, t.height, t.codec,
                      kDefaultTileQuality, t.bytes.data(), t.bytes.size());
     Database::TileRow tr;
@@ -3966,6 +4186,20 @@ void Client::handle_ensure_tiles(
     dbg("EnsureTiles START uri=%s scale=%d cell=%d,%d pyramid=%d",
         job.uri.c_str(), job.tile_scale, job.tile_x, job.tile_y,
         job.tile_pyramid ? 1 : 0);
+  }
+  if (!db_) {
+    // Store-only tile encode not yet implemented — empty reply.
+    if (job.tile_cb) {
+      auto cb = std::move(job.tile_cb);
+      auto uri = job.uri;
+      const int scale = job.tile_scale;
+      const int x = job.tile_x;
+      const int y = job.tile_y;
+      executor_.post([cb = std::move(cb), uri = std::move(uri), scale, x, y]() mutable {
+        cb(std::move(uri), scale, x, y, std::nullopt);
+      });
+    }
+    return;
   }
   auto reply_one = [&](std::optional<TileBlob> t) {
     if (!job.tile_cb) return;

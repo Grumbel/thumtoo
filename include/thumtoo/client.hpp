@@ -90,8 +90,10 @@ class Client {
                                       unsigned worker_threads = 0,
                                       const std::filesystem::path& data_root = {});
 
-  [[nodiscard]] Database& db() { return *db_; }
-  [[nodiscard]] const Database& db() const { return *db_; }
+  /// Null when THUMTOO_STORE_ONLY (no legacy Database).
+  [[nodiscard]] bool has_legacy() const { return db_ != nullptr && blobs_ != nullptr; }
+  [[nodiscard]] Database& db();
+  [[nodiscard]] const Database& db() const;
 
   /// Redesign index/bulk/user (docs/PLAN.md Phase E dual-path). Pixels still use
   /// db(); user overlays dual-write into store() when content_id is sha256.
@@ -474,9 +476,12 @@ class Client {
   void handle_probe_size(
       Job& job,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);
+  /// Store-only probe for plain file:// images (no legacy Database).
+  void handle_probe_size_store_only(Job& job);
   void handle_ensure_pixels(
       Job& job,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);
+  void handle_ensure_pixels_store_only(Job& job);
   void handle_ensure_tiles(
       Job& job,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);
