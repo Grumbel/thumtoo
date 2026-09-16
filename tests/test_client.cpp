@@ -84,7 +84,6 @@ int main() {
   {
     image_library_init();
     auto client = Client::open(cache);
-    expect(!client->has_legacy(), "Client has no legacy Database");
     expect(!client->get_size(uri).has_value(), "no size before request");
 
     // --- probe ---

@@ -112,8 +112,6 @@ class Client {
                                       unsigned worker_threads = 0,
                                       const std::filesystem::path& data_root = {});
 
-  /// Always false: Client never opens legacy Database/BlobStore (≥262).
-  [[nodiscard]] bool has_legacy() const { return false; }
 
   /// Redesign index/bulk/user (Store-only).
   [[nodiscard]] Store& store() { return *store_; }

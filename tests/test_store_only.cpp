@@ -103,7 +103,6 @@ int main() {
   auto client = thumtoo::Client::open(cache);
   expect(client != nullptr, "Client::open STORE_ONLY");
   expect(thumtoo::store_only_mode(), "store_only_mode");
-  expect(!client->has_legacy(), "no legacy Database");
 
   expect(file_nonempty(cache / "index.sqlite"), "Store index on disk");
   expect(file_nonempty(cache / "bulk.sqlite"), "Store bulk on disk");
@@ -112,7 +111,6 @@ int main() {
              thumtoo::kStoreIndexSchemaVersion,
          "Store schema");
 
-  expect(!client->has_legacy(), "has_legacy still false after open");
 
   thumtoo::image_library_init();
   const auto uri = thumtoo::file_uri_from_path(img);

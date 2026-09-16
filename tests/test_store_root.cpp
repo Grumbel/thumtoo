@@ -65,7 +65,6 @@ int main() {
            "fresh: Store index at cache root");
     expect(file_nonempty(cache / "bulk.sqlite"),
            "fresh: Store bulk at cache root");
-    expect(!client->has_legacy(), "fresh: no legacy Database");
     expect(!fs::exists(cache / "legacy"), "fresh: no legacy/ from Client");
     expect(!fs::exists(cache / "store" / "index.sqlite"),
            "fresh: no store/ subdirectory index");
@@ -122,7 +121,6 @@ int main() {
 
     auto client = thumtoo::Client::open(cache);
     expect(client != nullptr, "Client::open migrates dual-path");
-    expect(!client->has_legacy(), "migrate: Client has no legacy");
 
     expect(file_nonempty(cache / "legacy" / "index.sqlite"),
            "migrate: legacy index under legacy/ (on disk)");
@@ -154,7 +152,6 @@ int main() {
            "default: Store index at cache root");
     expect(file_nonempty(cache / "bulk.sqlite"),
            "default: Store bulk at cache root");
-    expect(!client->has_legacy(), "default: STORE_ONLY, no legacy Database");
     expect(!fs::exists(cache / "legacy"), "default: no legacy/ directory");
     expect(!fs::exists(cache / "store" / "index.sqlite"),
            "default: no store/ subdirectory");
@@ -167,7 +164,6 @@ int main() {
     const fs::path cache = make_tmpdir("store-root-optout");
     auto client = thumtoo::Client::open(cache);
     expect(client != nullptr, "Client::open STORE_ROOT=0");
-    expect(!client->has_legacy(), "opt-out: no legacy Database");
     // Nested Store layout; no top-level legacy index from Client.
     expect(file_nonempty(cache / "store" / "index.sqlite"),
            "opt-out: Store under store/");

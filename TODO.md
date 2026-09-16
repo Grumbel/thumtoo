@@ -2,6 +2,27 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-274-drop-has-legacy.** Remove Client::has_legacy() (always false).
+Prior: **273**. Pair with **biltoo-1011**.
+
+### Change
+- `Client::has_legacy()` removed from public API
+- Tests no longer assert `has_legacy()`
+
+### Apply
+```bash
+git pull /path/to/thumtoo-274-drop-has-legacy.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **274**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-273-docs-orphan-gc.** Docs match ≥272; Store orphan blob GC.
 Prior: **272**.
 
