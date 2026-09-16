@@ -16,7 +16,7 @@ thumtoo/
   flake.nix CMakeLists.txt
   include/thumtoo/
     constants.hpp status.hpp types.hpp uri.hpp executor.hpp
-    database.hpp client.hpp
+    client.hpp store.hpp
   src/
     database.cpp uri.cpp client.cpp image.cpp schema.sql
   tools/

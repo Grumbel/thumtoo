@@ -2,6 +2,31 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-272-drop-database-blobstore.** Schema-4 Database/BlobStore sources deleted.
+Prior: **271**.
+
+### Change
+- **Deleted** `src/database.cpp`, `src/blob_store.cpp`, headers, `test_database`
+- Removed `thumtoo_legacy` CMake target
+- `thumtoo-gc` / `thumtoo-status` are Store-only (ladder flags return clear errors)
+- `test_text_layer_cache` is serialize/deserialize only (no durable Database)
+- On-disk `legacy/` trees still migrate via layout (raw schema_meta); Client ignores them
+
+### Apply
+```bash
+git pull /path/to/thumtoo-272-drop-database-blobstore.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **272**
+- [x] Suite passes without database test
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-271-legacy-lib-split.** Database/BlobStore → `thumtoo_legacy` library.
 Prior: **270**.
 

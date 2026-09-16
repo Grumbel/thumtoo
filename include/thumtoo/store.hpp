@@ -66,7 +66,7 @@ enum class MediaStatus : int {
 
 /// Redesign index/bulk/user stores (docs/DATABASE.md, docs/PLAN.md).
 ///
-/// Legacy Client still uses Database + BlobStore. This type is the new spine:
+/// Redesign Store spine (schema ≥ 100). Replaces schema-4 Database + BlobStore.
 /// integer blob ids, blob_hash digests, locators, media/region/tiles.
 /// Not thread-safe; one writer discipline at a higher layer.
 class Store {

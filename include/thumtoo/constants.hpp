@@ -9,7 +9,7 @@
 
 namespace thumtoo {
 
-/// Legacy Client Database schema (content_id TEXT ladder). Still used by Client.
+/// Historical schema-4 ladder version (on-disk migrate detection only).
 /// Bump only with incompatible legacy layout.
 inline constexpr int kSchemaVersion = 4;
 

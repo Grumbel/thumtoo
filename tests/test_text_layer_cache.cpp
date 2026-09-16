@@ -1,10 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "thumtoo/database.hpp"
 #include "thumtoo/text.hpp"
 
-#include <filesystem>
 #include <iostream>
 
 namespace {
@@ -53,21 +51,6 @@ int main() {
   auto obytes = thumtoo::serialize_document_outline(outline);
   auto o2 = thumtoo::deserialize_document_outline(obytes);
   expect(o2 && o2->items.size() == 1 && o2->items[0].title == "Chapter", "outline");
-
-  // Database round-trip
-  const auto root = std::filesystem::temp_directory_path() / "thumtoo_text_cache_test";
-  std::filesystem::remove_all(root);
-  std::filesystem::create_directories(root);
-  auto db = thumtoo::Database::open(root);
-  expect(db.schema_version() >= 3, "schema >= 3");
-  db.upsert_text_layer("sha256:abc", 3, layer.layout_key, 0, 0, 100, 200, bytes);
-  auto found = db.find_text_layer("sha256:abc", 3, layer.layout_key);
-  expect(found.has_value() && *found == bytes, "db text layer roundtrip");
-  db.upsert_document_outline("sha256:abc", "", obytes);
-  auto ofound = db.find_document_outline("sha256:abc", "");
-  expect(ofound.has_value() && *ofound == obytes, "db outline roundtrip");
-
-  std::filesystem::remove_all(root);
 
   if (g_failures) {
     std::cerr << g_failures << " failures\n";
