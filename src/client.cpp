@@ -751,12 +751,117 @@ std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
   return px;
 }
 
+namespace {
+
+struct LqipKey {
+  std::int64_t blob_id = 0;
+  int page_1based = 0;  // 0 = whole blob
+};
+
+std::optional<LqipKey> lqip_key_lookup(const Store& store, std::string_view uri) {
+  if (auto pdf = parse_pdf_uri(uri)) {
+    // Prefer page URI locator, else document file locator.
+    if (auto loc = store.find_locator(uri); loc && loc->blob_id)
+      return LqipKey{*loc->blob_id, pdf->page};
+    const auto fu = file_uri_from_path(pdf->pdf_path);
+    if (auto loc = store.find_locator(fu); loc && loc->blob_id)
+      return LqipKey{*loc->blob_id, pdf->page};
+    return std::nullopt;
+  }
+  if (auto pimg = parse_pdf_image_uri(uri)) {
+    if (auto loc = store.find_locator(uri); loc && loc->blob_id)
+      return LqipKey{*loc->blob_id, 0};
+    const auto fu = file_uri_from_path(pimg->pdf_path);
+    if (auto loc = store.find_locator(fu); loc && loc->blob_id)
+      return LqipKey{*loc->blob_id, 0};
+    return std::nullopt;
+  }
+  if (auto dj = parse_djvu_uri(uri)) {
+    if (auto loc = store.find_locator(uri); loc && loc->blob_id)
+      return LqipKey{*loc->blob_id, dj->page};
+    const auto fu = file_uri_from_path(dj->djvu_path);
+    if (auto loc = store.find_locator(fu); loc && loc->blob_id)
+      return LqipKey{*loc->blob_id, dj->page};
+    return std::nullopt;
+  }
+  if (auto loc = store.find_locator(uri); loc && loc->blob_id)
+    return LqipKey{*loc->blob_id, 0};
+  return std::nullopt;
+}
+
+std::optional<LqipKey> lqip_key_ensure(Store& store, std::string_view uri) {
+  if (auto hit = lqip_key_lookup(store, uri)) return hit;
+  std::filesystem::path file;
+  int page = 0;
+  if (auto pdf = parse_pdf_uri(uri)) {
+    file = pdf->pdf_path;
+    page = pdf->page;
+  } else if (auto pimg = parse_pdf_image_uri(uri)) {
+    file = pimg->pdf_path;
+  } else if (auto dj = parse_djvu_uri(uri)) {
+    file = dj->djvu_path;
+    page = dj->page;
+  } else if (auto path = path_from_file_uri(uri)) {
+    file = *path;
+  } else {
+    return std::nullopt;
+  }
+  if (!std::filesystem::is_regular_file(file)) return std::nullopt;
+  const auto hex = sha256_file_hex(file);
+  if (hex.empty()) return std::nullopt;
+  auto digest = Store::parse_sha256_digest(hex);
+  if (!digest) return std::nullopt;
+  std::int64_t blob_id = 0;
+  if (auto existing = store.find_blob_by_hash(HashAlgoId::Sha256, *digest)) {
+    blob_id = *existing;
+  } else {
+    blob_id = store.insert_blob(file_size_bytes(file), BlobStatus::Ok);
+    store.put_hash(blob_id, HashAlgoId::Sha256, *digest);
+  }
+  const auto fu = file_uri_from_path(file);
+  (void)store.upsert_locator(fu, blob_id, file_size_bytes(file),
+                             file_mtime_ns(file));
+  return LqipKey{blob_id, page};
+}
+
+std::vector<std::uint8_t> encode_lqip_for_uri(std::string_view uri) {
+  if (auto pdf = parse_pdf_uri(uri)) {
+    auto r = pdf_rasterize_page(pdf->pdf_path, pdf->page, /*max_edge=*/32,
+                                pdf->backend);
+    if (r && !r->rgb.empty())
+      return thumbhash_encode_rgb888(r->rgb.data(), r->width, r->height, 32);
+    return {};
+  }
+  if (auto pimg = parse_pdf_image_uri(uri)) {
+    auto r = pdf_rasterize_embedded_image(pimg->pdf_path, pimg->image,
+                                          /*max_edge=*/32);
+    if (r && !r->rgb.empty())
+      return thumbhash_encode_rgb888(r->rgb.data(), r->width, r->height, 32);
+    return {};
+  }
+  if (auto dj = parse_djvu_uri(uri)) {
+    auto r = djvu_rasterize_page(dj->djvu_path, dj->page, /*max_edge=*/32);
+    if (r && !r->rgb.empty())
+      return thumbhash_encode_rgb888(r->rgb.data(), r->width, r->height, 32);
+    return {};
+  }
+  if (auto path = path_from_file_uri(uri);
+      path && std::filesystem::is_regular_file(*path) && !is_archive_uri(uri) &&
+      !is_pdf_page_uri(uri) && !is_pdf_image_uri(uri)) {
+    return lqip_thumbhash_from_file(*path);
+  }
+  // Archive member or other: source bytes via helper needs Client — handled below.
+  return {};
+}
+
+}  // namespace
+
 std::optional<std::vector<std::uint8_t>> Client::get_lqip(
     std::string_view uri) const {
   if (!store_ || uri.empty()) return std::nullopt;
-  auto loc = store_->find_locator(uri);
-  if (!loc || !loc->blob_id) return std::nullopt;
-  return store_->get_blob_lqip(*loc->blob_id);
+  auto key = lqip_key_lookup(*store_, uri);
+  if (!key) return std::nullopt;
+  return store_->get_blob_lqip(key->blob_id, key->page_1based);
 }
 
 std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
@@ -764,43 +869,18 @@ std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
   if (!store_ || uri.empty()) return std::nullopt;
   if (auto hit = get_lqip(uri)) return hit;
 
-  auto loc = store_->find_locator(uri);
-  // Need a blob_id to attach LQIP; probe soft path may have created one.
-  if (!loc || !loc->blob_id) {
-    // Plain file:// image: hash + locator on demand.
-    auto path = path_from_file_uri(uri);
-    if (!path || !std::filesystem::is_regular_file(*path)) return std::nullopt;
-    auto bytes = lqip_thumbhash_from_file(*path);
-    if (bytes.empty()) return std::nullopt;
-    // Create blob row for this file if missing.
-    const auto hex = sha256_file_hex(*path);
-    if (hex.empty()) return std::nullopt;
-    auto digest = Store::parse_sha256_digest(hex);
-    if (!digest) return std::nullopt;
-    std::int64_t blob_id = 0;
-    if (auto existing = store_->find_blob_by_hash(HashAlgoId::Sha256, *digest)) {
-      blob_id = *existing;
-    } else {
-      blob_id = store_->insert_blob(file_size_bytes(*path), BlobStatus::Ok);
-      store_->put_hash(blob_id, HashAlgoId::Sha256, *digest);
-    }
-    (void)store_->upsert_locator(uri, blob_id, file_size_bytes(*path),
-                                 file_mtime_ns(*path));
-    store_->put_blob_lqip(blob_id, kLqipKindThumbHash, bytes);
-    return bytes;
-  }
+  auto key = lqip_key_ensure(*store_, uri);
+  if (!key) return std::nullopt;
 
-  // Encode from plain file, archive member bytes, or small source buffer.
-  std::vector<std::uint8_t> bytes;
-  if (auto path = path_from_file_uri(uri);
-      path && std::filesystem::is_regular_file(*path) && !is_archive_uri(uri) &&
-      !is_pdf_page_uri(uri) && !is_pdf_image_uri(uri)) {
-    bytes = lqip_thumbhash_from_file(*path);
-  } else if (auto src = read_source_bytes(uri); src && !src->empty()) {
-    bytes = lqip_thumbhash_from_buffer(src->data(), src->size());
+  std::vector<std::uint8_t> bytes = encode_lqip_for_uri(uri);
+  if (bytes.empty()) {
+    if (auto src = read_source_bytes(uri); src && !src->empty()) {
+      bytes = lqip_thumbhash_from_buffer(src->data(), src->size());
+    }
   }
   if (bytes.empty()) return std::nullopt;
-  store_->put_blob_lqip(*loc->blob_id, kLqipKindThumbHash, bytes);
+  store_->put_blob_lqip(key->blob_id, kLqipKindThumbHash, bytes,
+                        key->page_1based);
   return bytes;
 }
 

@@ -128,11 +128,13 @@ class Store {
   void set_blob_status(std::int64_t id, BlobStatus status);
 
   // --- blob_lqip (durable ThumbHash/Handsum placeholder; keyed by blob) ---
+  /// page_1based: 0 = whole-blob / still image; N = document page.
   void put_blob_lqip(std::int64_t blob_id, int kind,
-                     std::span<const std::uint8_t> data);
+                     std::span<const std::uint8_t> data, int page_1based = 0);
   [[nodiscard]] std::optional<std::vector<std::uint8_t>> get_blob_lqip(
-      std::int64_t blob_id) const;
-  [[nodiscard]] std::optional<int> get_blob_lqip_kind(std::int64_t blob_id) const;
+      std::int64_t blob_id, int page_1based = 0) const;
+  [[nodiscard]] std::optional<int> get_blob_lqip_kind(std::int64_t blob_id,
+                                                      int page_1based = 0) const;
 
   // --- page text / document outline (serialized payloads; keyed by blob) ---
   void put_page_text_layer(std::int64_t blob_id, int page_1based,

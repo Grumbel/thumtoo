@@ -141,9 +141,11 @@ CREATE TABLE IF NOT EXISTS media (
 );
 CREATE INDEX IF NOT EXISTS idx_media_blob ON media(blob_id);
 CREATE TABLE IF NOT EXISTS blob_lqip (
-  blob_id INTEGER PRIMARY KEY REFERENCES blob(id) ON DELETE CASCADE,
+  blob_id INTEGER NOT NULL REFERENCES blob(id) ON DELETE CASCADE,
+  page_1based INTEGER NOT NULL DEFAULT 0,
   kind    INTEGER NOT NULL DEFAULT 0,
-  data    BLOB NOT NULL
+  data    BLOB NOT NULL,
+  PRIMARY KEY (blob_id, page_1based)
 );
 CREATE TABLE IF NOT EXISTS page_text_layer (
   blob_id INTEGER NOT NULL REFERENCES blob(id) ON DELETE CASCADE,
@@ -406,10 +408,14 @@ void Store::seed_lookups() {
 void Store::ensure_optional_index_tables() {
   exec_index(
       "CREATE TABLE IF NOT EXISTS blob_lqip ("
-      "  blob_id INTEGER PRIMARY KEY REFERENCES blob(id) ON DELETE CASCADE,"
+      "  blob_id INTEGER NOT NULL REFERENCES blob(id) ON DELETE CASCADE,"
+      "  page_1based INTEGER NOT NULL DEFAULT 0,"
       "  kind    INTEGER NOT NULL DEFAULT 0,"
-      "  data    BLOB NOT NULL"
+      "  data    BLOB NOT NULL,"
+      "  PRIMARY KEY (blob_id, page_1based)"
       ");");
+  // Older single-key blob_lqip (blob_id PK only): leave in place if present;
+  // new writes go to the composite-key form. Reads try composite first.
   exec_index(
       "CREATE TABLE IF NOT EXISTS page_text_layer ("
       "  blob_id INTEGER NOT NULL REFERENCES blob(id) ON DELETE CASCADE,"
@@ -780,19 +786,36 @@ std::vector<Store::LocatorRow> Store::list_locators_like(
 }
 
 void Store::put_blob_lqip(std::int64_t blob_id, int kind,
-                          std::span<const std::uint8_t> data) {
+                          std::span<const std::uint8_t> data, int page_1based) {
+  if (page_1based < 0) page_1based = 0;
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(index_,
-                         "INSERT INTO blob_lqip(blob_id, kind, data) VALUES(?1, ?2, ?3) "
-                         "ON CONFLICT(blob_id) DO UPDATE SET kind = excluded.kind, "
-                         "data = excluded.data;",
-                         -1, &stmt, nullptr) != SQLITE_OK) {
-    throw_sqlite(index_, "prepare put_blob_lqip");
+  if (sqlite3_prepare_v2(
+          index_,
+          "INSERT INTO blob_lqip(blob_id, page_1based, kind, data) "
+          "VALUES(?1, ?2, ?3, ?4) "
+          "ON CONFLICT(blob_id, page_1based) DO UPDATE SET "
+          "kind = excluded.kind, data = excluded.data;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    // Fallback: legacy single-column PK table without page_1based.
+    if (sqlite3_prepare_v2(
+            index_,
+            "INSERT INTO blob_lqip(blob_id, kind, data) VALUES(?1, ?2, ?3) "
+            "ON CONFLICT(blob_id) DO UPDATE SET kind = excluded.kind, "
+            "data = excluded.data;",
+            -1, &stmt, nullptr) != SQLITE_OK) {
+      throw_sqlite(index_, "prepare put_blob_lqip");
+    }
+    sqlite3_bind_int64(stmt, 1, blob_id);
+    sqlite3_bind_int(stmt, 2, kind);
+    sqlite3_bind_blob(stmt, 3, data.data(), static_cast<int>(data.size()),
+                      SQLITE_STATIC);
+  } else {
+    sqlite3_bind_int64(stmt, 1, blob_id);
+    sqlite3_bind_int(stmt, 2, page_1based);
+    sqlite3_bind_int(stmt, 3, kind);
+    sqlite3_bind_blob(stmt, 4, data.data(), static_cast<int>(data.size()),
+                      SQLITE_STATIC);
   }
-  sqlite3_bind_int64(stmt, 1, blob_id);
-  sqlite3_bind_int(stmt, 2, kind);
-  sqlite3_bind_blob(stmt, 3, data.data(), static_cast<int>(data.size()),
-                    SQLITE_STATIC);
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     throw_sqlite(index_, "step put_blob_lqip");
@@ -801,11 +824,33 @@ void Store::put_blob_lqip(std::int64_t blob_id, int kind,
 }
 
 std::optional<std::vector<std::uint8_t>> Store::get_blob_lqip(
-    std::int64_t blob_id) const {
+    std::int64_t blob_id, int page_1based) const {
+  if (page_1based < 0) page_1based = 0;
   sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          index_,
+          "SELECT data FROM blob_lqip WHERE blob_id = ?1 AND page_1based = ?2;",
+          -1, &stmt, nullptr) == SQLITE_OK) {
+    sqlite3_bind_int64(stmt, 1, blob_id);
+    sqlite3_bind_int(stmt, 2, page_1based);
+    std::optional<std::vector<std::uint8_t>> out;
+    if (sqlite3_step(stmt) == SQLITE_ROW &&
+        sqlite3_column_type(stmt, 0) != SQLITE_NULL) {
+      const auto* p =
+          static_cast<const std::uint8_t*>(sqlite3_column_blob(stmt, 0));
+      const int n = sqlite3_column_bytes(stmt, 0);
+      if (p && n > 0) out = std::vector<std::uint8_t>(p, p + n);
+    }
+    sqlite3_finalize(stmt);
+    if (out) return out;
+  } else if (stmt) {
+    sqlite3_finalize(stmt);
+  }
+  // Legacy table (no page_1based column): only for page 0.
+  if (page_1based != 0) return std::nullopt;
   if (sqlite3_prepare_v2(index_, "SELECT data FROM blob_lqip WHERE blob_id = ?1;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
-    throw_sqlite(index_, "prepare get_blob_lqip");
+    return std::nullopt;
   }
   sqlite3_bind_int64(stmt, 1, blob_id);
   std::optional<std::vector<std::uint8_t>> out;
@@ -819,11 +864,27 @@ std::optional<std::vector<std::uint8_t>> Store::get_blob_lqip(
   return out;
 }
 
-std::optional<int> Store::get_blob_lqip_kind(std::int64_t blob_id) const {
+std::optional<int> Store::get_blob_lqip_kind(std::int64_t blob_id,
+                                            int page_1based) const {
+  if (page_1based < 0) page_1based = 0;
   sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          index_,
+          "SELECT kind FROM blob_lqip WHERE blob_id = ?1 AND page_1based = ?2;",
+          -1, &stmt, nullptr) == SQLITE_OK) {
+    sqlite3_bind_int64(stmt, 1, blob_id);
+    sqlite3_bind_int(stmt, 2, page_1based);
+    std::optional<int> out;
+    if (sqlite3_step(stmt) == SQLITE_ROW) out = sqlite3_column_int(stmt, 0);
+    sqlite3_finalize(stmt);
+    if (out) return out;
+  } else if (stmt) {
+    sqlite3_finalize(stmt);
+  }
+  if (page_1based != 0) return std::nullopt;
   if (sqlite3_prepare_v2(index_, "SELECT kind FROM blob_lqip WHERE blob_id = ?1;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
-    throw_sqlite(index_, "prepare get_blob_lqip_kind");
+    return std::nullopt;
   }
   sqlite3_bind_int64(stmt, 1, blob_id);
   std::optional<int> out;
@@ -831,6 +892,7 @@ std::optional<int> Store::get_blob_lqip_kind(std::int64_t blob_id) const {
   sqlite3_finalize(stmt);
   return out;
 }
+
 
 void Store::put_hash(std::int64_t blob_id, HashAlgoId algo,
                      std::span<const std::uint8_t> digest) {

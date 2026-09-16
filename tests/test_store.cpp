@@ -333,15 +333,21 @@ int main() {
                "other kept");
       }
 
-      // blob_lqip durable placeholder
+      // blob_lqip durable placeholder (page-aware)
       {
         const auto bid = store.insert_blob(3, thumtoo::BlobStatus::Ok);
         const std::vector<std::uint8_t> hash = {1, 2, 3, 4, 5};
-        store.put_blob_lqip(bid, 1, hash);
-        auto got = store.get_blob_lqip(bid);
+        store.put_blob_lqip(bid, 1, hash, 0);
+        auto got = store.get_blob_lqip(bid, 0);
         expect(got && *got == hash, "lqip roundtrip");
-        expect(store.get_blob_lqip_kind(bid) && *store.get_blob_lqip_kind(bid) == 1,
+        expect(store.get_blob_lqip_kind(bid, 0) && *store.get_blob_lqip_kind(bid, 0) == 1,
                "lqip kind");
+        const std::vector<std::uint8_t> page = {9, 9, 9};
+        store.put_blob_lqip(bid, 1, page, 3);
+        auto gp = store.get_blob_lqip(bid, 3);
+        expect(gp && *gp == page, "lqip page 3");
+        expect(store.get_blob_lqip(bid, 0) && *store.get_blob_lqip(bid, 0) == hash,
+               "page 0 independent");
       }
 
       // page_text_layer + document_outline

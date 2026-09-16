@@ -2,6 +2,33 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-280-page-aware-lqip.** LQIP per document page (PDF/DjVu/pdfimage).
+Prior: **279**.
+
+### Change
+- `blob_lqip` keyed by `(blob_id, page_1based)` — pages no longer overwrite each other
+- `ensure_lqip` / `get_lqip` resolve document file blob + page from URI
+- Encode via `pdf_rasterize_page` / embedded image / `djvu_rasterize_page` at max_edge 32
+- Legacy single-column `blob_lqip` still readable for page 0
+
+### Apply
+```bash
+git pull /path/to/thumtoo-280-page-aware-lqip.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **280**
+- [x] store / client / store_only tests pass
+
+### Gap status
+All post-cutover feature gaps from the 278 audit are addressed (lists, text/outline, page LQIP).
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-279-text-outline-lqip-lists.** Durable text/outline; LIKE lists; broader LQIP.
 Prior: **278**.
 
