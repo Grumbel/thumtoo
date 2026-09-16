@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-225-nodiscard-warnings**. Next bundle: **226**.
+Latest agent handoff: **TODO.md → thumtoo-226-client-directory**. Next bundle: **227**.
 
 
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code

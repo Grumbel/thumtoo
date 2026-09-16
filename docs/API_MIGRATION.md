@@ -53,6 +53,8 @@ cache wipe.
   tile rows.
 - **Size/meta fallback:** `get_size` / `get_meta` use Store locator + image
   media dims when legacy has no row (`meta_from_store`).
+- **Directory:** `Client::{find,list,replace,delete,refresh}_directory_*`
+  forward to Store (cache-first folder open).
 
 ## Next cutover steps
 

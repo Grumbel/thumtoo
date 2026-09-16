@@ -2,6 +2,33 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-226-client-directory.** Client directory snapshot API on Store.
+Prior: **225**.
+
+### Change
+- `Client::{find,list,replace,delete}_directory_*` → Store
+- `refresh_directory_snapshot(path)` FS walk → Store snapshot
+- PLAN success criteria updated for dual-path spine
+
+### Next
+- Reduce durable soft-level writes when tiles cover
+- Host tile-native (biltoo after 0.1.0)
+- Archive member Store mirror
+
+### Apply
+```bash
+git pull /path/to/thumtoo-226-client-directory.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **226**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-225-nodiscard-warnings.** Silence ensure_region / add_link_edge nodiscard.
 Prior: **224**.
 
