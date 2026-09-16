@@ -477,7 +477,87 @@ Integer ids internally; digests and URIs at the edges.
 
 ---
 
-## 14. Compatibility and migration
+## 14. Internet Archive (archive.org)
+
+Biltoo as a **browser for open Internet Archive holdings** (especially texts)
+is a natural consumer of the locator/blob/region model. IA exposes public HTTP
+APIs; no special partnership is required for read/search of openly available
+items. Developer portal: <https://archive.org/developers/>.
+
+### APIs that matter
+
+| Capability | Pattern | Role |
+|------------|---------|------|
+| **Item metadata + file list** | `GET https://archive.org/metadata/{identifier}` | Title, creator, mediatype, `files[]` (name, format, size, md5, sha1, …) |
+| **Search** | `advancedsearch.php?q=…&output=json` | Lucene-like queries (`mediatype:texts`, `creator:…`, `collection:…`) |
+| **Deep search** | `https://archive.org/services/search/v1/scrape` | Cursor pagination beyond the ~10k sorted-page limit |
+| **File download** | `https://archive.org/download/{id}/{filename}` | Prefer this over hand-built data-node URLs (items move) |
+| **IIIF** | `https://iiif.archive.org/iiif/{id}/manifest.json` | Page/image manifests for books and images; stream pages without a full PDF |
+| **Full-text search** | FTS API (also via official `ia` Python tooling) | Search inside OCR’d texts; map hits to pages when possible |
+| **Details / stream UI** | `https://archive.org/details/{id}` (+ page fragments) | Human deep links; same identifier space |
+
+Upload/S3-like (IAS3) and metadata write are out of scope for a reader.
+
+### Locator mapping
+
+```text
+ia:{identifier}                 -- item (bag of files; TOC-like)
+ia:{identifier}/{filename}      -- one file → locator → blob when fetched
+ia:{identifier}#page=12         -- region (or IIIF canvas)
+https://archive.org/details/…   -- HTTP form of the item
+https://archive.org/download/…/… -- direct file locator
+```
+
+- Item ≈ **container** (many files, analogous to archive TOC).
+- Each file ≈ **member**; metadata digests seed **`blob_hash`** after cache.
+- Book pages ≈ **regions** (or IIIF canvases); OCR/text can become
+  `doc_structure`.
+- Search results ≈ transient listing until the user opens a file.
+
+Location-bar examples:
+
+```text
+ia:aliceinwonderlan00carriala
+ia:aliceinwonderlan00carriala#page=23
+https://archive.org/details/aliceinwonderlan00carriala
+https://archive.org/download/aliceinwonderlan00carriala/aliceinwonderlan00carriala.pdf
+```
+
+### Product phases (biltoo)
+
+1. **HTTPS open** — Paste `details/` or `download/` URLs; thumtoo http(s) fetch
+   + body cache; existing PDF/DjVu/EPUB/image paths.
+2. **Search chrome** — Advanced Search / scrape → virtual folder of items;
+   thumb from `__ia_thumb.jpg` or IIIF; open item → file list from metadata.
+3. **Book-native** — Prefer **IIIF** (or JP2 sequences) for large scans: page
+   regions and tiles without downloading multi‑GB PDFs; optional FTS → page jump.
+4. **Identity + overlays** — After fetch, promote to blob + digests; tags,
+   bookmarks, trails on the blob with `ia:{id}` kept as a locator alias.
+
+### Limits
+
+- **Controlled Digital Lending** — Many modern books are not free full-file
+  downloads; access is logged-in, time-limited, often image-only through IA’s
+  viewer. Start with **public / openly downloadable** items
+  (`mediatype:texts`, images, etc.). Lending is a later, auth-heavy experiment
+  if at all.
+- **Rate limits / bot policy** — Interactive use with caching is appropriate;
+  bulk scrape is not. Respect IA guidance for automated clients.
+- **Size** — Page streaming (IIIF) is the difference between a viewer and a
+  download manager.
+- **Auth** — Open metadata, search, and most downloads: anonymous. Lending and
+  writes: cookies or S3 keys.
+
+### Fit to the rest of this doc
+
+IA is another **locator space** (like `file:` and `https:`), not a second data
+model. Items and files become containers/members; pages become regions; user
+structure stays in the **overlay** graph. Same spine as local archives and the
+WWW.
+
+---
+
+## 15. Compatibility and migration
 
 - **No** attempt to migrate old thumtoo ladder rows automatically.
 - On schema epoch bump: detect old DB → warn → delete/replace cache root (or
@@ -487,7 +567,7 @@ Integer ids internally; digests and URIs at the edges.
 
 ---
 
-## 15. Priority order (discussion)
+## 16. Priority order (discussion)
 
 1. Blob + `blob_hash` + locator + container_member (identity + archives)  
 2. Media + region + tiles (+ codec table); levels demoted  
@@ -495,11 +575,12 @@ Integer ids internally; digests and URIs at the edges.
 4. Doc structure (text, links, maps) + bookmarks/annotations  
 5. Link edges / trails + backlinks index  
 6. media_aux (attention, AI)  
-7. Hypertia transport / IPLD export (shape only until needed)
+7. HTTP(s) locators + Internet Archive (open items; IIIF for books)  
+8. Hypertia transport / IPLD export (shape only until needed)
 
 ---
 
-## 16. Open questions
+## 17. Open questions
 
 1. Canonical merge digest (SHA-256 only vs multi-algo equality rules).  
 2. Region key stability for EPUB reflow and archive renames inside CBR.  
@@ -507,11 +588,13 @@ Integer ids internally; digests and URIs at the edges.
 4. One SQLite vs split (checksum cache vs tags data) while sharing blob ids.  
 5. Whether collections are exclusive membership (dirtoo FileSet) or multi-set.  
 6. Hypertia auth and multi-user overlay namespaces.  
-7. How much extracted WWW structure to store vs on-demand fetch.
+7. How much extracted WWW structure to store vs on-demand fetch.  
+8. IA: IIIF-first vs PDF download-first for `mediatype:texts`; whether
+   `ia:` is a first-class URI scheme or only `https://archive.org/…`.
 
 ---
 
-## 17. Summary
+## 18. Summary
 
 - Replace string `content_id` PKs with **integer blob ids**; digests in
   **`blob_hash`**; name dumb bytes **`blob`**, meaning **`media`/`region`**.
@@ -523,6 +606,8 @@ Integer ids internally; digests and URIs at the edges.
   identity boundary.
 - **Hypertia** is HTTP-shaped access to blobs, media, and overlays; the WWW is
   another locator space and link source, not a separate data model.
+- **Internet Archive** is a first-class remote library: metadata/search/download
+  APIs + IIIF for open texts/images; map to locators, containers, and regions.
 - **IPFS/IPLD** contribute vocabulary (CID, immutable blocks, mutable names),
   not a required runtime.
 

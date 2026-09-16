@@ -2,6 +2,28 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-209-ia-archive-org.** Document Internet Archive APIs in BLOB_AND_OVERLAY.
+Prior: **208**.
+
+### Change
+- `docs/BLOB_AND_OVERLAY.md` §14: archive.org metadata/search/download/IIIF,
+  locator mapping (`ia:` / details / download), biltoo product phases, CDL limits.
+- Priority list and open questions updated.
+
+### Apply
+```bash
+git pull /path/to/thumtoo-209-ia-archive-org.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **209**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-208-blob-overlay-brainstorm.** Design note: blob identity, overlays, hypertia.
 Prior: **207**.
 
