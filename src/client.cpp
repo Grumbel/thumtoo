@@ -173,8 +173,12 @@ std::optional<std::int64_t> file_mtime_ns(const std::filesystem::path& p) {
 }  // namespace
 
 Client::Client(std::unique_ptr<Database> db, std::unique_ptr<BlobStore> blobs,
-               Executor executor, unsigned worker_threads)
-    : db_(std::move(db)), blobs_(std::move(blobs)), executor_(std::move(executor)) {
+               std::unique_ptr<Store> store, Executor executor,
+               unsigned worker_threads)
+    : db_(std::move(db)),
+      blobs_(std::move(blobs)),
+      store_(std::move(store)),
+      executor_(std::move(executor)) {
   if (debug_enabled()) {
     dbg("Client constructed — THUMTOO_DEBUG active (stderr task traces on)");
   }
@@ -204,12 +208,20 @@ Client::~Client() {
 }
 
 std::unique_ptr<Client> Client::open(const std::filesystem::path& cache_root,
-                                     Executor executor, unsigned worker_threads) {
+                                     Executor executor, unsigned worker_threads,
+                                     const std::filesystem::path& data_root) {
   auto db = std::make_unique<Database>(Database::open(cache_root));
   auto blobs = std::make_unique<BlobStore>(BlobStore::open(cache_root));
+  // Dual-path: redesign Store must not share legacy index.sqlite (schema 1–4).
+  // Layout: cache_root/store/{index,bulk}.sqlite ; user under data_root (or
+  // cache_root when data_root is empty).
+  Store::Paths sp;
+  sp.cache_root = cache_root / "store";
+  sp.data_root = data_root.empty() ? cache_root : data_root;
+  auto store = std::make_unique<Store>(Store::open(sp));
   return std::unique_ptr<Client>(
-      new Client(std::move(db), std::move(blobs), std::move(executor),
-                 worker_threads));
+      new Client(std::move(db), std::move(blobs), std::move(store),
+                 std::move(executor), worker_threads));
 }
 
 std::optional<Size> Client::get_size(std::string_view uri) const {
@@ -3757,10 +3769,33 @@ void Client::handle_ensure_tiles(
   reply_pyramid_done(!tiles.empty());
 }
 
+namespace {
+
+/// Legacy content_id "sha256:<hex>" → Store blob ref "blob:sha256:<hex>".
+std::optional<std::string> blob_ref_from_content_id(std::string_view content_id) {
+  constexpr std::string_view kSha = "sha256:";
+  if (content_id.size() == kSha.size() + 64 && content_id.starts_with(kSha)) {
+    return std::string("blob:") + std::string(content_id);
+  }
+  return std::nullopt;
+}
+
+}  // namespace
+
 std::vector<std::string> Client::get_tags(std::string_view uri) const {
   auto loc = db_->find_locator(uri);
   if (!loc || !loc->content_id) return {};
-  return db_->tags_for_content(*loc->content_id);
+  // Prefer union of legacy + Store so dual-write hosts see both during cutover.
+  auto tags = db_->tags_for_content(*loc->content_id);
+  if (auto bref = blob_ref_from_content_id(*loc->content_id)) {
+    auto st = store_->tags_for_blob_ref(*bref);
+    for (const auto& t : st) {
+      if (std::find(tags.begin(), tags.end(), t) == tags.end()) {
+        tags.push_back(t);
+      }
+    }
+  }
+  return tags;
 }
 
 bool Client::add_tag(std::string_view uri, std::string_view tag,
@@ -3768,13 +3803,21 @@ bool Client::add_tag(std::string_view uri, std::string_view tag,
   auto loc = db_->find_locator(uri);
   if (!loc || !loc->content_id) return false;
   db_->add_tag(*loc->content_id, tag, source);
+  if (auto bref = blob_ref_from_content_id(*loc->content_id)) {
+    store_->add_blob_tag(*bref, tag, source);
+  }
   return true;
 }
 
 bool Client::remove_tag(std::string_view uri, std::string_view tag) {
   auto loc = db_->find_locator(uri);
   if (!loc || !loc->content_id) return false;
-  return db_->remove_tag(*loc->content_id, tag);
+  const bool legacy = db_->remove_tag(*loc->content_id, tag);
+  bool redesigned = false;
+  if (auto bref = blob_ref_from_content_id(*loc->content_id)) {
+    redesigned = store_->remove_blob_tag(*bref, tag);
+  }
+  return legacy || redesigned;
 }
 
 

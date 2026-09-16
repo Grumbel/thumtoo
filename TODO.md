@@ -2,6 +2,35 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-220-client-store-dual-path.** Phase E start: Client opens Store dual-path.
+Prior: **219**.
+
+### Change
+- `Client::open` opens redesign `Store` under `cache_root/store/` (index+bulk)
+  and `user.sqlite` under optional `data_root` (default: cache_root).
+- `Client::store()` accessor; `THUMTOO_API_STORE` feature probe.
+- Tags dual-write/read: legacy + `blob:sha256:` when content_id is sha256.
+- `docs/API_MIGRATION.md` layout and cutover steps.
+
+### Next
+- Probe path: ensure Store locator/blob/media on request_size success
+- Soft pixels from Store tiles (compat assemble)
+- biltoo: pass XDG data_root
+
+### Apply
+```bash
+git pull /path/to/thumtoo-220-client-store-dual-path.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **220**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-219-store-phase-d-close.** Store Phase D close: annotation, http_body, tile list.
 Prior: **218**.
 

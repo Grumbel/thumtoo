@@ -127,9 +127,11 @@ Feature macros: new schema epoch; `TILES_ONLY`; user-store present.
 **Phase C status:** `container_member` TOC + optional member blob_id (hash on
 read/tag/explicit via `set_container_member_blob`); `ensure_document_media` /
 `ensure_page_region`.  
-**Phase D status:** directory_snapshot/entry; user tags, collections,
-bookmarks, link_edge, annotation; bulk `http_body`; tile list helpers.
-Legacy Client unchanged. **Phase D complete.** Next: Phase E host wiring.
+**Phase D status:** complete (directory, user overlays, http_body, tile list).  
+**Phase E (started):** Client opens Store under `cache_root/store/` (dual-path;
+legacy `index.sqlite` kept for pixels). `Client::store()`; tag dual-write when
+content_id is `sha256:…`. See [API_MIGRATION.md](API_MIGRATION.md). Next: probe
+→ Store blob/media; tile-primary soft pixels.
 
 ### Phase B — images
 

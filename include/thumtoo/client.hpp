@@ -7,6 +7,7 @@
 #include "thumtoo/archive.hpp"
 #include "thumtoo/blob_store.hpp"
 #include "thumtoo/executor.hpp"
+#include "thumtoo/store.hpp"
 #include "thumtoo/types.hpp"
 #include "thumtoo/text.hpp"
 #include "thumtoo/pdf.hpp"
@@ -52,6 +53,9 @@ namespace thumtoo {
 #ifndef THUMTOO_API_PURGE_URI
 #define THUMTOO_API_PURGE_URI 1
 #endif
+#ifndef THUMTOO_API_STORE
+#define THUMTOO_API_STORE 1
+#endif
 
 /// In-process client: cache-only get_* + async request_* (DESIGN API sketch).
 ///
@@ -77,12 +81,21 @@ class Client {
   ~Client();
 
   /// \param worker_threads 0 → std::thread::hardware_concurrency() (min 1, max 32).
+  /// \param data_root user.sqlite root (tags/collections). Empty → same as
+  ///        cache_root. Redesign Store lives under cache_root/store/ so it does
+  ///        not collide with the legacy index.sqlite still used for pixels.
   static std::unique_ptr<Client> open(const std::filesystem::path& cache_root,
                                       Executor executor = {},
-                                      unsigned worker_threads = 0);
+                                      unsigned worker_threads = 0,
+                                      const std::filesystem::path& data_root = {});
 
   [[nodiscard]] Database& db() { return *db_; }
   [[nodiscard]] const Database& db() const { return *db_; }
+
+  /// Redesign index/bulk/user (docs/PLAN.md Phase E dual-path). Pixels still use
+  /// db(); user overlays dual-write into store() when content_id is sha256.
+  [[nodiscard]] Store& store() { return *store_; }
+  [[nodiscard]] const Store& store() const { return *store_; }
 
   /// Cache-only; does not touch source volumes.
   [[nodiscard]] std::optional<Size> get_size(std::string_view uri) const;
@@ -366,8 +379,8 @@ class Client {
 
  private:
   explicit Client(std::unique_ptr<Database> db,
-                  std::unique_ptr<BlobStore> blobs, Executor executor,
-                  unsigned worker_threads);
+                  std::unique_ptr<BlobStore> blobs, std::unique_ptr<Store> store,
+                  Executor executor, unsigned worker_threads);
 
   /// Load/refresh TOC-ordered image members for FastBatch cursor (source I/O on miss).
   void ensure_archive_cursor(const std::filesystem::path& archive_path);
@@ -454,6 +467,7 @@ class Client {
 
   std::unique_ptr<Database> db_;
   std::unique_ptr<BlobStore> blobs_;
+  std::unique_ptr<Store> store_;
   Executor executor_;
 
   mutable std::mutex mu_;  // also locked from const interest_epoch()
