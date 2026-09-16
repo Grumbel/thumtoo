@@ -2,6 +2,33 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-229-phase-e-dual-path-complete.** Phase E library dual-path spine done.
+Prior: **228**.
+
+### Change
+- `get_archive_entries` falls back to Store `container_member` when legacy TOC empty
+- PLAN: Phase E dual-path marked complete; success criteria all checked
+- Remaining work is host cutover (tile-native biltoo; drop legacy index)
+
+### Next
+- biltoo: PreferCache / filmstrip tile-native (post 0.1.0)
+- Drop legacy `levels` write path when hosts no longer need soft ladder rows
+- Move Store files to top-level `$cache/` after legacy gone
+
+### Apply
+```bash
+git pull /path/to/thumtoo-229-phase-e-dual-path-complete.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **229**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-228-archive-store-mirror.** Archive TOC + member blob dual-write to Store.
 Prior: **227**.
 

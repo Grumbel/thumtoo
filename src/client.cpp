@@ -1885,7 +1885,44 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
 
 std::vector<Database::ArchiveEntryRow> Client::get_archive_entries(
     std::string_view archive_uri) const {
-  return db_->list_archive_entries(archive_uri);
+  auto rows = db_->list_archive_entries(archive_uri);
+  if (!rows.empty() || !store_) return rows;
+
+  // Dual-path: Store container_member when legacy TOC is empty.
+  auto resolve_container = [&]() -> std::optional<std::int64_t> {
+    if (auto loc = store_->find_locator(archive_uri)) {
+      if (loc->blob_id) return *loc->blob_id;
+    }
+    if (auto arch = parse_archive_uri(archive_uri)) {
+      const auto root = thumtoo::archive_uri(arch->archive_path);
+      if (auto loc = store_->find_locator(root)) {
+        if (loc->blob_id) return *loc->blob_id;
+      }
+      const auto file_uri =
+          file_uri_from_path(arch->archive_path.lexically_normal());
+      if (auto loc = store_->find_locator(file_uri)) {
+        if (loc->blob_id) return *loc->blob_id;
+      }
+    }
+    return std::nullopt;
+  };
+
+  auto cid = resolve_container();
+  if (!cid) return rows;
+  try {
+    auto members = store_->list_container_members(*cid);
+    rows.reserve(members.size());
+    for (const auto& m : members) {
+      if (m.is_directory) continue;
+      Database::ArchiveEntryRow r;
+      r.archive_uri = std::string(archive_uri);
+      r.member_path = m.member_path;
+      r.uncompressed_size = m.uncompressed_size;
+      rows.push_back(std::move(r));
+    }
+  } catch (...) {
+  }
+  return rows;
 }
 
 std::vector<Database::ArchiveEntryRow> Client::refresh_archive_toc(

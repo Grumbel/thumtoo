@@ -128,10 +128,12 @@ Feature macros: new schema epoch; `TILES_ONLY`; user-store present.
 read/tag/explicit via `set_container_member_blob`); `ensure_document_media` /
 `ensure_page_region`.  
 **Phase D status:** complete (directory, user overlays, http_body, tile list).  
-**Phase E (started):** dual-path Store; tag/probe/tile dual-write; tile read +
-TileSynth + size/meta fall back; directory Client API; soft EnsurePixels
-skips soft-ladder encode when tiles cover. See [API_MIGRATION.md](API_MIGRATION.md).
-Next: host tile-native rendering after biltoo 0.1.0; archive Store mirror.
+**Phase E (library dual-path):** complete for 0.1.0 spine — probe/tile/tag/
+directory/archive dual-write; tile + size/meta + archive TOC read fallback;
+tiles-first soft encode. Hosts still open legacy Database for soft levels until
+tile-native biltoo. See [API_MIGRATION.md](API_MIGRATION.md).
+**Next (post dual-path):** host tile-native rendering; drop legacy `levels` /
+`index.sqlite` after biltoo ships Store-only.
 
 ### Phase B — images
 
@@ -199,7 +201,7 @@ Otherwise implement through Phase E.
 - [x] PDF page via `//page:N`; tiles keyed by page region (dual-write).  
 - [x] Directory list returns snapshot without mandatory FS walk on first paint (Client → Store).  
 - [x] Tags on `blob:sha256:` survive index/bulk delete (user.sqlite + dual-write).  
-- [ ] No `levels` table in the new schema.
+- [x] No `levels` table in the new schema (Store epoch ≥ 100 is tiles-only; legacy levels remain on dual-path until host cutover).
 
 ---
 

@@ -57,6 +57,7 @@ cache wipe.
   forward to Store (cache-first folder open).
 - **Archive:** `refresh_archive_toc` dual-writes Store `container_member` TOC;
   member size probe attaches hashed member blob via `set_container_member_blob`.
+  `get_archive_entries` falls back to Store TOC when legacy is empty.
 
 ## Next cutover steps
 
