@@ -72,6 +72,8 @@ cache wipe.
    legacy is gone (epoch already ≥ 100). Hosts pass `$XDG_DATA_HOME/thumtoo`
    as `data_root` (biltoo does).
 
+Host checklist: [HOST_CUTOVER.md](HOST_CUTOVER.md).
+
 ## Non-goals until hosts are ready
 
 - Migrating old ladder rows into tiles.

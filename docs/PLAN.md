@@ -133,7 +133,7 @@ directory/archive dual-write; tile + size/meta + archive TOC read fallback;
 tiles-first soft encode. Hosts still open legacy Database for soft levels until
 tile-native biltoo. See [API_MIGRATION.md](API_MIGRATION.md).
 **Next (post dual-path):** host tile-native rendering; drop legacy `levels` /
-`index.sqlite` after biltoo ships Store-only.
+`index.sqlite` after biltoo ships Store-only. Checklist: [HOST_CUTOVER.md](HOST_CUTOVER.md).
 
 ### Phase B — images
 

@@ -2,6 +2,30 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-230-host-cutover-doc.** Host cutover checklist after Phase E dual-path.
+Prior: **229**.
+
+### Change
+- `docs/HOST_CUTOVER.md` — biltoo tile-native steps; when to drop legacy levels/index
+
+### Next
+- biltoo: PreferCache / filmstrip treat TileSynth as valid soft (tile-native)
+- Optional `THUMTOO_TILES_ONLY` to refuse soft-level writes under test
+
+### Apply
+```bash
+git pull /path/to/thumtoo-230-host-cutover-doc.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **230**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-229-phase-e-dual-path-complete.** Phase E library dual-path spine done.
 Prior: **228**.
 
