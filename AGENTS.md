@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-288-file-uri-lqip-after-probe**. Next bundle: **289**.
+Latest agent handoff: **TODO.md → thumtoo-289-cheap-lqip-from-pixels**. Next bundle: **290**.
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code
 here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 

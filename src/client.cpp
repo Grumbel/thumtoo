@@ -919,6 +919,21 @@ std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
   auto key = lqip_key_ensure(*store_, uri);
   if (!key) return std::nullopt;
 
+  // Cheap path: ThumbHash/Handsum from an already-decoded soft/tile overview
+  // (≤64 long edge). Avoids a second full-source vips_thumbnail for file://.
+  if (auto px = get_pixels(uri, /*max_edge=*/64, /*frame_idx=*/0,
+                           /*allow_tile_synth=*/true);
+      px && !px->bytes.empty()) {
+    auto bytes = lqip_thumbhash_from_buffer(px->bytes.data(), px->bytes.size());
+    if (!bytes.empty()) {
+      const int kind =
+          bytes.size() == 147 ? kLqipKindHandsum : kLqipKindThumbHash;
+      store_->put_blob_lqip(key->blob_id, kind, bytes, key->page_1based);
+      return bytes;
+    }
+  }
+
+  // Expensive path: rasterize/thumbnail the source again.
   EncodedLqip enc = encode_lqip_for_uri(uri);
   if (enc.bytes.empty()) {
     if (auto src = read_source_bytes(uri); src && !src->empty()) {
@@ -2455,12 +2470,14 @@ void Client::worker_main() {
 void Client::request_lqip(std::string uri) {
   if (uri.empty()) return;
   if (get_lqip(uri)) return;
+  // Last-resort job: ensure_lqip may still full-decode the source if no
+  // soft/tiles exist yet. Prefer opportunistic fill from ensure_pixels/tiles.
+  // Keep at back of queue so ProbeSize / EnsureTiles stay ahead.
   Job job;
   job.kind = JobKind::EnsureLqip;
   job.uri = std::move(uri);
   {
     std::lock_guard lock(mu_);
-    // Prefer back of queue so ProbeSize / EnsureTiles stay ahead.
     queue_.push_back(std::move(job));
   }
   cv_.notify_one();
@@ -2481,14 +2498,12 @@ void Client::handle_probe_size_store(Job& job) {
       cb(std::move(uri), SizeReply{});
     });
   };
-  // Cache-only LQIP on the size reply (may be empty on cold probe). Never
-  // encode Handsum/ThumbHash on the probe path — that blocked size delivery.
-  // When missing, enqueue EnsureLqip so file:// (and pages) fill blob_lqip
-  // without waiting for a soft PreferCache hit.
+  // Cache-only LQIP on the size reply (empty on cold probe). Do not enqueue
+  // EnsureLqip here: encode_lqip_for_uri re-thumbnails the source and is too
+  // expensive for a path that only needed dimensions. LQIP is filled
+  // opportunistically when soft/tiles already decoded (ensure_pixels) or via
+  // an explicit host ensure_lqip / request_lqip.
   auto reply_size = [&](Size sz) {
-    if (!get_lqip(job.uri)) {
-      request_lqip(job.uri);
-    }
     if (!job.size_cb) return;
     auto cb = std::move(job.size_cb);
     auto uri = job.uri;
@@ -2870,6 +2885,31 @@ void Client::handle_ensure_pixels_store(Job& job) {
   if (levels.empty()) {
     reply(std::nullopt);
     return;
+  }
+  // Opportunistic LQIP from the smallest ladder step (already in RAM). Far
+  // cheaper than a separate EnsureLqip full-source thumbnail.
+  if (!get_lqip(job.uri)) {
+    const LevelBlob* small = &levels.front();
+    for (const auto& lvl : levels) {
+      if (lvl.max_edge > 0 &&
+          (small->max_edge <= 0 || lvl.max_edge < small->max_edge)) {
+        small = &lvl;
+      }
+    }
+    if (!small->bytes.empty()) {
+      if (auto key = lqip_key_ensure(*store_, job.uri)) {
+        auto bytes = lqip_thumbhash_from_buffer(small->bytes.data(),
+                                                small->bytes.size());
+        if (!bytes.empty()) {
+          const int kind =
+              bytes.size() == 147 ? kLqipKindHandsum : kLqipKindThumbHash;
+          try {
+            store_->put_blob_lqip(key->blob_id, kind, bytes, key->page_1based);
+          } catch (...) {
+          }
+        }
+      }
+    }
   }
   LevelBlob& best = levels.front();
   for (auto& lvl : levels) {

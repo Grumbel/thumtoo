@@ -2,6 +2,33 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-289-cheap-lqip-from-pixels.** Opportunistic LQIP; no probe enqueue.
+Prior: **288**.
+
+### Change
+- **No** `request_lqip` on size probe (standalone encode is a full source thumb)
+- `ensure_lqip`: prefer ThumbHash from existing soft/tile `get_pixels(≤64)` before
+  `encode_lqip_for_uri` / source re-decode
+- `handle_ensure_pixels_store`: after ladder build, fill `blob_lqip` from the
+  smallest level buffer (almost free vs a separate EnsureLqip job)
+- `request_lqip` remains last-resort, back-of-queue
+
+### Apply
+```bash
+git pull /path/to/thumtoo-289-cheap-lqip-from-pixels.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **289**
+- [x] Size path does not enqueue EnsureLqip
+- [x] Soft/tile work can populate LQIP without a second full decode
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-288-file-uri-lqip-after-probe.** Enqueue LQIP after file:// size probe.
 Prior: **287**.
 
