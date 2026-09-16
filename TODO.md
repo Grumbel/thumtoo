@@ -2,6 +2,30 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-288-file-uri-lqip-after-probe.** Enqueue LQIP after file:// size probe.
+Prior: **287**.
+
+### Change
+- `handle_probe_size_store` `reply_size`: attach cache-only `get_lqip`; if missing,
+  `request_lqip` (EnsureLqip job) so plain `file://` (and other probe paths) fill
+  `blob_lqip` without blocking size or waiting for soft PreferCache
+- Restores tip-199/200 intent after Store-only rewrite dropped `store_lqip_if_missing`
+
+### Apply
+```bash
+git pull /path/to/thumtoo-288-file-uri-lqip-after-probe.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **288**
+- [x] Cold `request_size(file://…)` eventually stores LQIP via EnsureLqip
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-287-fix-outer-path-index-order.** Create outer_path index after ALTER.
 Prior: **286**.
 

@@ -2481,12 +2481,20 @@ void Client::handle_probe_size_store(Job& job) {
       cb(std::move(uri), SizeReply{});
     });
   };
+  // Cache-only LQIP on the size reply (may be empty on cold probe). Never
+  // encode Handsum/ThumbHash on the probe path — that blocked size delivery.
+  // When missing, enqueue EnsureLqip so file:// (and pages) fill blob_lqip
+  // without waiting for a soft PreferCache hit.
   auto reply_size = [&](Size sz) {
+    if (!get_lqip(job.uri)) {
+      request_lqip(job.uri);
+    }
     if (!job.size_cb) return;
     auto cb = std::move(job.size_cb);
     auto uri = job.uri;
     SizeReply reply;
     reply.size = sz;
+    reply.lqip = get_lqip(uri);
     executor_.post([cb = std::move(cb), uri = std::move(uri),
                     reply = std::move(reply)]() mutable {
       cb(std::move(uri), std::move(reply));
