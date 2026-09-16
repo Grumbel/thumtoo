@@ -2,6 +2,32 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-223-tile-read-store.** Phase E: get_tile / TileSynth fall back to Store.
+Prior: **222**.
+
+### Change
+- `store_tile_target_for_content_id` maps pure/page ids → media/region.
+- `get_tile` / `has_tile` / `get_tile_coverage` fall back to Store.
+- `get_pixels_from_tiles` uses Store scale range when legacy has no tiles.
+
+### Next
+- Store-primary size/meta (less reliance on legacy content row)
+- biltoo XDG data_root
+
+### Apply
+```bash
+git pull /path/to/thumtoo-223-tile-read-store.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **223**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-222-tile-mirror-store.** Phase E: dual-write tiles into Store bulk.
 Prior: **221**.
 

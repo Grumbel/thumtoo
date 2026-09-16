@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-222-tile-mirror-store**. Next bundle: **223**.
+Latest agent handoff: **TODO.md → thumtoo-223-tile-read-store**. Next bundle: **224**.
 
 
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code

@@ -453,7 +453,13 @@ std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
 
   int min_s = 0, max_s = 0;
   if (!db_->tile_min_max_scale(meta->content_id, min_s, max_s)) {
-    return std::nullopt;  // no tiles stored
+    // Dual-path: tiles may live only on Store after dual-write.
+    auto tgt = store_tile_target_for_content_id(meta->content_id);
+    if (!tgt) return std::nullopt;
+    auto scales = store_->list_tile_scales(tgt->media_id, tgt->region_id);
+    if (scales.empty()) return std::nullopt;
+    min_s = scales.front();
+    max_s = scales.back();
   }
 
   const int want = max_edge > 0 ? max_edge : kBatchMaxEdge;
@@ -872,29 +878,117 @@ void Client::request_overview_pixels(std::string uri, int max_edge,
 bool Client::has_tile(std::string_view uri, int scale, int x, int y) const {
   auto meta = db_->meta_for_uri(uri);
   if (!meta) return false;
-  return db_->find_tile(meta->content_id, scale, x, y).has_value();
+  if (db_->find_tile(meta->content_id, scale, x, y).has_value()) return true;
+  if (auto tgt = store_tile_target_for_content_id(meta->content_id)) {
+    return store_->has_tile(tgt->media_id, tgt->region_id, scale, x, y);
+  }
+  return false;
 }
 
 std::optional<TileBlob> Client::get_tile(std::string_view uri, int scale, int x,
                                          int y) const {
   auto meta = db_->meta_for_uri(uri);
   if (!meta) return std::nullopt;
-  auto row = db_->find_tile(meta->content_id, scale, x, y);
-  if (!row) return std::nullopt;
-  auto bytes = blobs_->get_tile(meta->content_id, scale, x, y);
-  if (!bytes) return std::nullopt;
-  TileBlob t;
-  t.scale = scale;
-  t.x = x;
-  t.y = y;
-  if (row->width) t.width = *row->width;
-  if (row->height) t.height = *row->height;
-  if (row->codec) t.codec = *row->codec;
-  else t.codec = kDefaultTileCodec;
-  t.bytes = std::move(*bytes);
-  t.source = static_cast<TileSource>(row->source);
-  debug_overlay_tile(t, uri);
-  return t;
+  if (auto row = db_->find_tile(meta->content_id, scale, x, y)) {
+    auto bytes = blobs_->get_tile(meta->content_id, scale, x, y);
+    if (bytes) {
+      TileBlob t;
+      t.scale = scale;
+      t.x = x;
+      t.y = y;
+      if (row->width) t.width = *row->width;
+      if (row->height) t.height = *row->height;
+      if (row->codec) t.codec = *row->codec;
+      else t.codec = kDefaultTileCodec;
+      t.bytes = std::move(*bytes);
+      t.source = static_cast<TileSource>(row->source);
+      debug_overlay_tile(t, uri);
+      return t;
+    }
+  }
+  // Dual-path: tiles may exist only on Store after dual-write or Store-only encode.
+  if (auto tgt = store_tile_target_for_content_id(meta->content_id)) {
+    auto bytes =
+        store_->get_tile_data(tgt->media_id, tgt->region_id, scale, x, y);
+    if (!bytes) return std::nullopt;
+    auto row =
+        store_->find_tile_meta(tgt->media_id, tgt->region_id, scale, x, y);
+    TileBlob t;
+    t.scale = scale;
+    t.x = x;
+    t.y = y;
+    if (row) {
+      t.width = row->width;
+      t.height = row->height;
+      if (row->codec_id == CodecId::Jxl) t.codec = "jxl";
+      else if (row->codec_id == CodecId::Png) t.codec = "png";
+      else t.codec = kDefaultTileCodec;
+    } else {
+      t.codec = kDefaultTileCodec;
+    }
+    t.bytes = std::move(*bytes);
+    t.source = TileSource::Full;
+    debug_overlay_tile(t, uri);
+    return t;
+  }
+  return std::nullopt;
+}
+
+std::optional<Client::StoreTileTarget> Client::store_tile_target_for_content_id(
+    std::string_view content_id) const {
+  if (!store_ || content_id.empty()) return std::nullopt;
+
+  constexpr std::string_view kSha = "sha256:";
+  if (!content_id.starts_with(kSha) || content_id.size() < kSha.size() + 64) {
+    return std::nullopt;
+  }
+
+  const std::string_view rest(content_id.data() + kSha.size(),
+                              content_id.size() - kSha.size());
+  const std::string_view hex = rest.substr(0, 64);
+  for (char c : hex) {
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+          (c >= 'A' && c <= 'F'))) {
+      return std::nullopt;
+    }
+  }
+
+  std::optional<int> page_1based;
+  if (rest.size() > 64) {
+    constexpr std::string_view kPage = ":page:";
+    if (rest.size() > 64 + kPage.size() &&
+        rest.substr(64, kPage.size()) == kPage) {
+      try {
+        page_1based = std::stoi(std::string(rest.substr(64 + kPage.size())));
+      } catch (...) {
+        return std::nullopt;
+      }
+      if (*page_1based < 1) return std::nullopt;
+    } else {
+      return std::nullopt;
+    }
+  }
+
+  auto digest = Store::parse_sha256_digest(hex);
+  if (!digest || digest->size() != 32) return std::nullopt;
+
+  auto blob_id = store_->find_blob_by_hash(HashAlgoId::Sha256, *digest);
+  if (!blob_id) return std::nullopt;
+
+  if (page_1based) {
+    auto media = store_->find_media_for_blob(*blob_id, MediaKind::Document);
+    if (!media) return std::nullopt;
+    auto region = store_->find_region_by_key(
+        media->id, RegionKind::Page, std::to_string(*page_1based));
+    if (!region) return std::nullopt;
+    return StoreTileTarget{media->id, region->id};
+  }
+
+  auto media = store_->find_media_for_blob(*blob_id, MediaKind::Image);
+  if (!media) return std::nullopt;
+  auto full = store_->find_full_region(media->id);
+  if (!full) return std::nullopt;
+  return StoreTileTarget{media->id, full->id};
 }
 
 std::optional<TileCoverage> Client::get_tile_coverage(
@@ -909,6 +1003,14 @@ std::optional<TileCoverage> Client::get_tile_coverage(
     cov.min_scale = min_s;
     cov.max_scale = max_s;
     return cov;
+  }
+  if (auto tgt = store_tile_target_for_content_id(meta->content_id)) {
+    auto scales = store_->list_tile_scales(tgt->media_id, tgt->region_id);
+    if (!scales.empty()) {
+      cov.min_scale = scales.front();
+      cov.max_scale = scales.back();
+      return cov;
+    }
   }
   // No tiles stored yet: theoretical coverage from native size alone.
   if (!meta->size || meta->size->width <= 0 || meta->size->height <= 0) {

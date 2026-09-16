@@ -435,6 +435,15 @@ class Client {
   /// Dual-path: copy newly encoded tiles into Store bulk (by content_id hash).
   void mirror_tiles_to_store(const std::string& content_id,
                              const std::vector<TileBlob>& tiles);
+
+  /// Resolve pure/page content_id to Store media+region for tile read fallback.
+  struct StoreTileTarget {
+    std::int64_t media_id = 0;
+    std::int64_t region_id = 0;
+  };
+  [[nodiscard]] std::optional<StoreTileTarget> store_tile_target_for_content_id(
+      std::string_view content_id) const;
+
   void handle_probe_size(
       Job& job,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);
