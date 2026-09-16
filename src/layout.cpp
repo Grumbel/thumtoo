@@ -74,13 +74,6 @@ bool store_root_layout_enabled() {
   return true;
 }
 
-bool store_only_mode() {
-  // Legacy dual-path removed: Client never opens Database/BlobStore.
-  return true;
-}
-
-bool dual_write_to_store_enabled() { return false; }
-
 std::filesystem::path legacy_db_root(const std::filesystem::path& cache_root) {
   return store_root_layout_enabled() ? (cache_root / "legacy") : cache_root;
 }

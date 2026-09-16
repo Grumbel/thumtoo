@@ -102,7 +102,6 @@ int main() {
 
   auto client = thumtoo::Client::open(cache);
   expect(client != nullptr, "Client::open STORE_ONLY");
-  expect(thumtoo::store_only_mode(), "store_only_mode");
 
   expect(file_nonempty(cache / "index.sqlite"), "Store index on disk");
   expect(file_nonempty(cache / "bulk.sqlite"), "Store bulk on disk");
@@ -156,8 +155,6 @@ int main() {
 
   // Still no legacy files after probe/pixels/tiles/tags.
   expect(!fs::exists(cache / "legacy"), "no legacy/ after work");
-  expect(thumtoo::dual_write_to_store_enabled() == false,
-         "dual_write off under STORE_ONLY");
 
   if (g_failures) {
     std::cerr << g_failures << " failure(s)\n";

@@ -59,9 +59,8 @@ tree); do not invent a second PreferCache retry loop.
 
 ## 3. Library facts (post ≥262)
 
-1. **`store_only_mode()` is always true** — Client never opens legacy
-   `Database` / `BlobStore`. `THUMTOO_STORE_ONLY` is ignored.
-2. **Dual-write is off** — `dual_write_to_store_enabled()` is always false.
+1. **Client is Store-only** — no legacy ladder classes (≥272). `THUMTOO_STORE_ONLY` is ignored.
+2. **Dual-write is gone** — probe/tiles write only to Store.
 3. **`has_legacy()` is always false**; `Client::db()` throws if called.
 4. Durable tiles go through Store (`put_tile` / tile list APIs).
 5. Public APIs are null-safe without legacy: `prepare_paths`, archive TOC, etc.

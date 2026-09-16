@@ -318,6 +318,20 @@ int main() {
       auto ost = store.purge_orphan_blobs(/*dry_run=*/false);
       expect(ost.blobs_purged >= 1, "purge orphan count");
       expect(!store.find_blob(orphan), "orphan blob gone");
+
+      // forget_uri_prefix
+      {
+        const auto b1 = store.insert_blob(1, thumtoo::BlobStatus::Ok);
+        const auto b2 = store.insert_blob(2, thumtoo::BlobStatus::Ok);
+        (void)store.upsert_locator("file:///tmp/dir/a.jpg", b1, 1, 1);
+        (void)store.upsert_locator("file:///tmp/dir/b.jpg", b2, 2, 2);
+        (void)store.upsert_locator("file:///tmp/other.jpg", b2, 2, 2);
+        auto pst = store.forget_uri_prefix("file:///tmp/dir/", false);
+        expect(pst.locators_removed == 2, "prefix removes two");
+        expect(!store.find_locator("file:///tmp/dir/a.jpg"), "a gone");
+        expect(store.find_locator("file:///tmp/other.jpg").has_value(),
+               "other kept");
+      }
     }
 
     // Re-create after deleting index+bulk (simulates operator cache wipe).

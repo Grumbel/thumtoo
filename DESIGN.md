@@ -5,6 +5,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # thumtoo design
 
+> **Historical note (2026-09):** Sections that describe a schema-4 `content_id`
+> TEXT ladder, soft pixel levels, and a dual-path `Database`/`BlobStore` are
+> archival. The live implementation is the redesign **Store** (schema ≥ 100;
+> see [docs/DATABASE.md](docs/DATABASE.md) and [docs/API_MIGRATION.md](docs/API_MIGRATION.md)).
+> The C++ `Database` / `BlobStore` types were deleted in tip **272**.
+
 ## 1. Problem
 
 Apps such as [biltoo](https://github.com/Grumbel/biltoo) currently keep image

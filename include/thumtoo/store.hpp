@@ -192,6 +192,16 @@ class Store {
   };
   [[nodiscard]] ForgetStats forget_uri(std::string_view uri, bool dry_run = false);
 
+  /// Forget every locator whose uri starts with prefix; then purge orphan blobs
+  /// that become unreferenced. Useful for directory/file:// tree clears.
+  struct PrefixForgetStats {
+    std::int64_t locators_removed = 0;
+    std::int64_t blobs_purged = 0;
+    std::int64_t tiles_deleted = 0;
+  };
+  [[nodiscard]] PrefixForgetStats forget_uri_prefix(std::string_view uri_prefix,
+                                                    bool dry_run = false);
+
   /// Blob ids with no locator rows (after forget_uri or partial deletes).
   [[nodiscard]] std::vector<std::int64_t> list_orphan_blob_ids(
       int limit = 100000) const;

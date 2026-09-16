@@ -2,6 +2,30 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-275-layout-cleanup-prefix-gc.** Drop no-op layout helpers; uri-prefix GC.
+Prior: **274**.
+
+### Change
+- Removed `store_only_mode()` / `dual_write_to_store_enabled()`
+- `DESIGN.md` banner: ladder schema is historical (Store ≥100 is live)
+- `Store::forget_uri_prefix` + `thumtoo-gc --uri-prefix`
+- Docs HOST_CUTOVER / API_MIGRATION updated
+
+### Apply
+```bash
+git pull /path/to/thumtoo-275-layout-cleanup-prefix-gc.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **275**
+- [x] Full unit test suite passes
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-274-drop-has-legacy.** Remove Client::has_legacy() (always false).
 Prior: **273**. Pair with **biltoo-1011**.
 

@@ -968,6 +968,43 @@ Store::ForgetStats Store::forget_uri(std::string_view uri, bool dry_run) {
 }
 
 
+
+Store::PrefixForgetStats Store::forget_uri_prefix(std::string_view uri_prefix,
+                                                  bool dry_run) {
+  PrefixForgetStats st;
+  if (uri_prefix.empty()) return st;
+
+  std::string pattern;
+  pattern.reserve(uri_prefix.size() * 2 + 1);
+  for (char ch : uri_prefix) {
+    if (ch == '%' || ch == '_' || ch == '\\') pattern.push_back('\\');
+    pattern.push_back(ch);
+  }
+  pattern.push_back('%');
+
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(index_,
+                         "SELECT uri FROM locator WHERE uri LIKE ?1 ESCAPE '\\';",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare forget_uri_prefix list");
+  }
+  sqlite3_bind_text(stmt, 1, pattern.c_str(), -1, SQLITE_TRANSIENT);
+  std::vector<std::string> uris;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    const char* u = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    if (u) uris.emplace_back(u);
+  }
+  sqlite3_finalize(stmt);
+
+  for (const auto& u : uris) {
+    auto one = forget_uri(u, dry_run);
+    if (one.locator_removed) ++st.locators_removed;
+    if (one.blob_purged) ++st.blobs_purged;
+    st.tiles_deleted += one.tiles_deleted;
+  }
+  return st;
+}
+
 std::vector<std::int64_t> Store::list_orphan_blob_ids(int limit) const {
   sqlite3_stmt* stmt = nullptr;
   // blobs with no locator pointing at them

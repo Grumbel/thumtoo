@@ -39,7 +39,7 @@ Classic dual-path trees are migrated once at open: top-level schema-4 files
 - All probe / pixels / tiles / tags / directory / archive TOC paths go through
   Store handlers (`*_store_only`).
 - `has_legacy()` is always false; `Client::db()` was removed (≥268).
-- `store_only_mode()` always true; `dual_write_to_store_enabled()` always false.
+- Layout helpers `store_only_mode` / `dual_write_to_store_enabled` were removed (≥275).
 
 ## Schema-4 classes (deleted ≥272)
 

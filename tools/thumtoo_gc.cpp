@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-/// Cache maintenance for redesign Store (schema ≥ 100). Schema-4 ladder GC
+/// Cache maintenance for redesign Store (schema >= 100). Schema-4 ladder GC
 /// was removed with Database/BlobStore.
 
 #include "thumtoo/layout.hpp"
@@ -35,7 +35,7 @@ void usage(const char* argv0) {
       << "Usage: " << argv0
       << " [--cache DIR] [--dry-run]\n"
       << "       [--uri URI]... [--path PATH]...\n"
-      << "       [--store-summary] [--orphans]\n"
+      << "       [--store-summary] [--orphans] [--uri-prefix PREFIX]\n"
       << "\n"
       << "Manual Store maintenance (no automatic eviction).\n"
       << "\n"
@@ -43,6 +43,7 @@ void usage(const char* argv0) {
       << "  --dry-run         Report only; do not delete\n"
       << "  --uri URI         Forget this location URI (locator + orphan blob/tiles)\n"
       << "  --path PATH       Forget file:// locator for this filesystem path\n"
+      << "  --uri-prefix P    Forget all locators whose uri starts with P\n"
       << "  --orphans         Purge Store blobs with no locator references\n"
       << "  --store-summary   Print Store blob/locator/tile counts\n"
       << "\n"
@@ -77,6 +78,7 @@ int main(int argc, char** argv) {
   bool do_store_summary = false;
   bool do_orphans = false;
   std::vector<std::string> uris;
+  std::vector<std::string> uri_prefixes;
   std::vector<fs::path> paths;
 
   for (int i = 1; i < argc; ++i) {
@@ -101,6 +103,10 @@ int main(int argc, char** argv) {
       paths.emplace_back(argv[++i]);
       continue;
     }
+    if (a == "--uri-prefix" && i + 1 < argc) {
+      uri_prefixes.emplace_back(argv[++i]);
+      continue;
+    }
     if (a == "--store-summary") {
       do_store_summary = true;
       continue;
@@ -112,7 +118,7 @@ int main(int argc, char** argv) {
     if (a == "--dead-paths" || a == "--soft-levels" || a == "--min-scale") {
       std::cerr << "thumtoo-gc: " << a
                 << " removed (schema-4 ladder GC is gone)\n"
-                << "  Use --uri / --path / --orphans / --store-summary.\n";
+                << "  Use --uri / --path / --uri-prefix / --orphans / --store-summary.\n";
       return 2;
     }
     std::cerr << "Unknown argument: " << a << "\n";
@@ -120,7 +126,8 @@ int main(int argc, char** argv) {
     return 2;
   }
 
-  if (!do_store_summary && !do_orphans && uris.empty() && paths.empty()) {
+  if (!do_store_summary && !do_orphans && uris.empty() && paths.empty()
+      && uri_prefixes.empty()) {
     usage(argv[0]);
     return 2;
   }
@@ -131,7 +138,7 @@ int main(int argc, char** argv) {
       print_store_summary(cache);
     }
 
-    if (uris.empty() && paths.empty() && !do_orphans) {
+    if (uris.empty() && paths.empty() && uri_prefixes.empty() && !do_orphans) {
       return 0;
     }
 
@@ -167,6 +174,14 @@ int main(int argc, char** argv) {
                   << " tiles=" << st.tiles_deleted
                   << (dry_run ? " (dry-run)\n" : "\n");
       }
+    }
+    for (const auto& pref : uri_prefixes) {
+      auto pst = store.forget_uri_prefix(pref, dry_run);
+      std::cout << "uri-prefix " << pref
+                << " locators=" << pst.locators_removed
+                << " blobs=" << pst.blobs_purged
+                << " tiles=" << pst.tiles_deleted
+                << (dry_run ? " (dry-run)\n" : "\n");
     }
     if (do_orphans) {
       auto ost = store.purge_orphan_blobs(dry_run);
