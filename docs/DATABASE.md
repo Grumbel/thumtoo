@@ -5,16 +5,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # Database redesign — schema
 
-Status: **implemented** in `Store` (index + bulk + user) with dual-path Client
-cutover still in progress (see [API_MIGRATION.md](API_MIGRATION.md),
-[HOST_CUTOVER.md](HOST_CUTOVER.md)). The C++ `Database` / `BlobStore`
-classes are **deleted** (≥272); this document describes the redesign Store
-schema. Historical
-(`content_id` TEXT + `levels`) remain open until Store-only Client ships.
+Status: **implemented** in `Store` (index + bulk + user). Client is
+**Store-only** (≥262); the C++ `Database` / `BlobStore` classes are **deleted**
+(≥272). See [API_MIGRATION.md](API_MIGRATION.md), [HOST_CUTOVER.md](HOST_CUTOVER.md).
 
 **No migration** of old ladder rows into tiles. On epoch detect: warn / replace
-cache DBs; **user** DB must survive cache wipe. Experimental top-level Store
-layout: `THUMTOO_STORE_ROOT=1` (migrate dual-path on open).
+cache DBs; **user** DB must survive cache wipe. Store files live at the cache
+root (`index.sqlite`, `bulk.sqlite`); classic dual-path trees are parked under
+`legacy/` on open. Schema remains experimental (version 100 + optional
+columns); hosts should treat the cache as disposable across upgrades.
 
 **Scope:** identity, locators, archives, media, tiles, directory cache, tags,
 collections, link edges, extracted document structure.  

@@ -9,7 +9,7 @@ Status: **complete for Client** (Store-only ≥262). Normative schema:
 [DATABASE.md](DATABASE.md), plan: [PLAN.md](PLAN.md), host notes:
 [HOST_CUTOVER.md](HOST_CUTOVER.md).
 
-## Layout (default, `THUMTOO_STORE_ROOT` on)
+## Layout (top-level Store)
 
 | Role | Path | Owner |
 |------|------|-------|
@@ -23,8 +23,8 @@ pass `$XDG_DATA_HOME/thumtoo` (or equivalent) as `data_root` so user tags
 survive a cache wipe.
 
 Classic dual-path trees are migrated once at open: top-level schema-4 files
-→ `legacy/`; redesign under `store/` → cache root. Opt out of that layout with
-`THUMTOO_STORE_ROOT=0` (Store stays under `$cache/store/`).
+→ `legacy/`; redesign under `store/` → cache root. There is no nested-`store/`
+opt-out (`THUMTOO_STORE_ROOT` is ignored).
 
 ## Feature probe
 

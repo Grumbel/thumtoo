@@ -29,9 +29,10 @@ for tile-native behaviour on the Store-only Client (≥262).
 | Directory | `Client::refresh_directory_snapshot` / list → Store |
 | Archive TOC | Store `container_member` |
 
-On-disk migrate (once, at open when `THUMTOO_STORE_ROOT` default on): classic
-dual-path trees move legacy files under `cache_root/legacy/` and redesign
-`store/` files up to the cache root. Covered by `test_store_root`.
+On-disk migrate (once, at open): classic dual-path trees move under
+`cache_root/legacy/`; redesign files under `store/` move up to the cache root.
+Covered by `test_store_root`. Nested `store/` layout and `THUMTOO_STORE_ROOT=0`
+are gone.
 
 **biltoo:** pass `$XDG_DATA_HOME/thumtoo` as `data_root` (tip biltoo-1002+).
 
@@ -76,7 +77,7 @@ ladder rows under `legacy/`; new work does not add them.
 
 | Variable | Effect |
 |----------|--------|
-| **`THUMTOO_STORE_ROOT`** | Default **on**: Store at `$cache/`; on-disk migrate moves classic dual-path into `$cache/legacy/` + top-level Store. `=0` keeps redesign under `$cache/store/` (no top-level migrate). |
+| **`THUMTOO_STORE_ROOT`** | **Ignored.** Store always at `$cache/`; dual-path migrate still parks classic trees under `$cache/legacy/`. |
 | **`THUMTOO_STORE_ONLY`** | **Ignored** (≥262). Client is always Store-only. |
 | **`THUMTOO_SOFT_LEVELS`** / **`THUMTOO_TILES_ONLY`** | **Ignored** for Client writes (≥265). Durable soft/`levels` path removed with dual-path handlers. Tiles + session encode remain. |
 
@@ -92,7 +93,7 @@ Pair with biltoo ≥1007 (`scheduleSoftPixels`) for PreferCache when tiles exist
 | biltoo `data_root` | **Done** (biltoo-1004; XDG data root) |
 | biltoo tile-native PreferCache / filmstrip | **OK** (≥1007 `scheduleSoftPixels`; docs biltoo-1012; needs thumtoo ≥280) |
 | Tiles-first (no durable soft levels) | **Always** (Client; ≥265 dead env removed) |
-| Top-level Store layout (`THUMTOO_STORE_ROOT`) | **Default on** (≥245; migrate ≥238; `test_store_root`) |
+| Top-level Store layout | **Always** (nested `store/` opt-out removed; migrate ≥238; `test_store_root`) |
 | Full-from-tiles (EnsurePixels Full) | **On** when tile pyramid covers want (≥243) |
 | Store-only (Client) | **Always** (≥262) |
 | Database / BlobStore sources | **Deleted** (≥272) |

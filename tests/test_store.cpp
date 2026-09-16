@@ -76,10 +76,16 @@ int main() {
       expect(parsed && *parsed == digest, "parse blob ref");
 
       const std::string uri = "file:///tmp/example.jpg";
-      const auto loc_id = store.upsert_locator(uri, blob_id, 12345, 99);
+      const auto loc_id = store.upsert_locator(uri, blob_id, 12345, 99,
+                                              std::string("/tmp/example.jpg"),
+                                              std::nullopt);
       expect(loc_id >= 1, "locator id");
       auto loc = store.find_locator(uri);
       expect(loc && loc->blob_id && *loc->blob_id == blob_id, "locator blob");
+      expect(loc && loc->outer_path && *loc->outer_path == "/tmp/example.jpg",
+             "locator outer_path");
+      auto by_outer = store.list_locators_by_outer_path_prefix("/tmp/", 10);
+      expect(by_outer.size() >= 1, "list by outer_path prefix");
       expect(store.count_blobs() == 1, "one blob");
       expect(store.count_locators() == 1, "one locator");
 

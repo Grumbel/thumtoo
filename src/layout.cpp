@@ -6,7 +6,6 @@
 
 #include "sqlite3.h"
 
-#include <cstdlib>
 #include <optional>
 #include <string>
 
@@ -81,26 +80,16 @@ void rename_sqlite_bundle(const std::filesystem::path& from_base,
 
 }  // namespace
 
-bool store_root_layout_enabled() {
-  // Default: top-level Store layout (soak-confirmed). Opt out: THUMTOO_STORE_ROOT=0.
-  const char* e = std::getenv("THUMTOO_STORE_ROOT");
-  if (!e || !e[0]) return true;
-  if (e[0] == '0' || e[0] == 'f' || e[0] == 'F' || e[0] == 'n' || e[0] == 'N')
-    return false;
-  return true;
-}
-
 std::filesystem::path legacy_db_root(const std::filesystem::path& cache_root) {
-  return store_root_layout_enabled() ? (cache_root / "legacy") : cache_root;
+  return cache_root / "legacy";
 }
 
 std::filesystem::path redesign_store_root(
     const std::filesystem::path& cache_root) {
-  return store_root_layout_enabled() ? cache_root : (cache_root / "store");
+  return cache_root;
 }
 
 void migrate_dual_path_to_store_root(const std::filesystem::path& cache_root) {
-  if (!store_root_layout_enabled()) return;
   namespace fs = std::filesystem;
   const fs::path top_index = cache_root / "index.sqlite";
   const fs::path top_blobs = cache_root / "blobs.sqlite";

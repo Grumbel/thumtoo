@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-/// Top-level Store layout (default) + dual-path migrate + STORE_ROOT=0 opt-out.
+/// Top-level Store layout + dual-path migrate (nested store/ opt-out removed).
 
 #include "thumtoo/client.hpp"
 #include "thumtoo/constants.hpp"
@@ -105,14 +105,14 @@ void dump_tree(const fs::path& root, const char* label) {
 }  // namespace
 
 int main() {
-  setenv("THUMTOO_STORE_ROOT", "1", 1);
+  unsetenv("THUMTOO_STORE_ROOT");  // ignored; top-level Store always
   unsetenv("THUMTOO_STORE_ONLY");
 
   // --- A: fresh open places Store at cache root; no legacy Client open ---
   {
     const fs::path cache = make_tmpdir("store-root-fresh");
     auto client = thumtoo::Client::open(cache);
-    expect(client != nullptr, "Client::open STORE_ROOT");
+    expect(client != nullptr, "Client::open top-level Store");
     expect(file_nonempty(cache / "index.sqlite"),
            "fresh: Store index at cache root");
     expect(file_nonempty(cache / "bulk.sqlite"),
@@ -175,7 +175,7 @@ int main() {
            "post-migrate store schema");
   }
 
-  // --- C: default (env unset) is top-level Store + STORE_ONLY ---
+  // --- C: default is top-level Store ---
   {
     unsetenv("THUMTOO_STORE_ROOT");
     unsetenv("THUMTOO_STORE_ONLY");
@@ -191,21 +191,7 @@ int main() {
            "default: no store/ subdirectory");
   }
 
-  // --- D: opt-out dual-path with THUMTOO_STORE_ROOT=0 ---
-  {
-    setenv("THUMTOO_STORE_ROOT", "0", 1);
-    unsetenv("THUMTOO_STORE_ONLY");
-    const fs::path cache = make_tmpdir("store-root-optout");
-    auto client = thumtoo::Client::open(cache);
-    expect(client != nullptr, "Client::open STORE_ROOT=0");
-    // Nested Store layout; no top-level legacy index from Client.
-    expect(file_nonempty(cache / "store" / "index.sqlite"),
-           "opt-out: Store under store/");
-    expect(file_nonempty(cache / "store" / "bulk.sqlite"),
-           "opt-out: bulk under store/");
-    expect(!fs::exists(cache / "legacy"), "opt-out: no legacy/ dir");
-  }
-
+  
   if (g_failures) {
     std::cerr << g_failures << " failure(s)\n";
     return 1;

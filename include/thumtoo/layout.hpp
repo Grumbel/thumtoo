@@ -7,19 +7,19 @@
 
 namespace thumtoo {
 
-/// Top-level Store layout (default): Store files at cache_root. On-disk
-/// dual-path trees are moved under cache_root/legacy/ by migrate.
-/// Opt out with THUMTOO_STORE_ROOT=0 (Store under cache_root/store/).
-[[nodiscard]] bool store_root_layout_enabled();
+/// Store files always live at cache_root (index.sqlite, bulk.sqlite).
+/// Classic dual-path trees are moved under cache_root/legacy/ on open.
+/// THUMTOO_STORE_ROOT is ignored (nested store/ opt-out removed).
 
 /// Destination for relocated pre-cutover files (layout migrate only).
 [[nodiscard]] std::filesystem::path legacy_db_root(
     const std::filesystem::path& cache_root);
 
+/// Store root: always cache_root (top-level layout).
 [[nodiscard]] std::filesystem::path redesign_store_root(
     const std::filesystem::path& cache_root);
 
-/// When STORE_ROOT is on, move classic dual-path files into the root layout.
+/// Move classic dual-path files into the root layout.
 /// Safe to call repeatedly; skips renames when destinations exist.
 void migrate_dual_path_to_store_root(const std::filesystem::path& cache_root);
 

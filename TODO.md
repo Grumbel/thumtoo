@@ -2,6 +2,31 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-290-outer-path-probe-drop-store-root-optout.** Probe outer_path; always top-level Store.
+Prior: **289**.
+
+### Change
+- Probe `upsert_locator` fills `outer_path` / `member_path` (file, archive, PDF/DjVu/EPUB page)
+- Drop nested `store/` / `THUMTOO_STORE_ROOT=0` opt-out; layout always cache root
+- Docs: DATABASE.md / HOST_CUTOVER.md / API_MIGRATION.md post-cutover accuracy
+- `test_store_root`: remove opt-out section; `test_store` asserts outer_path list
+
+### Apply
+```bash
+git pull /path/to/thumtoo-290-outer-path-probe-drop-store-root-optout.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **290**
+- [x] No `store_root_layout_enabled` / STORE_ROOT=0 path
+- [x] Probe writes outer_path for file:// and documents
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-289-cheap-lqip-from-pixels.** Opportunistic LQIP; no probe enqueue.
 Prior: **288**.
 

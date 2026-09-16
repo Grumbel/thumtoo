@@ -180,19 +180,16 @@ Client::~Client() {
 std::unique_ptr<Client> Client::open(const std::filesystem::path& cache_root,
                                      Executor executor, unsigned worker_threads,
                                      const std::filesystem::path& data_root) {
-  // Layouts (docs/HOST_CUTOVER.md / layout.hpp):
-  //  default: Store at cache_root/; migrate dual-path layouts when present
-  //  STORE_ROOT=0: Store under cache_root/store/
-  //  Legacy Database/BlobStore are no longer opened by Client.
+  // Store at cache_root/; migrate dual-path layouts when present.
+  // Legacy Database/BlobStore are no longer opened by Client.
   migrate_dual_path_to_store_root(cache_root);
   Store::Paths sp;
   sp.cache_root = redesign_store_root(cache_root);
   sp.data_root = data_root.empty() ? cache_root : data_root;
   auto store = std::make_unique<Store>(Store::open(sp));
   if (debug_enabled()) {
-    dbg("Client::open cache=%s layout=%s store=%s data=%s",
+    dbg("Client::open cache=%s store=%s data=%s",
         cache_root.string().c_str(),
-        store_root_layout_enabled() ? "store-root" : "nested-store/",
         sp.cache_root.string().c_str(),
         sp.data_root.string().c_str());
   }
@@ -2559,7 +2556,8 @@ void Client::handle_probe_size_store(Job& job) {
         blob_id = store_->insert_blob(byte_size, BlobStatus::Ok);
         store_->put_hash(blob_id, HashAlgoId::Sha256, *digest);
       }
-      store_->upsert_locator(job.uri, blob_id, byte_size, mtime);
+      store_->upsert_locator(job.uri, blob_id, byte_size, mtime,
+                             pdf->pdf_path.string(), std::to_string(pdf->page));
       const auto media_id = store_->ensure_document_media(blob_id, {});
       (void)store_->ensure_page_region(media_id, pdf->page);
       // Stash page pixel size on document media for meta_from_store (last page
@@ -2601,7 +2599,8 @@ void Client::handle_probe_size_store(Job& job) {
         blob_id = store_->insert_blob(byte_size, BlobStatus::Ok);
         store_->put_hash(blob_id, HashAlgoId::Sha256, *digest);
       }
-      store_->upsert_locator(job.uri, blob_id, byte_size, mtime);
+      store_->upsert_locator(job.uri, blob_id, byte_size, mtime,
+                             dj->djvu_path.string(), std::to_string(dj->page));
       const auto media_id = store_->ensure_document_media(blob_id, {});
       (void)store_->ensure_page_region(media_id, dj->page);
       store_->set_media_size(media_id, layout->width, layout->height);
@@ -2642,7 +2641,8 @@ void Client::handle_probe_size_store(Job& job) {
         blob_id = store_->insert_blob(byte_size, BlobStatus::Ok);
         store_->put_hash(blob_id, HashAlgoId::Sha256, *digest);
       }
-      store_->upsert_locator(job.uri, blob_id, byte_size, mtime);
+      store_->upsert_locator(job.uri, blob_id, byte_size, mtime,
+                             ep->epub_path.string(), std::to_string(ep->page));
       const auto media_id = store_->ensure_document_media(blob_id, {});
       (void)store_->ensure_page_region(media_id, ep->page);
       store_->set_media_size(media_id, layout->width, layout->height);
@@ -2688,7 +2688,8 @@ void Client::handle_probe_size_store(Job& job) {
         blob_id = store_->insert_blob(byte_size, BlobStatus::Ok);
         store_->put_hash(blob_id, HashAlgoId::Sha256, *digest);
       }
-      store_->upsert_locator(job.uri, blob_id, byte_size, {});
+      store_->upsert_locator(job.uri, blob_id, byte_size, {},
+                             arch->archive_path.string(), arch->member_path);
       (void)store_->ensure_image_media(blob_id, probe->size.width,
                                        probe->size.height);
       if (auto cid = ensure_store_container_blob(arch->archive_path)) {
@@ -2775,7 +2776,8 @@ void Client::handle_probe_size_store(Job& job) {
       blob_id = store_->insert_blob(byte_size, BlobStatus::Ok);
       store_->put_hash(blob_id, HashAlgoId::Sha256, *digest);
     }
-    store_->upsert_locator(job.uri, blob_id, byte_size, mtime);
+    store_->upsert_locator(job.uri, blob_id, byte_size, mtime, path->string(),
+                           std::nullopt);
     (void)store_->ensure_image_media(blob_id, probe->size.width,
                                      probe->size.height);
     reply_size(probe->size);
@@ -2947,15 +2949,18 @@ std::optional<std::int64_t> Client::ensure_store_container_blob(
     const auto file_uri = file_uri_from_path(archive_path.lexically_normal());
     if (auto loc = store_->find_locator(file_uri)) {
       if (loc->blob_id) {
-        store_->upsert_locator(root_uri, *loc->blob_id, loc->size, loc->mtime_ns);
+        store_->upsert_locator(root_uri, *loc->blob_id, loc->size, loc->mtime_ns,
+                               archive_path.lexically_normal().string(),
+                               std::nullopt);
         return *loc->blob_id;
       }
     }
     const auto size = file_size_bytes(archive_path);
     const auto mtime = file_mtime_ns(archive_path);
     const auto blob_id = store_->insert_blob(size, BlobStatus::Ok);
-    store_->upsert_locator(root_uri, blob_id, size, mtime);
-    store_->upsert_locator(file_uri, blob_id, size, mtime);
+    const std::string outer = archive_path.lexically_normal().string();
+    store_->upsert_locator(root_uri, blob_id, size, mtime, outer, std::nullopt);
+    store_->upsert_locator(file_uri, blob_id, size, mtime, outer, std::nullopt);
     return blob_id;
   } catch (const std::exception& ex) {
     if (debug_enabled()) {

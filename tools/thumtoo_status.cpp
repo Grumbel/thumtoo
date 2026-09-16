@@ -48,10 +48,7 @@ void print_store_summary(const fs::path& cache) {
       fs::is_regular_file(legacy_root / "index.sqlite", ec) ||
       fs::is_regular_file(legacy_root / "blobs.sqlite", ec);
   std::cout << "cache:         " << cache << "\n"
-            << "layout:        "
-            << (thumtoo::store_root_layout_enabled() ? "store-root"
-                                                     : "nested-store/")
-            << "\n"
+            << "layout:        store-root\n"
             << "store_root:    " << store_root << "\n"
             << "legacy_root:   " << legacy_root
             << (legacy_left ? " (files present, ignored by Client)\n"
