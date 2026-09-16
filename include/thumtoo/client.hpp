@@ -65,7 +65,7 @@ namespace thumtoo {
 /// concurrent workers can share the connection.
 class Client {
  public:
-  /// Cache locator (path/URI → content identity). Independent of legacy Database.
+  /// Cache locator (path/URI → content identity on Store).
   struct LocatorRow {
     std::string uri;
     std::optional<std::string> content_id;
@@ -87,7 +87,7 @@ class Client {
     std::vector<std::string> removed_uris;
     std::vector<std::string> purged_content_ids;
     std::int64_t tiles_deleted = 0;
-    std::int64_t levels_deleted = 0;  // also: locator count for purge_uri_prefix
+    std::int64_t levels_deleted = 0;  // locator count when used by purge_uri_prefix
   };
 
   using SizeCallback = std::function<void(std::string uri, SizeReply)>;
@@ -483,7 +483,7 @@ class Client {
   [[nodiscard]] std::optional<StoreTileTarget> store_tile_target_for_content_id(
       std::string_view content_id) const;
 
-  /// Dual-path: ContentMeta from Store locator + media when legacy has none.
+  /// ContentMeta from Store locator + media/regions.
   [[nodiscard]] std::optional<ContentMeta> meta_from_store(
       std::string_view uri) const;
 
@@ -494,13 +494,13 @@ class Client {
   void handle_probe_size(
       Job& job,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);
-  /// Store-only probe for plain file:// images (no legacy Database).
-  void handle_probe_size_store_only(Job& job);
+  /// Probe plain file:// images into Store (hash, media, size).
+  void handle_probe_size_store(Job& job);
   void handle_ensure_pixels(
       Job& job,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);
-  void handle_ensure_pixels_store_only(Job& job);
-  void handle_ensure_tiles_store_only(Job& job);
+  void handle_ensure_pixels_store(Job& job);
+  void handle_ensure_tiles_store(Job& job);
   void handle_ensure_tiles(
       Job& job,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);

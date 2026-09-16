@@ -10,11 +10,11 @@
 namespace thumtoo {
 
 /// Historical schema-4 ladder version (on-disk migrate detection only).
-/// Bump only with incompatible legacy layout.
+/// Legacy schema-4 ladder version constants (historical; not used by Client).
 inline constexpr int kSchemaVersion = 4;
 
 /// Redesign Store (docs/DATABASE.md): index/bulk/user. Values ≥ 100 so open()
-/// can distinguish legacy index.sqlite (1–4) and wipe cache without touching user.
+/// Redesign Store index starts at 100 so tools can refuse schema-4 indexes.
 inline constexpr int kStoreIndexSchemaVersion = 100;
 inline constexpr int kStoreBulkSchemaVersion = 100;
 inline constexpr int kStoreUserSchemaVersion = 100;

@@ -2,6 +2,29 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-281-polish-docs-handlers.** Post-cutover comment/doc polish; drop `_store_only` names.
+Prior: **280**.
+
+### Change
+- ARCHITECTURE.md matches Store-only tree (no database.cpp)
+- Client comments no longer refer to dual-path / legacy Database
+- Private handlers renamed `handle_*_store_only` → `handle_*_store`
+- constants / layout comments clarified
+
+### Apply
+```bash
+git pull /path/to/thumtoo-281-polish-docs-handlers.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **281**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-280-page-aware-lqip.** LQIP per document page (PDF/DjVu/pdfimage).
 Prior: **279**.
 

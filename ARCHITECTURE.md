@@ -5,7 +5,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # Architecture
 
-[DESIGN.md](DESIGN.md) is normative for product rules. This file tracks the tree.
+[DESIGN.md](DESIGN.md) is normative for product rules (ladder schema sections are
+**historical** — live path is redesign Store ≥100). This file tracks the tree.
 
 ## Tree
 
@@ -15,16 +16,14 @@ thumtoo/
   REUSE.toml LICENSES/
   flake.nix CMakeLists.txt
   include/thumtoo/
-    constants.hpp status.hpp types.hpp uri.hpp executor.hpp
-    client.hpp store.hpp
+    client.hpp store.hpp constants.hpp types.hpp uri.hpp …
   src/
-    database.cpp uri.cpp client.cpp image.cpp schema.sql
+    client.cpp store.cpp image.cpp layout.cpp uri.cpp …
   tools/
-    thumtoo_status.cpp thumtoo_prepare.cpp
+    thumtoo_status.cpp thumtoo_prepare.cpp thumtoo_gc.cpp
   tests/
-    test_database.cpp test_client.cpp
+    test_store.cpp test_client.cpp test_store_root.cpp …
   external/   # optional vendored sources (not system libs)
-    # amalgamation (public domain)
 ```
 
 ## Build
@@ -34,26 +33,23 @@ nix develop          # optional
 cmake -B build -GNinja
 cmake --build build
 ctest --test-dir build
-./build/thumtoo-status --cache /path/to/cache summary
+./build/thumtoo-status --cache /path/to/cache
+./build/thumtoo-gc --cache /path/to/cache --store-summary
 ```
 
-SQLite is **vendored** (amalgamation) so the library has no system sqlite
-dependency. WAL is enabled at open.
+## Cache layout (default `THUMTOO_STORE_ROOT=on`)
 
-## Dependencies
+```text
+$XDG_CACHE_HOME/thumtoo/
+  index.sqlite   # Store meta (schema ≥ 100)
+  bulk.sqlite    # tile / payload bulk
+  legacy/        # optional relocated pre-cutover files (ignored by Client)
+```
 
-| Component | Status |
-|-----------|--------|
-| C++20, CMake ≥ 3.16 | required |
-| SQLite3 | **required** (pkg-config / flake) |
-| libvips + libjxl | **required** (flake.nix / pkg-config) |
-| libarchive | **required** (TOC + member extract) |
-| libarchive | Phase 2 |
-| ffmpeg CLI (video stills) | Later |
+User data (tags, etc.): `$XDG_DATA_HOME/thumtoo/user.sqlite` when `data_root` is set.
 
-## Consumers
+## Host contract
 
-- biltoo — first integration target
-- dirtoo — optional later
-- `thumtoo-status` — cache inspection (in-tree)
-- `thumtoo-prepare` — prewarm (skeleton TBD)
+See [docs/HOST_CUTOVER.md](docs/HOST_CUTOVER.md) and
+[docs/API_MIGRATION.md](docs/API_MIGRATION.md). Client is Store-only; schema-4
+`Database` / `BlobStore` were removed.

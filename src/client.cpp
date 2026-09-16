@@ -2423,7 +2423,7 @@ void Client::handle_ensure_lqip(Job& job) {
 }
 
 
-void Client::handle_probe_size_store_only(Job& job) {
+void Client::handle_probe_size_store(Job& job) {
   auto reply_empty = [&]() {
     if (!job.size_cb) return;
     auto cb = std::move(job.size_cb);
@@ -2709,13 +2709,13 @@ void Client::handle_probe_size_store_only(Job& job) {
     reply_size(probe->size);
   } catch (const std::exception& ex) {
     if (debug_enabled()) {
-      dbg("handle_probe_size_store_only: %s", ex.what());
+      dbg("handle_probe_size_store: %s", ex.what());
     }
     reply_empty();
   }
 }
 
-void Client::handle_ensure_pixels_store_only(Job& job) {
+void Client::handle_ensure_pixels_store(Job& job) {
   auto reply = [&](std::optional<PixelLevel> px) {
     if (!job.pixels_cb) return;
     auto cb = std::move(job.pixels_cb);
@@ -2739,7 +2739,7 @@ void Client::handle_ensure_pixels_store_only(Job& job) {
     Job probe;
     probe.kind = JobKind::ProbeSize;
     probe.uri = job.uri;
-    handle_probe_size_store_only(probe);
+    handle_probe_size_store(probe);
   }
 
   if (auto px = get_pixels(job.uri, job.max_edge, job.frame_idx,
@@ -2834,7 +2834,7 @@ void Client::handle_probe_size(
     const std::optional<std::vector<std::uint8_t>>& preextracted) {
   (void)preextracted;
   global_build_stats().probes_done.fetch_add(1, std::memory_order_relaxed);
-  handle_probe_size_store_only(job);
+  handle_probe_size_store(job);
 }
 
 
@@ -2876,7 +2876,7 @@ void Client::handle_ensure_pixels(
     dbg("EnsurePixels START uri=%s max_edge=%d frame=%d", job.uri.c_str(),
         job.max_edge, job.frame_idx);
   }
-  handle_ensure_pixels_store_only(job);
+  handle_ensure_pixels_store(job);
 }
 
 
@@ -2994,7 +2994,7 @@ thread_local std::vector<DeferredTileStore> g_deferred_tile_stores;
 }  // namespace
 
 
-void Client::handle_ensure_tiles_store_only(Job& job) {
+void Client::handle_ensure_tiles_store(Job& job) {
   auto reply_one = [&](std::optional<TileBlob> tile) {
     if (!job.tile_cb) return;
     if (tile) debug_overlay_tile(*tile, job.uri);
@@ -3024,7 +3024,7 @@ void Client::handle_ensure_tiles_store_only(Job& job) {
     Job probe;
     probe.kind = JobKind::ProbeSize;
     probe.uri = job.uri;
-    handle_probe_size_store_only(probe);
+    handle_probe_size_store(probe);
   }
 
   if (!job.tile_pyramid) {
@@ -3231,7 +3231,7 @@ void Client::handle_ensure_tiles(
         job.uri.c_str(), job.tile_scale, job.tile_x, job.tile_y,
         job.tile_pyramid ? 1 : 0);
   }
-  handle_ensure_tiles_store_only(job);
+  handle_ensure_tiles_store(job);
 }
 
 
