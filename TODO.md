@@ -2,6 +2,32 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-249-store-only-pdf-archive.** Store-only PDF + archive member paths.
+Prior: **248**.
+
+### Change
+- Store-only probe for PDF pages and archive image members
+- Session pixels + tile cells for PDF (live) and archive members
+- `meta_from_store` PDF pages report layout size
+
+### Next
+- DjVu/EPUB Store-only parity
+- Drop dual-write helpers when hosts use STORE_ONLY
+
+### Apply
+```bash
+git pull /path/to/thumtoo-249-store-only-pdf-archive.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **249**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-248-store-only-tiles.** Store-only file:// tile encode.
 Prior: **247**.
 

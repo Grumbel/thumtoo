@@ -295,6 +295,13 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
     cm.content_id += ":page:" + std::to_string(pdf->page);
     cm.format = "pdf";
     cm.status = ContentStatus::Incomplete;
+    // Prefer layout-size probe; fall back to media dims from last Store-only probe.
+    if (auto layout =
+            pdf_page_layout_size(pdf->pdf_path, pdf->page, pdf->backend)) {
+      cm.size = *layout;
+    } else if (media->width && media->height) {
+      cm.size = Size{*media->width, *media->height};
+    }
     return cm;
   }
 
@@ -2771,40 +2778,136 @@ void Client::handle_probe_size_store_only(Job& job) {
       cb(std::move(uri), SizeReply{});
     });
   };
+  auto reply_size = [&](Size sz) {
+    if (!job.size_cb) return;
+    auto cb = std::move(job.size_cb);
+    auto uri = job.uri;
+    SizeReply reply;
+    reply.size = sz;
+    executor_.post([cb = std::move(cb), uri = std::move(uri),
+                    reply = std::move(reply)]() mutable {
+      cb(std::move(uri), std::move(reply));
+    });
+  };
   if (!store_) {
     reply_empty();
     return;
   }
-  // Cache hit on Store.
+  // Cache hit on Store (includes PDF page size via meta_from_store).
   if (auto sm = meta_from_store(job.uri); sm && sm->size) {
-    if (job.size_cb) {
-      auto cb = std::move(job.size_cb);
-      auto uri = job.uri;
-      SizeReply reply;
-      reply.size = sm->size;
-      executor_.post([cb = std::move(cb), uri = std::move(uri),
-                      reply = std::move(reply)]() mutable {
-        cb(std::move(uri), std::move(reply));
-      });
-    }
+    reply_size(*sm->size);
     return;
   }
-  auto path = path_from_file_uri(job.uri);
-  if (!path || !std::filesystem::is_regular_file(*path)) {
-    reply_empty();
-    return;
-  }
-  auto probe = probe_image_file(*path);
-  if (!probe) {
-    reply_empty();
-    return;
-  }
-  const auto hex = sha256_file_hex(*path);
-  if (hex.empty()) {
-    reply_empty();
-    return;
-  }
+
   try {
+    if (auto pdf = parse_pdf_uri(job.uri)) {
+      if (!std::filesystem::is_regular_file(pdf->pdf_path)) {
+        reply_empty();
+        return;
+      }
+      auto layout =
+          pdf_page_layout_size(pdf->pdf_path, pdf->page, pdf->backend);
+      if (!layout) {
+        reply_empty();
+        return;
+      }
+      const auto hex = sha256_file_hex(pdf->pdf_path);
+      if (hex.empty()) {
+        reply_empty();
+        return;
+      }
+      auto digest = Store::parse_sha256_digest(hex);
+      if (!digest) {
+        reply_empty();
+        return;
+      }
+      const auto byte_size = file_size_bytes(pdf->pdf_path);
+      const auto mtime = file_mtime_ns(pdf->pdf_path);
+      std::int64_t blob_id = 0;
+      if (auto existing =
+              store_->find_blob_by_hash(HashAlgoId::Sha256, *digest)) {
+        blob_id = *existing;
+        if (byte_size) store_->set_blob_size(blob_id, *byte_size);
+        store_->set_blob_status(blob_id, BlobStatus::Ok);
+      } else {
+        blob_id = store_->insert_blob(byte_size, BlobStatus::Ok);
+        store_->put_hash(blob_id, HashAlgoId::Sha256, *digest);
+      }
+      store_->upsert_locator(job.uri, blob_id, byte_size, mtime);
+      const auto media_id = store_->ensure_document_media(blob_id, {});
+      (void)store_->ensure_page_region(media_id, pdf->page);
+      // Stash page pixel size on document media for meta_from_store (last page
+      // wins for multi-page; page-specific size still comes from layout below).
+      store_->set_media_size(media_id, layout->width, layout->height);
+      reply_size(*layout);
+      return;
+    }
+
+    if (auto arch = parse_archive_uri(job.uri)) {
+      if (arch->member_path.empty()) {
+        reply_empty();
+        return;
+      }
+      auto bytes = member_bytes(arch->archive_path, arch->member_path);
+      if (!bytes || bytes->empty()) {
+        reply_empty();
+        return;
+      }
+      auto probe = probe_image_buffer(bytes->data(), bytes->size(),
+                                      format_from_member(arch->member_path));
+      if (!probe) {
+        reply_empty();
+        return;
+      }
+      const auto hex = sha256_bytes_hex(bytes->data(), bytes->size());
+      if (hex.empty()) {
+        reply_empty();
+        return;
+      }
+      auto digest = Store::parse_sha256_digest(hex);
+      if (!digest) {
+        reply_empty();
+        return;
+      }
+      const auto byte_size =
+          static_cast<std::int64_t>(bytes->size());
+      std::int64_t blob_id = 0;
+      if (auto existing =
+              store_->find_blob_by_hash(HashAlgoId::Sha256, *digest)) {
+        blob_id = *existing;
+        store_->set_blob_size(blob_id, byte_size);
+        store_->set_blob_status(blob_id, BlobStatus::Ok);
+      } else {
+        blob_id = store_->insert_blob(byte_size, BlobStatus::Ok);
+        store_->put_hash(blob_id, HashAlgoId::Sha256, *digest);
+      }
+      store_->upsert_locator(job.uri, blob_id, byte_size, {});
+      (void)store_->ensure_image_media(blob_id, probe->size.width,
+                                       probe->size.height);
+      if (auto cid = ensure_store_container_blob(arch->archive_path)) {
+        store_->upsert_container_member(*cid, arch->member_path, false,
+                                        byte_size, blob_id);
+        store_->set_container_member_blob(*cid, arch->member_path, blob_id);
+      }
+      reply_size(probe->size);
+      return;
+    }
+
+    auto path = path_from_file_uri(job.uri);
+    if (!path || !std::filesystem::is_regular_file(*path)) {
+      reply_empty();
+      return;
+    }
+    auto probe = probe_image_file(*path);
+    if (!probe) {
+      reply_empty();
+      return;
+    }
+    const auto hex = sha256_file_hex(*path);
+    if (hex.empty()) {
+      reply_empty();
+      return;
+    }
     auto digest = Store::parse_sha256_digest(hex);
     if (!digest) {
       reply_empty();
@@ -2813,7 +2916,8 @@ void Client::handle_probe_size_store_only(Job& job) {
     const auto byte_size = file_size_bytes(*path);
     const auto mtime = file_mtime_ns(*path);
     std::int64_t blob_id = 0;
-    if (auto existing = store_->find_blob_by_hash(HashAlgoId::Sha256, *digest)) {
+    if (auto existing =
+            store_->find_blob_by_hash(HashAlgoId::Sha256, *digest)) {
       blob_id = *existing;
       if (byte_size) store_->set_blob_size(blob_id, *byte_size);
       store_->set_blob_status(blob_id, BlobStatus::Ok);
@@ -2824,22 +2928,12 @@ void Client::handle_probe_size_store_only(Job& job) {
     store_->upsert_locator(job.uri, blob_id, byte_size, mtime);
     (void)store_->ensure_image_media(blob_id, probe->size.width,
                                      probe->size.height);
+    reply_size(probe->size);
   } catch (const std::exception& ex) {
     if (debug_enabled()) {
       dbg("handle_probe_size_store_only: %s", ex.what());
     }
     reply_empty();
-    return;
-  }
-  if (job.size_cb) {
-    auto cb = std::move(job.size_cb);
-    auto uri = job.uri;
-    SizeReply reply;
-    reply.size = probe->size;
-    executor_.post([cb = std::move(cb), uri = std::move(uri),
-                    reply = std::move(reply)]() mutable {
-      cb(std::move(uri), std::move(reply));
-    });
   }
 }
 
@@ -2876,33 +2970,47 @@ void Client::handle_ensure_pixels_store_only(Job& job) {
     return;
   }
 
-  auto path = path_from_file_uri(job.uri);
-  if (!path || !std::filesystem::is_regular_file(*path)) {
-    reply(std::nullopt);
-    return;
-  }
-
   const int edge_limit =
       job.full_native
           ? std::min(job.max_edge > 0 ? job.max_edge : kFullMaxEdge, kFullMaxEdge)
           : std::min(job.max_edge > 0 ? job.max_edge : kMaxSoftLadderEdge,
                      kMaxSoftLadderEdge);
 
-  const auto hex = sha256_file_hex(*path);
-  if (hex.empty()) {
-    reply(std::nullopt);
-    return;
+  std::vector<LevelBlob> levels;
+  std::string content_id;
+  if (auto pdf = parse_pdf_uri(job.uri)) {
+    auto sm = meta_from_store(job.uri);
+    if (sm) content_id = sm->content_id;
+    auto raster = pdf_rasterize_page(pdf->pdf_path, pdf->page, edge_limit,
+                                     pdf->backend);
+    if (raster && !raster->rgb.empty() && !content_id.empty()) {
+      levels = build_ladder_rgb(raster->rgb.data(), raster->width, raster->height,
+                                content_id, kDefaultJxlQuality, edge_limit);
+    }
+  } else if (auto arch = parse_archive_uri(job.uri)) {
+    if (!arch->member_path.empty()) {
+      auto sm = meta_from_store(job.uri);
+      if (sm) content_id = sm->content_id;
+      auto bytes = member_bytes(arch->archive_path, arch->member_path);
+      if (bytes && !bytes->empty() && !content_id.empty()) {
+        levels = build_ladder_buffer(bytes->data(), bytes->size(), content_id,
+                                     kDefaultJxlQuality, edge_limit);
+      }
+    }
+  } else if (auto path = path_from_file_uri(job.uri)) {
+    if (std::filesystem::is_regular_file(*path)) {
+      const auto hex = sha256_file_hex(*path);
+      if (!hex.empty()) {
+        content_id = std::string(kContentIdSha256Prefix) + hex;
+        levels = build_ladder(*path, content_id, kDefaultJxlQuality, edge_limit);
+      }
+    }
   }
-  const std::string content_id =
-      std::string(kContentIdSha256Prefix) + hex;
 
-  auto levels =
-      build_ladder(*path, content_id, kDefaultJxlQuality, edge_limit);
   if (levels.empty()) {
     reply(std::nullopt);
     return;
   }
-  // Session reply from best level; durable pixels only via Store tiles later.
   LevelBlob& best = levels.front();
   for (auto& lvl : levels) {
     if (lvl.max_edge > best.max_edge) best = lvl;
@@ -4154,7 +4262,7 @@ void Client::mirror_tiles_to_store(const std::string& content_id,
 }
 
 void Client::invalidate_q1_levels(const std::string& content_id) {
-  if (content_id.empty()) return;
+  if (content_id.empty() || !db_ || !blobs_) return;
   // Keep Embedded + Full; drop FastScale JpegShrink overviews once Q2 exists.
   constexpr int kJpegShrink = static_cast<int>(PixelSource::JpegShrink);
   auto rows = db_->list_levels(content_id, /*limit=*/64);
@@ -4227,10 +4335,45 @@ void Client::handle_ensure_tiles_store_only(Job& job) {
   }
   const std::string content_id = sm->content_id;
 
-  // Single cell: plain file:// images only for now.
+  // Single cell: file:// image, PDF page (live rgb888), archive member.
   if (!job.tile_pyramid) {
     std::optional<TileBlob> cell;
-    if (auto path = path_from_file_uri(job.uri)) {
+    if (auto pdf = parse_pdf_uri(job.uri)) {
+      auto raster = pdf_render_tile_cell(pdf->pdf_path, pdf->page, job.tile_scale,
+                                         job.tile_x, job.tile_y, pdf->backend);
+      if (raster && !raster->rgb.empty()) {
+        if (job.tile_scale >= kPdfMinDurableTileScale) {
+          if (auto jpeg = encode_tile_cell_rgb(
+                  raster->rgb.data(), raster->width, raster->height,
+                  job.tile_scale, job.tile_x, job.tile_y, kPdfTileQuality)) {
+            jpeg->source = TileSource::PdfRegion;
+            store_tiles(content_id, std::vector<TileBlob>{*jpeg});
+          }
+        }
+        TileBlob live;
+        live.scale = job.tile_scale;
+        live.x = job.tile_x;
+        live.y = job.tile_y;
+        live.width = raster->width;
+        live.height = raster->height;
+        live.codec = kTileCodecRgb888;
+        live.source = TileSource::PdfRegion;
+        live.bytes = std::move(raster->rgb);
+        reply_one(std::move(live));
+        return;
+      }
+    } else if (auto arch = parse_archive_uri(job.uri)) {
+      if (!arch->member_path.empty()) {
+        auto bytes = member_bytes(arch->archive_path, arch->member_path);
+        if (bytes && !bytes->empty()) {
+          const std::string dkey =
+              "a:" + extract_cache_key(arch->archive_path, arch->member_path);
+          cell = build_tile_cell_buffer(bytes->data(), bytes->size(),
+                                        job.tile_scale, job.tile_x, job.tile_y,
+                                        kDefaultTileQuality, dkey);
+        }
+      }
+    } else if (auto path = path_from_file_uri(job.uri)) {
       if (std::filesystem::is_regular_file(*path)) {
         cell = build_tile_cell(*path, job.tile_scale, job.tile_x, job.tile_y,
                                kDefaultTileQuality);
