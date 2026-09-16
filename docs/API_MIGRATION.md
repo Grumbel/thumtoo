@@ -46,11 +46,14 @@ cache wipe.
   - pure `sha256:<hex>` → blob + hash + locator + `ensure_image_media`
   - `sha256:<hex>:page:N` → same file blob + locator + document media + page region
   - other composite ids (`:pdfimage:`, …) are skipped for now
+- **Tile dual-write:** `store_tiles` also calls `mirror_tiles_to_store` →
+  Store `put_tile` under the matching media/region (same id rules as probe).
 
 ## Next cutover steps
 
 1. ~~Resolve locator → blob/hash on Store when probing~~ (pure image + page done).
-2. Write new tiles to Store bulk; stop writing durable `levels`.
+2. ~~Write new tiles to Store bulk~~ (dual-write from `store_tiles`; legacy
+   levels still written until hosts stop relying on them).
 3. Soft `get_pixels` assemble from Store tiles (compat).
 4. Drop legacy `index.sqlite` after biltoo ships on Store-only open.
 5. Move redesign files to top-level `$cache/index.sqlite` + `bulk.sqlite` once

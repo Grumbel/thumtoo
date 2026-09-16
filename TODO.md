@@ -2,6 +2,32 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-222-tile-mirror-store.** Phase E: dual-write tiles into Store bulk.
+Prior: **221**.
+
+### Change
+- `store_tiles` → `mirror_tiles_to_store`: map pure/page `content_id` to
+  media/region, `put_tile` on Store (create blob if probe race).
+- Legacy BlobStore + Database tile rows unchanged.
+
+### Next
+- Soft get_pixels assemble from Store tiles (compat)
+- biltoo XDG data_root
+
+### Apply
+```bash
+git pull /path/to/thumtoo-222-tile-mirror-store.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **222**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-221-probe-mirror-store.** Phase E: mirror probe into Store blob/media.
 Prior: **220**.
 

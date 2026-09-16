@@ -3389,6 +3389,101 @@ void Client::store_tiles(const std::string& content_id,
     tr.source = static_cast<int>(t.source);
     db_->upsert_tile(tr);
   }
+  mirror_tiles_to_store(content_id, tiles);
+}
+
+void Client::mirror_tiles_to_store(const std::string& content_id,
+                                   const std::vector<TileBlob>& tiles) {
+  if (!store_ || tiles.empty() || content_id.empty()) return;
+
+  constexpr std::string_view kSha = "sha256:";
+  if (!content_id.starts_with(kSha) || content_id.size() < kSha.size() + 64) {
+    return;
+  }
+
+  const std::string_view rest(content_id.data() + kSha.size(),
+                              content_id.size() - kSha.size());
+  const std::string_view hex = rest.substr(0, 64);
+  for (char c : hex) {
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+          (c >= 'A' && c <= 'F'))) {
+      return;
+    }
+  }
+
+  std::optional<int> page_1based;
+  if (rest.size() > 64) {
+    constexpr std::string_view kPage = ":page:";
+    if (rest.size() > 64 + kPage.size() &&
+        rest.substr(64, kPage.size()) == kPage) {
+      try {
+        page_1based = std::stoi(std::string(rest.substr(64 + kPage.size())));
+      } catch (...) {
+        return;
+      }
+      if (*page_1based < 1) return;
+    } else {
+      return;  // composite ids without page mapping
+    }
+  }
+
+  auto digest = Store::parse_sha256_digest(hex);
+  if (!digest || digest->size() != 32) return;
+
+  auto blob_id = store_->find_blob_by_hash(HashAlgoId::Sha256, *digest);
+  if (!blob_id) {
+    try {
+      blob_id = store_->insert_blob({}, BlobStatus::Ok);
+      store_->put_hash(*blob_id, HashAlgoId::Sha256, *digest);
+    } catch (const std::exception& ex) {
+      if (debug_enabled()) {
+        dbg("mirror_tiles_to_store insert_blob: %s", ex.what());
+      }
+      return;
+    }
+  }
+
+  try {
+    std::int64_t media_id = 0;
+    std::int64_t region_id = 0;
+    if (page_1based) {
+      media_id = store_->ensure_document_media(*blob_id, {});
+      region_id = store_->ensure_page_region(media_id, *page_1based);
+    } else {
+      media_id = store_->ensure_image_media(*blob_id, {}, {});
+      if (auto full = store_->find_full_region(media_id)) {
+        region_id = full->id;
+      } else {
+        region_id = store_->ensure_region(media_id, RegionKind::Full, "", {});
+      }
+    }
+
+    for (const auto& t : tiles) {
+      if (t.bytes.empty()) continue;
+      Store::TileRow meta;
+      meta.media_id = media_id;
+      meta.region_id = region_id;
+      meta.scale = t.scale;
+      meta.x = t.x;
+      meta.y = t.y;
+      meta.width = t.width;
+      meta.height = t.height;
+      if (t.codec == "jxl") {
+        meta.codec_id = CodecId::Jxl;
+      } else if (t.codec == "png") {
+        meta.codec_id = CodecId::Png;
+      } else {
+        meta.codec_id = CodecId::Jpeg;
+      }
+      meta.quality = kDefaultTileQuality;
+      store_->put_tile(meta, t.bytes);
+    }
+  } catch (const std::exception& ex) {
+    if (debug_enabled()) {
+      dbg("mirror_tiles_to_store failed content_id=%s: %s", content_id.c_str(),
+          ex.what());
+    }
+  }
 }
 
 void Client::invalidate_q1_levels(const std::string& content_id) {

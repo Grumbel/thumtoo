@@ -432,6 +432,9 @@ class Client {
   /// Dual-path: after a successful legacy probe, ensure Store locator/blob/media.
   void mirror_probe_to_store(std::string_view uri,
                              const Database::ContentRow& row);
+  /// Dual-path: copy newly encoded tiles into Store bulk (by content_id hash).
+  void mirror_tiles_to_store(const std::string& content_id,
+                             const std::vector<TileBlob>& tiles);
   void handle_probe_size(
       Job& job,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);

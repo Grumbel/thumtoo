@@ -129,9 +129,9 @@ read/tag/explicit via `set_container_member_blob`); `ensure_document_media` /
 `ensure_page_region`.  
 **Phase D status:** complete (directory, user overlays, http_body, tile list).  
 **Phase E (started):** Client dual-path Store under `cache_root/store/`; tag
-dual-write; probe mirror → blob/hash/locator + image or page region. See
-[API_MIGRATION.md](API_MIGRATION.md). Next: write tiles to Store bulk;
-tile-primary soft pixels.
+dual-write; probe mirror; tile dual-write into Store bulk. See
+[API_MIGRATION.md](API_MIGRATION.md). Next: soft `get_pixels` from Store tiles;
+biltoo `data_root`.
 
 ### Phase B — images
 
