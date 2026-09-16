@@ -2,6 +2,26 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-239-fix-store-root-dbg.** Forward-declare dbg for STORE_ROOT migrate.
+Prior: **238**.
+
+### Change
+- Fix compile: `dbg` used before definition in migrate helpers
+
+### Apply
+```bash
+git pull /path/to/thumtoo-239-fix-store-root-dbg.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **239**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-238-store-root-migrate.** Auto-migrate dual-path → STORE_ROOT on open.
 Prior: **237**.
 
