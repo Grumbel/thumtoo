@@ -90,9 +90,6 @@ class Client {
 
   /// Always false: Client never opens legacy Database/BlobStore (≥262).
   [[nodiscard]] bool has_legacy() const { return false; }
-  /// Always throws: legacy Database is not opened by Client.
-  [[nodiscard]] Database& db();
-  [[nodiscard]] const Database& db() const;
 
   /// Redesign index/bulk/user (Store-only).
   [[nodiscard]] Store& store() { return *store_; }

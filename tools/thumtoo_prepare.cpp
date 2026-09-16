@@ -229,41 +229,14 @@ int main(int argc, char** argv) {
       client->drain();
     }
 
-    // Status tallies from the content table (best-effort after drain).
-    const auto ncontent = client->db().count_content();
-    const int list_limit =
-        static_cast<int>(ncontent > 0 ? ncontent : 1);
-    int ready = 0, failed = 0, unsupported = 0, pending = 0, incomplete = 0;
-    for (const auto& row : client->db().list_content(list_limit)) {
-      switch (row.status) {
-        case thumtoo::ContentStatus::Ready:
-          ++ready;
-          break;
-        case thumtoo::ContentStatus::Failed:
-          ++failed;
-          break;
-        case thumtoo::ContentStatus::Unsupported:
-          ++unsupported;
-          break;
-        case thumtoo::ContentStatus::Pending:
-          ++pending;
-          break;
-        case thumtoo::ContentStatus::Incomplete:
-          ++incomplete;
-          break;
-      }
-    }
-
+    // Status tallies from redesign Store (best-effort after drain).
+    auto& store = client->store();
     std::cout << "registered " << paths.size() << " path(s), queued " << total
               << " probe(s) under " << cache << "\n"
-              << "content=" << ncontent
-              << " locators=" << client->db().count_locators()
-              << " tiles=" << client->db().count_tiles()
-              << " ready=" << ready << " failed=" << failed
-              << " unsupported=" << unsupported;
-    if (pending) std::cout << " pending=" << pending;
-    if (incomplete) std::cout << " incomplete=" << incomplete;
-    std::cout << "\n";
+              << "blobs=" << store.count_blobs()
+              << " locators=" << store.count_locators()
+              << " media=" << store.count_media()
+              << " tiles=" << store.count_tiles() << "\n";
     if (show_stats || do_tiles || ladder_edge > 0) {
       if (stats_line)
         std::cerr << thumtoo::global_build_stats().summary_line() << "\n";

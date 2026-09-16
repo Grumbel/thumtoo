@@ -1,22 +1,21 @@
 // SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+/// Inspect a thumtoo cache. Default: redesign Store at cache root (or store/).
+/// Optional legacy ladder dump when schema-4 files remain on disk.
+
 #include "thumtoo/constants.hpp"
 #include "thumtoo/database.hpp"
 #include "thumtoo/layout.hpp"
 #include "thumtoo/store.hpp"
-#include "thumtoo/status.hpp"
 #include "thumtoo/uri.hpp"
 
-#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_set>
-#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -37,155 +36,122 @@ fs::path default_cache_root() {
 void usage(const char* argv0) {
   std::cerr
       << "Usage:\n"
-      << "  " << argv0 << " [--cache DIR] [summary|locators|content|levels|tiles|archives]\n"
+      << "  " << argv0 << " [--cache DIR] [summary|store|legacy]\n"
       << "  " << argv0 << " [--cache DIR] path PATH|URI\n"
       << "\n"
-      << "  Inspect a thumtoo cache (index.sqlite under DIR).\n"
+      << "  Inspect a thumtoo cache (Store by default).\n"
       << "  Default DIR: $XDG_CACHE_HOME/thumtoo or ~/.cache/thumtoo\n"
       << "\n"
-      << "  path  Show locator(s), content, ladder levels, and tile scales for one\n"
-      << "        filesystem path or Location URI (file:///…, //archive:, …).\n";
+      << "  summary   Store counts + whether legacy files remain (default)\n"
+      << "  store     Same as summary (Store-only detail)\n"
+      << "  legacy    Legacy ladder index when present under legacy root\n"
+      << "  path      Store locator for one path or URI\n";
 }
 
-void print_locator(const thumtoo::Database::LocatorRow& r, int index, int total) {
-  if (total > 1) {
-    std::cout << "locator[" << index << "/" << total << "]:\n";
-  } else {
-    std::cout << "locator:\n";
-  }
-  std::cout << "  uri:         " << r.uri << "\n";
-  if (r.content_id) std::cout << "  content_id:  " << *r.content_id << "\n";
-  else std::cout << "  content_id:  (none)\n";
-  if (r.outer_path) std::cout << "  outer_path:  " << *r.outer_path << "\n";
-  if (r.member_path) std::cout << "  member_path: " << *r.member_path << "\n";
-  if (r.size) std::cout << "  size:        " << *r.size << "\n";
-  if (r.mtime_ns) std::cout << "  mtime_ns:    " << *r.mtime_ns << "\n";
+bool legacy_files_present(const fs::path& legacy_root) {
+  std::error_code ec;
+  return fs::is_regular_file(legacy_root / "index.sqlite", ec) ||
+         fs::is_regular_file(legacy_root / "blobs.sqlite", ec);
 }
 
-void print_content(const thumtoo::Database::ContentRow& c) {
-  std::cout << "content:\n";
-  std::cout << "  content_id:  " << c.content_id << "\n";
-  std::cout << "  status:      " << thumtoo::to_string(c.status) << "\n";
-  if (c.width && c.height)
-    std::cout << "  size:        " << *c.width << "x" << *c.height << "\n";
-  if (c.format) std::cout << "  format:      " << *c.format << "\n";
-  if (c.still_count) std::cout << "  stills:      " << *c.still_count << "\n";
-  if (c.duration_ms) std::cout << "  duration_ms: " << *c.duration_ms << "\n";
-  if (c.error_code) std::cout << "  error:       " << *c.error_code << "\n";
-  if (!c.lqip.empty())
-    std::cout << "  lqip:        " << c.lqip.size() << " bytes (kind=" << c.lqip_kind
-              << ")\n";
-}
+void print_store_summary(const fs::path& cache) {
+  const auto store_root = thumtoo::redesign_store_root(cache);
+  const auto legacy_root = thumtoo::legacy_db_root(cache);
+  std::cout << "cache:         " << cache << "\n"
+            << "layout:        "
+            << (thumtoo::store_root_layout_enabled() ? "store-root"
+                                                     : "nested-store/")
+            << "\n"
+            << "store_root:    " << store_root << "\n"
+            << "legacy_root:   " << legacy_root
+            << (legacy_files_present(legacy_root) ? " (files present)\n"
+                                                  : " (absent)\n");
 
-void print_levels(thumtoo::Database& db, std::string_view content_id) {
-  auto levels = db.list_levels(content_id, 256);
-  std::cout << "levels:        " << levels.size() << "\n";
-  for (const auto& lv : levels) {
-    std::cout << "  edge=" << lv.max_edge << "  frame=" << lv.frame_idx;
-    if (lv.width && lv.height)
-      std::cout << "  " << *lv.width << "x" << *lv.height;
-    if (lv.codec) std::cout << "  " << *lv.codec;
-    if (lv.quality) std::cout << "  q=" << *lv.quality;
-    if (lv.path) std::cout << "  " << *lv.path;
-    std::cout << "  source=" << lv.source << "\n";
-  }
-}
-
-void print_tiles(thumtoo::Database& db, std::string_view content_id) {
-  int min_s = 0, max_s = 0;
-  if (!db.tile_min_max_scale(content_id, min_s, max_s)) {
-    std::cout << "tiles:         none\n";
+  std::error_code ec;
+  if (!fs::is_regular_file(store_root / "index.sqlite", ec)) {
+    std::cout << "store:         (no index.sqlite)\n";
     return;
   }
-  auto tiles = db.list_tiles(content_id, 100000);
-  std::cout << "tiles:         " << tiles.size() << "  scales=[" << min_s << ".." << max_s
-            << "]\n";
-  // Summarize by scale rather than dumping every tile.
-  std::vector<int> scales;
-  scales.reserve(tiles.size());
-  for (const auto& t : tiles) scales.push_back(t.scale);
-  std::sort(scales.begin(), scales.end());
-  scales.erase(std::unique(scales.begin(), scales.end()), scales.end());
-  for (int s : scales) {
-    int n = 0;
-    for (const auto& t : tiles)
-      if (t.scale == s) ++n;
-    std::cout << "  scale=" << s << "  count=" << n << "\n";
-  }
+  thumtoo::Store::Paths sp;
+  sp.cache_root = store_root;
+  sp.data_root = cache;
+  auto store = thumtoo::Store::open(sp);
+  std::cout << "index_schema:  " << store.index_schema_version() << "\n"
+            << "blobs:         " << store.count_blobs() << "\n"
+            << "locators:      " << store.count_locators() << "\n"
+            << "media:         " << store.count_media() << "\n"
+            << "regions:       " << store.count_regions() << "\n"
+            << "tiles:         " << store.count_tiles() << "\n";
 }
 
-/// Collect locators matching a filesystem path or Location URI.
-std::vector<thumtoo::Database::LocatorRow> resolve_locators(
-    thumtoo::Database& db, std::string_view query) {
-  std::vector<thumtoo::Database::LocatorRow> out;
-  std::unordered_set<std::string> seen;
+void print_legacy_summary(const fs::path& cache) {
+  const auto legacy_root = thumtoo::legacy_db_root(cache);
+  if (!legacy_files_present(legacy_root)) {
+    std::cout << "legacy:        (no index.sqlite / blobs.sqlite under "
+              << legacy_root << ")\n";
+    return;
+  }
+  auto db = thumtoo::Database::open(legacy_root);
+  std::cout << "legacy_root:   " << legacy_root << "\n"
+            << "schema:        " << db.schema_version() << "\n"
+            << "locators:      " << db.count_locators() << "\n"
+            << "content:       " << db.count_content() << "\n"
+            << "tiles:         " << db.count_tiles() << "\n";
+}
 
-  auto add = [&](const thumtoo::Database::LocatorRow& r) {
-    if (seen.insert(r.uri).second) out.push_back(r);
-  };
-
-  // 1) Exact URI match.
-  if (auto loc = db.find_locator(query)) add(*loc);
-
-  // 2) Filesystem path → file URI + outer_path.
+int cmd_path_store(const fs::path& cache, std::string_view query) {
+  thumtoo::Store::Paths sp;
+  sp.cache_root = thumtoo::redesign_store_root(cache);
+  sp.data_root = cache;
   std::error_code ec;
-  fs::path as_path(query);
-  if (!query.empty() && query.find("://") == std::string_view::npos) {
-    fs::path abs = as_path;
-    if (!abs.is_absolute()) {
-      abs = fs::absolute(abs, ec);
-    }
-    if (!ec) {
-      abs = abs.lexically_normal();
-      const std::string uri = thumtoo::file_uri_from_path(abs);
-      if (auto loc = db.find_locator(uri)) add(*loc);
-      for (const auto& r : db.list_locators_for_outer_path(abs.string())) add(r);
-      // Prefix match for archive members under this outer path.
-      for (const auto& r : db.list_locators_by_outer_path_prefix(abs.string(), 500))
-        add(r);
-    }
+  if (!fs::is_regular_file(sp.cache_root / "index.sqlite", ec)) {
+    std::cout << "result:        no Store index at " << sp.cache_root << "\n";
+    return 0;
+  }
+  auto store = thumtoo::Store::open(sp);
+  std::cout << "query:         " << query << "\n"
+            << "store_root:    " << sp.cache_root << "\n";
+
+  std::string uri(query);
+  if (query.find("://") == std::string_view::npos && !query.empty() &&
+      query[0] == '/') {
+    uri = thumtoo::file_uri_from_path(fs::path(std::string(query)));
   }
 
-  // 3) URI prefix (e.g. file:///foo/bar → members under //archive:).
-  if (query.find("://") != std::string_view::npos
-      || (query.size() >= 7 && query.substr(0, 7) == "file://")) {
-    for (const auto& r : db.list_locators_by_uri_prefix(query, 500)) add(r);
-  }
-
-  return out;
-}
-
-int cmd_path(thumtoo::Database& db, std::string_view query) {
-  std::cout << "query:         " << query << "\n";
-  std::cout << "cache_root:    " << db.cache_root() << "\n";
-
-  auto locs = resolve_locators(db, query);
-  if (locs.empty()) {
+  auto loc = store.find_locator(uri);
+  if (!loc) {
     std::cout << "result:        not cached (no locator)\n";
     return 0;
   }
+  std::cout << "locator:\n"
+            << "  uri:         " << loc->uri << "\n";
+  if (loc->blob_id) std::cout << "  blob_id:     " << *loc->blob_id << "\n";
+  if (loc->size) std::cout << "  size:        " << *loc->size << "\n";
+  if (loc->mtime_ns) std::cout << "  mtime_ns:    " << *loc->mtime_ns << "\n";
 
-  std::cout << "locators:      " << locs.size() << "\n";
-  std::unordered_set<std::string> content_ids;
-  for (std::size_t i = 0; i < locs.size(); ++i) {
-    print_locator(locs[i], static_cast<int>(i + 1), static_cast<int>(locs.size()));
-    if (locs[i].content_id) content_ids.insert(*locs[i].content_id);
-  }
-
-  if (content_ids.empty()) {
-    std::cout << "content:       (no content_id on locator)\n";
-    return 0;
-  }
-
-  for (const auto& cid : content_ids) {
-    if (auto c = db.find_content(cid)) {
-      print_content(*c);
-    } else {
-      std::cout << "content:\n  content_id:  " << cid
-                << "\n  status:      (row missing)\n";
+  if (loc->blob_id) {
+    if (auto media =
+            store.find_media_for_blob(*loc->blob_id, thumtoo::MediaKind::Image)) {
+      std::cout << "media:\n"
+                << "  id:          " << media->id << "\n"
+                << "  kind:        image\n";
+      if (media->width && media->height)
+        std::cout << "  size:        " << *media->width << "x" << *media->height
+                  << "\n";
+      if (auto full = store.find_full_region(media->id)) {
+        auto scales = store.list_tile_scales(media->id, full->id);
+        std::cout << "  tile_scales: ";
+        if (scales.empty())
+          std::cout << "(none)\n";
+        else {
+          for (std::size_t i = 0; i < scales.size(); ++i) {
+            if (i) std::cout << ",";
+            std::cout << scales[i];
+          }
+          std::cout << "\n";
+        }
+      }
     }
-    print_levels(db, cid);
-    print_tiles(db, cid);
   }
   return 0;
 }
@@ -217,9 +183,16 @@ int main(int argc, char** argv) {
       path_query = argv[++i];
       continue;
     }
-    if (a == "summary" || a == "locators" || a == "content" || a == "levels"
-        || a == "tiles" || a == "archives") {
-      mode = a;
+    if (a == "summary" || a == "store" || a == "legacy" || a == "locators" ||
+        a == "content" || a == "levels" || a == "tiles" || a == "archives") {
+      // locators/content/levels/tiles/archives were legacy modes; map to summary
+      // or legacy as appropriate.
+      if (a == "locators" || a == "content" || a == "levels" || a == "tiles" ||
+          a == "archives") {
+        mode = "legacy";
+      } else {
+        mode = a;
+      }
       continue;
     }
     std::cerr << "Unknown argument: " << a << "\n";
@@ -228,169 +201,15 @@ int main(int argc, char** argv) {
   }
 
   try {
-    const bool store_only = thumtoo::store_only_mode();
-    const auto legacy_root = thumtoo::legacy_db_root(cache);
-    const bool legacy_present =
-        fs::exists(legacy_root / "index.sqlite") ||
-        fs::exists(legacy_root / "blobs.sqlite");
-
-    if (store_only || !legacy_present) {
-      if (mode == "summary") {
-        std::cout << "cache_root:     " << cache << "\n"
-                  << "layout:         "
-                  << (thumtoo::store_root_layout_enabled() ? "store-root"
-                                                            : "dual-path")
-                  << "\n"
-                  << "store_only:     " << (store_only ? "yes" : "no") << "\n"
-                  << "legacy_root:    " << legacy_root
-                  << (legacy_present ? "\n" : " (absent)\n")
-                  << "store_root:     " << thumtoo::redesign_store_root(cache)
-                  << "\n";
-        try {
-          thumtoo::Store::Paths sp;
-          sp.cache_root = thumtoo::redesign_store_root(cache);
-          sp.data_root = cache;
-          auto store = thumtoo::Store::open(sp);
-          std::cout << "--- store ---\n"
-                    << "store schema:   " << store.index_schema_version()
-                    << "\n"
-                    << "store blobs:    " << store.count_blobs() << "\n"
-                    << "store locators: " << store.count_locators() << "\n"
-                    << "store media:    " << store.count_media() << "\n"
-                    << "store regions:  " << store.count_regions() << "\n"
-                    << "store tiles:    " << store.count_tiles() << "\n"
-                    << "store dir snaps:"
-                    << store.count_directory_snapshots() << "\n";
-        } catch (const std::exception& e) {
-          std::cout << "--- store ---\n"
-                    << "store:          (unavailable: " << e.what() << ")\n";
-        }
-        return 0;
-      }
-      std::cerr << "thumtoo-status: mode '" << mode
-                << "' needs a legacy index; cache is Store-only "
-                << "(THUMTOO_STORE_ONLY=" << (store_only ? "1" : "0") << ")\n";
-      return 2;
-    }
-
-    auto db = thumtoo::Database::open(legacy_root);
     if (mode == "path") {
-      return cmd_path(db, *path_query);
+      return cmd_path_store(cache, *path_query);
     }
-    if (mode == "summary") {
-      std::cout << "cache_root:     " << cache << "\n"
-                << "layout:         "
-                << (thumtoo::store_root_layout_enabled() ? "store-root" : "dual-path")
-                << "\n"
-                << "legacy_root:    " << db.cache_root() << "\n"
-                << "db_path:        " << db.db_path() << "\n"
-                << "blobs_path:     " << (db.cache_root() / "blobs.sqlite") << "\n"
-                << "store_root:     " << thumtoo::redesign_store_root(cache) << "\n"
-                << "schema_version: " << db.schema_version()
-                << " (build " << thumtoo::kSchemaVersion << ")\n";
-      if (auto v = db.meta_get(thumtoo::kSchemaMetaLadderEdgesKey))
-        std::cout << "ladder_edges:   " << *v << "\n";
-      if (auto v = db.meta_get(thumtoo::kSchemaMetaJxlQualityKey))
-        std::cout << "jxl_quality:    " << *v << "\n";
-      else if (auto v = db.meta_get(thumtoo::kSchemaMetaWebpQualityKey))
-        std::cout << "webp_quality:   " << *v << " (legacy)\n";
-      std::cout << "content rows:   " << db.count_content() << "\n"
-                << "locators:       " << db.count_locators() << "\n"
-                << "levels:         " << db.count_levels() << "\n"
-                << "tiles:          " << db.count_tiles() << "\n"
-                << "dir snapshots:  " << db.count_directory_snapshots() << "\n";
-      // Redesign Store (may be empty on fresh dual-path).
-      try {
-        thumtoo::migrate_dual_path_to_store_root(cache);
-        thumtoo::Store::Paths sp;
-        sp.cache_root = thumtoo::redesign_store_root(cache);
-        sp.data_root = cache;  // status does not take data_root; user under cache
-        auto store = thumtoo::Store::open(sp);
-        std::cout << "--- store ---\n"
-                  << "store schema:   " << store.index_schema_version() << "\n"
-                  << "store blobs:    " << store.count_blobs() << "\n"
-                  << "store locators: " << store.count_locators() << "\n"
-                  << "store media:    " << store.count_media() << "\n"
-                  << "store regions:  " << store.count_regions() << "\n"
-                  << "store tiles:    " << store.count_tiles() << "\n"
-                  << "store dir snaps:" << store.count_directory_snapshots()
-                  << "\n";
-      } catch (const std::exception& e) {
-        std::cout << "--- store ---\n"
-                  << "store:          (unavailable: " << e.what() << ")\n";
-      }
+    if (mode == "legacy") {
+      print_legacy_summary(cache);
       return 0;
     }
-    if (mode == "locators") {
-      for (const auto& r : db.list_locators(500)) {
-        std::cout << r.uri;
-        if (r.content_id) std::cout << "  content=" << *r.content_id;
-        if (r.size) std::cout << "  size=" << *r.size;
-        std::cout << "\n";
-      }
-      return 0;
-    }
-    if (mode == "content") {
-      for (const auto& r : db.list_content(500)) {
-        std::cout << r.content_id << "  status=" << thumtoo::to_string(r.status);
-        if (r.width && r.height)
-          std::cout << "  " << *r.width << "x" << *r.height;
-        if (r.still_count) std::cout << "  stills=" << *r.still_count;
-        if (r.duration_ms) std::cout << "  duration_ms=" << *r.duration_ms;
-        if (r.error_code) std::cout << "  error=" << *r.error_code;
-        std::cout << "\n";
-      }
-      return 0;
-    }
-    if (mode == "levels") {
-      for (const auto& c : db.list_content(500)) {
-        for (const auto& lv : db.list_levels(c.content_id)) {
-          std::cout << c.content_id << "  edge=" << lv.max_edge
-                    << "  frame=" << lv.frame_idx;
-          if (lv.width && lv.height)
-            std::cout << "  " << *lv.width << "x" << *lv.height;
-          if (lv.codec) std::cout << "  " << *lv.codec;
-          if (lv.path) std::cout << "  " << *lv.path;
-          std::cout << "\n";
-        }
-      }
-      return 0;
-    }
-    if (mode == "tiles") {
-      for (const auto& c : db.list_content(500)) {
-        int min_s = 0, max_s = 0;
-        if (!db.tile_min_max_scale(c.content_id, min_s, max_s)) continue;
-        auto tiles = db.list_tiles(c.content_id, 20);
-        std::cout << c.content_id << "  scales=[" << min_s << ".." << max_s
-                  << "]  sample=" << tiles.size() << "\n";
-        for (const auto& t : tiles) {
-          std::cout << "  s=" << t.scale << " x=" << t.x << " y=" << t.y;
-          if (t.width && t.height)
-            std::cout << "  " << *t.width << "x" << *t.height;
-          std::cout << "\n";
-        }
-      }
-      return 0;
-    }
-    if (mode == "archives") {
-      // List members for every archive_uri that has locator rows or entries.
-      std::vector<std::string> seen;
-      for (const auto& loc : db.list_locators(5000)) {
-        if (loc.uri.find("//archive") == std::string::npos) continue;
-        auto pipe = loc.uri.find("//archive");
-        std::string root = loc.uri.substr(0, pipe + std::string("//archive").size());
-        if (std::find(seen.begin(), seen.end(), root) != seen.end()) continue;
-        seen.push_back(root);
-        auto entries = db.list_archive_entries(root);
-        std::cout << root << "  members=" << entries.size() << "\n";
-        for (const auto& e : entries) {
-          std::cout << "  " << e.member_path;
-          if (e.uncompressed_size) std::cout << "  size=" << *e.uncompressed_size;
-          std::cout << "\n";
-        }
-      }
-      return 0;
-    }
+    // summary / store
+    print_store_summary(cache);
   } catch (const std::exception& e) {
     std::cerr << "error: " << e.what() << "\n";
     return 1;

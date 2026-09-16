@@ -177,16 +177,6 @@ Client::~Client() {
   }
 }
 
-Database& Client::db() {
-  throw std::runtime_error(
-      "Client::db: legacy Database is not opened (Store-only Client)");
-}
-
-const Database& Client::db() const {
-  throw std::runtime_error(
-      "Client::db: legacy Database is not opened (Store-only Client)");
-}
-
 std::unique_ptr<Client> Client::open(const std::filesystem::path& cache_root,
                                      Executor executor, unsigned worker_threads,
                                      const std::filesystem::path& data_root) {

@@ -2,6 +2,30 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-268-tools-store-first.** GC/status/prepare use Store; Client::db() removed.
+Prior: **267**.
+
+### Change
+- `thumtoo-status`: Store summary by default; `legacy` mode when schema-4 files exist
+- `thumtoo-gc`: `--store-summary`; ladder GC only if legacy files on disk (no STORE_ONLY hard fail)
+- `thumtoo-prepare`: post-run tallies from Store counts
+- Remove `Client::db()` (biltoo uses `has_legacy()` + `store()`)
+
+### Apply
+```bash
+git pull /path/to/thumtoo-268-tools-store-first.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **268**
+- [x] store_root / store_only / client tests pass
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-267-client-drop-legacy-members.** Client holds Store only; no Database/BlobStore.
 Prior: **266**.
 

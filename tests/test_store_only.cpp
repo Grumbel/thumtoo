@@ -112,13 +112,7 @@ int main() {
              thumtoo::kStoreIndexSchemaVersion,
          "Store schema");
 
-  bool threw = false;
-  try {
-    (void)client->db();
-  } catch (const std::exception&) {
-    threw = true;
-  }
-  expect(threw, "db() throws without legacy");
+  expect(!client->has_legacy(), "has_legacy still false after open");
 
   thumtoo::image_library_init();
   const auto uri = thumtoo::file_uri_from_path(img);

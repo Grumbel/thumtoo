@@ -1,9 +1,14 @@
 // SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+/// Cache maintenance. Legacy ladder GC when on-disk schema-4 files exist under
+/// legacy_db_root; otherwise reports Store counts (redesign has no ladder GC).
+
 #include "thumtoo/blob_store.hpp"
-#include "thumtoo/layout.hpp"
 #include "thumtoo/database.hpp"
+#include "thumtoo/layout.hpp"
+#include "thumtoo/store.hpp"
+#include "thumtoo/constants.hpp"
 #include "thumtoo/uri.hpp"
 
 #include <cstdlib>
@@ -12,18 +17,26 @@
 #include <string>
 #include <vector>
 
+namespace fs = std::filesystem;
+
 namespace {
 
-std::filesystem::path default_cache_root() {
+fs::path default_cache_root() {
   const char* xdg = std::getenv("XDG_CACHE_HOME");
   if (xdg && *xdg) {
-    return std::filesystem::path(xdg) / "thumtoo";
+    return fs::path(xdg) / "thumtoo";
   }
   const char* home = std::getenv("HOME");
   if (home && *home) {
-    return std::filesystem::path(home) / ".cache" / "thumtoo";
+    return fs::path(home) / ".cache" / "thumtoo";
   }
-  return std::filesystem::path(".cache") / "thumtoo";
+  return fs::path(".cache") / "thumtoo";
+}
+
+bool legacy_files_present(const fs::path& legacy_root) {
+  std::error_code ec;
+  return fs::is_regular_file(legacy_root / "index.sqlite", ec) ||
+         fs::is_regular_file(legacy_root / "blobs.sqlite", ec);
 }
 
 void usage(const char* argv0) {
@@ -32,27 +45,23 @@ void usage(const char* argv0) {
       << " [--cache DIR] [--dry-run]\n"
       << "       [--uri URI]... [--path PATH]...\n"
       << "       [--min-scale N] [--orphans] [--dead-paths] [--soft-levels]\n"
+      << "       [--store-summary]\n"
       << "\n"
       << "Manual cache maintenance (no automatic eviction).\n"
       << "\n"
-      << "  --cache DIR     Cache root (default: $XDG_CACHE_HOME/thumtoo or\n"
-      << "                  ~/.cache/thumtoo)\n"
-      << "  --dry-run       Report only; do not delete\n"
-      << "  --uri URI       Forget this location URI (locator + orphan content/tiles)\n"
-      << "  --path PATH     Forget all locators for this filesystem path (outer_path\n"
-      << "                  and file:/// form). Returns that path to cold cache state.\n"
-      << "  --min-scale N   Drop tile rows/blobs with scale < N (keep coarser)\n"
-      << "                  Higher scale = coarser in thumtoo tile coords.\n"
-      << "                  Example: --min-scale 3 removes fine scales 0,1,2\n"
-      << "  --orphans       Remove content with no locators (+ their blobs)\n"
-      << "  --dead-paths    Remove locators whose outer_path is missing on disk\n"
-      << "                  (then purge newly orphaned content)\n"
-      << "  --soft-levels   Drop soft/overview levels (max_edge ≤ batch edge)\n"
-      << "                  from index + blobs; keep full_native and tiles\n"
+      << "  Legacy ladder GC runs only when index.sqlite/blobs.sqlite exist under\n"
+      << "  the legacy root (top-level or $cache/legacy/ after STORE_ROOT migrate).\n"
+      << "  Redesign Store tiles are not purged by ladder flags; use --store-summary.\n"
       << "\n"
-      << "At least one action flag is required.\n"
-      << "LQIP on content rows is kept until the content row is purged.\n"
-      << "Shared content_id is only fully purged when no locators remain.\n";
+      << "  --cache DIR       Cache root (default: $XDG_CACHE_HOME/thumtoo)\n"
+      << "  --dry-run         Report only; do not delete\n"
+      << "  --uri URI         Forget this location URI (legacy)\n"
+      << "  --path PATH       Forget locators for this filesystem path (legacy)\n"
+      << "  --min-scale N     Drop legacy tile rows with scale < N\n"
+      << "  --orphans         Remove legacy content with no locators\n"
+      << "  --dead-paths      Remove locators whose outer_path is missing\n"
+      << "  --soft-levels     Drop soft/overview levels (legacy only)\n"
+      << "  --store-summary   Print redesign Store blob/locator/tile counts\n";
 }
 
 thumtoo::Database::PurgeStats purge_uris(thumtoo::Database& db,
@@ -61,43 +70,26 @@ thumtoo::Database::PurgeStats purge_uris(thumtoo::Database& db,
                                          bool dry_run) {
   thumtoo::Database::PurgeStats stats;
   for (const auto& uri : uris) {
-    if (uri.empty()) {
-      continue;
-    }
+    if (uri.empty()) continue;
     auto loc = db.find_locator(uri);
-    if (!loc) {
-      std::cout << "  miss (not in cache): " << uri << "\n";
-      continue;
-    }
+    if (!loc) continue;
     stats.removed_uris.push_back(uri);
-    std::cout << "  locator: " << uri;
-    if (loc->content_id) {
-      std::cout << "  content=" << *loc->content_id;
-    }
-    std::cout << "\n";
-    const auto cid = loc->content_id;
-    if (dry_run) {
-      continue;
-    }
+    const std::optional<std::string> cid = loc->content_id;
+    if (dry_run) continue;
     db.delete_locator(uri);
-    if (!cid || cid->empty()) {
-      continue;
-    }
-    if (!db.list_locators_for_content_id(*cid, 1).empty()) {
-      std::cout << "    content kept (other locators)\n";
-      continue;
-    }
+    if (!cid || cid->empty()) continue;
+    const auto remaining = db.list_locators_for_content_id(*cid, 1);
+    if (!remaining.empty()) continue;
     stats.tiles_deleted += blobs.delete_tiles_for_content(*cid);
     stats.levels_deleted += blobs.delete_levels_for_content(*cid);
     db.purge_content_metadata(*cid);
     stats.purged_content_ids.push_back(*cid);
-    std::cout << "    purged content + tiles/levels\n";
   }
   return stats;
 }
 
 std::vector<std::string> uris_for_path(thumtoo::Database& db,
-                                       const std::filesystem::path& path) {
+                                       const fs::path& path) {
   std::vector<std::string> uris;
   auto add = [&](const std::string& u) {
     if (u.empty()) return;
@@ -107,9 +99,9 @@ std::vector<std::string> uris_for_path(thumtoo::Database& db,
     uris.push_back(u);
   };
   std::error_code ec;
-  std::filesystem::path abs = path;
+  fs::path abs = path;
   if (!abs.is_absolute()) {
-    abs = std::filesystem::absolute(path, ec);
+    abs = fs::absolute(path, ec);
     if (ec) abs = path;
   }
   const std::string path_s = abs.lexically_normal().string();
@@ -137,17 +129,37 @@ void print_purge_stats(const thumtoo::Database::PurgeStats& s, bool dry_run) {
             << (dry_run ? " (dry-run)\n" : "\n");
 }
 
+void print_store_summary(const fs::path& cache) {
+  thumtoo::Store::Paths sp;
+  sp.cache_root = thumtoo::redesign_store_root(cache);
+  sp.data_root = cache;
+  std::error_code ec;
+  if (!fs::is_regular_file(sp.cache_root / "index.sqlite", ec)) {
+    std::cout << "store:         (no index.sqlite at " << sp.cache_root << ")\n";
+    return;
+  }
+  auto store = thumtoo::Store::open(sp);
+  std::cout << "store_root:    " << sp.cache_root << "\n"
+            << "index_schema:  " << store.index_schema_version() << "\n"
+            << "blobs:         " << store.count_blobs() << "\n"
+            << "locators:      " << store.count_locators() << "\n"
+            << "media:         " << store.count_media() << "\n"
+            << "regions:       " << store.count_regions() << "\n"
+            << "tiles:         " << store.count_tiles() << "\n";
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
-  std::filesystem::path cache = default_cache_root();
+  fs::path cache = default_cache_root();
   bool dry_run = false;
   bool do_orphans = false;
   bool do_dead = false;
   bool do_soft_levels = false;
+  bool do_store_summary = false;
   int min_scale = -1;
   std::vector<std::string> uris;
-  std::vector<std::filesystem::path> paths;
+  std::vector<fs::path> paths;
 
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
@@ -187,13 +199,18 @@ int main(int argc, char** argv) {
       do_soft_levels = true;
       continue;
     }
+    if (a == "--store-summary") {
+      do_store_summary = true;
+      continue;
+    }
     std::cerr << "Unknown argument: " << a << "\n";
     usage(argv[0]);
     return 2;
   }
 
-  if (min_scale < 0 && !do_orphans && !do_dead && !do_soft_levels && uris.empty()
-      && paths.empty()) {
+  const bool want_legacy = min_scale >= 0 || do_orphans || do_dead ||
+                           do_soft_levels || !uris.empty() || !paths.empty();
+  if (!want_legacy && !do_store_summary) {
     usage(argv[0]);
     return 2;
   }
@@ -203,15 +220,29 @@ int main(int argc, char** argv) {
   }
 
   try {
-    if (thumtoo::store_only_mode()) {
-      std::cerr << "thumtoo-gc: THUMTOO_STORE_ONLY=1 — legacy GC is not applicable\n"
-                << "  (Store maintenance tools not yet available)\n";
-      return 2;
-    }
-    auto db = thumtoo::Database::open(thumtoo::legacy_db_root(cache));
-    auto blobs = thumtoo::BlobStore::open(thumtoo::legacy_db_root(cache));
-
     std::cout << "cache: " << cache << (dry_run ? " (dry-run)\n" : "\n");
+    if (do_store_summary) {
+      print_store_summary(cache);
+    }
+
+    if (!want_legacy) {
+      return 0;
+    }
+
+    const auto legacy_root = thumtoo::legacy_db_root(cache);
+    if (!legacy_files_present(legacy_root)) {
+      std::cerr << "thumtoo-gc: no legacy index/blobs under " << legacy_root
+                << "\n"
+                << "  (Client is Store-only; ladder GC applies only to old "
+                   "caches)\n"
+                << "  Try: " << argv[0] << " --cache " << cache
+                << " --store-summary\n";
+      return want_legacy && !do_store_summary ? 2 : 0;
+    }
+
+    auto db = thumtoo::Database::open(legacy_root);
+    auto blobs = thumtoo::BlobStore::open(legacy_root);
+    std::cout << "legacy_root: " << legacy_root << "\n";
 
     if (!uris.empty() || !paths.empty()) {
       std::vector<std::string> all = uris;
@@ -240,16 +271,36 @@ int main(int argc, char** argv) {
       const auto before_t = db.count_tiles();
       const auto before_b = blobs.count_tiles();
       std::cout << "tiles below scale " << min_scale << ": index=" << before_t
-                << " blobs=" << before_b << " (counts are all tiles; deleting"
-                << " scale < " << min_scale << ")\n";
+                << " blobs=" << before_b << "\n";
       if (!dry_run) {
         const auto n_idx = db.delete_tiles_below_scale(min_scale);
         const auto n_blob = blobs.delete_tiles_below_scale(min_scale);
         std::cout << "  deleted index rows: " << n_idx
                   << "  blob rows: " << n_blob << "\n";
-      } else {
-        std::cout << "  dry-run: would DELETE FROM tiles/tile_blobs WHERE scale < "
-                  << min_scale << "\n";
+      }
+    }
+
+    if (do_orphans) {
+      auto orphans = db.list_orphan_content_ids(100000);
+      std::cout << "orphans: " << orphans.size() << "\n";
+      if (!dry_run) {
+        for (const auto& cid : orphans) {
+          (void)blobs.delete_tiles_for_content(cid);
+          (void)blobs.delete_levels_for_content(cid);
+          db.purge_content_metadata(cid);
+        }
+      }
+    }
+
+    if (do_dead) {
+      auto dead = db.list_dead_path_locators(100000);
+      std::cout << "dead-path locators: " << dead.size() << "\n";
+      if (!dry_run) {
+        std::vector<std::string> dead_uris;
+        dead_uris.reserve(dead.size());
+        for (const auto& loc : dead) dead_uris.push_back(loc.uri);
+        const auto st = purge_uris(db, blobs, dead_uris, /*dry_run=*/false);
+        print_purge_stats(st, false);
       }
     }
 
@@ -277,43 +328,8 @@ int main(int argc, char** argv) {
         std::cout << "  deleted index+blob levels: " << n << "\n";
       }
     }
-
-    if (do_dead) {
-      auto dead = db.list_dead_path_locators();
-      std::cout << "dead-path locators: " << dead.size() << "\n";
-      for (const auto& loc : dead) {
-        std::cout << "  " << loc.uri;
-        if (loc.outer_path) std::cout << "  (" << *loc.outer_path << ")";
-        std::cout << "\n";
-        if (!dry_run) db.delete_locator(loc.uri);
-      }
-      do_orphans = true;
-    }
-
-    if (do_orphans) {
-      auto orphans = db.list_orphan_content_ids();
-      std::cout << "orphan content_ids: " << orphans.size() << "\n";
-      std::int64_t tiles = 0, levels = 0;
-      for (const auto& id : orphans) {
-        std::cout << "  " << id << "\n";
-        if (!dry_run) {
-          tiles += blobs.delete_tiles_for_content(id);
-          levels += blobs.delete_levels_for_content(id);
-          db.purge_content_metadata(id);
-        }
-      }
-      if (!dry_run && !orphans.empty()) {
-        std::cout << "  purged blob tiles=" << tiles << " levels=" << levels
-                  << "\n";
-      }
-    }
-
-    if (!dry_run) {
-      std::cout << "done. tiles left: index=" << db.count_tiles()
-                << " blobs=" << blobs.count_tiles() << "\n";
-    }
   } catch (const std::exception& e) {
-    std::cerr << "thumtoo-gc: " << e.what() << "\n";
+    std::cerr << "error: " << e.what() << "\n";
     return 1;
   }
   return 0;
