@@ -408,16 +408,61 @@ void Store::seed_lookups() {
   sqlite3_finalize(stmt);
 }
 
+namespace {
+
+bool index_table_has_column(sqlite3* db, const char* table, const char* column) {
+  if (!db || !table || !column) return false;
+  // PRAGMA table_info rows: cid, name, type, notnull, dflt_value, pk
+  std::string sql = std::string("PRAGMA table_info(") + table + ");";
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+    return false;
+  }
+  bool found = false;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    const char* name =
+        reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    if (name && std::strcmp(name, column) == 0) {
+      found = true;
+      break;
+    }
+  }
+  sqlite3_finalize(stmt);
+  return found;
+}
+
+void ensure_locator_column(sqlite3* db, const char* column, const char* sql_type) {
+  if (index_table_has_column(db, "locator", column)) return;
+  std::string alter =
+      std::string("ALTER TABLE locator ADD COLUMN ") + column + " " + sql_type + ";";
+  char* err = nullptr;
+  const int rc = sqlite3_exec(db, alter.c_str(), nullptr, nullptr, &err);
+  if (rc != SQLITE_OK) {
+    std::string msg = err ? err : "ALTER TABLE locator failed";
+    sqlite3_free(err);
+    // Duplicate column is fine (race / concurrent open); re-check below.
+    if (msg.find("duplicate column") == std::string::npos) {
+      throw std::runtime_error(msg);
+    }
+  }
+  if (!index_table_has_column(db, "locator", column)) {
+    throw std::runtime_error(
+        std::string("locator.") + column +
+        " missing after ALTER; delete cache index.sqlite and retry");
+  }
+}
+
+}  // namespace
+
 void Store::ensure_optional_index_tables() {
-  // Best-effort columns for pre-outer_path indexes (schema 100 fixed version).
-  sqlite3_exec(index_, "ALTER TABLE locator ADD COLUMN outer_path TEXT;",
-               nullptr, nullptr, nullptr);
-  sqlite3_exec(index_, "ALTER TABLE locator ADD COLUMN member_path TEXT;",
-               nullptr, nullptr, nullptr);
-  sqlite3_exec(index_,
-               "CREATE INDEX IF NOT EXISTS idx_locator_outer_path ON "
-               "locator(outer_path);",
-               nullptr, nullptr, nullptr);
+  // Schema stays at 100; outer_path/member_path were added after the first
+  // redesign cutover. Existing indexes must gain the columns before any
+  // SELECT/INSERT that references them (archives, PDF/EPUB, directory list).
+  ensure_locator_column(index_, "outer_path", "TEXT");
+  ensure_locator_column(index_, "member_path", "TEXT");
+  exec_index(
+      "CREATE INDEX IF NOT EXISTS idx_locator_outer_path ON "
+      "locator(outer_path);");
   // Prefer composite-key blob_lqip. If a legacy single-column table exists
   // (blob_id PK only), rebuild it and copy page-0 rows.
   {

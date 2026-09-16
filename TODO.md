@@ -2,6 +2,31 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-286-fix-outer-path-migrate.** Ensure locator outer_path on open.
+Prior: **285**.
+
+### Change
+- `ensure_optional_index_tables`: verify `locator.outer_path` / `member_path` via
+  `PRAGMA table_info`; ALTER when missing; throw if still absent
+- Fixes "no such column: outer_path" on existing schema-100 caches (archives,
+  PDF/EPUB expand, locator list)
+- `test_store`: open a pre-outer_path index and upsert/find/list by outer_path
+
+### Apply
+```bash
+git pull /path/to/thumtoo-286-fix-outer-path-migrate.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **286**
+- [x] Old schema-100 index without outer_path opens and accepts upsert_locator
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-285-fix-store-root-blobs-migrate.** Harden dual-path blobs relocate.
 Prior: **284**.
 

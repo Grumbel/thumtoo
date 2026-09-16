@@ -4,6 +4,8 @@
 #include "thumtoo/store.hpp"
 #include "thumtoo/constants.hpp"
 
+#include "sqlite3.h"
+
 #include <cstdio>
 #include <filesystem>
 #include <iostream>
@@ -366,6 +368,66 @@ int main() {
       {
         auto rows = store.list_locators_like("file:///tmp/%", 50);
         expect(rows.size() >= 1, "like list finds file uris");
+      }
+    }
+
+    // Pre-outer_path schema 100 index: locator without outer_path/member_path.
+    // Open must ALTER-add columns so upsert/find do not throw "no such column".
+    {
+      const fs::path old_dir =
+          fs::temp_directory_path() / "thumtoo-test-store-oldloc-XXXXXX";
+      std::string otmpl = old_dir.string();
+      std::vector<char> obuf(otmpl.begin(), otmpl.end());
+      obuf.push_back('\0');
+      if (!mkdtemp(obuf.data())) {
+        std::perror("mkdtemp oldloc");
+        ++g_failed;
+      } else {
+        const fs::path odir(obuf.data());
+        const fs::path index_path = odir / "index.sqlite";
+        sqlite3* db = nullptr;
+        if (sqlite3_open(index_path.string().c_str(), &db) != SQLITE_OK) {
+          expect(false, "seed old locator open");
+        } else {
+          char* err = nullptr;
+          const char* sql =
+              "CREATE TABLE schema_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
+              "INSERT INTO schema_meta(key, value) VALUES('schema_version', '100');"
+              "CREATE TABLE blob("
+              "  id INTEGER PRIMARY KEY, size INTEGER, status INTEGER NOT NULL DEFAULT 0,"
+              "  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);"
+              "CREATE TABLE locator("
+              "  id INTEGER PRIMARY KEY, uri TEXT NOT NULL UNIQUE,"
+              "  blob_id INTEGER, size INTEGER, mtime_ns INTEGER,"
+              "  updated_at INTEGER NOT NULL);";
+          if (sqlite3_exec(db, sql, nullptr, nullptr, &err) != SQLITE_OK) {
+            std::cerr << "seed old locator: " << (err ? err : "?") << "\n";
+            sqlite3_free(err);
+            expect(false, "seed old locator sql");
+          }
+          sqlite3_close(db);
+          try {
+            auto store = thumtoo::Store::open(odir);
+            const auto blob_id =
+                store.insert_blob(7, thumtoo::BlobStatus::Ok);
+            const auto loc_id = store.upsert_locator(
+                "file:///tmp/pre-outer.jpg", blob_id, 7, 1,
+                std::string("/tmp/pre-outer.jpg"), std::nullopt);
+            expect(loc_id >= 1, "old-schema upsert_locator after migrate");
+            auto loc = store.find_locator("file:///tmp/pre-outer.jpg");
+            expect(loc.has_value(), "old-schema find_locator");
+            expect(loc && loc->outer_path &&
+                       *loc->outer_path == "/tmp/pre-outer.jpg",
+                   "old-schema outer_path populated");
+            auto by_prefix = store.list_locators_by_outer_path_prefix("/tmp/", 10);
+            expect(by_prefix.size() >= 1, "old-schema list by outer_path");
+          } catch (const std::exception& ex) {
+            std::cerr << "old-schema migrate exception: " << ex.what() << "\n";
+            ++g_failed;
+          }
+        }
+        std::error_code oec;
+        fs::remove_all(odir, oec);
       }
     }
 
