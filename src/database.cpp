@@ -240,6 +240,21 @@ Database Database::open(const std::filesystem::path& cache_root) {
   return out;
 }
 
+Database Database::open_memory() {
+  sqlite3* db = nullptr;
+  // URI so we can name the DB; pure :memory: is fine for a single connection.
+  if (sqlite3_open(":memory:", &db) != SQLITE_OK) {
+    const std::string msg = db ? sqlite3_errmsg(db) : "sqlite3_open failed";
+    if (db) sqlite3_close(db);
+    throw std::runtime_error(msg);
+  }
+  Database out(db, {}, ":memory:", 0);
+  out.exec("PRAGMA foreign_keys=ON;");
+  out.migrate_or_init();
+  out.exec("CREATE INDEX IF NOT EXISTS idx_locators_outer_path ON locators(outer_path);");
+  return out;
+}
+
 void Database::migrate_or_init() {
   std::lock_guard<std::recursive_mutex> lock(mu_);
   exec(kSchemaSql);

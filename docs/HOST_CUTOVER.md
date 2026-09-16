@@ -63,8 +63,12 @@ tree); do not invent a second PreferCache retry loop.
    **Auto-migrate (≥238):** on open, classic dual-path caches move top-level legacy
    schema files → `legacy/` and `store/` redesign files → cache root (skips if
    destinations already exist). Soak-confirmed with biltoo.
-3. Remove dual-write helpers (`mirror_*`) and legacy `Database` open (Store-only).
-4. Migration: **no** ladder→tile conversion (PLAN non-goal); cold rebuild tiles.
+3. **Ephemeral legacy (`THUMTOO_STORE_ONLY=1`, ≥246):** in-memory Database/BlobStore;
+   only redesign Store files are durable under the cache. Dual-write still runs
+   in-process so Client APIs keep working; nothing is written to `legacy/`.
+4. Remove dual-write helpers (`mirror_*`) and drop legacy open entirely (true
+   Store-only Client).
+5. Migration: **no** ladder→tile conversion (PLAN non-goal); cold rebuild tiles.
 
 Under tiles-first, EnsurePixels does not write durable `levels` for soft *or*
 full_native. Session encode + TileSynth (when the pyramid covers the want) supply
@@ -102,7 +106,8 @@ Pair with biltoo ≥1007 (`scheduleSoftPixels`) for PreferCache when tiles exist
 | Top-level Store layout (`THUMTOO_STORE_ROOT`) | **Default on** (≥245; migrate ≥238; soak OK; `test_store_root`) |
 | Full-from-tiles (EnsurePixels Full) | **On** when tile pyramid covers want (≥243) |
 | Tiles-first skips full_native levels | **On** (≥244; same env as soft) |
-| Drop legacy Database open (Store-only) | **Next** |
+| Ephemeral legacy (`THUMTOO_STORE_ONLY`) | **Experimental** (≥246; in-memory legacy) |
+| Drop legacy Database open (true Store-only) | **Next** |
 
 Soft ladder rows may still exist in older caches; new soft encodes no longer
 persist them unless soft levels are explicitly re-enabled.

@@ -232,17 +232,28 @@ std::unique_ptr<Client> Client::open(const std::filesystem::path& cache_root,
   //  STORE_ROOT=0:   legacy at cache_root/; Store at cache_root/store/
   migrate_dual_path_to_store_root(cache_root);
   const std::filesystem::path legacy_root = legacy_db_root(cache_root);
-  auto db = std::make_unique<Database>(Database::open(legacy_root));
-  auto blobs = std::make_unique<BlobStore>(BlobStore::open(legacy_root));
+  // STORE_ONLY: process-private in-memory legacy (no index/blobs on disk).
+  // Durable pixels/meta live on the redesign Store under the cache root.
+  std::unique_ptr<Database> db;
+  std::unique_ptr<BlobStore> blobs;
+  if (store_only_mode()) {
+    db = std::make_unique<Database>(Database::open_memory());
+    blobs = std::make_unique<BlobStore>(BlobStore::open_memory());
+  } else {
+    db = std::make_unique<Database>(Database::open(legacy_root));
+    blobs = std::make_unique<BlobStore>(BlobStore::open(legacy_root));
+  }
   Store::Paths sp;
   sp.cache_root = redesign_store_root(cache_root);
   sp.data_root = data_root.empty() ? cache_root : data_root;
   auto store = std::make_unique<Store>(Store::open(sp));
   if (debug_enabled()) {
-    dbg("Client::open cache=%s layout=%s legacy=%s store=%s data=%s",
+    dbg("Client::open cache=%s layout=%s store_only=%d legacy=%s store=%s data=%s",
         cache_root.string().c_str(),
         store_root_layout_enabled() ? "store-root" : "dual-path",
-        legacy_root.string().c_str(), sp.cache_root.string().c_str(),
+        store_only_mode() ? 1 : 0,
+        store_only_mode() ? ":memory:" : legacy_root.string().c_str(),
+        sp.cache_root.string().c_str(),
         sp.data_root.string().c_str());
   }
   return std::unique_ptr<Client>(

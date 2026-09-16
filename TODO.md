@@ -2,6 +2,33 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-246-store-only-ephemeral.** THUMTOO_STORE_ONLY in-memory legacy.
+Prior: **245**.
+
+### Change
+- `Database::open_memory` / `BlobStore::open_memory`
+- `store_only_mode()` / Client::open uses memory legacy when STORE_ONLY=1
+- Durable Store remains on disk; no `legacy/` files
+- `test_store_only`
+
+### Next
+- True Store-only: drop memory legacy; Store-first probe/pixels
+- Hosts may try `THUMTOO_STORE_ONLY=1` with tiles-first
+
+### Apply
+```bash
+git pull /path/to/thumtoo-246-store-only-ephemeral.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **246**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-245-store-root-default.** Top-level Store layout is the default.
 Prior: **244**.
 

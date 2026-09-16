@@ -74,8 +74,10 @@ cache wipe.
    (level_adequate); no longer blocks TileSynth solely because `full_native`.
 8. ~~Tiles-first skips durable full_native levels~~ (same default as soft; session
    + tiles reply). Restore with `THUMTOO_SOFT_LEVELS=1`.
-9. Drop legacy Database/BlobStore open (Store-only Client).
-10. Hosts pass `$XDG_DATA_HOME/thumtoo` as `data_root` (biltoo does).
+9. ~~Ephemeral legacy (`THUMTOO_STORE_ONLY=1`)~~ — in-memory Database/BlobStore;
+   durable pixels/meta on Store only (`test_store_only`).
+10. Drop in-memory legacy entirely (true Store-only Client; Store-first probe).
+11. Hosts pass `$XDG_DATA_HOME/thumtoo` as `data_root` (biltoo does).
 
 Host checklist: [HOST_CUTOVER.md](HOST_CUTOVER.md).
 

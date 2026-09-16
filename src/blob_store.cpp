@@ -65,6 +65,18 @@ BlobStore BlobStore::open(const std::filesystem::path& cache_root) {
   return out;
 }
 
+BlobStore BlobStore::open_memory() {
+  sqlite3* db = nullptr;
+  if (sqlite3_open(":memory:", &db) != SQLITE_OK) {
+    const std::string msg = db ? sqlite3_errmsg(db) : "sqlite3_open failed";
+    if (db) sqlite3_close(db);
+    throw std::runtime_error(msg);
+  }
+  BlobStore out(db, ":memory:");
+  out.migrate_or_init();
+  return out;
+}
+
 void BlobStore::migrate_or_init() {
   std::lock_guard<std::recursive_mutex> lock(mu_);
   exec(

@@ -32,6 +32,9 @@ class Database {
   /// Creates cache_root if needed.
   static Database open(const std::filesystem::path& cache_root);
 
+  /// Process-private in-memory index (THUMTOO_STORE_ONLY). No disk files.
+  static Database open_memory();
+
   [[nodiscard]] const std::filesystem::path& cache_root() const {
     return cache_root_;
   }

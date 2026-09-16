@@ -12,6 +12,10 @@ namespace thumtoo {
 /// (Store under cache_root/store/; legacy at cache_root).
 [[nodiscard]] bool store_root_layout_enabled();
 
+/// THUMTOO_STORE_ONLY=1 → ephemeral in-memory legacy Database/BlobStore;
+/// only redesign Store files are durable under the cache root.
+[[nodiscard]] bool store_only_mode();
+
 [[nodiscard]] std::filesystem::path legacy_db_root(
     const std::filesystem::path& cache_root);
 

@@ -30,6 +30,9 @@ class BlobStore {
 
   static BlobStore open(const std::filesystem::path& cache_root);
 
+  /// Process-private in-memory blob DB (THUMTOO_STORE_ONLY). No disk files.
+  static BlobStore open_memory();
+
   [[nodiscard]] const std::filesystem::path& db_path() const { return db_path_; }
 
   void put_level(std::string_view content_id, int max_edge, int frame_idx,
