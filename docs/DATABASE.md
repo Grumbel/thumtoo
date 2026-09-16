@@ -17,6 +17,8 @@ collections, link edges, extracted document structure.
 `ia:` scheme, Hypertia multi-machine product, WWW HTML link graphs, rich AI
 aux. Those do not change the core tables below.
 
+Work plan: [PLAN.md](PLAN.md).
+
 Related: [DESIGN.md](../DESIGN.md) (current shipping model), [TAGS.md](../TAGS.md),
 [TILES.md](../TILES.md). Consumers: biltoo, dirtoo (via thumtoo library).
 
@@ -229,21 +231,24 @@ CREATE TABLE codec (
 -- ---------------------------------------------------------------------------
 -- tile: pyramid metadata in index; payload in bulk DB
 -- ---------------------------------------------------------------------------
--- Rationale: tiles-only pixel store. scale is discrete pyramid level (0 = full
--- resolution grid or app-defined); x,y tile coordinates. Payload keyed the
--- same in bulk.tile_blob. Completeness = application query over tile rows.
--- media_id: image or page-raster media; documents may use per-page media or
--- region_id — v1 uses media_id pointing at image or at page-derived media.
+-- Rationale: tiles-only pixel store. EVERY tile belongs to a region:
+--   image  → one region(kind=full)
+--   PDF    → region(kind=page, key=N); live or baked raster
+-- PK includes region_id so pages cannot collide. No per-page media rows in v1.
+-- scale/x/y = app pyramid (not format-native tile grids).
+-- Completeness = query over tile rows for (media_id, region_id).
+-- HTML fragment regions usually have zero tiles (identity only).
 CREATE TABLE tile (
-  media_id  INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
-  scale     INTEGER NOT NULL,
-  x         INTEGER NOT NULL,
-  y         INTEGER NOT NULL,
-  width     INTEGER NOT NULL,      -- pixel size of this tile
-  height    INTEGER NOT NULL,
-  codec_id  INTEGER NOT NULL REFERENCES codec(id),
-  quality   INTEGER,
-  PRIMARY KEY (media_id, scale, x, y)
+  media_id   INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+  region_id  INTEGER NOT NULL REFERENCES region(id) ON DELETE CASCADE,
+  scale      INTEGER NOT NULL,
+  x          INTEGER NOT NULL,
+  y          INTEGER NOT NULL,
+  width      INTEGER NOT NULL,      -- pixel size of this tile
+  height     INTEGER NOT NULL,
+  codec_id   INTEGER NOT NULL REFERENCES codec(id),
+  quality    INTEGER,
+  PRIMARY KEY (media_id, region_id, scale, x, y)
 );
 
 -- ---------------------------------------------------------------------------
@@ -321,13 +326,14 @@ CREATE TABLE schema_meta (
 
 -- Tile payloads; coordinates match index.tile
 CREATE TABLE tile_blob (
-  media_id  INTEGER NOT NULL,     -- same id as index.media (no cross-DB FK)
-  scale     INTEGER NOT NULL,
-  x         INTEGER NOT NULL,
-  y         INTEGER NOT NULL,
-  codec_id  INTEGER NOT NULL,
-  data      BLOB NOT NULL,
-  PRIMARY KEY (media_id, scale, x, y)
+  media_id   INTEGER NOT NULL,    -- same ids as index (no cross-DB FK)
+  region_id  INTEGER NOT NULL,
+  scale      INTEGER NOT NULL,
+  x          INTEGER NOT NULL,
+  y          INTEGER NOT NULL,
+  codec_id   INTEGER NOT NULL,
+  data       BLOB NOT NULL,
+  PRIMARY KEY (media_id, region_id, scale, x, y)
 );
 
 -- HTTP(s) body cache (locator or URL string)

@@ -2,6 +2,28 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-213-final-plan.** Final pre-implementation plan; tile PK includes region_id.
+Prior: **212**.
+
+### Change
+- Add `docs/PLAN.md`: locked decisions, API impact, phases A–E, non-goals,
+  success criteria. Next coding step: Phase A (schema open + blob/locator).
+- `docs/DATABASE.md`: tile / tile_blob PK = (media_id, region_id, scale, x, y).
+
+### Apply
+```bash
+git pull /path/to/thumtoo-213-final-plan.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **213**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-212-database-schema.** DATABASE.md schema for review; split 0.2.0 TODOs.
 Prior: **211**.
 
