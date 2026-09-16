@@ -2430,6 +2430,8 @@ void Client::handle_probe_size(
       && (row.status == ContentStatus::Ready
           || row.status == ContentStatus::Incomplete)) {
     size_out = Size{*row.width, *row.height};
+    // Backfill Store if dual-path open and rows were only on legacy DB.
+    mirror_probe_to_store(job.uri, row);
     // LQIP not generated here — attach durable blob if already backfilled.
     if (job.size_cb) {
       auto cb = std::move(job.size_cb);
@@ -2755,6 +2757,10 @@ void Client::handle_probe_size(
 
   db_->upsert_content(row);
 
+  if (size_out) {
+    mirror_probe_to_store(job.uri, row);
+  }
+
   // LQIP is not generated during size probe — only returned if already stored
   // (e.g. backfilled after soft ladder). Soft/full pixels fill in later.
 
@@ -2771,7 +2777,86 @@ void Client::handle_probe_size(
   }
 }
 
+void Client::mirror_probe_to_store(std::string_view uri,
+                                   const Database::ContentRow& row) {
+  if (!store_) return;
+  if (row.status != ContentStatus::Ready &&
+      row.status != ContentStatus::Incomplete) {
+    return;
+  }
 
+  constexpr std::string_view kSha = "sha256:";
+  if (!row.content_id.starts_with(kSha) ||
+      row.content_id.size() < kSha.size() + 64) {
+    return;
+  }
+
+  const std::string_view rest(row.content_id.data() + kSha.size(),
+                              row.content_id.size() - kSha.size());
+  // Pure image: sha256:<64hex>
+  // Document page: sha256:<64hex>:page:<n>
+  const std::string_view hex = rest.substr(0, 64);
+  for (char c : hex) {
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+          (c >= 'A' && c <= 'F'))) {
+      return;
+    }
+  }
+
+  std::optional<int> page_1based;
+  if (rest.size() > 64) {
+    constexpr std::string_view kPage = ":page:";
+    if (rest.size() > 64 + kPage.size() &&
+        rest.substr(64, kPage.size()) == kPage) {
+      try {
+        page_1based = std::stoi(std::string(rest.substr(64 + kPage.size())));
+      } catch (...) {
+        return;
+      }
+      if (*page_1based < 1) return;
+    } else {
+      // pdfimage / other composite ids — skip Store mirror for now.
+      return;
+    }
+  }
+
+  auto digest = Store::parse_sha256_digest(hex);
+  if (!digest || digest->size() != 32) return;
+
+  std::optional<std::int64_t> byte_size;
+  std::optional<std::int64_t> mtime_ns;
+  if (auto loc = db_->find_locator(uri)) {
+    byte_size = loc->size;
+    mtime_ns = loc->mtime_ns;
+  }
+
+  try {
+    std::int64_t blob_id = 0;
+    if (auto existing =
+            store_->find_blob_by_hash(HashAlgoId::Sha256, *digest)) {
+      blob_id = *existing;
+      if (byte_size) store_->set_blob_size(blob_id, *byte_size);
+      store_->set_blob_status(blob_id, BlobStatus::Ok);
+    } else {
+      blob_id = store_->insert_blob(byte_size, BlobStatus::Ok);
+      store_->put_hash(blob_id, HashAlgoId::Sha256, *digest);
+    }
+
+    store_->upsert_locator(uri, blob_id, byte_size, mtime_ns);
+
+    if (page_1based) {
+      const auto media_id = store_->ensure_document_media(blob_id, {});
+      (void)store_->ensure_page_region(media_id, *page_1based);
+    } else if (row.width && row.height) {
+      (void)store_->ensure_image_media(blob_id, *row.width, *row.height);
+    }
+  } catch (const std::exception& ex) {
+    if (debug_enabled()) {
+      dbg("mirror_probe_to_store failed uri=%.*s: %s",
+          static_cast<int>(uri.size()), uri.data(), ex.what());
+    }
+  }
+}
 
 void Client::handle_ensure_pixels(
     Job& job, const std::optional<std::vector<std::uint8_t>>& preextracted) {

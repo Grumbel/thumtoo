@@ -429,6 +429,9 @@ class Client {
   void reply_cancelled_job(Job& job);
   /// \param front true → LIFO (interactive tiles); false → FIFO (bulk).
   void enqueue(Job job, bool front = false);
+  /// Dual-path: after a successful legacy probe, ensure Store locator/blob/media.
+  void mirror_probe_to_store(std::string_view uri,
+                             const Database::ContentRow& row);
   void handle_probe_size(
       Job& job,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);

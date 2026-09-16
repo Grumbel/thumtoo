@@ -39,13 +39,17 @@ cache wipe.
 
 - Direct access via `Client::store()` (collections, bookmarks, links, …).
 - **Tags dual-write:** `add_tag` / `remove_tag` update legacy `tags` and, when
-  `content_id` is `sha256:…`, also `blob_tag` on `blob:sha256:…`.
+  `content_id` is pure `sha256:<64hex>`, also `blob_tag` on `blob:sha256:…`.
   `get_tags` returns the union of both.
+- **Probe mirror:** after a successful `request_size` probe (or cache hit with
+  known size), `mirror_probe_to_store`:
+  - pure `sha256:<hex>` → blob + hash + locator + `ensure_image_media`
+  - `sha256:<hex>:page:N` → same file blob + locator + document media + page region
+  - other composite ids (`:pdfimage:`, …) are skipped for now
 
 ## Next cutover steps
 
-1. Resolve locator → blob/hash on Store when probing a new file; keep legacy
-   rows for pixel path until tile-primary is ready.
+1. ~~Resolve locator → blob/hash on Store when probing~~ (pure image + page done).
 2. Write new tiles to Store bulk; stop writing durable `levels`.
 3. Soft `get_pixels` assemble from Store tiles (compat).
 4. Drop legacy `index.sqlite` after biltoo ships on Store-only open.

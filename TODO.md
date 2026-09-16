@@ -2,6 +2,35 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-221-probe-mirror-store.** Phase E: mirror probe into Store blob/media.
+Prior: **220**.
+
+### Change
+- `Client::mirror_probe_to_store` after successful size probe (and on size
+  cache-hit path).
+- Pure `sha256:<hex>` → blob + hash + locator + image media.
+- `sha256:<hex>:page:N` → file blob + locator + document media + page region.
+- Failures logged under THUMTOO_DEBUG only; never fail the probe.
+
+### Next
+- Dual-write tiles into Store bulk on encode
+- Soft get_pixels assemble from Store tiles
+- biltoo XDG data_root
+
+### Apply
+```bash
+git pull /path/to/thumtoo-221-probe-mirror-store.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **221**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-220-client-store-dual-path.** Phase E start: Client opens Store dual-path.
 Prior: **219**.
 
