@@ -84,6 +84,10 @@ bool debug_enabled() {
   return env_flag_on("THUMTOO_DEBUG") || env_flag_on("BILTOO_THUMTOO_DEBUG");
 }
 
+/// Refuse durable soft/overview level writes (tiles + full_native still OK).
+/// Host test flag for dual-path cutover — see docs/HOST_CUTOVER.md.
+bool tiles_only_mode() { return env_flag_on("THUMTOO_TILES_ONLY"); }
+
 std::FILE* debug_file() {
   static std::FILE* fp = []() -> std::FILE* {
     const char* xdg = std::getenv("XDG_CACHE_HOME");
@@ -3346,20 +3350,22 @@ void Client::handle_ensure_pixels(
                   bytes->data(), bytes->size(), *loc_early->content_id, edge_limit,
                   kDefaultJxlQuality)) {
             const std::string& cid = *loc_early->content_id;
-            blobs_->put_level(cid, lvl->max_edge, lvl->frame_idx, lvl->width,
-                              lvl->height, lvl->codec, lvl->quality,
-                              lvl->bytes.data(), lvl->bytes.size());
-            Database::LevelRow lr;
-            lr.content_id = cid;
-            lr.max_edge = lvl->max_edge;
-            lr.frame_idx = lvl->frame_idx;
-            lr.width = lvl->width;
-            lr.height = lvl->height;
-            lr.codec = lvl->codec;
-            lr.quality = lvl->quality;
-            lr.source = static_cast<int>(lvl->source);
-            lr.path = "blobs.sqlite";
-            db_->upsert_level(lr);
+            if (job.full_native || !tiles_only_mode()) {
+              blobs_->put_level(cid, lvl->max_edge, lvl->frame_idx, lvl->width,
+                                lvl->height, lvl->codec, lvl->quality,
+                                lvl->bytes.data(), lvl->bytes.size());
+              Database::LevelRow lr;
+              lr.content_id = cid;
+              lr.max_edge = lvl->max_edge;
+              lr.frame_idx = lvl->frame_idx;
+              lr.width = lvl->width;
+              lr.height = lvl->height;
+              lr.codec = lvl->codec;
+              lr.quality = lvl->quality;
+              lr.source = static_cast<int>(lvl->source);
+              lr.path = "blobs.sqlite";
+              db_->upsert_level(lr);
+            }
             if (auto px = get_pixels(job.uri, job.max_edge, job.frame_idx)) {
               if (level_adequate(*px)) {
                 if (job.pixels_cb) {
@@ -3427,6 +3433,8 @@ void Client::handle_ensure_pixels(
         if (!dup) levels.push_back(std::move(s));
       }
       for (const auto& lvl : levels) {
+        // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
+        if (!job.full_native && tiles_only_mode()) continue;
         blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
                           lvl.width, lvl.height, lvl.codec, lvl.quality,
                           lvl.bytes.data(), lvl.bytes.size());
@@ -3474,6 +3482,8 @@ void Client::handle_ensure_pixels(
           for (auto& s : soft) levels.push_back(std::move(s));
         }
         for (const auto& lvl : levels) {
+          // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
+          if (!job.full_native && tiles_only_mode()) continue;
           blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
                             lvl.width, lvl.height, lvl.codec, lvl.quality,
                             lvl.bytes.data(), lvl.bytes.size());
@@ -3507,6 +3517,8 @@ void Client::handle_ensure_pixels(
                                      raster->height, row.content_id,
                                      kDefaultJxlQuality, edge_limit);
       for (const auto& lvl : levels) {
+        // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
+        if (!job.full_native && tiles_only_mode()) continue;
         blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
                           lvl.width, lvl.height, lvl.codec, lvl.quality,
                           lvl.bytes.data(), lvl.bytes.size());
@@ -3540,6 +3552,8 @@ void Client::handle_ensure_pixels(
                                      raster->height, row.content_id,
                                      kDefaultJxlQuality, edge_limit);
       for (const auto& lvl : levels) {
+        // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
+        if (!job.full_native && tiles_only_mode()) continue;
         blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
                           lvl.width, lvl.height, lvl.codec, lvl.quality,
                           lvl.bytes.data(), lvl.bytes.size());
@@ -3575,6 +3589,8 @@ void Client::handle_ensure_pixels(
                                 kDefaultJxlQuality, edge_limit);
         int best_w = 0, best_h = 0;
         for (const auto& lvl : levels) {
+          // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
+          if (!job.full_native && tiles_only_mode()) continue;
           blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
                              lvl.width, lvl.height, lvl.codec, lvl.quality,
                              lvl.bytes.data(), lvl.bytes.size());
@@ -3616,6 +3632,8 @@ void Client::handle_ensure_pixels(
           build_ladder_buffer(bytes->data(), bytes->size(), row.content_id,
                               kDefaultJxlQuality, edge_limit);
       for (const auto& lvl : levels) {
+        // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
+        if (!job.full_native && tiles_only_mode()) continue;
         blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
                            lvl.width, lvl.height, lvl.codec, lvl.quality,
                            lvl.bytes.data(), lvl.bytes.size());
@@ -3649,6 +3667,8 @@ void Client::handle_ensure_pixels(
         auto levels = build_ladder(*path, row.content_id, kDefaultJxlQuality,
                                    edge_limit);
         for (const auto& lvl : levels) {
+          // THUMTOO_TILES_ONLY: skip durable soft/overview levels (tiles/full remain).
+          if (!job.full_native && tiles_only_mode()) continue;
           blobs_->put_level(row.content_id, lvl.max_edge, lvl.frame_idx,
                              lvl.width, lvl.height, lvl.codec, lvl.quality,
                              lvl.bytes.data(), lvl.bytes.size());
