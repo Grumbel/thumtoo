@@ -142,8 +142,10 @@ blob:sha256:<hex>
 
 # Location-addressed
 file:///abs/path/photo.jpg
-file:///abs/path/book.zip!/chapter/page001.jpg
-file:///outer.zip!/inner.rar!/dir/img.png
+file:///abs/path/book.zip//archive:chapter/page001.jpg
+file:///outer.zip//archive:inner.rar//archive:dir/img.png
+
+# Prefer //archive: pipes (DESIGN.md); do not use JAR-style path!/member.
 
 https://example.com/img.jpg
 
@@ -359,7 +361,7 @@ database.
 ```text
 blob:sha256:b8665477a40753e5d056c8650128bdc444a78fbac11aa44701f9fccfe9343fc0
 blob:sha256:b866…3fc0#page=110
-file:///home/user/Pictures/vacation.zip!/DSC_0001.jpg
+file:///home/user/Pictures/vacation.zip//archive:DSC_0001.jpg
 https://example.com/gallery/1.jpg
 hypertia://library/collections/summer-2024
 hypertia://library/blob/sha256/b866…3fc0

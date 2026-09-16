@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-209-ia-archive-org**. Next bundle: **210**.
+Latest agent handoff: **TODO.md → thumtoo-210-archive-pipe-uri**. Next bundle: **211**.
 
 
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code

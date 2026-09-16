@@ -2,6 +2,28 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-210-archive-pipe-uri.** Prefer //archive: pipes; no JAR !/ in docs.
+Prior: **209**.
+
+### Change
+- `docs/BLOB_AND_OVERLAY.md`: archive member examples use
+  `file://…//archive:member` (and nested `//archive:`) per DESIGN.md, not
+  JAR-style `path!/member`.
+
+### Apply
+```bash
+git pull /path/to/thumtoo-210-archive-pipe-uri.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **210**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-209-ia-archive-org.** Document Internet Archive APIs in BLOB_AND_OVERLAY.
 Prior: **208**.
 
