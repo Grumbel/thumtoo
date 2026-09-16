@@ -2,6 +2,30 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-241-status-store.** thumtoo-status summary includes Store counts.
+Prior: **240**.
+
+### Change
+- summary mode opens redesign Store and prints blobs/locators/media/tiles/…
+
+### Next
+- Soak STORE_ROOT with biltoo
+- Store-only Client
+
+### Apply
+```bash
+git pull /path/to/thumtoo-241-status-store.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **241**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-240-layout-helpers.** Shared layout.hpp; tools honor STORE_ROOT.
 Prior: **239**.
 

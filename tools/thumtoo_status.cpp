@@ -4,6 +4,7 @@
 #include "thumtoo/constants.hpp"
 #include "thumtoo/database.hpp"
 #include "thumtoo/layout.hpp"
+#include "thumtoo/store.hpp"
 #include "thumtoo/status.hpp"
 #include "thumtoo/uri.hpp"
 
@@ -253,6 +254,26 @@ int main(int argc, char** argv) {
                 << "levels:         " << db.count_levels() << "\n"
                 << "tiles:          " << db.count_tiles() << "\n"
                 << "dir snapshots:  " << db.count_directory_snapshots() << "\n";
+      // Redesign Store (may be empty on fresh dual-path).
+      try {
+        thumtoo::migrate_dual_path_to_store_root(cache);
+        thumtoo::Store::Paths sp;
+        sp.cache_root = thumtoo::redesign_store_root(cache);
+        sp.data_root = cache;  // status does not take data_root; user under cache
+        auto store = thumtoo::Store::open(sp);
+        std::cout << "--- store ---\n"
+                  << "store schema:   " << store.index_schema_version() << "\n"
+                  << "store blobs:    " << store.count_blobs() << "\n"
+                  << "store locators: " << store.count_locators() << "\n"
+                  << "store media:    " << store.count_media() << "\n"
+                  << "store regions:  " << store.count_regions() << "\n"
+                  << "store tiles:    " << store.count_tiles() << "\n"
+                  << "store dir snaps:" << store.count_directory_snapshots()
+                  << "\n";
+      } catch (const std::exception& e) {
+        std::cout << "--- store ---\n"
+                  << "store:          (unavailable: " << e.what() << ")\n";
+      }
       return 0;
     }
     if (mode == "locators") {
