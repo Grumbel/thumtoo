@@ -142,6 +142,18 @@ int main(int argc, char** argv) {
     std::vector<std::string> sized_uris;
     sized_uris.reserve(256);
 
+    if (!quiet) {
+      std::cerr
+          << "=== phase 1: size probe ===\n"
+          << "Measure native width×height and register locators in the Store.\n"
+          << "  incomplete = size stored (normal after a successful probe)\n"
+          << "  ready      = soft/full content already considered ready\n"
+          << "  failed     = could not probe this URI\n"
+          << "Cache hits skip decoding the file; cold probes read the source.\n"
+          << "cache=" << cache << "  paths=" << paths.size()
+          << "  jobs=" << (jobs ? jobs : 0) << "\n";
+    }
+
     const size_t total = client->prepare_paths(
         paths,
         [&](std::string uri, thumtoo::SizeReply reply) {
@@ -163,27 +175,38 @@ int main(int argc, char** argv) {
           } else if (size) {
             status = "ready";
           }
+          // LQIP on the size reply means durable placeholder already existed.
+          const bool had_lqip = reply.lqip && !reply.lqip->empty();
           std::lock_guard lock(progress_mu);
-          std::cerr << "[" << n;
+          std::cerr << "[probe " << n;
           if (tot > 0) std::cerr << "/" << tot;
           std::cerr << "] " << status << "  " << uri;
           if (size) {
             std::cerr << "  " << size->width << "x" << size->height;
+          }
+          if (had_lqip) {
+            std::cerr << "  lqip=yes";
           }
           std::cerr << detail << "\n";
         });
     total_atom.store(total, std::memory_order_release);
 
     if (!quiet && total == 0) {
-      std::cerr << "nothing to do (all paths already ready or invalid)\n";
+      std::cerr << "phase 1: nothing to probe (all paths already ready or invalid)\n";
     }
 
     client->drain();
+    if (!quiet) {
+      std::cerr << "phase 1 done: " << completed.load() << " probe callback(s), "
+                << sized_uris.size() << " URI(s) eligible for encode\n";
+    }
 
     if (ladder_edge > 0 && !sized_uris.empty()) {
       if (!quiet) {
-        std::cerr << "encoding ladder (edge=" << ladder_edge << ") for "
-                  << sized_uris.size() << " uri(s)…\n";
+        std::cerr << "=== phase 2: soft ladder (max edge=" << ladder_edge
+                  << ") ===\n"
+                  << "Encode durable preview pixels for " << sized_uris.size()
+                  << " URI(s). ready=encoded, miss=failed.\n";
       }
       std::atomic<int> px_done{0};
       const int px_total = static_cast<int>(sized_uris.size());
@@ -208,9 +231,13 @@ int main(int argc, char** argv) {
 
     if (do_tiles && !sized_uris.empty()) {
       if (!quiet) {
-        std::cerr << "encoding tile pyramids for " << sized_uris.size()
-                  << " uri(s) (min_scale=" << tile_min_scale
-                  << " max_scale=" << tile_max_scale << ")…\n";
+        std::cerr << "=== phase " << (ladder_edge > 0 ? "3" : "2")
+                  << ": tile pyramid ===\n"
+                  << "Build Galapix-style 256×256 JPEG cells for "
+                  << sized_uris.size() << " URI(s) "
+                  << "(min_scale=" << tile_min_scale
+                  << " max_scale=" << tile_max_scale << ").\n"
+                  << "ready=stored, miss=encode failed (check archive extract / format).\n";
       }
       std::atomic<int> tile_done{0};
       const int tile_total = static_cast<int>(sized_uris.size());
@@ -231,12 +258,20 @@ int main(int argc, char** argv) {
 
     // Status tallies from redesign Store (best-effort after drain).
     auto& store = client->store();
+    if (!quiet) {
+      std::cerr << "=== summary ===\n";
+    }
     std::cout << "registered " << paths.size() << " path(s), queued " << total
               << " probe(s) under " << cache << "\n"
               << "blobs=" << store.count_blobs()
               << " locators=" << store.count_locators()
               << " media=" << store.count_media()
               << " tiles=" << store.count_tiles() << "\n";
+    if (!quiet && do_tiles) {
+      std::cerr
+          << "Inspect one URI: thumtoo-status path <URI|PATH>\n"
+          << "(per-scale have/expected/missing, LQIP, min/max scale)\n";
+    }
     if (show_stats || do_tiles || ladder_edge > 0) {
       if (stats_line)
         std::cerr << thumtoo::global_build_stats().summary_line() << "\n";

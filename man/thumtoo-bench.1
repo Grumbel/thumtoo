@@ -1,0 +1,28 @@
+.\" SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+.\" SPDX-License-Identifier: GPL-3.0-or-later
+.TH THUMTOO-BENCH 1 "2026-09-16" "thumtoo" "User Commands"
+.SH NAME
+thumtoo-bench \- cold-cache phase timing for thumtoo
+.SH SYNOPSIS
+.B thumtoo-bench
+[\fIOPTION\fR]...
+\fIPATH\fR...
+.SH DESCRIPTION
+Benchmark thumtoo cold-cache phases on files or archives. Each phase uses a
+fresh stats window; overall wall time is also reported. Default cache root is
+under
+.B thumtoo-bench
+and is wiped each run.
+.PP
+Typical phases: size probe, optional soft ladder, optional tile pyramid or
+single-cell request. See
+.B \-\-help
+for options (
+.BR \-\-jobs ,
+.BR \-\-ladder ,
+.BR \-\-tiles ,
+.BR \-\-tile\-cell ,
+\&...).
+.SH SEE ALSO
+.BR thumtoo-prepare (1),
+.BR thumtoo-status (1)

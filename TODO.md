@@ -2,6 +2,28 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-296-prepare-verbose-man.** Verbose prepare phases + man pages.
+Prior: **295**.
+
+### Change
+- `thumtoo-prepare`: phase banners, `[probe n/N]`, status legend, encode phases, status hint
+- Man pages installed to `${CMAKE_INSTALL_MANDIR}/man1`:
+  thumtoo-prepare, status, tile, gc, archive, bench
+
+### Apply
+```bash
+git pull /path/to/thumtoo-296-prepare-verbose-man.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **296**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-295-status-path-tiles.** Rich path status: tiles/LQIP/missing.
 Prior: **293**.
 

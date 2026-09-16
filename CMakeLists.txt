@@ -235,6 +235,14 @@ if(THUMTOO_BUILD_TOOLS)
   install(TARGETS thumtoo-tile thumtoo-status thumtoo-prepare thumtoo-bench
                   thumtoo-gc thumtoo-archive thumtoo-microbench-decode
           RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+  install(FILES
+    man/thumtoo-prepare.1
+    man/thumtoo-status.1
+    man/thumtoo-tile.1
+    man/thumtoo-gc.1
+    man/thumtoo-archive.1
+    man/thumtoo-bench.1
+    DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
 endif()
 
 # pkg-config for consumers (biltoo, etc.). Static lib: Requires.private lists public deps.
