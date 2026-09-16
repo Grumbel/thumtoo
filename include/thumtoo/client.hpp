@@ -444,6 +444,10 @@ class Client {
   [[nodiscard]] std::optional<StoreTileTarget> store_tile_target_for_content_id(
       std::string_view content_id) const;
 
+  /// Dual-path: ContentMeta from Store locator + media when legacy has none.
+  [[nodiscard]] std::optional<ContentMeta> meta_from_store(
+      std::string_view uri) const;
+
   void handle_probe_size(
       Job& job,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);

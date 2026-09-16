@@ -50,7 +50,9 @@ cache wipe.
   Store `put_tile` under the matching media/region (same id rules as probe).
 - **Tile read fallback:** `get_tile` / `has_tile` / `get_tile_coverage` and
   TileSynth (`get_pixels_from_tiles`) fall back to Store when legacy has no
-  tile rows (still needs legacy meta/size for canvas geometry).
+  tile rows.
+- **Size/meta fallback:** `get_size` / `get_meta` use Store locator + image
+  media dims when legacy has no row (`meta_from_store`).
 
 ## Next cutover steps
 
@@ -58,9 +60,11 @@ cache wipe.
 2. ~~Write new tiles to Store bulk~~ (dual-write from `store_tiles`; legacy
    levels still written until hosts stop relying on them).
 3. ~~Soft `get_pixels` assemble from Store tiles~~ (TileSynth via Store fallback).
-4. Drop legacy `index.sqlite` after biltoo ships on Store-only open.
-5. Move redesign files to top-level `$cache/index.sqlite` + `bulk.sqlite` once
-   legacy is gone (epoch already ≥ 100).
+4. ~~Store size/meta fallback~~ (`get_size` / `get_meta`).
+5. Drop legacy `index.sqlite` after biltoo ships on Store-only open.
+6. Move redesign files to top-level `$cache/index.sqlite` + `bulk.sqlite` once
+   legacy is gone (epoch already ≥ 100). Hosts pass `$XDG_DATA_HOME/thumtoo`
+   as `data_root` (biltoo does).
 
 ## Non-goals until hosts are ready
 

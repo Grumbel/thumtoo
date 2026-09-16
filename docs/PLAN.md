@@ -128,9 +128,9 @@ Feature macros: new schema epoch; `TILES_ONLY`; user-store present.
 read/tag/explicit via `set_container_member_blob`); `ensure_document_media` /
 `ensure_page_region`.  
 **Phase D status:** complete (directory, user overlays, http_body, tile list).  
-**Phase E (started):** Client dual-path Store; tag/probe/tile dual-write; tile
-read + TileSynth fall back to Store. See [API_MIGRATION.md](API_MIGRATION.md).
-Next: Store-primary meta/size (reduce legacy dependence); biltoo `data_root`.
+**Phase E (started):** dual-path Store; tag/probe/tile dual-write; tile read +
+TileSynth + size/meta fall back to Store. See [API_MIGRATION.md](API_MIGRATION.md).
+Next: drop legacy levels write path; hosts use `data_root` (biltoo wired).
 
 ### Phase B — images
 

@@ -224,18 +224,57 @@ std::unique_ptr<Client> Client::open(const std::filesystem::path& cache_root,
                  std::move(executor), worker_threads));
 }
 
+std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
+  if (!store_) return std::nullopt;
+  auto loc = store_->find_locator(uri);
+  if (!loc || !loc->blob_id) return std::nullopt;
+
+  auto ref = store_->blob_ref_sha256(*loc->blob_id);
+  if (!ref || !ref->starts_with("blob:")) return std::nullopt;
+  // "blob:sha256:…" → legacy-style "sha256:…"
+  ContentMeta cm;
+  cm.content_id = ref->substr(5);
+
+  if (auto pdf = parse_pdf_uri(uri)) {
+    auto media =
+        store_->find_media_for_blob(*loc->blob_id, MediaKind::Document);
+    if (!media) return std::nullopt;
+    auto region = store_->find_region_by_key(
+        media->id, RegionKind::Page, std::to_string(pdf->page));
+    if (!region) return std::nullopt;
+    cm.content_id += ":page:" + std::to_string(pdf->page);
+    cm.format = "pdf";
+    cm.status = ContentStatus::Incomplete;
+    return cm;
+  }
+
+  if (auto media =
+          store_->find_media_for_blob(*loc->blob_id, MediaKind::Image)) {
+    if (media->width && media->height) {
+      cm.size = Size{*media->width, *media->height};
+    }
+    cm.format = "image";
+    cm.status = ContentStatus::Incomplete;
+    return cm;
+  }
+  return std::nullopt;
+}
+
 std::optional<Size> Client::get_size(std::string_view uri) const {
   auto m = db_->meta_for_uri(uri);
-  if (!m || !m->size) return std::nullopt;
-  if (m->status == ContentStatus::Failed ||
-      m->status == ContentStatus::Unsupported) {
-    return std::nullopt;
+  if (m && m->size && m->status != ContentStatus::Failed &&
+      m->status != ContentStatus::Unsupported) {
+    return m->size;
   }
-  return m->size;
+  if (auto sm = meta_from_store(uri)) {
+    return sm->size;
+  }
+  return std::nullopt;
 }
 
 std::optional<ContentMeta> Client::get_meta(std::string_view uri) const {
-  return db_->meta_for_uri(uri);
+  if (auto m = db_->meta_for_uri(uri)) return m;
+  return meta_from_store(uri);
 }
 
 std::vector<Database::LocatorRow> Client::list_locators(int limit) const {

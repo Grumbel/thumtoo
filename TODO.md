@@ -2,6 +2,31 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-224-meta-from-store.** Phase E: get_size/get_meta fall back to Store.
+Prior: **223**.
+
+### Change
+- `meta_from_store`: locator + image media dims (and page region presence).
+- `get_size` / `get_meta` prefer legacy, then Store.
+
+### Next
+- Reduce durable `levels` writes; prefer tiles
+- Hosts: `data_root` = XDG_DATA (biltoo-1002)
+
+### Apply
+```bash
+git pull /path/to/thumtoo-224-meta-from-store.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **224**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-223-tile-read-store.** Phase E: get_tile / TileSynth fall back to Store.
 Prior: **222**.
 
