@@ -3353,6 +3353,9 @@ void Client::handle_ensure_pixels(
                   bytes->data(), bytes->size(), *loc_early->content_id, edge_limit,
                   kDefaultJxlQuality)) {
             const std::string& cid = *loc_early->content_id;
+            if (!session_best_level || lvl->max_edge > session_best_level->max_edge) {
+              session_best_level = *lvl;
+            }
             if (job.full_native || !tiles_only_mode()) {
               blobs_->put_level(cid, lvl->max_edge, lvl->frame_idx, lvl->width,
                                 lvl->height, lvl->codec, lvl->quality,
@@ -3369,19 +3372,30 @@ void Client::handle_ensure_pixels(
               lr.path = "blobs.sqlite";
               db_->upsert_level(lr);
             }
-            if (auto px = get_pixels(job.uri, job.max_edge, job.frame_idx)) {
-              if (level_adequate(*px)) {
-                if (job.pixels_cb) {
-                  auto cb = std::move(job.pixels_cb);
-                  auto uri = job.uri;
-                  const int edge = job.max_edge;
-                  executor_.post([cb = std::move(cb), uri = std::move(uri), edge,
-                                  px = std::move(px)]() mutable {
-                    cb(std::move(uri), edge, std::move(px));
-                  });
-                }
-                return;
+            std::optional<PixelLevel> px =
+                get_pixels(job.uri, job.max_edge, job.frame_idx);
+            if (!px && session_best_level && !job.full_native) {
+              PixelLevel out;
+              out.max_edge = session_best_level->max_edge;
+              out.frame_idx = session_best_level->frame_idx;
+              out.width = session_best_level->width;
+              out.height = session_best_level->height;
+              out.codec = session_best_level->codec;
+              out.bytes = session_best_level->bytes;
+              out.source = session_best_level->source;
+              px = std::move(out);
+            }
+            if (px && level_adequate(*px)) {
+              if (job.pixels_cb) {
+                auto cb = std::move(job.pixels_cb);
+                auto uri = job.uri;
+                const int edge = job.max_edge;
+                executor_.post([cb = std::move(cb), uri = std::move(uri), edge,
+                                px = std::move(px)]() mutable {
+                  cb(std::move(uri), edge, std::move(px));
+                });
               }
+              return;
             }
           }
         }

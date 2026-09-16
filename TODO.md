@@ -2,6 +2,31 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-232-tiles-only-session-reply.** TILES_ONLY soft reply from session encode.
+Prior: **231**.
+
+### Change
+- Track `session_best_level` across EnsurePixels encode branches
+- When TILES_ONLY skips put_level, final (and downscale) reply uses session bytes
+
+### Next
+- Host soak: biltoo ≥1007 + THUMTOO_TILES_ONLY=1
+- Drop legacy levels write path after soak
+
+### Apply
+```bash
+git pull /path/to/thumtoo-232-tiles-only-session-reply.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **232**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-231-tiles-only-env.** THUMTOO_TILES_ONLY skips soft/overview level writes.
 Prior: **230**.
 

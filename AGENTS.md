@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-231-tiles-only-env**. Next bundle: **232**.
+Latest agent handoff: **TODO.md → thumtoo-232-tiles-only-session-reply**. Next bundle: **233**.
 
 
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code
