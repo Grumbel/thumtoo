@@ -2,6 +2,31 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-256-dual-write-gate.** Explicit dual_write_to_store_enabled().
+Prior: **255**.
+
+### Change
+- `dual_write_to_store_enabled()` = !STORE_ONLY (gates mirror_probe)
+- test_store_only asserts no legacy/ after work and dual-write off
+
+### Next
+- Host soak confirmation (`THUMTOO_STORE_ONLY=1` + biltoo ≥ 1002)
+- Default STORE_ONLY; delete dual-write helpers
+
+### Apply
+```bash
+git pull /path/to/thumtoo-256-dual-write-gate.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **256**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-255-store-only-tools.** status/gc work without legacy under STORE_ONLY.
 Prior: **254**.
 

@@ -16,6 +16,9 @@ namespace thumtoo {
 /// Plain file:// images use Store-first probe and session pixels.
 [[nodiscard]] bool store_only_mode();
 
+/// Dual-write into Store from legacy rows (false under STORE_ONLY).
+[[nodiscard]] bool dual_write_to_store_enabled();
+
 [[nodiscard]] std::filesystem::path legacy_db_root(
     const std::filesystem::path& cache_root);
 

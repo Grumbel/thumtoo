@@ -162,6 +162,11 @@ int main() {
   expect(std::find(tags.begin(), tags.end(), "store-only-tag") == tags.end(),
          "tag removed");
 
+  // Still no legacy files after probe/pixels/tiles/tags.
+  expect(!fs::exists(cache / "legacy"), "no legacy/ after work");
+  expect(thumtoo::dual_write_to_store_enabled() == false,
+         "dual_write off under STORE_ONLY");
+
   if (g_failures) {
     std::cerr << g_failures << " failure(s)\n";
     return 1;

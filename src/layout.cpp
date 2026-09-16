@@ -84,6 +84,8 @@ bool store_root_layout_enabled() {
 
 bool store_only_mode() { return env_flag_on("THUMTOO_STORE_ONLY"); }
 
+bool dual_write_to_store_enabled() { return !store_only_mode(); }
+
 std::filesystem::path legacy_db_root(const std::filesystem::path& cache_root) {
   return store_root_layout_enabled() ? (cache_root / "legacy") : cache_root;
 }

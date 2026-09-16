@@ -247,6 +247,7 @@ std::unique_ptr<Client> Client::open(const std::filesystem::path& cache_root,
   // Layouts (docs/HOST_CUTOVER.md / layout.hpp):
   //  default (≥245): Store at cache_root/; legacy at cache_root/legacy/
   //  STORE_ROOT=0:   legacy at cache_root/; Store at cache_root/store/
+  //  STORE_ONLY=1:   no legacy open; durable Store only (still migrate layout)
   migrate_dual_path_to_store_root(cache_root);
   const std::filesystem::path legacy_root = legacy_db_root(cache_root);
   // STORE_ONLY: no legacy Database/BlobStore — Store is the only durable DB.
@@ -3654,7 +3655,7 @@ void Client::handle_probe_size(
 void Client::mirror_probe_to_store(std::string_view uri,
                                    const Database::ContentRow& row) {
   // STORE_ONLY probe writes Store directly; dual-write is dual-path only.
-  if (!store_ || store_only_mode() || !db_) return;
+  if (!store_ || !dual_write_to_store_enabled() || !db_) return;
   if (row.status != ContentStatus::Ready &&
       row.status != ContentStatus::Incomplete) {
     return;
