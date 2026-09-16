@@ -2,6 +2,32 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-243-full-from-tiles.** Full EnsurePixels accepts TileSynth when adequate.
+Prior: **242**.
+
+### Change
+- EnsurePixels TILES_COVER path applies to full_native (level_adequate guards edge)
+- Final Full reply may use TileSynth; session encode reply also for full_native
+- HOST_CUTOVER / API_MIGRATION: full-from-tiles noted
+
+### Next
+- Store-only Client (no legacy open)
+- Soak STORE_ROOT with biltoo
+
+### Apply
+```bash
+git pull /path/to/thumtoo-243-full-from-tiles.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **243**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-242-tiles-first-tests-store-root.** Tiles-first tests + STORE_ROOT test/docs.
 Prior: **241**.
 

@@ -3297,21 +3297,25 @@ void Client::handle_ensure_pixels(
     }
   }
 
-  // Prefer an existing tile pyramid over encoding a durable soft ladder
-  // (Phase E tiles-first). SoftOnly hosts still get a reply; we avoid dual
-  // soft-level storage when tiles already cover the request edge.
-  if (!job.full_native && !is_pdf_image_uri(job.uri)) {
-    const int want = job.overview
-        ? std::min(job.max_edge > 0 ? job.max_edge : kBatchMaxEdge,
-                   kBatchMaxEdge)
-        : std::min(job.max_edge > 0 ? job.max_edge : kMaxSoftLadderEdge,
-                   kMaxSoftLadderEdge);
+  // Prefer an existing tile pyramid over encoding a durable ladder
+  // (Phase E tiles-first). Soft and full_native both accept TileSynth when
+  // decoded long edge covers the request (level_adequate); soft 512 tiles
+  // cannot satisfy a Full 2048 want. pdfimage stays ladder-only.
+  if (!is_pdf_image_uri(job.uri)) {
+    const int want = job.full_native
+        ? std::min(job.max_edge > 0 ? job.max_edge : kFullMaxEdge, kFullMaxEdge)
+        : job.overview
+            ? std::min(job.max_edge > 0 ? job.max_edge : kBatchMaxEdge,
+                       kBatchMaxEdge)
+            : std::min(job.max_edge > 0 ? job.max_edge : kMaxSoftLadderEdge,
+                       kMaxSoftLadderEdge);
     if (auto from_tiles = get_pixels_from_tiles(job.uri, want)) {
       if (level_adequate(*from_tiles)) {
         if (debug_enabled()) {
-          dbg("EnsurePixels TILES_COVER skip_soft_ladder uri=%s edge=%d "
+          dbg("EnsurePixels TILES_COVER skip_ladder uri=%s edge=%d full=%d "
               "level=%dx%d",
-              job.uri.c_str(), want, from_tiles->width, from_tiles->height);
+              job.uri.c_str(), want, job.full_native ? 1 : 0,
+              from_tiles->width, from_tiles->height);
         }
         reply_pixels(std::move(from_tiles));
         return;
@@ -3395,8 +3399,9 @@ void Client::handle_ensure_pixels(
               db_->upsert_level(lr);
             }
             std::optional<PixelLevel> px =
-                get_pixels(job.uri, job.max_edge, job.frame_idx);
-            if (!px && session_best_level && !job.full_native) {
+                get_pixels(job.uri, job.max_edge, job.frame_idx,
+                           /*allow_tile_synth=*/true);
+            if (!px && session_best_level) {
               PixelLevel out;
               out.max_edge = session_best_level->max_edge;
               out.frame_idx = session_best_level->frame_idx;
@@ -3756,12 +3761,15 @@ void Client::handle_ensure_pixels(
     }
   }
 
-  // full_native: never fall back to TileSynth for the reply — that is how
-  // 2048 "Full" replies leaked after a real encode attempt.
+  // TileSynth is safe for full_native when level_adequate holds (long edge
+  // covers the request). Blocking it previously forced a full ladder encode
+  // even when a complete scale-0 pyramid already covered the want.
   auto px = get_pixels(job.uri, job.max_edge, job.frame_idx,
-                       /*allow_tile_synth=*/!job.full_native);
+                       /*allow_tile_synth=*/true);
   // TILES_ONLY: soft/overview levels were not persisted — reply from session encode.
-  if (!px && session_best_level && !job.full_native) {
+  // full_native session encode is also used when levels were written or when
+  // encode produced bytes but put_level was skipped.
+  if (!px && session_best_level) {
     PixelLevel out;
     out.max_edge = session_best_level->max_edge;
     out.frame_idx = session_best_level->frame_idx;

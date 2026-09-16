@@ -71,8 +71,10 @@ cache wipe.
 6. ~~Top-level Store path~~ (`THUMTOO_STORE_ROOT=1` → Store at `$cache/`, legacy
    under `$cache/legacy/`; default still `store/` dual-path).
    Covered by `test_store_root` (fresh layout + dual-path migrate).
-7. Drop legacy Database/BlobStore open (Store-only Client).
-8. Hosts pass `$XDG_DATA_HOME/thumtoo` as `data_root` (biltoo does).
+7. ~~Full-from-tiles for Full EnsurePixels~~ when pyramid covers the request
+   (level_adequate); no longer blocks TileSynth solely because `full_native`.
+8. Drop legacy Database/BlobStore open (Store-only Client).
+9. Hosts pass `$XDG_DATA_HOME/thumtoo` as `data_root` (biltoo does).
 
 Host checklist: [HOST_CUTOVER.md](HOST_CUTOVER.md).
 
