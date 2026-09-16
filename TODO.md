@@ -2,6 +2,28 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-263-collapse-legacy-handlers.** Probe/pixels/tiles only via Store handlers.
+Prior: **262**.
+
+### Change
+- `handle_probe_size` / `handle_ensure_pixels` / `handle_ensure_tiles` forward only
+  to `*_store_only` (≈1400 lines of dual-path worker code removed)
+- get_pixels: pdfimage uses TileSynth (no legacy levels)
+
+### Apply
+```bash
+git pull /path/to/thumtoo-263-collapse-legacy-handlers.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **263**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-262-remove-legacy-client.** Client never opens legacy Database/BlobStore.
 Prior: **261**.
 
