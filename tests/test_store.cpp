@@ -115,6 +115,10 @@ int main() {
       auto data = store.get_tile_data(media_id, full->id, 0, 0, 0);
       expect(data && *data == payload, "tile payload");
       expect(store.count_tiles() == 1, "one tile");
+      auto tile_rows = store.list_tiles_for_region(media_id, full->id);
+      expect(tile_rows.size() == 1 && tile_rows[0].scale == 0, "list tiles");
+      auto scales = store.list_tile_scales(media_id, full->id);
+      expect(scales.size() == 1 && scales[0] == 0, "tile scales");
 
       // Document page region (no tiles required)
       const auto doc_blob = store.insert_blob(999, thumtoo::BlobStatus::Ok);
@@ -237,6 +241,28 @@ int main() {
       expect(store.list_links_from(bref).empty(), "no links");
       // re-add for wipe survival
       store.add_link_edge(bref, other, std::string_view{"see-also"});
+
+      // Annotation + http_body
+      const std::vector<std::uint8_t> geom = {1, 2, 3};
+      const auto ann = store.create_annotation(bref, 1, std::string_view{"note"},
+                                               geom);
+      auto arow = store.find_annotation(ann);
+      expect(arow && arow->body && *arow->body == "note", "annotation body");
+      expect(arow && arow->geom == geom, "annotation geom");
+      expect(store.list_annotations_for_target(bref).size() == 1, "list ann");
+      store.set_annotation_body(ann, std::string_view{"edited"});
+      expect(store.find_annotation(ann)->body &&
+                 *store.find_annotation(ann)->body == "edited",
+             "ann body update");
+
+      const std::vector<std::uint8_t> http = {'h', 'i'};
+      store.put_http_body("https://example.com/x", http, blob_id);
+      auto hb = store.get_http_body("https://example.com/x");
+      expect(hb && hb->data == http && hb->blob_id && *hb->blob_id == blob_id,
+             "http body");
+      expect(store.delete_http_body("https://example.com/x"), "delete http");
+      expect(!store.get_http_body("https://example.com/x"), "http gone");
+      // re-put for wipe: bulk is wiped with index, so no survival expected
     }
 
     // Re-open preserves rows

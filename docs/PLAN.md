@@ -128,9 +128,8 @@ Feature macros: new schema epoch; `TILES_ONLY`; user-store present.
 read/tag/explicit via `set_container_member_blob`); `ensure_document_media` /
 `ensure_page_region`.  
 **Phase D status:** directory_snapshot/entry; user tags, collections,
-bookmarks, link_edge APIs. Annotation write API and HTTPS/`http_body` still
-optional. Legacy Client unchanged. Next: Phase E host wiring (or thin
-annotation / http_body if needed first).
+bookmarks, link_edge, annotation; bulk `http_body`; tile list helpers.
+Legacy Client unchanged. **Phase D complete.** Next: Phase E host wiring.
 
 ### Phase B — images
 

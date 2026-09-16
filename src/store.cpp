@@ -2452,4 +2452,318 @@ std::vector<Store::LinkEdgeRow> Store::list_links_to(std::string_view to_ref,
   return out;
 }
 
+std::int64_t Store::create_annotation(std::string_view target_ref, int kind,
+                                      std::optional<std::string_view> body,
+                                      std::span<const std::uint8_t> geom) {
+  if (target_ref.empty()) {
+    throw std::invalid_argument("create_annotation: empty target_ref");
+  }
+  const std::int64_t now = now_unix_s();
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "INSERT INTO annotation(target_ref, kind, body, geom, created_at, "
+          "updated_at) VALUES(?1,?2,?3,?4,?5,?6);",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare create_annotation");
+  }
+  sqlite3_bind_text(stmt, 1, target_ref.data(),
+                    static_cast<int>(target_ref.size()), SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, kind);
+  if (body) {
+    sqlite3_bind_text(stmt, 3, body->data(), static_cast<int>(body->size()),
+                      SQLITE_STATIC);
+  } else {
+    sqlite3_bind_null(stmt, 3);
+  }
+  if (!geom.empty()) {
+    sqlite3_bind_blob(stmt, 4, geom.data(), static_cast<int>(geom.size()),
+                      SQLITE_STATIC);
+  } else {
+    sqlite3_bind_null(stmt, 4);
+  }
+  sqlite3_bind_int64(stmt, 5, now);
+  sqlite3_bind_int64(stmt, 6, now);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(user_, "step create_annotation");
+  }
+  const std::int64_t id = sqlite3_last_insert_rowid(user_);
+  sqlite3_finalize(stmt);
+  return id;
+}
+
+std::optional<Store::AnnotationRow> Store::find_annotation(
+    std::int64_t id) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "SELECT id, target_ref, kind, body, geom, created_at, updated_at "
+          "FROM annotation WHERE id = ?1;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare find_annotation");
+  }
+  sqlite3_bind_int64(stmt, 1, id);
+  std::optional<AnnotationRow> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    AnnotationRow r;
+    r.id = sqlite3_column_int64(stmt, 0);
+    r.target_ref =
+        reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    r.kind = sqlite3_column_int(stmt, 2);
+    if (sqlite3_column_type(stmt, 3) != SQLITE_NULL) {
+      r.body = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+    }
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL) {
+      const auto* p =
+          static_cast<const std::uint8_t*>(sqlite3_column_blob(stmt, 4));
+      const int n = sqlite3_column_bytes(stmt, 4);
+      r.geom.assign(p, p + n);
+    }
+    r.created_at = sqlite3_column_int64(stmt, 5);
+    r.updated_at = sqlite3_column_int64(stmt, 6);
+    out = std::move(r);
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+void Store::set_annotation_body(std::int64_t id,
+                                std::optional<std::string_view> body) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "UPDATE annotation SET body = ?1, updated_at = ?2 WHERE id = ?3;", -1,
+          &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare set_annotation_body");
+  }
+  if (body) {
+    sqlite3_bind_text(stmt, 1, body->data(), static_cast<int>(body->size()),
+                      SQLITE_STATIC);
+  } else {
+    sqlite3_bind_null(stmt, 1);
+  }
+  sqlite3_bind_int64(stmt, 2, now_unix_s());
+  sqlite3_bind_int64(stmt, 3, id);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(user_, "step set_annotation_body");
+  }
+  sqlite3_finalize(stmt);
+}
+
+void Store::set_annotation_geom(std::int64_t id,
+                                std::span<const std::uint8_t> geom) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "UPDATE annotation SET geom = ?1, updated_at = ?2 WHERE id = ?3;", -1,
+          &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare set_annotation_geom");
+  }
+  if (!geom.empty()) {
+    sqlite3_bind_blob(stmt, 1, geom.data(), static_cast<int>(geom.size()),
+                      SQLITE_STATIC);
+  } else {
+    sqlite3_bind_null(stmt, 1);
+  }
+  sqlite3_bind_int64(stmt, 2, now_unix_s());
+  sqlite3_bind_int64(stmt, 3, id);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(user_, "step set_annotation_geom");
+  }
+  sqlite3_finalize(stmt);
+}
+
+void Store::delete_annotation(std::int64_t id) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(user_, "DELETE FROM annotation WHERE id = ?1;", -1,
+                         &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare delete_annotation");
+  }
+  sqlite3_bind_int64(stmt, 1, id);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(user_, "step delete_annotation");
+  }
+  sqlite3_finalize(stmt);
+}
+
+std::vector<Store::AnnotationRow> Store::list_annotations_for_target(
+    std::string_view target_ref, int limit) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          user_,
+          "SELECT id, target_ref, kind, body, geom, created_at, updated_at "
+          "FROM annotation WHERE target_ref = ?1 ORDER BY id LIMIT ?2;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(user_, "prepare list_annotations_for_target");
+  }
+  sqlite3_bind_text(stmt, 1, target_ref.data(),
+                    static_cast<int>(target_ref.size()), SQLITE_STATIC);
+  sqlite3_bind_int(stmt, 2, limit);
+  std::vector<AnnotationRow> out;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    AnnotationRow r;
+    r.id = sqlite3_column_int64(stmt, 0);
+    r.target_ref =
+        reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    r.kind = sqlite3_column_int(stmt, 2);
+    if (sqlite3_column_type(stmt, 3) != SQLITE_NULL) {
+      r.body = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+    }
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL) {
+      const auto* p =
+          static_cast<const std::uint8_t*>(sqlite3_column_blob(stmt, 4));
+      const int n = sqlite3_column_bytes(stmt, 4);
+      r.geom.assign(p, p + n);
+    }
+    r.created_at = sqlite3_column_int64(stmt, 5);
+    r.updated_at = sqlite3_column_int64(stmt, 6);
+    out.push_back(std::move(r));
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+void Store::put_http_body(std::string_view url,
+                          std::span<const std::uint8_t> data,
+                          std::optional<std::int64_t> blob_id,
+                          std::optional<std::int64_t> fetched_at) {
+  if (url.empty()) {
+    throw std::invalid_argument("put_http_body: empty url");
+  }
+  if (data.empty()) {
+    throw std::invalid_argument("put_http_body: empty data");
+  }
+  const std::int64_t at = fetched_at ? *fetched_at : now_unix_s();
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          bulk_,
+          "INSERT INTO http_body(url, fetched_at, blob_id, data) "
+          "VALUES(?1,?2,?3,?4) "
+          "ON CONFLICT(url) DO UPDATE SET fetched_at = excluded.fetched_at, "
+          "blob_id = excluded.blob_id, data = excluded.data;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(bulk_, "prepare put_http_body");
+  }
+  sqlite3_bind_text(stmt, 1, url.data(), static_cast<int>(url.size()),
+                    SQLITE_STATIC);
+  sqlite3_bind_int64(stmt, 2, at);
+  if (blob_id) {
+    sqlite3_bind_int64(stmt, 3, *blob_id);
+  } else {
+    sqlite3_bind_null(stmt, 3);
+  }
+  sqlite3_bind_blob(stmt, 4, data.data(), static_cast<int>(data.size()),
+                    SQLITE_STATIC);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(bulk_, "step put_http_body");
+  }
+  sqlite3_finalize(stmt);
+}
+
+std::optional<Store::HttpBodyRow> Store::get_http_body(
+    std::string_view url) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          bulk_,
+          "SELECT url, fetched_at, blob_id, data FROM http_body WHERE url = ?1;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(bulk_, "prepare get_http_body");
+  }
+  sqlite3_bind_text(stmt, 1, url.data(), static_cast<int>(url.size()),
+                    SQLITE_STATIC);
+  std::optional<HttpBodyRow> out;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    HttpBodyRow r;
+    r.url = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    r.fetched_at = sqlite3_column_int64(stmt, 1);
+    if (sqlite3_column_type(stmt, 2) != SQLITE_NULL) {
+      r.blob_id = sqlite3_column_int64(stmt, 2);
+    }
+    const auto* p =
+        static_cast<const std::uint8_t*>(sqlite3_column_blob(stmt, 3));
+    const int n = sqlite3_column_bytes(stmt, 3);
+    r.data.assign(p, p + n);
+    out = std::move(r);
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+bool Store::delete_http_body(std::string_view url) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(bulk_, "DELETE FROM http_body WHERE url = ?1;", -1,
+                         &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(bulk_, "prepare delete_http_body");
+  }
+  sqlite3_bind_text(stmt, 1, url.data(), static_cast<int>(url.size()),
+                    SQLITE_STATIC);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(bulk_, "step delete_http_body");
+  }
+  const int changes = sqlite3_changes(bulk_);
+  sqlite3_finalize(stmt);
+  return changes > 0;
+}
+
+std::vector<Store::TileRow> Store::list_tiles_for_region(std::int64_t media_id,
+                                                        std::int64_t region_id,
+                                                        int limit) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          index_,
+          "SELECT media_id, region_id, scale, x, y, width, height, codec_id, "
+          "quality FROM tile WHERE media_id = ?1 AND region_id = ?2 "
+          "ORDER BY scale, y, x LIMIT ?3;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare list_tiles_for_region");
+  }
+  sqlite3_bind_int64(stmt, 1, media_id);
+  sqlite3_bind_int64(stmt, 2, region_id);
+  sqlite3_bind_int(stmt, 3, limit);
+  std::vector<TileRow> out;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    TileRow r;
+    r.media_id = sqlite3_column_int64(stmt, 0);
+    r.region_id = sqlite3_column_int64(stmt, 1);
+    r.scale = sqlite3_column_int(stmt, 2);
+    r.x = sqlite3_column_int(stmt, 3);
+    r.y = sqlite3_column_int(stmt, 4);
+    r.width = sqlite3_column_int(stmt, 5);
+    r.height = sqlite3_column_int(stmt, 6);
+    r.codec_id = static_cast<CodecId>(sqlite3_column_int(stmt, 7));
+    if (sqlite3_column_type(stmt, 8) != SQLITE_NULL) {
+      r.quality = sqlite3_column_int(stmt, 8);
+    }
+    out.push_back(std::move(r));
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+std::vector<int> Store::list_tile_scales(std::int64_t media_id,
+                                         std::int64_t region_id) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          index_,
+          "SELECT DISTINCT scale FROM tile WHERE media_id = ?1 AND "
+          "region_id = ?2 ORDER BY scale;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare list_tile_scales");
+  }
+  sqlite3_bind_int64(stmt, 1, media_id);
+  sqlite3_bind_int64(stmt, 2, region_id);
+  std::vector<int> out;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    out.push_back(sqlite3_column_int(stmt, 0));
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
 }  // namespace thumtoo

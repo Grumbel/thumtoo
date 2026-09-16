@@ -474,6 +474,59 @@ class Store {
   [[nodiscard]] std::vector<LinkEdgeRow> list_links_to(std::string_view to_ref,
                                                       int limit = 1000) const;
 
+  // --- user annotations (highlights / notes; geom optional) ---
+  struct AnnotationRow {
+    std::int64_t id = 0;
+    std::string target_ref;
+    int kind = 0;
+    std::optional<std::string> body;
+    std::vector<std::uint8_t> geom;  // empty if none
+    std::int64_t created_at = 0;
+    std::int64_t updated_at = 0;
+  };
+
+  [[nodiscard]] std::int64_t create_annotation(
+      std::string_view target_ref, int kind,
+      std::optional<std::string_view> body = {},
+      std::span<const std::uint8_t> geom = {});
+
+  [[nodiscard]] std::optional<AnnotationRow> find_annotation(
+      std::int64_t id) const;
+
+  void set_annotation_body(std::int64_t id,
+                           std::optional<std::string_view> body);
+  void set_annotation_geom(std::int64_t id, std::span<const std::uint8_t> geom);
+
+  void delete_annotation(std::int64_t id);
+
+  [[nodiscard]] std::vector<AnnotationRow> list_annotations_for_target(
+      std::string_view target_ref, int limit = 1000) const;
+
+  // --- bulk http_body (optional HTTPS cache; Phase D §12) ---
+  struct HttpBodyRow {
+    std::string url;
+    std::int64_t fetched_at = 0;
+    std::optional<std::int64_t> blob_id;
+    std::vector<std::uint8_t> data;
+  };
+
+  void put_http_body(std::string_view url, std::span<const std::uint8_t> data,
+                     std::optional<std::int64_t> blob_id = {},
+                     std::optional<std::int64_t> fetched_at = {});
+
+  [[nodiscard]] std::optional<HttpBodyRow> get_http_body(
+      std::string_view url) const;
+
+  bool delete_http_body(std::string_view url);
+
+  // --- tile listing (for assemble / GC) ---
+  [[nodiscard]] std::vector<TileRow> list_tiles_for_region(
+      std::int64_t media_id, std::int64_t region_id, int limit = 100000) const;
+
+  /// Distinct scales present for a region (ascending).
+  [[nodiscard]] std::vector<int> list_tile_scales(std::int64_t media_id,
+                                                  std::int64_t region_id) const;
+
  private:
   Store(sqlite3* index, sqlite3* bulk, sqlite3* user,
         std::filesystem::path cache_root, std::filesystem::path data_root,

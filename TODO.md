@@ -2,6 +2,33 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-219-store-phase-d-close.** Store Phase D close: annotation, http_body, tile list.
+Prior: **218**.
+
+### Change
+- User: `create_annotation` / find / body·geom set / list / delete.
+- Bulk: `put_http_body` / `get_http_body` / `delete_http_body`.
+- Index: `list_tiles_for_region`, `list_tile_scales`.
+- PLAN.md: Phase D complete; next Phase E (Client / hosts).
+
+### Next
+- Phase E: open Store from Client (or dual path); pixel resolve via tiles;
+  biltoo cutover notes.
+
+### Apply
+```bash
+git pull /path/to/thumtoo-219-store-phase-d-close.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **219**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-218-store-phase-d-user-sets.** Store Phase D: collections, bookmarks, links.
 Prior: **217**.
 
