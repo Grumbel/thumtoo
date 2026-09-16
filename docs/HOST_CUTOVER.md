@@ -61,9 +61,9 @@ tree); do not invent a second PreferCache retry loop.
 
 1. **Client is Store-only** — no legacy ladder classes (≥272). `THUMTOO_STORE_ONLY` is ignored.
 2. **Dual-write is gone** — probe/tiles write only to Store.
-3. **`has_legacy()` is always false**; `Client::db()` throws if called.
+3. **`has_legacy()` and `Client::db()` are removed** (≥268 / ≥274).
 4. Durable tiles go through Store (`put_tile` / tile list APIs).
-5. Public APIs are null-safe without legacy: `prepare_paths`, archive TOC, etc.
+5. Public APIs are Store-backed: `prepare_paths`, archive TOC, purge, tags, etc.
 6. Migration: **no** ladder→tile conversion (PLAN non-goal); cold rebuild tiles.
 
 EnsurePixels does not write durable soft or full_native **levels**. Session
@@ -95,6 +95,8 @@ Pair with biltoo ≥1007 (`scheduleSoftPixels`) for PreferCache when tiles exist
 | Top-level Store layout (`THUMTOO_STORE_ROOT`) | **Default on** (≥245; migrate ≥238; `test_store_root`) |
 | Full-from-tiles (EnsurePixels Full) | **On** when tile pyramid covers want (≥243) |
 | Store-only (Client) | **Always** (≥262) |
+| Database / BlobStore sources | **Deleted** (≥272) |
+| `has_legacy` / `Client::db` | **Removed** (≥274) |
 
 Legacy `Database` / `BlobStore` classes were **deleted** (≥272). Client never
 opened them after ≥262; tools are Store-only. On-disk `legacy/` trees may still
@@ -109,4 +111,6 @@ thumtoo-gc --cache "$XDG_CACHE_HOME/thumtoo" --uri 'file:///path/to/image.jpg'
 # optional: --dry-run
 ```
 
-Ladder flags (`--soft-levels`, `--orphans`, …) were removed with schema-4.
+Schema-4 ladder flags (`--soft-levels`, `--dead-paths`, `--min-scale`) were
+removed. Store GC supports `--uri`, `--path`, `--uri-prefix`, `--orphans`, and
+`--store-summary` (see tip ≥275).

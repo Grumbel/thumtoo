@@ -132,8 +132,12 @@ read/tag/explicit via `set_container_member_blob`); `ensure_document_media` /
 Client never opens legacy; ≥263 handlers Store-only only; ≥265 dead soft-level
 env removed). Host cutover: [HOST_CUTOVER.md](HOST_CUTOVER.md).
 See [API_MIGRATION.md](API_MIGRATION.md).
-**Next:** host tile-native polish (biltoo); Store GC beyond forget-uri;
-docs/historical DESIGN ladder schema is archival only.
+**Phase E complete (≥275):** Database/BlobStore deleted; tools Store-only;
+forget-uri / uri-prefix / orphan GC; layout helpers cleaned. DESIGN ladder
+sections are archival.
+
+**Next:** host tile-native polish (biltoo PreferCache / filmstrip); optional
+Store features (durable LQIP, richer directory GC).
 
 ### Phase B — images
 

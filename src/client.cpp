@@ -1861,6 +1861,22 @@ Client::PurgeStats Client::purge_path(const std::filesystem::path& path,
   return out;
 }
 
+Client::PurgeStats Client::purge_uri_prefix(std::string_view uri_prefix,
+                                           bool dry_run) {
+  PurgeStats out;
+  if (!store_ || uri_prefix.empty()) return out;
+  auto st = store_->forget_uri_prefix(uri_prefix, dry_run);
+  out.tiles_deleted = st.tiles_deleted;
+  out.levels_deleted = st.locators_removed;  // locators removed (field name is legacy)
+  if (st.blobs_purged > 0) {
+    out.purged_content_ids.resize(static_cast<std::size_t>(st.blobs_purged));
+  }
+  if (st.locators_removed > 0) {
+    out.removed_uris.resize(static_cast<std::size_t>(st.locators_removed));
+  }
+  return out;
+}
+
 std::uint64_t Client::set_interest(std::vector<InterestItem> items) {
   // Cancel stale work first so the new snapshot owns the queue.
   const std::uint64_t epoch = bump_interest_epoch();

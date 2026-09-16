@@ -1,13 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-/// Soft ladder vs tiles: only small ladder levels are durable; high-res is tiles.
+/// Session soft pixels vs tiles (Store-only; no durable schema-4 levels).
 ///
-/// Contract (session soft replies under Store-only; no durable legacy levels):
-/// * kMaxSoftLadderEdge (512) caps request_pixels / durable soft levels.
-/// * request_pixels(2048) must not leave a 2048 full-page level; long edge ≤ 512.
-/// * An existing 256 level must not short-circuit upgrade to 512.
-/// * PDF page high-res remains request_tile (existing test_pdf_tiles.cpp).
+/// Contract:
+/// * kMaxSoftLadderEdge (512) caps request_pixels session replies.
+/// * request_pixels(2048) must not return a full-page decode above that cap.
+/// * An existing 256 soft reply must not block upgrade toward 512.
+/// * PDF page high-res remains request_tile (see test_pdf_tiles.cpp).
 
 #include "thumtoo/client.hpp"
 #include "thumtoo/constants.hpp"

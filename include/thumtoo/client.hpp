@@ -82,12 +82,12 @@ class Client {
     std::optional<std::int64_t> uncompressed_size;
   };
 
-  /// Result of purge_uri / purge_path (no-ops on Store-only Client).
+  /// Result of purge_uri / purge_path (Store forget_uri).
   struct PurgeStats {
     std::vector<std::string> removed_uris;
     std::vector<std::string> purged_content_ids;
     std::int64_t tiles_deleted = 0;
-    std::int64_t levels_deleted = 0;
+    std::int64_t levels_deleted = 0;  // also: locator count for purge_uri_prefix
   };
 
   using SizeCallback = std::function<void(std::string uri, SizeReply)>;
@@ -381,6 +381,11 @@ class Client {
    */
   [[nodiscard]] PurgeStats purge_path(
       const std::filesystem::path& path, bool dry_run = false);
+
+  /// Forget all locators under a URI prefix (Store::forget_uri_prefix).
+  [[nodiscard]] PurgeStats purge_uri_prefix(std::string_view uri_prefix,
+                                           bool dry_run = false);
+
 
   /**
    * Replace the interest snapshot (PIXEL_PIPELINE §6.1).

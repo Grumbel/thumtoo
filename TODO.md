@@ -2,6 +2,32 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-276-cutover-docs-purge-prefix.** Phase E docs closed; Client::purge_uri_prefix.
+Prior: **275**.
+
+### Change
+- HOST_CUTOVER / PLAN / API_MIGRATION: post-274/275 accuracy (`db`/`has_legacy` gone; Store GC flags)
+- `Client::purge_uri_prefix` → Store::forget_uri_prefix
+- Soft-ladder test header matches Store-only session soft contract
+
+### Apply
+```bash
+git pull /path/to/thumtoo-276-cutover-docs-purge-prefix.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **276**
+- [x] store / client / store_root tests pass
+
+### Rewrite status
+**Database layout rewrite complete** (tips 265–276 + biltoo-1011). Further work is host polish / Store features, not ladder removal.
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-275-layout-cleanup-prefix-gc.** Drop no-op layout helpers; uri-prefix GC.
 Prior: **274**.
 
