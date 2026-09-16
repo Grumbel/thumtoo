@@ -2,6 +2,29 @@
 
 ## Status (2026-09-16)
 
+**Tip: thumtoo-214-store-phase-a.** Phase A Store: three DBs, blob/hash/locator.
+Prior: **213**.
+
+### Change
+- `thumtoo::Store` opens index/bulk/user SQLite (epoch 100); seeds hash_algo +
+  codec; legacy index schema &lt; 100 replaced (user DB kept).
+- Blob insert, blob_hash put/lookup, locator upsert, `blob:sha256:` format/parse.
+- `tests/test_store.cpp`. Client still on legacy Database.
+
+### Apply
+```bash
+git pull /path/to/thumtoo-214-store-phase-a.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **214**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-16)
+
 **Tip: thumtoo-213-final-plan.** Final pre-implementation plan; tile PK includes region_id.
 Prior: **212**.
 

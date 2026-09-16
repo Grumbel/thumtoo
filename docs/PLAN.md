@@ -122,6 +122,11 @@ Feature macros: new schema epoch; `TILES_ONLY`; user-store present.
 2. Old cache detection → warn → recreate index+bulk (leave user).  
 3. `blob` / `blob_hash` / `locator` + URI parse (`//archive:`, `//page:`).
 
+**Status:** A.1–A.2 and blob/hash/locator CRUD landed as `thumtoo::Store`
+(`include/thumtoo/store.hpp`, `src/store.cpp`). Legacy `Client` / `Database`
+unchanged. URI pipe resolution remains in existing `uri.hpp` (no duplicate
+parser). Next: media + region + tiles (Phase B) on `Store`.
+
 ### Phase B — images
 
 4. `media` + `region(full)` for still images.  

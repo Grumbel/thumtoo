@@ -53,6 +53,7 @@ pkg_check_modules(LIBCURL IMPORTED_TARGET libcurl)
 
 add_library(thumtoo
   src/database.cpp
+  src/store.cpp
   src/uri.cpp
   src/client.cpp
   src/image.cpp
@@ -167,6 +168,10 @@ if(THUMTOO_BUILD_TESTS)
   add_executable(thumtoo-test-database tests/test_database.cpp)
   target_link_libraries(thumtoo-test-database PRIVATE thumtoo)
   add_test(NAME database COMMAND thumtoo-test-database)
+
+  add_executable(thumtoo-test-store tests/test_store.cpp)
+  target_link_libraries(thumtoo-test-store PRIVATE thumtoo)
+  add_test(NAME store COMMAND thumtoo-test-store)
   add_executable(thumtoo-test-client tests/test_client.cpp)
   target_link_libraries(thumtoo-test-client PRIVATE thumtoo)
   add_test(NAME client COMMAND thumtoo-test-client)

@@ -9,8 +9,15 @@
 
 namespace thumtoo {
 
-/// schema_meta / schema_version = 1 (DESIGN §6b). Bump only with incompatible layout.
+/// Legacy Client Database schema (content_id TEXT ladder). Still used by Client.
+/// Bump only with incompatible legacy layout.
 inline constexpr int kSchemaVersion = 4;
+
+/// Redesign Store (docs/DATABASE.md): index/bulk/user. Values ≥ 100 so open()
+/// can distinguish legacy index.sqlite (1–4) and wipe cache without touching user.
+inline constexpr int kStoreIndexSchemaVersion = 100;
+inline constexpr int kStoreBulkSchemaVersion = 100;
+inline constexpr int kStoreUserSchemaVersion = 100;
 
 /// Policy long-edge steps (pixels). Soft durable storage only uses steps
 /// ≤ kMaxSoftLadderEdge; larger values exist for API compatibility / future use.
