@@ -2,6 +2,25 @@
 
 ## Status (2026-09-17)
 
+**Tip: thumtoo-304-debug-overlay-ladder-vs-tile.** Clearer DEBUG_OVERLAY labels: LADDER vs TILE + scale.
+Prior: **303**.
+
+### Change
+- Soft stamp: first line `LADDER` (not THUM); `SOFT WxH`, `req=` / `have=`
+- Tile stamp: `TILE`, `scale=N (1:2^N)`, `xy=`
+- Avoids reading soft watermarks as grid tiles
+
+### Apply
+```bash
+git pull /path/to/thumtoo-304-debug-overlay-ladder-vs-tile.bundle HEAD
+```
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-17)
+
 **Tip: thumtoo-303-man-thumtoo-7.** Package overview man page: library, Store layout, environment.
 Prior: **302**.
 

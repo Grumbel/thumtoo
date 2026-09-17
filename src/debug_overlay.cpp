@@ -375,13 +375,14 @@ void debug_overlay_pixel_level(PixelLevel& px, std::string_view uri_tail,
   if (!rgb_from_encoded(px.bytes, w, h, rgb)) {
     return;
   }
+  // Labels must read as "soft ladder" not "tile" — hosts paint both.
   std::vector<std::string> lines;
-  lines.push_back("THUM");
+  lines.push_back("LADDER");  // soft overview, not grid tile
   lines.push_back(basename_tail(uri_tail));
   lines.push_back("SOFT " + std::to_string(w) + "x" + std::to_string(h));
   lines.push_back("req=" + std::to_string(request_edge) +
-                  " max=" + std::to_string(px.max_edge));
-  lines.push_back(std::string(to_string(px.source)));
+                  " have=" + std::to_string(px.max_edge));
+  lines.push_back(std::string("src=") + std::string(to_string(px.source)));
   if (!px.codec.empty()) {
     lines.push_back(px.codec);
   }
@@ -410,13 +411,20 @@ void debug_overlay_tile(TileBlob& tile, std::string_view uri_tail) {
   if (!rgb_from_encoded(tile.bytes, w, h, rgb)) {
     return;
   }
+  // Grid tile: scale 0 = full-res cell; each +1 is 2x coarser (half linear).
   std::vector<std::string> lines;
-  lines.push_back("THUM");
+  lines.push_back("TILE");
   lines.push_back(basename_tail(uri_tail));
-  lines.push_back("TILE " + std::to_string(w) + "x" + std::to_string(h));
-  lines.push_back("s=" + std::to_string(tile.scale) + " x=" +
-                  std::to_string(tile.x) + " y=" + std::to_string(tile.y));
-  lines.push_back(std::string("tsrc=") +
+  lines.push_back(std::to_string(w) + "x" + std::to_string(h));
+  {
+    const int s = tile.scale;
+    const int factor = (s <= 0) ? 1 : (1 << s);
+    lines.push_back("scale=" + std::to_string(s) + " (1:" +
+                    std::to_string(factor) + ")");
+  }
+  lines.push_back("xy=" + std::to_string(tile.x) + "," +
+                  std::to_string(tile.y));
+  lines.push_back(std::string("src=") +
                   std::to_string(static_cast<int>(tile.source)));
   debug_overlay_rgb888(rgb.data(), w, h, lines);
 
