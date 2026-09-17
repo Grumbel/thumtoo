@@ -2,7 +2,84 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 cmake_minimum_required(VERSION 3.16)
-project(thumtoo VERSION 0.1.0 LANGUAGES C CXX)
+
+# Version (single source of truth: top-level VERSION file).
+#   Packaging (nix build): -DPROJECT_VERSION_FULL=0.1.0-dev.N+gHASH from flake.nix
+#   Dev: VERSION + optional git rev-list count + short hash (same scheme as biltoo/dirtoo)
+#
+# Runtime API: generated thumtoo/version.hpp (not -D compile flags), so a VERSION
+# bump only recompiles TUs that include that header — not the whole static lib.
+if(DEFINED PROJECT_VERSION_FULL AND NOT PROJECT_VERSION_FULL STREQUAL "")
+  string(STRIP "${PROJECT_VERSION_FULL}" PROJECT_VERSION_FULL)
+else()
+  file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" PROJECT_VERSION_FULL LIMIT_COUNT 1)
+  string(STRIP "${PROJECT_VERSION_FULL}" PROJECT_VERSION_FULL)
+
+  if(PROJECT_VERSION_FULL MATCHES "-dev")
+    find_package(Git QUIET)
+    set(_thumtoo_git_dir "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+    if(Git_FOUND AND EXISTS "${_thumtoo_git_dir}")
+      if(NOT IS_DIRECTORY "${_thumtoo_git_dir}")
+        file(READ "${_thumtoo_git_dir}" _thumtoo_gitfile)
+        string(REGEX REPLACE "^gitdir:[ \t]*([^\n]+).*" "\\1" _thumtoo_git_dir
+               "${_thumtoo_gitfile}")
+        if(NOT IS_ABSOLUTE "${_thumtoo_git_dir}")
+          set(_thumtoo_git_dir "${CMAKE_CURRENT_SOURCE_DIR}/${_thumtoo_git_dir}")
+        endif()
+      endif()
+
+      execute_process(
+        COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}" rev-list --count HEAD
+        OUTPUT_VARIABLE _thumtoo_git_count
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE _thumtoo_git_count_rc
+      )
+      execute_process(
+        COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}" rev-parse --short=7 HEAD
+        OUTPUT_VARIABLE _thumtoo_git_rev
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE _thumtoo_git_rev_rc
+      )
+      if(_thumtoo_git_count_rc EQUAL 0 AND _thumtoo_git_rev_rc EQUAL 0
+         AND NOT _thumtoo_git_count STREQUAL "" AND NOT _thumtoo_git_rev STREQUAL "")
+        set(PROJECT_VERSION_FULL
+            "${PROJECT_VERSION_FULL}.${_thumtoo_git_count}+g${_thumtoo_git_rev}")
+        message(STATUS "Dev version from git: ${PROJECT_VERSION_FULL}")
+      endif()
+      set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/VERSION"
+        "${_thumtoo_git_dir}/HEAD"
+        "${_thumtoo_git_dir}/index")
+    else()
+      set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
+    endif()
+  else()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
+  endif()
+endif()
+
+string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" PROJECT_VERSION_CMAKE "${PROJECT_VERSION_FULL}")
+if(NOT PROJECT_VERSION_CMAKE)
+  set(PROJECT_VERSION_CMAKE "0.0.0")
+endif()
+
+string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)" _thumtoo_ver_match "${PROJECT_VERSION_CMAKE}")
+set(THUMTOO_VERSION_MAJOR "${CMAKE_MATCH_1}")
+set(THUMTOO_VERSION_MINOR "${CMAKE_MATCH_2}")
+set(THUMTOO_VERSION_PATCH "${CMAKE_MATCH_3}")
+if(THUMTOO_VERSION_MAJOR STREQUAL "")
+  set(THUMTOO_VERSION_MAJOR 0)
+  set(THUMTOO_VERSION_MINOR 0)
+  set(THUMTOO_VERSION_PATCH 0)
+endif()
+set(THUMTOO_VERSION_STRING "${PROJECT_VERSION_FULL}")
+
+project(thumtoo VERSION ${PROJECT_VERSION_CMAKE} LANGUAGES C CXX)
+message(STATUS "thumtoo version: ${PROJECT_VERSION_FULL}")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -82,11 +159,21 @@ else()
   target_sources(thumtoo PRIVATE src/archive_unarr_stub.cpp)
 endif()
 
+# Generated version.hpp lives in the build tree (configure_file below).
 target_include_directories(thumtoo
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
+
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/include/thumtoo/version.hpp.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/include/thumtoo/version.hpp"
+  @ONLY)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/include/thumtoo/version.hpp"
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/thumtoo")
+
 target_link_libraries(thumtoo PUBLIC
   PkgConfig::SQLITE3
   PkgConfig::VIPS

@@ -2,6 +2,29 @@
 
 ## Status (2026-09-17)
 
+**Tip: thumtoo-301-version-file.** VERSION file + generated version.hpp (no -D rebuild).
+Prior: **300**.
+
+### Change
+- Top-level `VERSION` (`0.1.0-dev`) as single source of truth (biltoo/dirtoo style)
+- CMake + flake read VERSION; optional `-DPROJECT_VERSION_FULL` from Nix
+- Generated `thumtoo/version.hpp` (build tree); install with headers
+- `thumtoo-status --version`; pkg-config Version uses full string
+
+### Apply
+```bash
+git pull /path/to/thumtoo-301-version-file.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **301**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-17)
+
 **Tip: thumtoo-300-reuse-lint.** REUSE 3.3 compliance: Apache-2.0/MIT texts, annotations.
 Prior: **299**.
 

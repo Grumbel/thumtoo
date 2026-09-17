@@ -69,9 +69,21 @@
         libxdmcp       # xdmcp.pc (X11 transitive via pango/cairo)
       ];
 
+      versionBase = nixpkgs.lib.strings.removeSuffix "\n" (builtins.readFile ./VERSION);
+      revCount = toString (self.revCount or 0);
+      gitRev =
+        if self ? shortRev then self.shortRev
+        else if self ? dirtyShortRev then self.dirtyShortRev
+        else "dirty";
+      # SemVer-ish: 0.1.0-dev.N+gHASH when VERSION ends with -dev
+      version =
+        if nixpkgs.lib.strings.hasInfix "-dev" versionBase
+        then "${versionBase}.${revCount}+g${gitRev}"
+        else versionBase;
+
       mkPackage = pkgs: pkgs.stdenv.mkDerivation {
         pname = "thumtoo";
-        version = "0.1.0";
+        inherit version;
         src = self;
         nativeBuildInputs = [ pkgs.cmake pkgs.ninja pkgs.pkg-config ];
         buildInputs = vipsInputs pkgs;
@@ -79,6 +91,7 @@
           "-GNinja"
           "-DTHUMTOO_BUILD_TESTS=ON"
           "-DTHUMTOO_BUILD_TOOLS=ON"
+          "-DPROJECT_VERSION_FULL=${version}"
         ];
         doCheck = true;
         # Bin presence is checked by `checks.tools-bin` (`nix flake check`),

@@ -1,0 +1,34 @@
+// SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#pragma once
+
+#include <string_view>
+
+// Generated at configure time from the top-level VERSION file (and optional
+// git/Nix suffix). Changing VERSION only regenerates this header and recompiles
+// translation units that include it — not the whole library via -D flags.
+
+#define THUMTOO_VERSION_MAJOR @THUMTOO_VERSION_MAJOR@
+#define THUMTOO_VERSION_MINOR @THUMTOO_VERSION_MINOR@
+#define THUMTOO_VERSION_PATCH @THUMTOO_VERSION_PATCH@
+#define THUMTOO_VERSION_STRING "@THUMTOO_VERSION_STRING@"
+
+namespace thumtoo {
+
+/// Full version string (e.g. "0.1.0-dev.42+g1a2b3c4" or "0.1.0").
+[[nodiscard]] inline std::string_view version_string() noexcept {
+  return THUMTOO_VERSION_STRING;
+}
+
+[[nodiscard]] inline constexpr int version_major() noexcept {
+  return THUMTOO_VERSION_MAJOR;
+}
+[[nodiscard]] inline constexpr int version_minor() noexcept {
+  return THUMTOO_VERSION_MINOR;
+}
+[[nodiscard]] inline constexpr int version_patch() noexcept {
+  return THUMTOO_VERSION_PATCH;
+}
+
+}  // namespace thumtoo

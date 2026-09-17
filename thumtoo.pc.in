@@ -8,7 +8,7 @@ includedir=@CMAKE_INSTALL_FULL_INCLUDEDIR@
 
 Name: thumtoo
 Description: Media index and display-pixel ladder library
-Version: @PROJECT_VERSION@
+Version: @THUMTOO_VERSION_STRING@
 Libs: -L${libdir} -lthumtoo
 Cflags: -I${includedir}
 Requires.private: sqlite3 vips libarchive

@@ -8,6 +8,7 @@
 #include "thumtoo/lqip.hpp"
 #include "thumtoo/store.hpp"
 #include "thumtoo/uri.hpp"
+#include "thumtoo/version.hpp"
 
 #include <chrono>
 #include <cstdlib>
@@ -37,6 +38,7 @@ fs::path default_cache_root() {
 
 void usage(const char* argv0) {
   std::cerr
+      << "thumtoo " << thumtoo::version_string() << "\n"
       << "Usage:\n"
       << "  " << argv0 << " [--cache DIR] [summary|store]\n"
       << "  " << argv0 << " [--cache DIR] path PATH|URI\n"
@@ -279,6 +281,10 @@ int main(int argc, char** argv) {
 
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
+    if (a == "--version" || a == "-V") {
+      std::cout << "thumtoo " << thumtoo::version_string() << "\n";
+      return 0;
+    }
     if (a == "--help" || a == "-h") {
       usage(argv[0]);
       return 0;
