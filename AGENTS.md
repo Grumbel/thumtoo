@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-302-user-docs**. Next bundle: **303**.
+Latest agent handoff: **TODO.md → thumtoo-303-man-thumtoo-7**. Next bundle: **304**.
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code
 here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 Post-release: prefer SQLite schema migration over cache wipe (see docs/DIRTOO_BACKBONE.md).

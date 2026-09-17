@@ -71,6 +71,18 @@ thumtoo-prepare --help
 thumtoo-gc --cache ~/.cache/thumtoo --store-summary
 ```
 
+## Manual pages
+
+| Page | Topic |
+|------|--------|
+| **thumtoo(7)** | Library overview, Store layout, environment variables |
+| thumtoo-prepare(1), thumtoo-status(1), … | CLI tools under `man/` |
+
+```bash
+man 7 thumtoo
+man thumtoo-prepare
+```
+
 ## Documentation for integrators
 
 | Doc | Topic |

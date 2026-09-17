@@ -2,6 +2,32 @@
 
 ## Status (2026-09-17)
 
+**Tip: thumtoo-303-man-thumtoo-7.** Package overview man page: library, Store layout, environment.
+Prior: **302**.
+
+### Change
+- `man/thumtoo.7` — Client model, cache/data layout, ENVIRONMENT (THUMTOO_DEBUG, XDG_*, aliases)
+- Install to `${CMAKE_INSTALL_MANDIR}/man7`
+- Tool pages SEE ALSO → thumtoo(7); README table
+
+### Apply
+```bash
+git pull /path/to/thumtoo-303-man-thumtoo-7.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **303**
+- [x] `man 7 thumtoo` documents env vars and library role
+
+### Next
+- Optional: expand ENVIRONMENT if new runtime flags are added
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-17)
+
 **Tip: thumtoo-302-user-docs.** User-focused README; DATABASE migrate policy; TAGS user DB.
 Prior: **301**.
 

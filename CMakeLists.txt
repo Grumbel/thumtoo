@@ -330,6 +330,9 @@ if(THUMTOO_BUILD_TOOLS)
     man/thumtoo-archive.1
     man/thumtoo-bench.1
     DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
+  install(FILES
+    man/thumtoo.7
+    DESTINATION ${CMAKE_INSTALL_MANDIR}/man7)
 endif()
 
 # pkg-config for consumers (biltoo, etc.). Static lib: Requires.private lists public deps.
