@@ -2,6 +2,30 @@
 
 ## Status (2026-09-17)
 
+**Tip: thumtoo-305-jpeg-shrink-shared-cache.** Share DCT jpegload across concurrent tile cells.
+Prior: **304**.
+
+### Analysis
+- Interactive `request_tiles` enqueues one EnsureTiles job per miss cell.
+- `build_tile_cell` scale>0 JPEG used `vips_jpegload(shrink=N)` **per cell** — same
+  multi-MP file re-decoded for every visible cell at that shrink factor.
+
+### Change
+- `jpeg_shrink_acquire` / `_buffer`: process-wide cache (path+mtime+js or
+  decode_cache_key+js), max 8 slots; concurrent cells share one autorot image.
+- File and archive/http buffer paths both use the cache.
+
+### Apply
+```bash
+git pull /path/to/thumtoo-305-jpeg-shrink-shared-cache.bundle HEAD
+```
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-17)
+
 **Tip: thumtoo-304-debug-overlay-ladder-vs-tile.** Clearer DEBUG_OVERLAY labels: LADDER vs TILE + scale.
 Prior: **303**.
 

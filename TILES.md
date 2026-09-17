@@ -74,9 +74,13 @@ request_tile_pyramid(uri, min_scale, max_scale, callback)  // optional batch
 
 `TileBlob`: scale, x, y, width, height, codec, bytes.
 
-On miss, the worker loads the source once (file or archive member), builds the
-requested scale **and all coarser scales** in one pass, stores them, then
-invokes the callback. Finer scales than already stored are generated only when
+On miss, interactive `request_tile(s)` encode **one cell** (not the full pyramid).
+JPEG `scale>0` uses DCT `jpegload` shrink; concurrent cells of the same file share
+one shrink decode (`jpeg_shrink_acquire`, tip 305). Pyramid prepare still builds
+all scales offline.
+
+Historical note: an older path built the requested scale and coarser scales in one
+pass on miss; interactive path is single-cell. Finer scales than already stored are generated only when
 asked. Sources larger than `kTileMaxSourcePixels` yield no tiles (probe/size
 still work).
 

@@ -13,6 +13,7 @@
 #include <atomic>
 #include <unordered_map>
 #include <string>
+#include <string_view>
 #include <memory>
 #include <functional>
 #include <chrono>
@@ -1020,6 +1021,147 @@ std::shared_ptr<ShrinkLadder> ladder_get_or_create(const std::string& key) {
   return e;
 }
 
+// Shared DCT-shrink base for concurrent build_tile_cell on the same JPEG.
+// Without this, each cell at scale>0 re-ran vips_jpegload(shrink=N) on the
+// full file (dominant cost under interactive multi-cell request_tiles).
+constexpr std::size_t kJpegShrinkCacheMaxEntries = 8;
+
+struct JpegShrinkSlot {
+  std::mutex mu;
+  VipsImage* img = nullptr;  // autorot'd, shrink factor applied
+  std::chrono::steady_clock::time_point last_used{};
+};
+
+std::mutex g_jpeg_shrink_mu;
+std::unordered_map<std::string, std::shared_ptr<JpegShrinkSlot>> g_jpeg_shrink;
+
+void jpeg_shrink_cache_evict_unlocked(const std::string& keep_key) {
+  while (g_jpeg_shrink.size() >= kJpegShrinkCacheMaxEntries) {
+    std::string victim;
+    auto oldest = std::chrono::steady_clock::time_point::max();
+    for (auto& kv : g_jpeg_shrink) {
+      if (kv.first == keep_key) continue;
+      if (kv.second->last_used <= oldest) {
+        oldest = kv.second->last_used;
+        victim = kv.first;
+      }
+    }
+    if (victim.empty()) break;
+    auto it = g_jpeg_shrink.find(victim);
+    if (it == g_jpeg_shrink.end()) break;
+    {
+      std::lock_guard lock(it->second->mu);
+      if (it->second->img) {
+        g_object_unref(it->second->img);
+        it->second->img = nullptr;
+      }
+    }
+    g_jpeg_shrink.erase(it);
+  }
+}
+
+/** Ref'd VipsImage at jpegload shrink factor @p js, or nullptr. Caller unrefs. */
+VipsImage* jpeg_shrink_acquire(const std::filesystem::path& path, int js) {
+  if (js < 1) js = 1;
+  const std::string key =
+      ladder_key_for_file(path) + ":js" + std::to_string(js);
+  std::shared_ptr<JpegShrinkSlot> slot;
+  {
+    std::lock_guard lock(g_jpeg_shrink_mu);
+    auto it = g_jpeg_shrink.find(key);
+    if (it != g_jpeg_shrink.end()) {
+      it->second->last_used = std::chrono::steady_clock::now();
+      slot = it->second;
+    } else {
+      jpeg_shrink_cache_evict_unlocked(key);
+      slot = std::make_shared<JpegShrinkSlot>();
+      slot->last_used = std::chrono::steady_clock::now();
+      g_jpeg_shrink.emplace(key, slot);
+    }
+  }
+  std::lock_guard lock(slot->mu);
+  slot->last_used = std::chrono::steady_clock::now();
+  if (slot->img) {
+    g_object_ref(slot->img);
+    return slot->img;
+  }
+  VipsImage* shrunk = nullptr;
+  {
+    ScopedNsAccumulator timer(global_build_stats().image_load_ns);
+    if (vips_jpegload(path.string().c_str(), &shrunk, "shrink", js, nullptr) !=
+            0 ||
+        !shrunk) {
+      return nullptr;
+    }
+  }
+  {
+    VipsImage* rotated = nullptr;
+    if (vips_autorot(shrunk, &rotated, nullptr) == 0 && rotated) {
+      g_object_unref(shrunk);
+      shrunk = rotated;
+    }
+  }
+  slot->img = shrunk;  // owns one ref
+  g_object_ref(slot->img);
+  return slot->img;
+}
+
+/** Buffer JPEG (archive/http). Keyed by decode_cache_key + js when non-empty. */
+VipsImage* jpeg_shrink_acquire_buffer(std::string_view decode_cache_key,
+                                      const std::uint8_t* data, std::size_t size,
+                                      int js) {
+  if (!data || size == 0) return nullptr;
+  if (js < 1) js = 1;
+
+  std::shared_ptr<JpegShrinkSlot> slot;
+  if (!decode_cache_key.empty()) {
+    const std::string key =
+        std::string(decode_cache_key) + ":js" + std::to_string(js);
+    std::lock_guard lock(g_jpeg_shrink_mu);
+    auto it = g_jpeg_shrink.find(key);
+    if (it != g_jpeg_shrink.end()) {
+      it->second->last_used = std::chrono::steady_clock::now();
+      slot = it->second;
+    } else {
+      jpeg_shrink_cache_evict_unlocked(key);
+      slot = std::make_shared<JpegShrinkSlot>();
+      slot->last_used = std::chrono::steady_clock::now();
+      g_jpeg_shrink.emplace(key, slot);
+    }
+  }
+
+  auto load = [&]() -> VipsImage* {
+    VipsImage* shrunk = nullptr;
+    ScopedNsAccumulator timer(global_build_stats().image_load_ns);
+    if (vips_jpegload_buffer(const_cast<std::uint8_t*>(data), size, &shrunk,
+                             "shrink", js, nullptr) != 0 ||
+        !shrunk) {
+      return nullptr;
+    }
+    VipsImage* rotated = nullptr;
+    if (vips_autorot(shrunk, &rotated, nullptr) == 0 && rotated) {
+      g_object_unref(shrunk);
+      shrunk = rotated;
+    }
+    return shrunk;
+  };
+
+  if (!slot) {
+    return load();
+  }
+  std::lock_guard lock(slot->mu);
+  slot->last_used = std::chrono::steady_clock::now();
+  if (slot->img) {
+    g_object_ref(slot->img);
+    return slot->img;
+  }
+  VipsImage* shrunk = load();
+  if (!shrunk) return nullptr;
+  slot->img = shrunk;
+  g_object_ref(slot->img);
+  return slot->img;
+}
+
 VipsImage* ladder_acquire_level(const std::string& key, int scale,
                                 const std::function<VipsImage*()>& load_full) {
   if (scale < 0 || key.empty()) return nullptr;
@@ -1265,27 +1407,14 @@ std::optional<TileBlob> build_tile_cell(const std::filesystem::path& path,
     return std::nullopt;
   }
   ensure_vips();
-  // Option A: coarse JPEG cells use DCT shrink — no full-res decode, no ladder.
+  // Option A: coarse JPEG cells use DCT shrink — no full-res decode.
+  // Shared jpeg_shrink_acquire so concurrent cells of the same file+js share
+  // one jpegload (interactive request_tiles used to re-decode per cell).
   if (scale > 0 && path_looks_jpeg(path)) {
-    VipsImage* shrunk = nullptr;
-    int remain = scale;
-    {
-      ScopedNsAccumulator timer(global_build_stats().image_load_ns);
-      const int js = jpeg_shrink_factor_for_scale(scale);
-      if (vips_jpegload(path.string().c_str(), &shrunk, "shrink", js, nullptr) ==
-              0 &&
-          shrunk) {
-        remain = scale_steps_after_jpeg_shrink(scale, js);
-      }
-    }
+    const int js = jpeg_shrink_factor_for_scale(scale);
+    const int remain = scale_steps_after_jpeg_shrink(scale, js);
+    VipsImage* shrunk = jpeg_shrink_acquire(path, js);
     if (shrunk) {
-      {
-        VipsImage* rotated = nullptr;
-        if (vips_autorot(shrunk, &rotated, nullptr) == 0 && rotated) {
-          g_object_unref(shrunk);
-          shrunk = rotated;
-        }
-      }
       auto tile = cut_cell_from_vips(shrunk, remain, x, y, jpeg_quality);
       g_object_unref(shrunk);
       if (tile) {
@@ -1345,28 +1474,13 @@ std::optional<TileBlob> build_tile_cell_buffer(const std::uint8_t* data,
   const bool maybe_jpeg =
       size >= 3 && data[0] == 0xff && data[1] == 0xd8 && data[2] == 0xff;
 
-  // Option A: coarse JPEG cells always use DCT shrink (ignore decode_cache_key).
-  // Avoids full-res load when Client passes archive/http cache keys.
+  // Option A: coarse JPEG cells use DCT shrink; share decode when cache key set.
   if (maybe_jpeg && scale > 0) {
-    VipsImage* shrunk = nullptr;
-    int remain = scale;
-    {
-      ScopedNsAccumulator timer(global_build_stats().image_load_ns);
-      const int js = jpeg_shrink_factor_for_scale(scale);
-      if (vips_jpegload_buffer(const_cast<std::uint8_t*>(data), size, &shrunk,
-                               "shrink", js, nullptr) == 0 &&
-          shrunk) {
-        remain = scale_steps_after_jpeg_shrink(scale, js);
-      }
-    }
+    const int js = jpeg_shrink_factor_for_scale(scale);
+    const int remain = scale_steps_after_jpeg_shrink(scale, js);
+    VipsImage* shrunk =
+        jpeg_shrink_acquire_buffer(decode_cache_key, data, size, js);
     if (shrunk) {
-      {
-        VipsImage* rotated = nullptr;
-        if (vips_autorot(shrunk, &rotated, nullptr) == 0 && rotated) {
-          g_object_unref(shrunk);
-          shrunk = rotated;
-        }
-      }
       auto tile = cut_cell_from_vips(shrunk, remain, x, y, jpeg_quality);
       g_object_unref(shrunk);
       if (tile) {
