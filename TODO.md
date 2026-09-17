@@ -2,6 +2,30 @@
 
 ## Status (2026-09-17)
 
+**Tip: thumtoo-299-schema-101-dir-futureproof.** Pre-release schema 101: directory
+POSIX columns, entry_xattr, user uuid keys, additive 100→101 migrate (no wipe).
+Prior: **298**.
+
+### Change
+- index 101: expand `directory_*` + `entry_xattr`; Store row structs; CRUD
+- user 101: `tag_def.uuid`, `collection.uuid`
+- Open/layout: only wipe pre-100; migrate 100→101 in place
+- Docs: DIRTOO_BACKBONE §10
+
+### Apply
+```bash
+git pull /path/to/thumtoo-299-schema-101-dir-futureproof.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **299**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-17)
+
 **Tip: thumtoo-298-dirtoo-backbone-design.** Design doc for dirtoo virtual FS backbone.
 Prior: **297**.
 
