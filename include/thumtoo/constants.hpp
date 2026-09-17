@@ -15,9 +15,21 @@ inline constexpr int kSchemaVersion = 4;
 
 /// Redesign Store (docs/DATABASE.md): index/bulk/user. Values ≥ 100 so open()
 /// Redesign Store index starts at 100 so tools can refuse schema-4 indexes.
-inline constexpr int kStoreIndexSchemaVersion = 100;
+/// 100 = redesign cutover. 101 = directory POSIX columns + user uuid keys
+/// (additive; see docs/DIRTOO_BACKBONE.md). bulk unchanged layout at 100.
+inline constexpr int kStoreIndexSchemaVersion = 101;
 inline constexpr int kStoreBulkSchemaVersion = 100;
-inline constexpr int kStoreUserSchemaVersion = 100;
+inline constexpr int kStoreUserSchemaVersion = 101;
+
+/// directory_entry.file_type (0 = unknown / legacy row).
+inline constexpr int kFsFileTypeUnknown = 0;
+inline constexpr int kFsFileTypeReg = 1;
+inline constexpr int kFsFileTypeDir = 2;
+inline constexpr int kFsFileTypeLnk = 3;
+inline constexpr int kFsFileTypeChr = 4;
+inline constexpr int kFsFileTypeBlk = 5;
+inline constexpr int kFsFileTypeFifo = 6;
+inline constexpr int kFsFileTypeSock = 7;
 
 /// Policy long-edge steps (pixels). Soft durable storage only uses steps
 /// ≤ kMaxSoftLadderEdge; larger values exist for API compatibility / future use.

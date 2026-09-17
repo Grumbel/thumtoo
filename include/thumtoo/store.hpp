@@ -399,6 +399,14 @@ class Store {
     std::optional<std::int64_t> mtime_ns;
     std::int64_t listed_at = 0;
     bool incomplete = false;
+    // Schema ≥101 (optional / NULL on legacy rows)
+    std::optional<std::int64_t> inode;
+    std::optional<std::int64_t> dev;
+    std::optional<std::int64_t> nlink;
+    std::optional<std::int64_t> mode;
+    std::optional<std::int64_t> uid;
+    std::optional<std::int64_t> gid;
+    std::optional<std::string> error_code;
   };
 
   struct DirectoryEntryRow {
@@ -408,6 +416,21 @@ class Store {
     bool is_dir = false;
     std::optional<std::int64_t> size;
     std::optional<std::int64_t> mtime_ns;
+    // Schema ≥101 (optional / NULL on legacy rows)
+    std::optional<std::int64_t> file_type;  // kFsFileType*
+    std::optional<std::int64_t> mode;
+    std::optional<std::int64_t> uid;
+    std::optional<std::int64_t> gid;
+    std::optional<std::int64_t> atime_ns;
+    std::optional<std::int64_t> ctime_ns;
+    std::optional<std::int64_t> birth_ns;
+    std::optional<std::int64_t> nlink;
+    std::optional<std::int64_t> inode;
+    std::optional<std::int64_t> dev;
+    std::optional<std::int64_t> rdev;
+    std::optional<std::string> symlink_target;
+    std::optional<std::int64_t> blob_id;
+    std::optional<std::int64_t> flags;
   };
 
   /// Replace snapshot meta + all entries transactionally (TOC-style refresh).
@@ -427,6 +450,7 @@ class Store {
   // --- user tags (tag_def + blob_tag; survive index/bulk wipe) ---
   struct TagDefRow {
     std::int64_t id = 0;
+    std::optional<std::string> uuid;  // stable export key; schema ≥101
     std::string name;
     std::optional<std::string> label;
     std::optional<std::string> color;
@@ -462,6 +486,7 @@ class Store {
   // --- user collections / sets (dirtoo FileSet direction) ---
   struct CollectionRow {
     std::int64_t id = 0;
+    std::optional<std::string> uuid;  // stable export key; schema ≥101
     std::optional<std::string> label;
     std::optional<std::string> color;
     std::int64_t created_at = 0;

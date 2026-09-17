@@ -105,7 +105,7 @@ void migrate_dual_path_to_store_root(const std::filesystem::path& cache_root) {
 
   // Classic dual-path (schema < 100) at cache root → park under legacy/.
   // Move index and blobs together so a partial rename cannot leave blobs at top.
-  if (top_ver && *top_ver < kStoreIndexSchemaVersion && !legacy_ver) {
+  if (top_ver && *top_ver < 100 && !legacy_ver) {
     rename_sqlite_bundle(cache_root, legacy_dir, "index.sqlite");
     rename_sqlite_bundle(cache_root, legacy_dir, "blobs.sqlite");
   }
@@ -123,7 +123,7 @@ void migrate_dual_path_to_store_root(const std::filesystem::path& cache_root) {
 
   top_ver = probe_index_schema_version(top_index);
   store_ver = probe_index_schema_version(store_index);
-  if (store_ver && *store_ver >= kStoreIndexSchemaVersion && !top_ver) {
+  if (store_ver && *store_ver >= 100 && !top_ver) {
     rename_sqlite_bundle(store_dir, cache_root, "index.sqlite");
     rename_sqlite_bundle(store_dir, cache_root, "bulk.sqlite");
   }

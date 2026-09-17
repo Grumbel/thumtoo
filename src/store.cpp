@@ -197,16 +197,44 @@ CREATE TABLE IF NOT EXISTS directory_snapshot (
   size       INTEGER,
   mtime_ns   INTEGER,
   listed_at  INTEGER NOT NULL,
-  incomplete INTEGER NOT NULL DEFAULT 0
+  incomplete INTEGER NOT NULL DEFAULT 0,
+  inode      INTEGER,
+  dev        INTEGER,
+  nlink      INTEGER,
+  mode       INTEGER,
+  uid        INTEGER,
+  gid        INTEGER,
+  error_code TEXT
 );
 CREATE TABLE IF NOT EXISTS directory_entry (
-  dir_uri    TEXT NOT NULL REFERENCES directory_snapshot(dir_uri) ON DELETE CASCADE,
-  name       TEXT NOT NULL,
-  child_uri  TEXT,
-  is_dir     INTEGER NOT NULL,
-  size       INTEGER,
-  mtime_ns   INTEGER,
+  dir_uri         TEXT NOT NULL REFERENCES directory_snapshot(dir_uri) ON DELETE CASCADE,
+  name            TEXT NOT NULL,
+  child_uri       TEXT,
+  is_dir          INTEGER NOT NULL,
+  size            INTEGER,
+  mtime_ns        INTEGER,
+  file_type       INTEGER,
+  mode            INTEGER,
+  uid             INTEGER,
+  gid             INTEGER,
+  atime_ns        INTEGER,
+  ctime_ns        INTEGER,
+  birth_ns        INTEGER,
+  nlink           INTEGER,
+  inode           INTEGER,
+  dev             INTEGER,
+  rdev            INTEGER,
+  symlink_target  TEXT,
+  blob_id         INTEGER,
+  flags           INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (dir_uri, name)
+);
+CREATE TABLE IF NOT EXISTS entry_xattr (
+  dir_uri  TEXT NOT NULL,
+  name     TEXT NOT NULL,
+  key      TEXT NOT NULL,
+  value    BLOB,
+  PRIMARY KEY (dir_uri, name, key)
 );
 )SQL";
 
@@ -240,6 +268,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 );
 CREATE TABLE IF NOT EXISTS tag_def (
   id         INTEGER PRIMARY KEY,
+  uuid       TEXT UNIQUE,
   name       TEXT NOT NULL UNIQUE,
   label      TEXT,
   color      TEXT,
@@ -256,6 +285,7 @@ CREATE TABLE IF NOT EXISTS blob_tag (
 CREATE INDEX IF NOT EXISTS idx_blob_tag_tag ON blob_tag(tag_id);
 CREATE TABLE IF NOT EXISTS collection (
   id         INTEGER PRIMARY KEY,
+  uuid       TEXT UNIQUE,
   label      TEXT,
   color      TEXT,
   created_at INTEGER NOT NULL,
@@ -453,17 +483,55 @@ void ensure_locator_column(sqlite3* db, const char* column, const char* sql_type
   }
 }
 
+
+void ensure_table_column(sqlite3* db, const char* table, const char* column,
+                         const char* sql_type) {
+  if (index_table_has_column(db, table, column)) return;
+  std::string alter = std::string("ALTER TABLE ") + table + " ADD COLUMN " +
+                      column + " " + sql_type + ";";
+  char* err = nullptr;
+  const int rc = sqlite3_exec(db, alter.c_str(), nullptr, nullptr, &err);
+  if (rc != SQLITE_OK) {
+    std::string msg = err ? err : "ALTER TABLE failed";
+    sqlite3_free(err);
+    if (msg.find("duplicate column") == std::string::npos) {
+      throw std::runtime_error(msg);
+    }
+  }
+  if (!index_table_has_column(db, table, column)) {
+    throw std::runtime_error(std::string(table) + "." + column +
+                             " missing after ALTER");
+  }
+}
+
 }  // namespace
 
 void Store::ensure_optional_index_tables() {
-  // Schema stays at 100; outer_path/member_path were added after the first
-  // redesign cutover. Existing indexes must gain the columns before any
-  // SELECT/INSERT that references them (archives, PDF/EPUB, directory list).
+  // outer_path/member_path were added after the first redesign cutover.
   ensure_locator_column(index_, "outer_path", "TEXT");
   ensure_locator_column(index_, "member_path", "TEXT");
   exec_index(
       "CREATE INDEX IF NOT EXISTS idx_locator_outer_path ON "
       "locator(outer_path);");
+  // Schema ≥101 directory POSIX columns (additive on existing 100 DBs).
+  for (const char* col : {"inode", "dev", "nlink", "mode", "uid", "gid"}) {
+    ensure_table_column(index_, "directory_snapshot", col, "INTEGER");
+  }
+  ensure_table_column(index_, "directory_snapshot", "error_code", "TEXT");
+  for (const char* col :
+       {"file_type", "mode", "uid", "gid", "atime_ns", "ctime_ns", "birth_ns",
+        "nlink", "inode", "dev", "rdev", "blob_id", "flags"}) {
+    ensure_table_column(index_, "directory_entry", col, "INTEGER");
+  }
+  ensure_table_column(index_, "directory_entry", "symlink_target", "TEXT");
+  exec_index(
+      "CREATE TABLE IF NOT EXISTS entry_xattr ("
+      "  dir_uri  TEXT NOT NULL,"
+      "  name     TEXT NOT NULL,"
+      "  key      TEXT NOT NULL,"
+      "  value    BLOB,"
+      "  PRIMARY KEY (dir_uri, name, key)"
+      ");");
   // Prefer composite-key blob_lqip. If a legacy single-column table exists
   // (blob_id PK only), rebuild it and copy page-0 rows.
   {
@@ -535,9 +603,17 @@ void Store::migrate_or_init_index() {
         "index schema_version is newer than this build");
   }
   if (index_schema_version_ < kStoreIndexSchemaVersion) {
-    // Redesign has no in-place migration from legacy ladders or older epochs.
-    throw std::runtime_error(
-        "index schema_version is outdated; delete cache index.sqlite and retry");
+    if (index_schema_version_ < 100) {
+      // Pre-redesign / ladder epoch: still no automated conversion.
+      throw std::runtime_error(
+          "index schema_version is outdated; delete cache index.sqlite and "
+          "retry");
+    }
+    // Additive path: 100 → 101 (directory POSIX columns + entry_xattr).
+    // ensure_optional_index_tables() runs after this and applies ALTERs.
+    meta_set_db(index_, kSchemaMetaVersionKey,
+                std::to_string(kStoreIndexSchemaVersion));
+    index_schema_version_ = kStoreIndexSchemaVersion;
   }
   seed_lookups();
 }
@@ -573,9 +649,22 @@ void Store::migrate_or_init_user() {
     throw std::runtime_error("user schema_version is newer than this build");
   }
   if (v < kStoreUserSchemaVersion) {
-    // User data: refuse silent wipe; operator must migrate or reset explicitly.
-    throw std::runtime_error(
-        "user schema_version is outdated; migrate or replace user.sqlite");
+    if (v < 100) {
+      throw std::runtime_error(
+          "user schema_version is outdated; migrate or replace user.sqlite");
+    }
+    // Additive 100 → 101: stable uuid keys for tag_def / collection.
+    ensure_table_column(user_, "tag_def", "uuid", "TEXT");
+    ensure_table_column(user_, "collection", "uuid", "TEXT");
+    // UNIQUE indexes (SQLite allows multiple NULLs).
+    exec_user(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_def_uuid ON "
+        "tag_def(uuid) WHERE uuid IS NOT NULL;");
+    exec_user(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_collection_uuid ON "
+        "collection(uuid) WHERE uuid IS NOT NULL;");
+    meta_set_db(user_, kSchemaMetaVersionKey,
+                std::to_string(kStoreUserSchemaVersion));
   }
 }
 
@@ -610,9 +699,9 @@ Store Store::open(const Paths& paths) {
       sqlite3_close(probe);
       if (ver) {
         const int v = std::stoi(*ver);
-        // Redesign epoch starts at kStoreIndexSchemaVersion (100+).
-        // Legacy used 1–4. Anything in between is also treated as obsolete cache.
-        if (v < kStoreIndexSchemaVersion) {
+        // Redesign epoch starts at 100. Pre-100 (ladder 1–4, etc.) is replaced.
+        // 100 → current is handled by migrate_or_init_index (additive), not wipe.
+        if (v < 100) {
           fs::remove(index_path, ec);
           fs::remove(bulk_path, ec);
           // WAL sidecars
@@ -2288,6 +2377,23 @@ void Store::replace_directory_snapshot(
   }
   const std::int64_t listed_at =
       snap.listed_at != 0 ? snap.listed_at : now_unix_s();
+  auto bind_opt_i64 = [](sqlite3_stmt* st, int idx,
+                         const std::optional<std::int64_t>& v) {
+    if (v) {
+      sqlite3_bind_int64(st, idx, *v);
+    } else {
+      sqlite3_bind_null(st, idx);
+    }
+  };
+  auto bind_opt_text = [](sqlite3_stmt* st, int idx,
+                          const std::optional<std::string>& v) {
+    if (v) {
+      sqlite3_bind_text(st, idx, v->data(), static_cast<int>(v->size()),
+                        SQLITE_STATIC);
+    } else {
+      sqlite3_bind_null(st, idx);
+    }
+  };
   exec_index("BEGIN IMMEDIATE;");
   try {
     sqlite3_stmt* del = nullptr;
@@ -2308,24 +2414,24 @@ void Store::replace_directory_snapshot(
     if (sqlite3_prepare_v2(
             index_,
             "INSERT INTO directory_snapshot(dir_uri, size, mtime_ns, listed_at, "
-            "incomplete) VALUES(?1,?2,?3,?4,?5);",
+            "incomplete, inode, dev, nlink, mode, uid, gid, error_code) "
+            "VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12);",
             -1, &ins, nullptr) != SQLITE_OK) {
       throw_sqlite(index_, "prepare replace_directory_snapshot insert");
     }
     sqlite3_bind_text(ins, 1, snap.dir_uri.data(),
                       static_cast<int>(snap.dir_uri.size()), SQLITE_STATIC);
-    if (snap.size) {
-      sqlite3_bind_int64(ins, 2, *snap.size);
-    } else {
-      sqlite3_bind_null(ins, 2);
-    }
-    if (snap.mtime_ns) {
-      sqlite3_bind_int64(ins, 3, *snap.mtime_ns);
-    } else {
-      sqlite3_bind_null(ins, 3);
-    }
+    bind_opt_i64(ins, 2, snap.size);
+    bind_opt_i64(ins, 3, snap.mtime_ns);
     sqlite3_bind_int64(ins, 4, listed_at);
     sqlite3_bind_int(ins, 5, snap.incomplete ? 1 : 0);
+    bind_opt_i64(ins, 6, snap.inode);
+    bind_opt_i64(ins, 7, snap.dev);
+    bind_opt_i64(ins, 8, snap.nlink);
+    bind_opt_i64(ins, 9, snap.mode);
+    bind_opt_i64(ins, 10, snap.uid);
+    bind_opt_i64(ins, 11, snap.gid);
+    bind_opt_text(ins, 12, snap.error_code);
     if (sqlite3_step(ins) != SQLITE_DONE) {
       sqlite3_finalize(ins);
       throw_sqlite(index_, "step replace_directory_snapshot insert");
@@ -2336,7 +2442,10 @@ void Store::replace_directory_snapshot(
     if (sqlite3_prepare_v2(
             index_,
             "INSERT INTO directory_entry(dir_uri, name, child_uri, is_dir, size, "
-            "mtime_ns) VALUES(?1,?2,?3,?4,?5,?6);",
+            "mtime_ns, file_type, mode, uid, gid, atime_ns, ctime_ns, birth_ns, "
+            "nlink, inode, dev, rdev, symlink_target, blob_id, flags) "
+            "VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,"
+            "?18,?19,?20);",
             -1, &ent, nullptr) != SQLITE_OK) {
       throw_sqlite(index_, "prepare replace_directory_snapshot entry");
     }
@@ -2348,22 +2457,35 @@ void Store::replace_directory_snapshot(
                         static_cast<int>(snap.dir_uri.size()), SQLITE_STATIC);
       sqlite3_bind_text(ent, 2, e.name.data(), static_cast<int>(e.name.size()),
                         SQLITE_STATIC);
-      if (e.child_uri) {
-        sqlite3_bind_text(ent, 3, e.child_uri->data(),
-                          static_cast<int>(e.child_uri->size()), SQLITE_STATIC);
+      bind_opt_text(ent, 3, e.child_uri);
+      const bool is_dir =
+          e.is_dir || (e.file_type && *e.file_type == kFsFileTypeDir);
+      sqlite3_bind_int(ent, 4, is_dir ? 1 : 0);
+      bind_opt_i64(ent, 5, e.size);
+      bind_opt_i64(ent, 6, e.mtime_ns);
+      if (e.file_type) {
+        bind_opt_i64(ent, 7, e.file_type);
+      } else if (e.is_dir) {
+        sqlite3_bind_int64(ent, 7, kFsFileTypeDir);
       } else {
-        sqlite3_bind_null(ent, 3);
+        sqlite3_bind_null(ent, 7);
       }
-      sqlite3_bind_int(ent, 4, e.is_dir ? 1 : 0);
-      if (e.size) {
-        sqlite3_bind_int64(ent, 5, *e.size);
+      bind_opt_i64(ent, 8, e.mode);
+      bind_opt_i64(ent, 9, e.uid);
+      bind_opt_i64(ent, 10, e.gid);
+      bind_opt_i64(ent, 11, e.atime_ns);
+      bind_opt_i64(ent, 12, e.ctime_ns);
+      bind_opt_i64(ent, 13, e.birth_ns);
+      bind_opt_i64(ent, 14, e.nlink);
+      bind_opt_i64(ent, 15, e.inode);
+      bind_opt_i64(ent, 16, e.dev);
+      bind_opt_i64(ent, 17, e.rdev);
+      bind_opt_text(ent, 18, e.symlink_target);
+      bind_opt_i64(ent, 19, e.blob_id);
+      if (e.flags) {
+        sqlite3_bind_int64(ent, 20, *e.flags);
       } else {
-        sqlite3_bind_null(ent, 5);
-      }
-      if (e.mtime_ns) {
-        sqlite3_bind_int64(ent, 6, *e.mtime_ns);
-      } else {
-        sqlite3_bind_null(ent, 6);
+        sqlite3_bind_int64(ent, 20, 0);
       }
       if (sqlite3_step(ent) != SQLITE_DONE) {
         sqlite3_finalize(ent);
@@ -2383,7 +2505,8 @@ std::optional<Store::DirectorySnapshotRow> Store::find_directory_snapshot(
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(
           index_,
-          "SELECT dir_uri, size, mtime_ns, listed_at, incomplete "
+          "SELECT dir_uri, size, mtime_ns, listed_at, incomplete, "
+          "inode, dev, nlink, mode, uid, gid, error_code "
           "FROM directory_snapshot WHERE dir_uri = ?1;",
           -1, &stmt, nullptr) != SQLITE_OK) {
     throw_sqlite(index_, "prepare find_directory_snapshot");
@@ -2402,6 +2525,28 @@ std::optional<Store::DirectorySnapshotRow> Store::find_directory_snapshot(
     }
     r.listed_at = sqlite3_column_int64(stmt, 3);
     r.incomplete = sqlite3_column_int(stmt, 4) != 0;
+    if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
+      r.inode = sqlite3_column_int64(stmt, 5);
+    }
+    if (sqlite3_column_type(stmt, 6) != SQLITE_NULL) {
+      r.dev = sqlite3_column_int64(stmt, 6);
+    }
+    if (sqlite3_column_type(stmt, 7) != SQLITE_NULL) {
+      r.nlink = sqlite3_column_int64(stmt, 7);
+    }
+    if (sqlite3_column_type(stmt, 8) != SQLITE_NULL) {
+      r.mode = sqlite3_column_int64(stmt, 8);
+    }
+    if (sqlite3_column_type(stmt, 9) != SQLITE_NULL) {
+      r.uid = sqlite3_column_int64(stmt, 9);
+    }
+    if (sqlite3_column_type(stmt, 10) != SQLITE_NULL) {
+      r.gid = sqlite3_column_int64(stmt, 10);
+    }
+    if (sqlite3_column_type(stmt, 11) != SQLITE_NULL) {
+      r.error_code =
+          reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11));
+    }
     out = std::move(r);
   }
   sqlite3_finalize(stmt);
@@ -2413,7 +2558,9 @@ std::vector<Store::DirectoryEntryRow> Store::list_directory_entries(
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(
           index_,
-          "SELECT dir_uri, name, child_uri, is_dir, size, mtime_ns "
+          "SELECT dir_uri, name, child_uri, is_dir, size, mtime_ns, "
+          "file_type, mode, uid, gid, atime_ns, ctime_ns, birth_ns, "
+          "nlink, inode, dev, rdev, symlink_target, blob_id, flags "
           "FROM directory_entry WHERE dir_uri = ?1 ORDER BY name LIMIT ?2;",
           -1, &stmt, nullptr) != SQLITE_OK) {
     throw_sqlite(index_, "prepare list_directory_entries");
@@ -2436,6 +2583,49 @@ std::vector<Store::DirectoryEntryRow> Store::list_directory_entries(
     }
     if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
       r.mtime_ns = sqlite3_column_int64(stmt, 5);
+    }
+    if (sqlite3_column_type(stmt, 6) != SQLITE_NULL) {
+      r.file_type = sqlite3_column_int64(stmt, 6);
+    }
+    if (sqlite3_column_type(stmt, 7) != SQLITE_NULL) {
+      r.mode = sqlite3_column_int64(stmt, 7);
+    }
+    if (sqlite3_column_type(stmt, 8) != SQLITE_NULL) {
+      r.uid = sqlite3_column_int64(stmt, 8);
+    }
+    if (sqlite3_column_type(stmt, 9) != SQLITE_NULL) {
+      r.gid = sqlite3_column_int64(stmt, 9);
+    }
+    if (sqlite3_column_type(stmt, 10) != SQLITE_NULL) {
+      r.atime_ns = sqlite3_column_int64(stmt, 10);
+    }
+    if (sqlite3_column_type(stmt, 11) != SQLITE_NULL) {
+      r.ctime_ns = sqlite3_column_int64(stmt, 11);
+    }
+    if (sqlite3_column_type(stmt, 12) != SQLITE_NULL) {
+      r.birth_ns = sqlite3_column_int64(stmt, 12);
+    }
+    if (sqlite3_column_type(stmt, 13) != SQLITE_NULL) {
+      r.nlink = sqlite3_column_int64(stmt, 13);
+    }
+    if (sqlite3_column_type(stmt, 14) != SQLITE_NULL) {
+      r.inode = sqlite3_column_int64(stmt, 14);
+    }
+    if (sqlite3_column_type(stmt, 15) != SQLITE_NULL) {
+      r.dev = sqlite3_column_int64(stmt, 15);
+    }
+    if (sqlite3_column_type(stmt, 16) != SQLITE_NULL) {
+      r.rdev = sqlite3_column_int64(stmt, 16);
+    }
+    if (sqlite3_column_type(stmt, 17) != SQLITE_NULL) {
+      r.symlink_target =
+          reinterpret_cast<const char*>(sqlite3_column_text(stmt, 17));
+    }
+    if (sqlite3_column_type(stmt, 18) != SQLITE_NULL) {
+      r.blob_id = sqlite3_column_int64(stmt, 18);
+    }
+    if (sqlite3_column_type(stmt, 19) != SQLITE_NULL) {
+      r.flags = sqlite3_column_int64(stmt, 19);
     }
     out.push_back(std::move(r));
   }

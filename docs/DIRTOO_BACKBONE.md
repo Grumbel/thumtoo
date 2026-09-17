@@ -351,3 +351,32 @@ the only tag store in dirtoo.
 | Portable backup for tags/sets | Versioned JSON export/import |
 | External directory sidecars | Deferred feature; not default |
 | Hardest long-term problem | Tag/set identity + merge across schema and machine moves |
+
+---
+
+## 10. Pre-release schema 101 (landed)
+
+**Before first release**, index **101** and user **101** reserve columns and
+migration so post-release upgrades stay additive.
+
+### Index 101
+
+- `directory_snapshot`: `inode`, `dev`, `nlink`, `mode`, `uid`, `gid`, `error_code`
+- `directory_entry`: `file_type`, `mode`, `uid`, `gid`, `atime_ns`, `ctime_ns`,
+  `birth_ns`, `nlink`, `inode`, `dev`, `rdev`, `symlink_target`, `blob_id`, `flags`
+- `entry_xattr(dir_uri, name, key, value)` — table present; API deferred
+- `kFsFileType*` constants for `file_type`
+- Open path: wipe only **pre-100** caches; **100 → 101** is in-place ALTER +
+  version bump (no delete)
+
+### User 101
+
+- `tag_def.uuid`, `collection.uuid` (nullable UNIQUE) for stable export/merge keys
+- In-place migrate from user 100
+
+### Still deferred (not required to freeze schema shape)
+
+- Filling rich stat fields in `refresh_directory_snapshot` (lstat/xattr)
+- `apply_watch_delta`, get-first listing host API polish
+- JSON export/import CLI implementation
+- External directory sidecars
