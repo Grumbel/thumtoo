@@ -7,66 +7,57 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Identity
 
-Both systems key tags by **file content hash**, not path:
+Tags are keyed by **file content hash**, not by path, so renames do not drop
+labels when the bytes are unchanged.
 
 | System | Content key | Store location |
 |--------|-------------|----------------|
 | **dirtoo** `TagStore` | bare SHA-256 hex (64 chars) | `$XDG_DATA_HOME/dirtoo/tags.sqlite` |
-| **thumtoo** | `content_id` = `sha256:` + hex | `$XDG_CACHE_HOME/thumtoo/index.sqlite` (`tags` table) |
+| **thumtoo** | `blob_ref` = `blob:sha256:` + hex | `$XDG_DATA_HOME/thumtoo/user.sqlite` (when `data_root` is set) |
 
-Conversion:
-
-```text
-dirtoo_sha256  = content_id.substr(strlen("sha256:"))   // when prefix matches
-thumtoo_id     = "sha256:" + dirtoo_sha256
-```
-
-Provisional ids (`prov:…`) must not receive durable tags; promote to SHA-256 first
-(prepare / probe does this).
-
-## Schema comparison
-
-**dirtoo** (rich Tag Manager):
+Wire form used inside thumtoo:
 
 ```text
-tag_defs(id, name, label, color, badge, created)
-files(id, sha256 UNIQUE)
-paths(path, file_id, last_seen)
-file_tags(file_id, tag_id, tagged_at)
+blob:sha256:<64 lowercase hex>
 ```
 
-**thumtoo** (minimal, ladder-cache sibling):
+Provisional or unhashed locators must not receive durable tags; hash (or
+promote) first.
+
+## Schema (thumtoo user DB)
 
 ```text
-tags(content_id, tag, source, created_at)
-  PRIMARY KEY (content_id, tag)
+tag_def(id, uuid?, name UNIQUE, label, color, badge, created_at)
+blob_tag(blob_ref, tag_id, tagged_at, source)
+collection / collection_member  — sets of blob_ref
 ```
 
-No tag catalog, colors, or rename indirection in thumtoo. UI for those stays in
-dirtoo. thumtoo only needs “this content carries label X” for consumers such as
-biltoo filters.
+`uuid` on `tag_def` / `collection` (schema ≥ 101) is optional and intended for
+stable export/import. Catalog metadata (colour, badge) lives here so hosts do
+not need a second definition store for basic UI.
 
-## API sketch (implemented)
+## API
 
 ```text
 Client::get_tags(uri) -> [tag…]
 Client::add_tag(uri, tag, source="user") -> bool
 Client::remove_tag(uri, tag) -> bool
 
-Store::tags_for_blob_ref / add_blob_tag / … (user.sqlite overlays)
-Client::get_tags / add_tag / remove_tag (URI → blob_ref)
+Store::ensure_tag_def / add_blob_tag / tags_for_blob_ref / …
 ```
 
-`source` is free text (`user`, `auto`, app id); not validated yet.
+`source` is free text (`user`, `auto`, app id).
 
-## Interop (later)
+## Interop with dirtoo
 
-- Import/export between stores via SHA-256 mapping (no shared SQLite file).
-- dirtoo remains authoritative for Tag Manager metadata (color/badge).
-- Optional: thumtoo-status `tags` subcommand; dirtoo `dt_tag` already exists.
+- Map bare hex ↔ `blob:sha256:` + hex.
+- Long term: one user overlay and JSON export/import (see
+  [docs/DIRTOO_BACKBONE.md](docs/DIRTOO_BACKBONE.md)).
+- Until then, dirtoo may keep its own TagStore; avoid dual-writing without a
+  clear merge story.
 
 ## Non-goals
 
-- Value-bearing / namespaced tags (`namespace:key=value`) — deferred in both
-  designs until needed.
+- Value-bearing or namespaced tags (`ns:key=value`) until needed.
 - Tagging by path alone when a content hash is known.
+- Writing tag files into the source tree by default.

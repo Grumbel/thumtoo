@@ -2,6 +2,28 @@
 
 ## Status (2026-09-17)
 
+**Tip: thumtoo-302-user-docs.** User-focused README; DATABASE migrate policy; TAGS user DB.
+Prior: **301**.
+
+### Change
+- README rewritten for users/integrators (no agent/history noise)
+- docs/DATABASE.md: additive migrate ≥100; schema 101 note
+- TAGS.md: user.sqlite blob_ref model
+
+### Apply
+```bash
+git pull /path/to/thumtoo-302-user-docs.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **302**
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-17)
+
 **Tip: thumtoo-301-version-file.** VERSION file + generated version.hpp (no -D rebuild).
 Prior: **300**.
 

@@ -5,103 +5,82 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # thumtoo
 
-**thumtoo** is a persistent **media index and display-pixel ladder** for the
-\*too family of apps. It remembers native image size, archive tables of
-contents, and multi-resolution preview pixels so viewers do not re-probe and
-re-decode the same files on every session.
+**thumtoo** is a library that remembers what your images (and related media)
+look like so apps do not have to re-measure and re-decode the same files on
+every open.
 
-It is a **library first** (optional D-Bus service later). It is **not** an
-image viewer and **not** a full file manager.
+It stores native dimensions, multi-resolution **preview tiles**, archive
+tables of contents, and optional tags keyed by content hash. Source files are
+never modified; everything lives under the usual XDG cache and data directories.
 
-**Cache-first, source-read-only:** durable data lives under
-`$XDG_CACHE_HOME/thumtoo/` (Store `index.sqlite` / `bulk.sqlite`; optional
-relocated pre-cutover files under `legacy/`). Tags and user data use
-`$XDG_DATA_HOME/thumtoo/` when the host passes `data_root`. Source trees are
-never modified. Content hashes couple tiles and tags to file bytes across
-renames.
+thumtoo is **not** an image viewer or a file manager. Applications such as
+[biltoo](https://github.com/Grumbel/biltoo) use it as a shared index and pixel
+cache.
 
-| Concern | thumtoo | Not thumtoo |
-|---------|---------|-------------|
-| Native width × height | Yes (SQLite) | — |
-| Archive TOC + member identity | Yes | — |
-| Fixed long-edge previews (ladder) | Yes | — |
-| Grid tiles (256², Galapix-style) | Yes (optional; `request_tile` / `--tiles`) | Workspace UI (galapix) |
-| Video stills (frame ladder) | Yes (`still_count` + `frame_idx`) | Storyboard composition (apps) |
-| Directory listing **snapshots** | Durable cache for cold/USB-safe folder open | Live listing UX, refresh policy (dirtoo) |
-| Session edit identity (crop, flips) | — | App session (`SessionImageId` in biltoo) |
-| Desktop file-manager icons | Optional consumer | Freedesktop Thumbnailer1 (dirtoo client) |
-| Zoomable workspace UI | — | biltoo / galapix |
+## What it provides
 
-## Related projects
+| Capability | Notes |
+|------------|--------|
+| Image size and basic media metadata | Width, height, format; page counts for documents where supported |
+| Preview tiles | Zoomable 256² tiles and soft overviews for fast browsing |
+| Archives | Cached member lists for zip, tar, and similar containers (read-only) |
+| Tags and sets | Optional user data keyed by content hash (survives cache rebuilds) |
+| Directory snapshots | Optional cached folder listings for faster reopen (e.g. slow disks) |
 
-| Project | Role | Link |
-|---------|------|------|
-| **biltoo** | Qt image viewer (Image / Gallery / Workspace); primary consumer of size + preview ladder | <https://github.com/Grumbel/biltoo> |
-| **dirtoo** | Modular file manager; checksum SQLite, MediaMetaCache, archive TOC, Thumbnailer1 client | <https://github.com/Grumbel/dirtoo> |
-| **galapix** | Zoomable collection viewer; multi-scale **tile** cache in SQLite (historical pyramid model) | <https://github.com/Galapix/galapix> |
-| **dirtoo-py** | Python/PyQt prototype (behavioral reference for dirtoo) | <https://github.com/Grumbel/dirtoo-py> |
+## Related applications
 
-Sister docs inside those trees (when present): biltoo `DOMAIN.md` / `IDENTITY.md` /
-`SLIDESHOW.md`; dirtoo `ARCHITECTURE.md`; galapix `README` (tile DB, `prepare` /
-`thumbgen`).
+| Project | Role |
+|---------|------|
+| [biltoo](https://github.com/Grumbel/biltoo) | Desktop image viewer (primary consumer) |
+| [dirtoo](https://github.com/Grumbel/dirtoo) | Media-oriented file manager |
+| [galapix](https://github.com/Galapix/galapix) | Zoomable collection viewer |
 
-## Status
+## Install and build
 
-**Store-only (schema ≥ 100).** Durable index is redesign Store (`index.sqlite` +
-`bulk.sqlite` at the cache root by default). Schema-4 ladder `Database` /
-`BlobStore` sources are gone. Soft previews are session/tiles-first; durable
-tiles, tags, directory snapshots, LQIP, and text/outline live on Store.
-
-Build with CMake or `nix develop`. Host cutover: [docs/HOST_CUTOVER.md](docs/HOST_CUTOVER.md).
-Details: [TODO.md](TODO.md), [TILES.md](TILES.md), [ARCHITECTURE.md](ARCHITECTURE.md).
-Biltoo: [INTEGRATION.md](INTEGRATION.md).
-
-## Name
-
-**thumtoo** follows biltoo / dirtoo. “Thumb” means *display proxy* (size index,
-preview ladder, archive listing helpers)—not only 128² file-manager icons.
-
-## Build
+**Nix** (recommended toolchain):
 
 ```bash
-cmake -B build && cmake --build build && ctest --test-dir build
-./build/thumtoo-status --cache ~/.cache/thumtoo
-./build/thumtoo-gc --cache ~/.cache/thumtoo --store-summary
+nix develop          # deps + helpers
+nix build            # package
+nix run .#status -- --help
 ```
 
-Use `nix develop` for the toolchain: **libvips** and **libjxl** are required (no stb/codec fallbacks). See `flake.nix`.
+**CMake** (needs libvips, libjxl, SQLite, libarchive; optional MuPDF, DjVu, curl):
 
-## Debug overlay
+```bash
+cmake -B build && cmake --build build
+ctest --test-dir build
+./build/thumtoo-status --version
+```
 
-Set **`THUMTOO_DEBUG_OVERLAY=1`** (alias `BILTOO_DEBUG_OVERLAY`) to stamp every
-returned soft level and grid tile with a **black outline** plus text:
-basename, pixel size, request edge / tile scale+coords, and source tag.
-Read-path only — does not rewrite the on-disk cache.
+Version comes from the top-level `VERSION` file (e.g. `0.1.0-dev`). Packaging
+may append a revision suffix. Hosts can call `thumtoo::version_string()` after
+including `<thumtoo/version.hpp>`.
+
+## Using the cache
+
+By default durable data is under `$XDG_CACHE_HOME/thumtoo/` (or
+`~/.cache/thumtoo/`). User overlays such as tags use `$XDG_DATA_HOME/thumtoo/`
+when the host sets a data root.
+
+Useful tools after install:
+
+```bash
+thumtoo-status --cache ~/.cache/thumtoo
+thumtoo-prepare --help
+thumtoo-gc --cache ~/.cache/thumtoo --store-summary
+```
+
+## Documentation for integrators
+
+| Doc | Topic |
+|-----|--------|
+| [INTEGRATION.md](INTEGRATION.md) | API mapping for biltoo-style hosts |
+| [docs/HOST_CUTOVER.md](docs/HOST_CUTOVER.md) | Store-only client expectations |
+| [TILES.md](TILES.md) | Tile pyramid behaviour |
+| [docs/DATABASE.md](docs/DATABASE.md) | On-disk schema overview |
+| [TAGS.md](TAGS.md) | Content-hash tags |
 
 ## License
 
-GPL-3.0-or-later. See [LICENSES/GPL-3.0-or-later.txt](LICENSES/GPL-3.0-or-later.txt)
-and [REUSE.toml](REUSE.toml).
-
-
-## Development (nix)
-
-```bash
-nix develop
-thumtoo-configure          # out-of-tree build in $THUMTOO_BUILD_DIR (/tmp/thumtoo-build)
-thumtoo-build
-thumtoo-test
-thumtoo-run-prepare -- --help
-thumtoo-run-bench --ladder 256 /path/to/images
-thumtoo-run-archive list /path/to/book.cbr
-```
-
-Flake apps (built package, not the dev build dir):
-
-```bash
-nix run .#prepare -- --help
-nix run .#bench -- --ladder 256 .
-nix run .#status -- /path/to/cache
-nix run .#archive -- list /path/to/book.cbz
-nix flake check   # tools-bin: status, prepare, archive, …
-```
+GPL-3.0-or-later. See [LICENSES/](LICENSES/) and [REUSE.toml](REUSE.toml).

@@ -9,11 +9,15 @@ Status: **implemented** in `Store` (index + bulk + user). Client is
 **Store-only** (≥262); the C++ `Database` / `BlobStore` classes are **deleted**
 (≥272). See [API_MIGRATION.md](API_MIGRATION.md), [HOST_CUTOVER.md](HOST_CUTOVER.md).
 
-**No migration** of old ladder rows into tiles. On epoch detect: warn / replace
-cache DBs; **user** DB must survive cache wipe. Store files live at the cache
-root (`index.sqlite`, `bulk.sqlite`); classic dual-path trees are parked under
-`legacy/` on open. Schema remains experimental (version 100 + optional
-columns); hosts should treat the cache as disposable across upgrades.
+**No migration** of pre-redesign ladder rows into tiles: on detecting a
+pre-100 epoch, index/bulk are replaced. **User** data (`user.sqlite`) must
+survive. Store files live at the cache root (`index.sqlite`, `bulk.sqlite`);
+classic dual-path trees are parked under `legacy/` on open.
+
+From schema **100** onward, prefer **in-place additive migration** (e.g. 100→101)
+over wiping the cache. Do not treat a normal upgrade as “delete the cache.”
+See [DIRTOO_BACKBONE.md](DIRTOO_BACKBONE.md). Current index/user baseline includes
+schema **101** (richer directory columns; optional `uuid` on tag/collection defs).
 
 **Scope:** identity, locators, archives, media, tiles, directory cache, tags,
 collections, link edges, extracted document structure.  
