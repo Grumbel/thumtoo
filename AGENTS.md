@@ -7,9 +7,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-297-tile-cache-hit-fast**. Next bundle: **298**.
+Latest agent handoff: **TODO.md → thumtoo-298-dirtoo-backbone-design**. Next bundle: **299**.
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code
 here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
+Post-release: prefer SQLite schema migration over cache wipe (see docs/DIRTOO_BACKBONE.md).
 
 ## Related repositories
 
@@ -32,6 +33,7 @@ here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 | [docs/DATABASE.md](docs/DATABASE.md) | DB redesign schema (index/bulk/user; dual-path) |
 | [docs/API_MIGRATION.md](docs/API_MIGRATION.md) | Dual-path Client → Store cutover notes |
 | [docs/BLOB_AND_OVERLAY.md](docs/BLOB_AND_OVERLAY.md) | Pointer only → DATABASE.md |
+| [docs/DIRTOO_BACKBONE.md](docs/DIRTOO_BACKBONE.md) | dirtoo virtual FS backbone; schema migrate policy; tags/sets JSON |
 
 ## Handoff
 

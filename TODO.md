@@ -1,5 +1,28 @@
 # TODO / agent handoff
 
+## Status (2026-09-17)
+
+**Tip: thumtoo-298-dirtoo-backbone-design.** Design doc for dirtoo virtual FS backbone.
+Prior: **297**.
+
+### Change
+- Add `docs/DIRTOO_BACKBONE.md`: cache-first directory backbone, POSIX-ish
+  observation fields, post-release **prefer schema migrate over wipe**, tags/sets
+  JSON export/import (hard part), external sidecars deferred
+- AGENTS.md: tip pointer + doc map entry; note migration preference
+
+### Apply
+```bash
+git pull /path/to/thumtoo-298-dirtoo-backbone-design.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **298**
+
+---
+
+# TODO / agent handoff
+
 ## Status (2026-09-16)
 
 **Tip: thumtoo-297-tile-cache-hit-fast.** Warm tiles skip worker queue.
