@@ -2,6 +2,29 @@
 
 ## Status (2026-09-17)
 
+**Tip: thumtoo-300-reuse-lint.** REUSE 3.3 compliance: Apache-2.0/MIT texts, annotations.
+Prior: **299**.
+
+### Change
+- `LICENSES/Apache-2.0.txt`, `LICENSES/MIT.txt` for vendored Handsum/Wuffs
+- `external/basic_handsum_decode_impl.c`: SPDX copyright + license
+- `REUSE.toml`: `.gitignore`, `flake.lock`, docs microbench/PDF, `tests/fixtures/hello.pdf`
+
+### Apply
+```bash
+git pull /path/to/thumtoo-300-reuse-lint.bundle HEAD
+```
+
+### Done criteria
+- [x] Bundle **300**
+- [x] `reuse lint` clean
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-17)
+
 **Tip: thumtoo-299-schema-101-dir-futureproof.** Pre-release schema 101: directory
 POSIX columns, entry_xattr, user uuid keys, additive 100→101 migrate (no wipe).
 Prior: **298**.

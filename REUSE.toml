@@ -9,10 +9,21 @@ path = [
   "TODO.md",
   "CMakeLists.txt",
   "flake.nix",
+  "flake.lock",
+  ".gitignore",
   "INTEGRATION.md",
   "INTEGRATION_GALAPIX.md",
   "TILES.md",
   "TAGS.md",
+  "docs/MICROBENCH_RESULTS.md",
+  "docs/PDF_BACKENDS.md",
+]
+SPDX-FileCopyrightText = "2026 Ingo Ruhnke <grumbel@gmail.com>"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+[[annotations]]
+path = [
+  "tests/fixtures/hello.pdf",
 ]
 SPDX-FileCopyrightText = "2026 Ingo Ruhnke <grumbel@gmail.com>"
 SPDX-License-Identifier = "GPL-3.0-or-later"
