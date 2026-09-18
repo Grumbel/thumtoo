@@ -2,6 +2,28 @@
 
 ## Status (2026-09-18)
 
+**Tip: thumtoo-309-prepare-lqip.** Prepare `--lqip` durable LQIP prewarm phase.
+Prior: **308**.
+
+### Change
+- `thumtoo-prepare --lqip`: after probes (and sequential URI order), `request_lqip`
+  for each sized URI, drain, report how many LQIP blobs are present.
+- sized_uris collected when ladder, tiles, **or** lqip requested.
+
+### Apply
+```bash
+git pull /path/to/thumtoo-309-prepare-lqip.bundle HEAD
+```
+
+### Next
+- [ ] Optional 7z solid/seek probe → Random
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-18)
+
 **Tip: thumtoo-308-prepare-sequential-order.** Prepare TOC-orders Sequential URIs; soft ladder not durable.
 Prior: **307**.
 

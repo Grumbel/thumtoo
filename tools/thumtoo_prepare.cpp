@@ -124,13 +124,14 @@ void usage(const char* argv0) {
       << "                      or ~/.cache/thumtoo)\n"
       << "      --ladder EDGE  after probes, encode ephemeral soft ≤ EDGE\n"
       << "                      (NOT stored in cache; prefer --tiles)\n"
+      << "      --lqip         after probes, ensure durable LQIP for each URI\n"
       << "      --tiles        after probes, build Galapix-style 256×256 JPEG\n"
       << "                      tile pyramid for each ready URI\n"
       << "      --min-scale N  finest tile scale to generate (default: 0 = full res)\n"
       << "                      higher N skips finer detail (e.g. 1 = no full-res)\n"
       << "      --max-scale M  coarsest tile scale (default: -1 = until single tile)\n"
       << "      --stats        print detailed timings on stderr (pretty multi-line)\n"
-      << "                      (also implied when --tiles / --ladder is used)\n"
+      << "                      (also implied when --tiles / --ladder / --lqip is used)\n"
       << "      --stats-line   one-line timings (script-friendly)\n"
       << "      --jobs N       worker threads for the job queue (default: CPUs,\n"
       << "                      max 32; 1 restores the old single-worker behaviour)\n"
@@ -150,6 +151,7 @@ int main(int argc, char** argv) {
   bool show_stats = false;
   bool stats_line = false;
   int ladder_edge = 0;
+  bool do_lqip = false;
   bool do_tiles = false;
   int tile_min_scale = 0;
   int tile_max_scale = -1;  // <0 → until single-tile coverage
@@ -172,6 +174,10 @@ int main(int argc, char** argv) {
     if (a == "--ladder" && i + 1 < argc) {
       ladder_edge = std::atoi(argv[++i]);
       if (ladder_edge < 0) ladder_edge = 0;
+      continue;
+    }
+    if (a == "--lqip") {
+      do_lqip = true;
       continue;
     }
     if (a == "--tiles") {
@@ -239,7 +245,7 @@ int main(int argc, char** argv) {
         paths,
         [&](std::string uri, thumtoo::SizeReply reply) {
           auto size = reply.size;
-          if (size && (ladder_edge > 0 || do_tiles)) {
+          if (size && (ladder_edge > 0 || do_tiles || do_lqip)) {
             std::lock_guard lock(progress_mu);
             sized_uris.push_back(uri);
           }
@@ -285,9 +291,29 @@ int main(int argc, char** argv) {
     // Sequential archives: TOC order so one extract pass warms neighbors.
     order_uris_for_sequential_extract(sized_uris);
 
+    if (do_lqip && !sized_uris.empty()) {
+      if (!quiet) {
+        std::cerr << "=== phase 2: LQIP ===\n"
+                  << "Ensure durable ThumbHash/Handsum for "
+                  << sized_uris.size() << " URI(s).\n";
+      }
+      for (const auto& uri : sized_uris) {
+        client->request_lqip(uri);
+      }
+      client->drain();
+      if (!quiet) {
+        int have = 0;
+        for (const auto& uri : sized_uris) {
+          if (client->get_lqip(uri)) ++have;
+        }
+        std::cerr << "LQIP present: " << have << "/" << sized_uris.size()
+                  << "\n";
+      }
+    }
+
     if (ladder_edge > 0 && !sized_uris.empty()) {
       if (!quiet) {
-        std::cerr << "=== phase 2: ephemeral soft (max edge=" << ladder_edge
+        std::cerr << "=== phase: ephemeral soft (max edge=" << ladder_edge
                   << ") ===\n"
                   << "WARNING: soft is not Store-durable; prefer --tiles.\n"
                   << "Encode one-shot soft for " << sized_uris.size()
@@ -316,8 +342,7 @@ int main(int argc, char** argv) {
 
     if (do_tiles && !sized_uris.empty()) {
       if (!quiet) {
-        std::cerr << "=== phase " << (ladder_edge > 0 ? "3" : "2")
-                  << ": tile pyramid ===\n"
+        std::cerr << "=== phase: tile pyramid ===\n"
                   << "Build Galapix-style 256×256 JPEG cells for "
                   << sized_uris.size() << " URI(s) "
                   << "(min_scale=" << tile_min_scale
@@ -357,7 +382,7 @@ int main(int argc, char** argv) {
           << "Inspect one URI: thumtoo-status path <URI|PATH>\n"
           << "(per-scale have/expected/missing, LQIP, min/max scale)\n";
     }
-    if (show_stats || do_tiles || ladder_edge > 0) {
+    if (show_stats || do_tiles || ladder_edge > 0 || do_lqip) {
       if (stats_line)
         std::cerr << thumtoo::global_build_stats().summary_line() << "\n";
       else
