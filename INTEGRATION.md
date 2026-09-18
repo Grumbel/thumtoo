@@ -9,12 +9,14 @@ Primary consumer of the size index and display ladder. thumtoo keys are
 **source URIs** only; biltoo **SessionImageId** stays session/edit identity and
 must not key durable pixels or tags.
 
+**Pixel durability / archives:** [docs/PIXEL_AND_ARCHIVE_POLICY.md](docs/PIXEL_AND_ARCHIVE_POLICY.md) (tiles + LQIP durable; soft ephemeral; random vs sequential archives).
+
 ## Mapping
 
 | biltoo need | thumtoo API |
 |-------------|-------------|
 | Replace provisional layout size (`imageSizeForPath` / probe) | `get_size(uri)` then `request_size(uri, cb)` |
-| Soft preview (Gallery overview / filmstrip / Image underlay) | `get_pixels` / `request_pixels` with max_edge ≤ **512** (`kMaxSoftLadderEdge`) |
+| Whole-image soft (ephemeral) / TileSynth | `get_pixels` / `request_pixels` ≤ **512**; prefer tiles for display |
 | High-res on zoom (Gallery) | Consumer **full decode** or `request_tile` — not `request_pixels(1024+)` |
 | Deep zoom / region | `get_tile` / `request_tile` ([TILES.md](TILES.md)) |
 | Known-good meta without I/O | `get_meta(uri)` (status, format, still_count, …) |
@@ -27,7 +29,7 @@ Suggested `max_edge` starting points (tunable in biltoo):
 | Mode | max_edge | Notes |
 |------|----------|--------|
 | Filmstrip / grid cell | 128 or 256 | Soft only |
-| Gallery soft overview | 256 or 512 | Cap at `kMaxSoftLadderEdge` |
+| Gallery overview | tiles or ephemeral ≤512 | Prefer `request_tile`; soft not durable |
 | Image-mode soft underlay | 512 | Cap at soft max; full decode for native |
 | Anything larger on screen | — | `request_tile` or app full decode |
 

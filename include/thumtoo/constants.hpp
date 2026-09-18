@@ -31,21 +31,18 @@ inline constexpr int kFsFileTypeBlk = 5;
 inline constexpr int kFsFileTypeFifo = 6;
 inline constexpr int kFsFileTypeSock = 7;
 
-/// Policy long-edge steps (pixels). Soft durable storage only uses steps
-/// ≤ kMaxSoftLadderEdge; larger values exist for API compatibility / future use.
-/// Policy long-edge steps. Soft durable storage only uses steps ≤ kMaxSoftLadderEdge.
-/// 2048+ steps are for Full / display levels (request_full_pixels), not soft.
+/// Policy long-edge steps (pixels). Soft whole-image replies clamp to
+/// kMaxSoftLadderEdge (ephemeral; not Store-durable). 2048+ steps are for
+/// Full / display (request_full_pixels), not soft. See PIXEL_AND_ARCHIVE_POLICY.md.
 inline constexpr std::array<int, 7> kLadderEdges = {
     128, 256, 512, 1024, 2048, 4096, 8192};
-/// Maximum long edge stored by request_pixels / EnsurePixels (soft preview).
-/// Soft requests above this are clamped. Full uses kFullMaxEdge via
-/// request_full_pixels / build_ladder with a higher max_edge_limit.
-/// See TILES.md and tests/test_soft_ladder.cpp.
+/// Maximum long edge for ephemeral soft / request_pixels (not Store-durable).
+/// Requests above this are clamped. Full uses kFullMaxEdge via
+/// request_full_pixels. See docs/PIXEL_AND_ARCHIVE_POLICY.md and TILES.md.
 inline constexpr int kMaxSoftLadderEdge = 512;
-/// Cap for FastBatch / shrink overview rasters (not soft durable max).
+/// Cap for FastBatch / shrink overview rasters (ephemeral / TileSynth band).
 inline constexpr int kBatchMaxEdge = 1024;
 /// Cap for request_full_pixels / Full policy (native-ish display level).
-/// Not soft durable; encodes one high level for host full-res path.
 inline constexpr int kFullMaxEdge = 8192;
 /// Max archive members planned per FastBatch extract window (PIXEL_PIPELINE §5.2).
 inline constexpr int kBatchWindowMembers = 32;

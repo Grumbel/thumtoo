@@ -7,10 +7,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-305-jpeg-shrink-shared-cache**. Next bundle: **306**.
+Latest agent handoff: **TODO.md → thumtoo-306-pixel-archive-policy**. Next bundle: **307**.
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code
 here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 Post-release: prefer SQLite schema migration over cache wipe (see docs/DIRTOO_BACKBONE.md).
+**Pixel durability / archives:** [docs/PIXEL_AND_ARCHIVE_POLICY.md](docs/PIXEL_AND_ARCHIVE_POLICY.md) (tiles+LQIP durable; soft ephemeral; Random vs Sequential archives).
 
 ## Related repositories
 

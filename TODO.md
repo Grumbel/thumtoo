@@ -1,5 +1,36 @@
 # TODO / agent handoff
 
+## Status (2026-09-18)
+
+**Tip: thumtoo-306-pixel-archive-policy.** Soft ephemeral; tiles+LQIP durable; random vs sequential archives.
+Prior: **305**.
+
+### Decision
+- Soft ladder is **not** a durable Store product (already true in schema ≥100
+  Client: `get_pixels` = TileSynth or miss; EnsurePixels replies once without
+  inserting soft levels). Docs aligned.
+- Durable pixels: **tiles** + **LQIP** only.
+- Archives: two access classes — **Random** (ZIP…) vs **Sequential** (tar,
+  solid RAR/7z). Sequential uses cursor + windowed extract; prepare one pass.
+- Normative: [docs/PIXEL_AND_ARCHIVE_POLICY.md](docs/PIXEL_AND_ARCHIVE_POLICY.md).
+
+### Docs
+- TILES.md, INTEGRATION.md, PIXEL_PIPELINE.md, constants.hpp comments
+
+### Next (code)
+- [ ] `archive_access_class()` heuristic; force Sequential discipline on all extract paths for tar/solid
+- [ ] Optional: avoid re-encoding ephemeral soft when host will request tiles soon
+- [ ] biltoo host contract + tiles-first product policy (paired tip)
+
+### Apply
+```bash
+git pull /path/to/thumtoo-306-pixel-archive-policy.bundle HEAD
+```
+
+---
+
+# TODO / agent handoff
+
 ## Status (2026-09-17)
 
 **Tip: thumtoo-305-jpeg-shrink-shared-cache.** Share DCT jpegload across concurrent tile cells.
