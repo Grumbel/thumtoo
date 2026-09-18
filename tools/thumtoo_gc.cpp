@@ -5,6 +5,7 @@
 /// was removed with Database/BlobStore.
 
 #include "thumtoo/layout.hpp"
+#include "thumtoo/version.hpp"
 #include "thumtoo/store.hpp"
 #include "thumtoo/uri.hpp"
 
@@ -83,6 +84,10 @@ int main(int argc, char** argv) {
 
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
+    if (a == "--version" || a == "-V") {
+      thumtoo::print_version(std::cout);
+      return 0;
+    }
     if (a == "--help" || a == "-h") {
       usage(argv[0]);
       return 0;

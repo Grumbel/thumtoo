@@ -2,6 +2,26 @@
 
 ## Status (2026-09-18)
 
+**Tip: thumtoo-310-version-features.** --version prints version + optional features.
+Prior: **309**.
+
+### Change
+- `version.hpp`: feature macros + `print_version()` (libarchive/vips/sqlite always-on;
+  unarr, MuPDF, DjVuLibre, curl optional).
+- `configure_file` for version.hpp runs **after** all `THUMTOO_HAVE_*` are set.
+- CLI tools: `--version` / `-V` → `print_version` (status, prepare, tile, gc, bench, archive).
+
+### Apply
+```bash
+git pull /path/to/thumtoo-310-version-features.bundle HEAD
+```
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-18)
+
 **Tip: thumtoo-309-prepare-lqip.** Prepare `--lqip` durable LQIP prewarm phase.
 Prior: **308**.
 

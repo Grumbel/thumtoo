@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "thumtoo/client.hpp"
+#include "thumtoo/version.hpp"
 #include "thumtoo/constants.hpp"
 #include "thumtoo/image.hpp"
 #include "thumtoo/pdf.hpp"
@@ -122,6 +123,10 @@ int main(int argc, char** argv) {
 
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
+    if (a == "--version" || a == "-V") {
+      thumtoo::print_version(std::cout);
+      return 0;
+    }
     auto need = [&](const char* name) -> std::string {
       if (i + 1 >= argc) {
         std::cerr << "missing value for " << name << "\n";

@@ -14,6 +14,7 @@
 // Exit codes: 0 ok, 1 usage/error, 2 archive open/TOC failed, 3 extract failed.
 
 #include "thumtoo/archive.hpp"
+#include "thumtoo/version.hpp"
 
 #include <cstdio>
 #include <filesystem>
@@ -179,6 +180,16 @@ int cmd_extract(const fs::path& archive, const fs::path& out_dir,
 }  // namespace
 
 int main(int argc, char** argv) {
+  if (argc >= 2) {
+    const std::string a0 = argv[1];
+    if (a0 == "--version" || a0 == "-V") {
+      thumtoo::print_version(std::cout);
+      return 0;
+    }
+    if (a0 == "--help" || a0 == "-h") {
+      // fall through to usage via argc < 3
+    }
+  }
   if (argc < 3) {
     usage(argv[0]);
     return 1;

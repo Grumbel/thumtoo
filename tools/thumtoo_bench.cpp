@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "thumtoo/build_stats.hpp"
+#include "thumtoo/version.hpp"
 #include "thumtoo/client.hpp"
 #include "thumtoo/image.hpp"
 #include "thumtoo/uri.hpp"
@@ -90,6 +91,10 @@ int main(int argc, char** argv) {
 
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
+    if (a == "--version" || a == "-V") {
+      thumtoo::print_version(std::cout);
+      return 0;
+    }
     if (a == "-h" || a == "--help") {
       usage(argv[0]);
       return 0;

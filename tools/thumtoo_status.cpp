@@ -282,7 +282,7 @@ int main(int argc, char** argv) {
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     if (a == "--version" || a == "-V") {
-      std::cout << "thumtoo " << thumtoo::version_string() << "\n";
+      thumtoo::print_version(std::cout);
       return 0;
     }
     if (a == "--help" || a == "-h") {

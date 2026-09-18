@@ -167,13 +167,6 @@ target_include_directories(thumtoo
     $<INSTALL_INTERFACE:include>
 )
 
-configure_file(
-  "${CMAKE_CURRENT_SOURCE_DIR}/include/thumtoo/version.hpp.in"
-  "${CMAKE_CURRENT_BINARY_DIR}/include/thumtoo/version.hpp"
-  @ONLY)
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/include/thumtoo/version.hpp"
-        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/thumtoo")
-
 target_link_libraries(thumtoo PUBLIC
   PkgConfig::SQLITE3
   PkgConfig::VIPS
@@ -230,6 +223,15 @@ else()
   message(STATUS "thumtoo: libcurl not found — HTTP/S fetch disabled")
 endif()
 thumtoo_export_to_parent(THUMTOO_HAVE_CURL)
+
+# version.hpp after all THUMTOO_HAVE_* are set (optional feature macros).
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/include/thumtoo/version.hpp.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/include/thumtoo/version.hpp"
+  @ONLY)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/include/thumtoo/version.hpp"
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/thumtoo")
+
 target_compile_options(thumtoo PRIVATE -Wall -Wextra -Wpedantic)
 
 if(THUMTOO_BUILD_TOOLS)
