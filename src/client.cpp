@@ -1559,6 +1559,31 @@ std::optional<std::vector<std::uint8_t>> Client::member_bytes(
   if (auto cached = extract_cache_get(archive, member)) {
     return cached;
   }
+
+  // Sequential archives (tar, solid RAR/7z): one libarchive/unarr pass for a
+  // TOC-ordered window around the interest member, fill extract cache, return
+  // the requested member. Avoids N independent full-stream walks for neighbors.
+  if (archive_access_class(archive) == ArchiveAccess::Sequential) {
+    const std::string member_s(member);
+    auto planned =
+        plan_and_maybe_advance_cursor(archive, {member_s}, /*advance_after=*/true);
+    if (planned.empty()) {
+      planned.push_back(member_s);
+    }
+    auto from_disk = extract_archive_members(archive, planned);
+    for (auto& kv : from_disk) {
+      extract_cache_put(archive, kv.first, kv.second);
+    }
+    if (auto it = from_disk.find(member_s); it != from_disk.end()) {
+      return it->second;
+    }
+    // Path equality may differ (./ prefix); fall back to cache get after put.
+    if (auto cached = extract_cache_get(archive, member)) {
+      return cached;
+    }
+    return std::nullopt;
+  }
+
   auto bytes = extract_archive_member(archive, member);
   if (bytes && !bytes->empty()) {
     extract_cache_put(archive, member, *bytes);

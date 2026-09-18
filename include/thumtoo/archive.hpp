@@ -34,6 +34,21 @@ struct ParsedArchiveUri {
 /// True when the file magic is RAR5 (Rar!\x1a\x07\x01). Cheap 8-byte probe.
 [[nodiscard]] bool archive_is_rar5(const std::filesystem::path& archive_path);
 
+/// How member extraction should be scheduled for this container.
+///
+/// Random: independent member seeks are cheap (typical ZIP/CBZ).
+/// Sequential: order matters — tar, solid RAR/CBR, solid/unindexed 7z.
+/// See docs/PIXEL_AND_ARCHIVE_POLICY.md §2.
+enum class ArchiveAccess {
+  Random = 0,
+  Sequential = 1,
+};
+
+/// Extension (+ cheap magic) heuristic. When unsure → Sequential (safe).
+[[nodiscard]] ArchiveAccess archive_access_class(
+    const std::filesystem::path& archive_path);
+
+
 /// Read archive TOC via libarchive or unarr (source I/O — not cache-only).
 [[nodiscard]] std::optional<std::vector<ArchiveMember>> read_archive_toc(
     const std::filesystem::path& archive_path);

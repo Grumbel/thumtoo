@@ -2,6 +2,34 @@
 
 ## Status (2026-09-18)
 
+**Tip: thumtoo-307-archive-access-class.** Random vs Sequential extract; windowed member_bytes.
+Prior: **306**.
+
+### Change
+- `ArchiveAccess` + `archive_access_class(path)` (zip/cbz → Random; tar*, rar/cbr,
+  7z/cb7, unknown → Sequential).
+- `Client::member_bytes`: Sequential → plan TOC window via cursor, one
+  `extract_archive_members`, fill extract LRU, return requested member.
+- Random path unchanged (single-member extract-on-demand).
+- Tests: `test_archive_cursor` access-class cases.
+- Policy doc §2.5 updated.
+
+### Apply
+```bash
+git pull /path/to/thumtoo-307-archive-access-class.bundle HEAD
+```
+
+### Next
+- [ ] Optional 7z solid/seek probe to promote some 7z to Random
+- [ ] biltoo tiles-first Gallery/filmstrip SoftOnly
+- [ ] Avoid ephemeral soft re-encode when tiles will be scheduled
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-18)
+
 **Tip: thumtoo-306-pixel-archive-policy.** Soft ephemeral; tiles+LQIP durable; random vs sequential archives.
 Prior: **305**.
 

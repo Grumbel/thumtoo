@@ -244,6 +244,47 @@ std::optional<std::vector<std::uint8_t>> extract_archive_member(
 }
 
 
+
+ArchiveAccess archive_access_class(const std::filesystem::path& archive_path) {
+  // Filename heuristic (lowercased). Multi-dot suffixes checked longest-first
+  // via is_archive_filename-style endswith on the basename.
+  std::string name = archive_path.filename().string();
+  for (char& c : name) {
+    if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+  }
+
+  auto ends_with = [&](std::string_view suf) {
+    return name.size() >= suf.size() &&
+           name.compare(name.size() - suf.size(), suf.size(), suf) == 0;
+  };
+
+  // --- Sequential: no central directory or solid / stream-oriented ---
+  // tar and compressed tar variants
+  if (ends_with(".tar") || ends_with(".tar.gz") || ends_with(".tar.bz2") ||
+      ends_with(".tar.xz") || ends_with(".tgz") || ends_with(".tbz2") ||
+      ends_with(".txz")) {
+    return ArchiveAccess::Sequential;
+  }
+  // RAR / CBR — solid is common; unarr is sequential walk; RAR5 via libarchive
+  // is still treated Sequential (safe: avoid fan-out solid streams).
+  if (ends_with(".rar") || ends_with(".cbr")) {
+    return ArchiveAccess::Sequential;
+  }
+  // 7z / CB7 — solid archives are expensive; non-solid is rarer in comic use.
+  // Default Sequential until a seek probe proves Random (future).
+  if (ends_with(".7z") || ends_with(".cb7")) {
+    return ArchiveAccess::Sequential;
+  }
+
+  // --- Random: central directory / independent members ---
+  if (ends_with(".zip") || ends_with(".cbz")) {
+    return ArchiveAccess::Random;
+  }
+
+  // Unknown archive-like path → Sequential (safe default).
+  return ArchiveAccess::Sequential;
+}
+
 bool is_likely_archive_path(const std::filesystem::path& path) {
   return is_archive_path(path);
 }

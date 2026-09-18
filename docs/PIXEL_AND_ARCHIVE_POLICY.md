@@ -122,10 +122,12 @@ Client workers and prepare. When unsure, **Sequential** is the safe default
   ([PIXEL_PIPELINE.md](PIXEL_PIPELINE.md)) — this is the Sequential path spine.
 - Random path is the default extract-on-demand + LRU.
 
-**Gap:** no explicit `ArchiveAccess` enum / heuristic yet; Sequential discipline
-is only fully applied on FastBatch/coalesce paths. Next code tip should classify
-and force Sequential behaviour for tar / solid 7z / solid RAR on all extract
-entry points, not only FastBatch.
+**Implemented (tip 307):** `ArchiveAccess` + `archive_access_class(path)`.
+`Client::member_bytes` for Sequential archives plans a TOC window (cursor),
+extracts once, fills the extract LRU, and returns the requested member.
+Random archives keep single-member extract-on-demand. Batch/coalesce paths
+already used the cursor; Sequential single-member no longer does a lone
+full-stream walk per cell without caching neighbors.
 
 ---
 

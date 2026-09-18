@@ -77,6 +77,26 @@ int main() {
     expect(!thumtoo::archive_member_toc_index(toc, "nope"), "toc miss");
   }
 
+
+  // Archive access class heuristic.
+  {
+    using thumtoo::ArchiveAccess;
+    using thumtoo::archive_access_class;
+    expect(archive_access_class("/x/a.zip") == ArchiveAccess::Random, "zip random");
+    expect(archive_access_class("/x/a.CBZ") == ArchiveAccess::Random, "cbz random");
+    expect(archive_access_class("/x/a.tar") == ArchiveAccess::Sequential, "tar seq");
+    expect(archive_access_class("/x/a.tar.gz") == ArchiveAccess::Sequential,
+           "tar.gz seq");
+    expect(archive_access_class("/x/a.tgz") == ArchiveAccess::Sequential, "tgz seq");
+    expect(archive_access_class("/x/a.rar") == ArchiveAccess::Sequential, "rar seq");
+    expect(archive_access_class("/x/a.cbr") == ArchiveAccess::Sequential, "cbr seq");
+    expect(archive_access_class("/x/a.7z") == ArchiveAccess::Sequential, "7z seq");
+    expect(archive_access_class("/x/a.cb7") == ArchiveAccess::Sequential, "cb7 seq");
+    // Unknown → Sequential (safe).
+    expect(archive_access_class("/x/a.unknown") == ArchiveAccess::Sequential,
+           "unknown seq");
+  }
+
   expect(thumtoo::kBatchWindowMembers == 32, "window constant");
   expect(thumtoo::kBatchMaxEdge == 1024, "batch edge constant");
 
