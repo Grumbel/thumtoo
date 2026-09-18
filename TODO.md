@@ -2,6 +2,30 @@
 
 ## Status (2026-09-18)
 
+**Tip: thumtoo-312-version-not-parent.** Subdir build must not inherit parent's PROJECT_VERSION_FULL.
+Prior: **311**.
+
+### Bug
+When biltoo `add_subdirectory(thumtoo)`, thumtoo saw biltoo's already-set
+`PROJECT_VERSION_FULL` and skipped its own VERSION + git. `--version` then
+printed the same string for biltoo and thumtoo (same rev count + hash).
+
+### Fix
+- Prefer `THUMTOO_VERSION_FULL` when set (packaging).
+- Honor `PROJECT_VERSION_FULL` only when thumtoo is the **top-level** project.
+- Nested builds always read thumtoo `VERSION` + this tree's git.
+
+### Apply
+```bash
+git pull /path/to/thumtoo-312-version-not-parent.bundle HEAD
+```
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-18)
+
 **Tip: thumtoo-311-store-size-before-layout.** get_size uses Store media dims before layout open.
 Prior: **310**.
 

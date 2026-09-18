@@ -3,13 +3,27 @@
 
 cmake_minimum_required(VERSION 3.16)
 
-# Version (single source of truth: top-level VERSION file).
-#   Packaging (nix build): -DPROJECT_VERSION_FULL=0.1.0-dev.N+gHASH from flake.nix
-#   Dev: VERSION + optional git rev-list count + short hash (same scheme as biltoo/dirtoo)
+# Version (single source of truth: this tree's VERSION file).
+#   Packaging (nix build top-level): -DPROJECT_VERSION_FULL=... or -DTHUMTOO_VERSION_FULL=...
+#   Dev: VERSION + git rev-list count + short hash (same scheme as biltoo/dirtoo)
+#
+# When biltoo add_subdirectory()'s this tree, the parent already defines
+# PROJECT_VERSION_FULL (biltoo's string). Must NOT inherit it — otherwise
+# thumtoo::version_string() reports biltoo's rev/hash (e.g. identical
+# "0.2.0-dev.1783+ga417a19" for both). Prefer THUMTOO_VERSION_FULL; only
+# honor PROJECT_VERSION_FULL when thumtoo is the top-level project().
 #
 # Runtime API: generated thumtoo/version.hpp (not -D compile flags), so a VERSION
 # bump only recompiles TUs that include that header — not the whole static lib.
-if(DEFINED PROJECT_VERSION_FULL AND NOT PROJECT_VERSION_FULL STREQUAL "")
+set(_thumtoo_is_top_level FALSE)
+if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+  set(_thumtoo_is_top_level TRUE)
+endif()
+if(DEFINED THUMTOO_VERSION_FULL AND NOT THUMTOO_VERSION_FULL STREQUAL "")
+  string(STRIP "${THUMTOO_VERSION_FULL}" PROJECT_VERSION_FULL)
+elseif(_thumtoo_is_top_level
+       AND DEFINED PROJECT_VERSION_FULL
+       AND NOT PROJECT_VERSION_FULL STREQUAL "")
   string(STRIP "${PROJECT_VERSION_FULL}" PROJECT_VERSION_FULL)
 else()
   file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" PROJECT_VERSION_FULL LIMIT_COUNT 1)
