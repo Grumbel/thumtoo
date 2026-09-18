@@ -221,12 +221,13 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
     if (!store_->list_tile_scales(media->id, region->id).empty()) {
       cm.status = ContentStatus::Ready;
     }
-    // Prefer layout-size probe; fall back to media dims from last Store-only probe.
-    if (auto layout =
-            pdf_page_layout_size(pdf->pdf_path, pdf->page, pdf->backend)) {
-      cm.size = *layout;
-    } else if (media->width && media->height) {
+    // Prefer durable media dims (warm cache must not re-open the PDF).
+    // Layout probe only when the Store has no size yet.
+    if (media->width && media->height) {
       cm.size = Size{*media->width, *media->height};
+    } else if (auto layout =
+                   pdf_page_layout_size(pdf->pdf_path, pdf->page, pdf->backend)) {
+      cm.size = *layout;
     }
     return cm;
   }
@@ -244,10 +245,10 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
     if (!store_->list_tile_scales(media->id, region->id).empty()) {
       cm.status = ContentStatus::Ready;
     }
-    if (auto layout = djvu_page_layout_size(dj->djvu_path, dj->page)) {
-      cm.size = *layout;
-    } else if (media->width && media->height) {
+    if (media->width && media->height) {
       cm.size = Size{*media->width, *media->height};
+    } else if (auto layout = djvu_page_layout_size(dj->djvu_path, dj->page)) {
+      cm.size = *layout;
     }
     return cm;
   }
@@ -266,11 +267,11 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
     if (!store_->list_tile_scales(media->id, region->id).empty()) {
       cm.status = ContentStatus::Ready;
     }
-    if (auto layout =
-            epub_page_layout_size(ep->epub_path, ep->page, ep->layout)) {
-      cm.size = *layout;
-    } else if (media->width && media->height) {
+    if (media->width && media->height) {
       cm.size = Size{*media->width, *media->height};
+    } else if (auto layout =
+                   epub_page_layout_size(ep->epub_path, ep->page, ep->layout)) {
+      cm.size = *layout;
     }
     return cm;
   }

@@ -2,6 +2,28 @@
 
 ## Status (2026-09-18)
 
+**Tip: thumtoo-311-store-size-before-layout.** get_size uses Store media dims before layout open.
+Prior: **310**.
+
+### Problem
+`meta_from_store` for PDF/DjVu/EPUB called `*_page_layout_size` on every size
+lookup, re-opening the document even when media width/height were already in
+the Store — biltoo warm open paid N document opens for "Opening N images".
+
+### Change
+Prefer `media->width/height` from Store; layout probe only when missing.
+
+### Apply
+```bash
+git pull /path/to/thumtoo-311-store-size-before-layout.bundle HEAD
+```
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-18)
+
 **Tip: thumtoo-310-version-features.** --version prints version + optional features.
 Prior: **309**.
 
