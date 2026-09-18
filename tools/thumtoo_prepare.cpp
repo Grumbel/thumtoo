@@ -5,8 +5,10 @@
 #include "thumtoo/client.hpp"
 #include "thumtoo/image.hpp"
 #include "thumtoo/status.hpp"
+#include "thumtoo/archive.hpp"
 #include "thumtoo/uri.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdlib>
 #include <filesystem>
@@ -17,6 +19,85 @@
 #include <vector>
 
 namespace {
+
+/// Order URIs so Sequential archives are processed in TOC member order (one
+/// extract stream warms neighbors). Random archives and plain files keep
+/// relative order.
+void order_uris_for_sequential_extract(std::vector<std::string>& uris) {
+  if (uris.size() < 2) return;
+
+  struct ArchGroup {
+    std::filesystem::path archive;
+    std::vector<std::pair<std::size_t, std::string>> members;  // toc_index, uri
+  };
+  std::vector<ArchGroup> seq_groups;
+  std::vector<std::string> other;
+  other.reserve(uris.size());
+
+  for (const auto& uri : uris) {
+    auto parsed = thumtoo::parse_archive_uri(uri);
+    if (!parsed || parsed->member_path.empty()) {
+      other.push_back(uri);
+      continue;
+    }
+    if (thumtoo::archive_access_class(parsed->archive_path) !=
+        thumtoo::ArchiveAccess::Sequential) {
+      other.push_back(uri);
+      continue;
+    }
+    ArchGroup* g = nullptr;
+    for (auto& existing : seq_groups) {
+      if (existing.archive == parsed->archive_path) {
+        g = &existing;
+        break;
+      }
+    }
+    if (!g) {
+      seq_groups.push_back({});
+      g = &seq_groups.back();
+      g->archive = parsed->archive_path;
+    }
+    g->members.emplace_back(0, uri);
+  }
+
+  if (seq_groups.empty()) return;
+
+  for (auto& g : seq_groups) {
+    std::vector<std::string> toc_order;
+    if (auto toc = thumtoo::read_archive_toc(g.archive)) {
+      for (const auto& m : *toc) {
+        if (thumtoo::is_likely_image_member_path(m.member_path)) {
+          toc_order.push_back(m.member_path);
+        }
+      }
+    }
+    for (auto& pair : g.members) {
+      auto parsed = thumtoo::parse_archive_uri(pair.second);
+      if (!parsed) continue;
+      if (auto i =
+              thumtoo::archive_member_toc_index(toc_order, parsed->member_path)) {
+        pair.first = *i;
+      } else {
+        pair.first = toc_order.size() + 1;
+      }
+    }
+    std::stable_sort(g.members.begin(), g.members.end(),
+                     [](const auto& a, const auto& b) {
+                       return a.first < b.first;
+                     });
+  }
+
+  std::vector<std::string> out;
+  out.reserve(uris.size());
+  for (auto& g : seq_groups) {
+    for (auto& pair : g.members) {
+      out.push_back(std::move(pair.second));
+    }
+  }
+  out.insert(out.end(), other.begin(), other.end());
+  uris = std::move(out);
+}
+
 
 std::filesystem::path default_cache_root() {
   if (const char* xdg = std::getenv("XDG_CACHE_HOME"); xdg && *xdg) {
@@ -41,8 +122,8 @@ void usage(const char* argv0) {
       << "  -q, --quiet        suppress per-job progress on stderr\n"
       << "      --cache DIR    cache root (default: $XDG_CACHE_HOME/thumtoo\n"
       << "                      or ~/.cache/thumtoo)\n"
-      << "      --ladder EDGE  after probes, encode one JXL preview per URI\n"
-      << "                      (largest policy edge ≤ EDGE; not a full ladder)\n"
+      << "      --ladder EDGE  after probes, encode ephemeral soft ≤ EDGE\n"
+      << "                      (NOT stored in cache; prefer --tiles)\n"
       << "      --tiles        after probes, build Galapix-style 256×256 JPEG\n"
       << "                      tile pyramid for each ready URI\n"
       << "      --min-scale N  finest tile scale to generate (default: 0 = full res)\n"
@@ -201,11 +282,15 @@ int main(int argc, char** argv) {
                 << sized_uris.size() << " URI(s) eligible for encode\n";
     }
 
+    // Sequential archives: TOC order so one extract pass warms neighbors.
+    order_uris_for_sequential_extract(sized_uris);
+
     if (ladder_edge > 0 && !sized_uris.empty()) {
       if (!quiet) {
-        std::cerr << "=== phase 2: soft ladder (max edge=" << ladder_edge
+        std::cerr << "=== phase 2: ephemeral soft (max edge=" << ladder_edge
                   << ") ===\n"
-                  << "Encode durable preview pixels for " << sized_uris.size()
+                  << "WARNING: soft is not Store-durable; prefer --tiles.\n"
+                  << "Encode one-shot soft for " << sized_uris.size()
                   << " URI(s). ready=encoded, miss=failed.\n";
       }
       std::atomic<int> px_done{0};

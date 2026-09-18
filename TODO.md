@@ -2,6 +2,32 @@
 
 ## Status (2026-09-18)
 
+**Tip: thumtoo-308-prepare-sequential-order.** Prepare TOC-orders Sequential URIs; soft ladder not durable.
+Prior: **307**.
+
+### Change
+- `thumtoo-prepare`: after probes, `order_uris_for_sequential_extract` so tar/rar/7z
+  members run in TOC order before soft/tiles phases (one extract stream warms
+  neighbors via member_bytes window + worker coalesce).
+- `--ladder` help + phase banner: soft is **ephemeral / not Store-durable**;
+  prefer `--tiles`.
+
+### Apply
+```bash
+git pull /path/to/thumtoo-308-prepare-sequential-order.bundle HEAD
+```
+
+### Next
+- [ ] Optional 7z solid/seek probe → Random
+- [ ] Optional `--lqip` durable prewarm phase
+- [ ] biltoo: schedulePixels thin alias of scheduleSoftPixels
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-18)
+
 **Tip: thumtoo-307-archive-access-class.** Random vs Sequential extract; windowed member_bytes.
 Prior: **306**.
 

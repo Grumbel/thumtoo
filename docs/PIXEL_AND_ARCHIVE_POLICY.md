@@ -158,3 +158,11 @@ Prepare profiles:
   Store soft levels.
 
 See biltoo host contract updates in the paired tip.
+
+### Prepare ordering (tip 308)
+
+`thumtoo-prepare` sorts sized URIs so **Sequential** archive members run in TOC
+order before soft/tiles phases. Combined with `member_bytes` windowed extract
+and worker same-archive coalesce, one forward pass warms neighbors instead of
+N independent solid-stream walks. `--ladder` remains available but is ephemeral
+(not Store-durable); prefer `--tiles`.
