@@ -2,6 +2,32 @@
 
 ## Status (2026-09-18)
 
+**Tip: thumtoo-313-lqip-free-data-only.** LQIP never opens the source; opportunistic only.
+Prior: **312**.
+
+### Policy
+LQIP is low utility and **must not** be generated standalone (extremely expensive
+vs benefit). Encode only when tile/soft work already holds a free small raster.
+Documented in `docs/PIXEL_AND_ARCHIVE_POLICY.md` §1.1.
+
+### Code
+- `ensure_lqip`: drop source thumbnail / full-decode fallback (free-data only).
+- Stop scheduling `request_lqip` from soft/overview cache hits.
+- `thumtoo-prepare --lqip`: report presence only (no `request_lqip` generation).
+- Tile pyramid path: opportunistic LQIP from coarsest cell after store.
+- Soft ladder path already filled LQIP inline from smallest level (kept).
+
+### Apply
+```bash
+git pull /path/to/thumtoo-313-lqip-free-data-only.bundle HEAD
+```
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-18)
+
 **Tip: thumtoo-312-version-not-parent.** Subdir build must not inherit parent's PROJECT_VERSION_FULL.
 Prior: **311**.
 

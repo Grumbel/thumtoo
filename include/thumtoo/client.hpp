@@ -194,14 +194,14 @@ class Client {
   [[nodiscard]] std::optional<std::vector<std::uint8_t>> get_lqip(
       std::string_view uri) const;
 
-  /// If LQIP missing, fill from an existing soft/full ladder blob when possible
-  /// (worker-safe; no host-driven “generate now” required). Falls back to a
-  /// small source raster only when no durable level exists. Returns get_lqip.
-  /// No-op when any LQIP is already stored (does not upgrade ThumbHash→Handsum).
+  /// Free-data only: if LQIP is missing, encode from an already-available soft
+  /// or TileSynth overview (≤64 long edge). **Never opens the source.** Returns
+  /// get_lqip. No-op when LQIP is already stored (does not upgrade kinds).
+  /// See docs/PIXEL_AND_ARCHIVE_POLICY.md §1.1.
   std::optional<std::vector<std::uint8_t>> ensure_lqip(std::string_view uri);
 
-  /// Queue background LQIP fill (worker only). Prefer after soft/tiles exist so
-  /// so successive opens get a soft underlay — never blocks tile replies.
+  /// Queue a free-data-only ensure_lqip on a worker. Hosts must not use this to
+  /// “generate LQIP”; LQIP is filled opportunistically during tile/soft encode.
   void request_lqip(std::string uri);
 
   void request_size(std::string uri, SizeCallback cb);

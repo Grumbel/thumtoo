@@ -22,6 +22,32 @@ biltoo `docs/THUMTOO_HOST_CONTRACT.md`.
 | **LQIP** (ThumbHash / Handsum) | Yes — per blob | `get_lqip` / `request_lqip` / `ensure_lqip` |
 | **Size / meta / TOC** | Yes | `get_size` / `request_size` / archive TOC |
 
+### 1.1 LQIP generation policy (normative — do not violate)
+
+**LQIP (ThumbHash / Handsum) must never be generated on its own.**
+
+It is a cheap durable placeholder of **very little overall utility**. Opening or
+thumbnailing the source solely to produce LQIP is **extremely expensive** relative
+to its value and is **forbidden**.
+
+**Allowed (only):**
+- **Opportunistic encode** when tile pyramid build or soft/overview encode already
+  holds a usable small raster in RAM (or a just-built coarsest tile JPEG).
+- **Cache read** via `get_lqip` / size-reply LQIP field.
+- `ensure_lqip` / `request_lqip` may encode **only from free data already in Store
+  or process cache** (e.g. TileSynth / soft ≤64). They must **not** open the source.
+
+**Forbidden:**
+- Standalone `EnsureLqip` jobs that full-decode or `vips_thumbnail` the source.
+- `thumtoo-prepare --lqip` as a generation phase (report-only is fine).
+- Host paths that call `request_lqip` to “warm LQIP” independent of tiles/soft.
+- Size-probe or open paths that generate LQIP as a side effect of needing dimensions.
+
+**Hosts (biltoo, galapix):** schedule tiles when display needs multi-res; LQIP
+appears when tiles (or free soft) already ran. Do not schedule LQIP generation.
+
+---
+
 **Whole-image soft / overview rasters are not durable.** They may be generated
 for a single reply (or held briefly in process RAM) but must not be written as
 a soft ladder into the Store.

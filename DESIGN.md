@@ -593,9 +593,11 @@ without Galapix resource SQL.
 
 ## Inline LQIP (ThumbHash)
 
-For gallery / list density, each `content` row may store a **ThumbHash** in
-`content.lqip` (~25–37 bytes, `lqip_kind = 1`). Written during **size probe**
-for local files, archive members, and HTTP(S) bodies — no blob-store open.
+For gallery / list density, each blob may store a **ThumbHash/Handsum** LQIP
+(~25–147 bytes). **Never generated standalone** — only opportunistically when
+tile/soft encode already holds a free small raster. See
+[docs/PIXEL_AND_ARCHIVE_POLICY.md](docs/PIXEL_AND_ARCHIVE_POLICY.md) §1.1.
+Size probe is cache-only for LQIP (no source open).
 
 Stack for progressive paint:
 

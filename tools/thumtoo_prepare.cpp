@@ -125,7 +125,8 @@ void usage(const char* argv0) {
       << "                      or ~/.cache/thumtoo)\n"
       << "      --ladder EDGE  after probes, encode ephemeral soft ≤ EDGE\n"
       << "                      (NOT stored in cache; prefer --tiles)\n"
-      << "      --lqip         after probes, ensure durable LQIP for each URI\n"
+      << "      --lqip         after probes, report LQIP presence (no generation;\n"
+      << "                      LQIP only opportunistically with --tiles)\n"
       << "      --tiles        after probes, build Galapix-style 256×256 JPEG\n"
       << "                      tile pyramid for each ready URI\n"
       << "      --min-scale N  finest tile scale to generate (default: 0 = full res)\n"
@@ -298,15 +299,10 @@ int main(int argc, char** argv) {
 
     if (do_lqip && !sized_uris.empty()) {
       if (!quiet) {
-        std::cerr << "=== phase 2: LQIP ===\n"
-                  << "Ensure durable ThumbHash/Handsum for "
-                  << sized_uris.size() << " URI(s).\n";
-      }
-      for (const auto& uri : sized_uris) {
-        client->request_lqip(uri);
-      }
-      client->drain();
-      if (!quiet) {
+        std::cerr << "=== phase: LQIP report (no generation) ===\n"
+                  << "LQIP is never generated standalone; it is filled only\n"
+                  << "opportunistically when --tiles (or soft encode) already\n"
+                  << "holds a free raster. See PIXEL_AND_ARCHIVE_POLICY §1.1.\n";
         int have = 0;
         for (const auto& uri : sized_uris) {
           if (client->get_lqip(uri)) ++have;

@@ -7,11 +7,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-312-version-not-parent**. Next bundle: **313**.
+Latest agent handoff: **TODO.md → thumtoo-313-lqip-free-data-only**. Next bundle: **314**.
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code
 here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 Post-release: prefer SQLite schema migration over cache wipe (see docs/DIRTOO_BACKBONE.md).
 **Pixel durability / archives:** [docs/PIXEL_AND_ARCHIVE_POLICY.md](docs/PIXEL_AND_ARCHIVE_POLICY.md) (tiles+LQIP durable; soft ephemeral; Random vs Sequential archives).
+**LQIP:** never generate standalone — only opportunistic free-data encode during tiles/soft ([docs/PIXEL_AND_ARCHIVE_POLICY.md](docs/PIXEL_AND_ARCHIVE_POLICY.md) §1.1).
 
 ## Related repositories
 

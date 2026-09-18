@@ -836,70 +836,6 @@ std::optional<LqipKey> lqip_key_ensure(Store& store, std::string_view uri) {
   return LqipKey{blob_id, page};
 }
 
-struct EncodedLqip {
-  int kind = kLqipKindNone;
-  std::vector<std::uint8_t> bytes;
-};
-
-EncodedLqip encode_lqip_from_rgb(const std::uint8_t* rgb, int w, int h) {
-  EncodedLqip out;
-  if (!rgb || w <= 0 || h <= 0) return out;
-  // Prefer Handsum (fixed 147 B) when encode succeeds; else ThumbHash.
-  auto hs = handsum_encode_rgb888(rgb, w, h);
-  if (!hs.empty()) {
-    out.kind = kLqipKindHandsum;
-    out.bytes = std::move(hs);
-    return out;
-  }
-  auto th = thumbhash_encode_rgb888(rgb, w, h, 32);
-  if (!th.empty()) {
-    out.kind = kLqipKindThumbHash;
-    out.bytes = std::move(th);
-  }
-  return out;
-}
-
-EncodedLqip encode_lqip_for_uri(std::string_view uri) {
-  if (auto pdf = parse_pdf_uri(uri)) {
-    auto r = pdf_rasterize_page(pdf->pdf_path, pdf->page, /*max_edge=*/32,
-                                pdf->backend);
-    if (r && !r->rgb.empty())
-      return encode_lqip_from_rgb(r->rgb.data(), r->width, r->height);
-    return {};
-  }
-  if (auto pimg = parse_pdf_image_uri(uri)) {
-    auto r = pdf_rasterize_embedded_image(pimg->pdf_path, pimg->image,
-                                          /*max_edge=*/32);
-    if (r && !r->rgb.empty())
-      return encode_lqip_from_rgb(r->rgb.data(), r->width, r->height);
-    return {};
-  }
-  if (auto dj = parse_djvu_uri(uri)) {
-    auto r = djvu_rasterize_page(dj->djvu_path, dj->page, /*max_edge=*/32);
-    if (r && !r->rgb.empty())
-      return encode_lqip_from_rgb(r->rgb.data(), r->width, r->height);
-    return {};
-  }
-  if (auto ep = parse_epub_uri(uri)) {
-    auto r = epub_rasterize_page(ep->epub_path, ep->page, ep->layout,
-                                 /*max_edge=*/32);
-    if (r && !r->rgb.empty())
-      return encode_lqip_from_rgb(r->rgb.data(), r->width, r->height);
-    return {};
-  }
-  if (auto path = path_from_file_uri(uri);
-      path && std::filesystem::is_regular_file(*path) && !is_archive_uri(uri) &&
-      !is_pdf_page_uri(uri) && !is_pdf_image_uri(uri) &&
-      !is_epub_layout_uri(uri)) {
-    // File path: ThumbHash helper (internal downscale); Handsum needs RGB load.
-    EncodedLqip out;
-    out.bytes = lqip_thumbhash_from_file(*path);
-    if (!out.bytes.empty()) out.kind = kLqipKindThumbHash;
-    return out;
-  }
-  return {};
-}
-
 }  // namespace
 
 std::optional<std::vector<std::uint8_t>> Client::get_lqip(
@@ -918,8 +854,10 @@ std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
   auto key = lqip_key_ensure(*store_, uri);
   if (!key) return std::nullopt;
 
-  // Cheap path: ThumbHash/Handsum from an already-decoded soft/tile overview
-  // (≤64 long edge). Avoids a second full-source vips_thumbnail for file://.
+  // FREE-DATA ONLY. Never open/thumbnail the source for LQIP alone — that is
+  // expensive and low utility (see docs/PIXEL_AND_ARCHIVE_POLICY.md §1.1).
+  // Encode ThumbHash/Handsum only when a soft/tile overview is already in the
+  // Store or process cache (≤64 long edge, including TileSynth).
   if (auto px = get_pixels(uri, /*max_edge=*/64, /*frame_idx=*/0,
                            /*allow_tile_synth=*/true);
       px && !px->bytes.empty()) {
@@ -931,20 +869,7 @@ std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
       return bytes;
     }
   }
-
-  // Expensive path: rasterize/thumbnail the source again.
-  EncodedLqip enc = encode_lqip_for_uri(uri);
-  if (enc.bytes.empty()) {
-    if (auto src = read_source_bytes(uri); src && !src->empty()) {
-      enc.bytes = lqip_thumbhash_from_buffer(src->data(), src->size());
-      if (!enc.bytes.empty()) enc.kind = kLqipKindThumbHash;
-    }
-  }
-  if (enc.bytes.empty()) return std::nullopt;
-  const int kind =
-      enc.kind != kLqipKindNone ? enc.kind : kLqipKindThumbHash;
-  store_->put_blob_lqip(key->blob_id, kind, enc.bytes, key->page_1based);
-  return enc.bytes;
+  return std::nullopt;
 }
 
 
@@ -959,11 +884,6 @@ void Client::request_pixels(std::string uri, int max_edge, PixelsCallback cb,
   if (auto px = get_pixels(uri, max_edge, frame_idx, /*allow_tile_synth=*/false)) {
     if (soft_level_covers(*px, max_edge)
         && px->source != PixelSource::TileSynth) {
-      // Soft already durable — fill LQIP from that blob on a worker if missing.
-      // Does not block this reply; ensure_lqip prefers soft levels over source.
-      if (!get_lqip(uri)) {
-        request_lqip(uri);
-      }
       if (cb) {
         executor_.post([cb = std::move(cb), uri, max_edge,
                         px = std::move(*px)]() mutable {
@@ -1002,9 +922,8 @@ void Client::request_overview_pixels(std::string uri, int max_edge,
     if (long_px >= (max_edge * 9) / 10 ||
         px->source == PixelSource::TileSynth ||
         px->source == PixelSource::Full) {
-      if (!get_lqip(uri)) {
-        request_lqip(uri);
-      }
+      // Do not request_lqip here: LQIP is free-data-only and must never open
+      // the source. Opportunistic fill runs inline when tiles/soft encode.
       if (cb) {
         executor_.post([cb = std::move(cb), uri, max_edge,
                         px = std::move(*px)]() mutable {
@@ -2538,8 +2457,9 @@ void Client::worker_main() {
 void Client::request_lqip(std::string uri) {
   if (uri.empty()) return;
   if (get_lqip(uri)) return;
-  // Last-resort job: ensure_lqip may still full-decode the source if no
-  // soft/tiles exist yet. Prefer opportunistic fill from ensure_pixels/tiles.
+  // Queue a free-data-only ensure_lqip (no source open). Prefer opportunistic
+  // inline fill during EnsureTiles / EnsurePixels when rasters are already in
+  // RAM — hosts must not treat this as "generate LQIP now".
   // Keep at back of queue so ProbeSize / EnsureTiles stay ahead.
   Job job;
   job.kind = JobKind::EnsureLqip;
@@ -2566,11 +2486,10 @@ void Client::handle_probe_size_store(Job& job) {
       cb(std::move(uri), SizeReply{});
     });
   };
-  // Cache-only LQIP on the size reply (empty on cold probe). Do not enqueue
-  // EnsureLqip here: encode_lqip_for_uri re-thumbnails the source and is too
-  // expensive for a path that only needed dimensions. LQIP is filled
-  // opportunistically when soft/tiles already decoded (ensure_pixels) or via
-  // an explicit host ensure_lqip / request_lqip.
+  // Cache-only LQIP on the size reply (empty on cold probe). Never enqueue
+  // EnsureLqip from size probe: LQIP must not open the source. It is filled
+  // opportunistically only when tile/soft encode already holds a free raster
+  // (see PIXEL_AND_ARCHIVE_POLICY §1.1).
   auto reply_size = [&](Size sz) {
     if (!job.size_cb) return;
     auto cb = std::move(job.size_cb);
@@ -3437,6 +3356,28 @@ void Client::handle_ensure_tiles_store(Job& job) {
 
   if (!tiles.empty()) {
     store_tiles(content_id, tiles);
+    // Opportunistic LQIP: coarsest pyramid cell is already in RAM / just stored.
+    // Never a separate source open (PIXEL_AND_ARCHIVE_POLICY §1.1).
+    if (!get_lqip(job.uri)) {
+      const TileBlob* coarse = &tiles.front();
+      for (const auto& t : tiles) {
+        if (t.scale > coarse->scale && !t.bytes.empty()) coarse = &t;
+      }
+      if (!coarse->bytes.empty()) {
+        if (auto key = lqip_key_ensure(*store_, job.uri)) {
+          auto bytes = lqip_thumbhash_from_buffer(coarse->bytes.data(),
+                                                  coarse->bytes.size());
+          if (!bytes.empty()) {
+            const int kind =
+                bytes.size() == 147 ? kLqipKindHandsum : kLqipKindThumbHash;
+            try {
+              store_->put_blob_lqip(key->blob_id, kind, bytes, key->page_1based);
+            } catch (...) {
+            }
+          }
+        }
+      }
+    }
   }
   reply_pyramid_done(!tiles.empty());
 }
