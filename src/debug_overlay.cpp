@@ -26,25 +26,25 @@ bool env_flag_on(const char* name) {
   return true;
 }
 
-// 5×7 glyphs for 0-9 A-Z a-z space . : × / _ - (minimal debug font).
-// Each glyph is 5 columns × 7 rows, bit 0 = top-left progressing left-to-right.
-constexpr int kGw = 5;
-constexpr int kGh = 7;
-constexpr int kGGap = 1;
+// 8×12 bitmap font for DEBUG_OVERLAY stamps (no fontconfig / Pango).
+// Each glyph is 8 columns × 12 rows; bit 7 = leftmost pixel.
+// Designed for TILE / SOFT / s=N / x,y labels; scales cleanly via nearest-neighbour.
+constexpr int kGw = 8;
+constexpr int kGh = 12;
+constexpr int kGGap = 2;
 
 std::uint8_t glyph_row(char c, int row) {
-  // Packed 5-bit rows for printable ASCII subset; missing → box.
-  static const std::uint8_t digits[10][7] = {
-      {0x0e, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0e}, // 0
-      {0x04, 0x0c, 0x04, 0x04, 0x04, 0x04, 0x0e}, // 1
-      {0x0e, 0x11, 0x01, 0x06, 0x08, 0x10, 0x1f}, // 2
-      {0x0e, 0x11, 0x01, 0x06, 0x01, 0x11, 0x0e}, // 3
-      {0x02, 0x06, 0x0a, 0x12, 0x1f, 0x02, 0x02}, // 4
-      {0x1f, 0x10, 0x1e, 0x01, 0x01, 0x11, 0x0e}, // 5
-      {0x06, 0x08, 0x10, 0x1e, 0x11, 0x11, 0x0e}, // 6
-      {0x1f, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08}, // 7
-      {0x0e, 0x11, 0x11, 0x0e, 0x11, 0x11, 0x0e}, // 8
-      {0x0e, 0x11, 0x11, 0x0f, 0x01, 0x02, 0x0c}, // 9
+  static const std::uint8_t digits[10][12] = {
+      {0x3c, 0x66, 0xc3, 0xc3, 0xc3, 0xc3, 0xc3, 0xc3, 0xc3, 0xc3, 0x66, 0x3c}, // 0
+      {0x18, 0x38, 0x78, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x7e}, // 1
+      {0x7e, 0xc3, 0x03, 0x03, 0x06, 0x0c, 0x18, 0x30, 0x60, 0xc0, 0xc0, 0xff}, // 2
+      {0x7e, 0xc3, 0x03, 0x03, 0x1e, 0x03, 0x03, 0x03, 0x03, 0xc3, 0xc3, 0x7e}, // 3
+      {0x0c, 0x1c, 0x2c, 0x4c, 0xcc, 0xcc, 0xff, 0x0c, 0x0c, 0x0c, 0x0c, 0x0c}, // 4
+      {0xff, 0xc0, 0xc0, 0xc0, 0xfe, 0x03, 0x03, 0x03, 0x03, 0xc3, 0xc3, 0x7e}, // 5
+      {0x3c, 0x66, 0xc0, 0xc0, 0xde, 0xe3, 0xc3, 0xc3, 0xc3, 0xc3, 0x66, 0x3c}, // 6
+      {0xff, 0x03, 0x06, 0x06, 0x0c, 0x0c, 0x18, 0x18, 0x30, 0x30, 0x60, 0x60}, // 7
+      {0x7e, 0xc3, 0xc3, 0xc3, 0x66, 0x3c, 0x66, 0xc3, 0xc3, 0xc3, 0xc3, 0x7e}, // 8
+      {0x7e, 0xc3, 0xc3, 0xc3, 0xc3, 0x67, 0x3f, 0x03, 0x03, 0x03, 0x66, 0x3c}, // 9
   };
   if (row < 0 || row >= kGh) {
     return 0;
@@ -55,93 +55,146 @@ std::uint8_t glyph_row(char c, int row) {
   if (c >= 'a' && c <= 'z') {
     c = static_cast<char>(c - 'a' + 'A');
   }
-  // Coarse letters / symbols — enough for debug tags.
   switch (c) {
     case ' ':
       return 0;
     case '.':
-      return row == 6 ? 0x04 : 0;
+      return (row == 9 || row == 10) ? 0x18 : 0;
+    case ',':
+      return row == 9    ? 0x18
+             : row == 10 ? 0x18
+             : row == 11 ? 0x30
+                         : 0;
     case ':':
-      return (row == 2 || row == 4) ? 0x04 : 0;
+      return (row == 3 || row == 4 || row == 7 || row == 8) ? 0x18 : 0;
+    case '=':
+      return (row == 4 || row == 5 || row == 7 || row == 8) ? 0xff : 0;
     case '-':
-      return row == 3 ? 0x1f : 0;
+      return (row == 5 || row == 6) ? 0xff : 0;
     case '_':
-      return row == 6 ? 0x1f : 0;
-    case '/':
-      return (0x01 << (6 - row)) & 0x1f;
-    case 'X':
-    case 'x':
-      return (row == 0 || row == 6)   ? 0x11
-             : (row == 1 || row == 5) ? 0x0a
-             : (row == 2 || row == 4) ? 0x04
-                                     : 0x0a;
-    case 'S':
-      return digits[5][row];
-    case 'R':
-      return row == 0   ? 0x1e
-             : row == 3 ? 0x1e
-             : row < 3  ? 0x11
-             : row == 4 ? 0x12
-             : row == 5 ? 0x11
-                        : 0x11;
-    case 'C':
-      return (row == 0 || row == 6) ? 0x0e : (row == 1 || row == 5) ? 0x11 : 0x10;
-    case 'E':
-      return (row == 0 || row == 6) ? 0x1f : (row == 3) ? 0x1e : 0x10;
-    case 'J':
-      return row < 5 ? 0x02 : (row == 5 ? 0x11 : 0x0e);
-    case 'P':
-      return row == 0   ? 0x1e
-             : row == 3 ? 0x1e
-             : row < 3  ? 0x11
-                        : 0x10;
+      return (row == 10 || row == 11) ? 0xff : 0;
+    case '/': {
+      // Diagonal from upper-right toward lower-left across 8 columns.
+      static const std::uint8_t slash[12] = {0x03, 0x06, 0x06, 0x0c, 0x0c, 0x18,
+                                             0x18, 0x30, 0x30, 0x60, 0x60, 0xc0};
+      return slash[row];
+    }
     case 'T':
-      return row == 0 ? 0x1f : 0x04;
+      return row < 2 ? 0xff : 0x18;
     case 'I':
-      return (row == 0 || row == 6) ? 0x0e : 0x04;
-    case 'F':
-      return row == 0 ? 0x1f : row == 3 ? 0x1e : 0x10;
-    case 'U':
-      return row == 6 ? 0x0e : 0x11;
+      return (row < 2 || row >= 10) ? 0x7e : 0x18;
     case 'L':
-      return row == 6 ? 0x1f : 0x10;
-    case 'M':
-      return row == 1 ? 0x1b : row == 2 ? 0x15 : 0x11;
-    case 'N':
-      return row == 1   ? 0x19
-             : row == 2 ? 0x15
-             : row == 3 ? 0x13
-                        : 0x11;
-    case 'G':
-      return row == 0   ? 0x0e
-             : row == 3 ? 0x17
-             : row == 6 ? 0x0e
-             : row == 1 || row == 2 || row == 4 || row == 5 ? 0x10
-                                                           : 0x11;
-    case 'A':
-      return row == 0 ? 0x0e : row == 3 ? 0x1f : 0x11;
-    case 'B':
-      return (row == 0 || row == 3 || row == 6) ? 0x1e : 0x11;
-    case 'D':
-      return (row == 0 || row == 6) ? 0x1e : 0x11;
-    case 'H':
-      return row == 3 ? 0x1f : 0x11;
-    case 'V':
-      return row >= 5 ? (row == 5 ? 0x0a : 0x04) : 0x11;
-    case 'W':
-      return row == 4 ? 0x15 : row == 5 ? 0x1b : 0x11;
-    case 'Y':
-      return row < 3 ? 0x11 : row == 3 ? 0x0a : 0x04;
-    case 'Z':
-      return row == 0 || row == 6 ? 0x1f : (0x01 << row);
-    case 'K':
-      return row == 3 ? 0x18 : row < 3 ? (0x10 | (0x04 >> row)) : (0x10 | (0x01 << (row - 3)));
+      return row >= 10 ? 0xff : 0xc0;
+    case 'E':
+      return (row < 2 || row >= 10) ? 0xff
+             : (row == 5 || row == 6)  ? 0xfe
+                                      : 0xc0;
+    case 'S': {
+      static const std::uint8_t s[12] = {0x7e, 0xc3, 0xc0, 0xc0, 0x60, 0x3c,
+                                         0x0c, 0x06, 0x03, 0x03, 0xc3, 0x7e};
+      return s[row];
+    }
     case 'O':
       return digits[0][row];
-    case 'Q':
-      return row == 5 ? 0x13 : row == 6 ? 0x0d : digits[0][row];
+    case 'F':
+      return (row < 2)              ? 0xff
+             : (row == 5 || row == 6) ? 0xfe
+                                     : 0xc0;
+    case 'A': {
+      static const std::uint8_t a[12] = {0x18, 0x3c, 0x66, 0xc3, 0xc3, 0xc3,
+                                         0xff, 0xc3, 0xc3, 0xc3, 0xc3, 0xc3};
+      return a[row];
+    }
+    case 'B': {
+      static const std::uint8_t b[12] = {0xfe, 0xc3, 0xc3, 0xc3, 0xc3, 0xfe,
+                                         0xc3, 0xc3, 0xc3, 0xc3, 0xc3, 0xfe};
+      return b[row];
+    }
+    case 'C': {
+      static const std::uint8_t cc[12] = {0x3c, 0x66, 0xc3, 0xc0, 0xc0, 0xc0,
+                                          0xc0, 0xc0, 0xc0, 0xc3, 0x66, 0x3c};
+      return cc[row];
+    }
+    case 'D': {
+      static const std::uint8_t d[12] = {0xfc, 0xc6, 0xc3, 0xc3, 0xc3, 0xc3,
+                                         0xc3, 0xc3, 0xc3, 0xc3, 0xc6, 0xfc};
+      return d[row];
+    }
+    case 'G': {
+      static const std::uint8_t g[12] = {0x3c, 0x66, 0xc3, 0xc0, 0xc0, 0xcf,
+                                         0xc3, 0xc3, 0xc3, 0xc3, 0x66, 0x3c};
+      return g[row];
+    }
+    case 'H':
+      return row == 5 || row == 6 ? 0xff : 0xc3;
+    case 'J': {
+      static const std::uint8_t j[12] = {0x1f, 0x06, 0x06, 0x06, 0x06, 0x06,
+                                         0x06, 0x06, 0x06, 0xc6, 0xc6, 0x7c};
+      return j[row];
+    }
+    case 'K': {
+      static const std::uint8_t k[12] = {0xc3, 0xc6, 0xcc, 0xd8, 0xf0, 0xe0,
+                                         0xf0, 0xd8, 0xcc, 0xc6, 0xc3, 0xc3};
+      return k[row];
+    }
+    case 'M': {
+      static const std::uint8_t m[12] = {0xc3, 0xe7, 0xff, 0xdb, 0xdb, 0xc3,
+                                         0xc3, 0xc3, 0xc3, 0xc3, 0xc3, 0xc3};
+      return m[row];
+    }
+    case 'N': {
+      static const std::uint8_t n[12] = {0xc3, 0xe3, 0xe3, 0xf3, 0xdb, 0xdb,
+                                         0xcf, 0xc7, 0xc7, 0xc3, 0xc3, 0xc3};
+      return n[row];
+    }
+    case 'P': {
+      static const std::uint8_t p[12] = {0xfe, 0xc3, 0xc3, 0xc3, 0xc3, 0xfe,
+                                         0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0};
+      return p[row];
+    }
+    case 'R': {
+      static const std::uint8_t r[12] = {0xfe, 0xc3, 0xc3, 0xc3, 0xc3, 0xfe,
+                                         0xf0, 0xd8, 0xcc, 0xc6, 0xc3, 0xc3};
+      return r[row];
+    }
+    case 'U': {
+      static const std::uint8_t u[12] = {0xc3, 0xc3, 0xc3, 0xc3, 0xc3, 0xc3,
+                                         0xc3, 0xc3, 0xc3, 0xc3, 0x66, 0x3c};
+      return u[row];
+    }
+    case 'V': {
+      static const std::uint8_t v[12] = {0xc3, 0xc3, 0xc3, 0xc3, 0xc3, 0xc3,
+                                         0xc3, 0x66, 0x66, 0x3c, 0x3c, 0x18};
+      return v[row];
+    }
+    case 'W': {
+      static const std::uint8_t w[12] = {0xc3, 0xc3, 0xc3, 0xc3, 0xc3, 0xc3,
+                                         0xdb, 0xdb, 0xff, 0xe7, 0xc3, 0xc3};
+      return w[row];
+    }
+    case 'X': {
+      static const std::uint8_t x[12] = {0xc3, 0xc3, 0x66, 0x66, 0x3c, 0x18,
+                                         0x18, 0x3c, 0x66, 0x66, 0xc3, 0xc3};
+      return x[row];
+    }
+    case 'Y': {
+      static const std::uint8_t y[12] = {0xc3, 0xc3, 0x66, 0x66, 0x3c, 0x18,
+                                         0x18, 0x18, 0x18, 0x18, 0x18, 0x18};
+      return y[row];
+    }
+    case 'Z': {
+      static const std::uint8_t z[12] = {0xff, 0x03, 0x06, 0x0c, 0x18, 0x18,
+                                         0x30, 0x30, 0x60, 0xc0, 0xc0, 0xff};
+      return z[row];
+    }
+    case 'Q': {
+      static const std::uint8_t q[12] = {0x3c, 0x66, 0xc3, 0xc3, 0xc3, 0xc3,
+                                         0xc3, 0xdb, 0xcf, 0x66, 0x3c, 0x07};
+      return q[row];
+    }
     default:
-      return (row == 0 || row == 6) ? 0x1f : 0x11;
+      // Unknown → hollow box so missing glyphs are obvious.
+      return (row == 0 || row == 11) ? 0xff : 0x81;
   }
 }
 
@@ -159,11 +212,12 @@ void put_px(std::uint8_t* rgb, int w, int h, int x, int y, std::uint8_t r,
 }
 
 void draw_char_pass(std::uint8_t* rgb, int w, int h, int x0, int y0, char c,
-                    int scale, bool outline) {
+                    int scale, int outline_px, bool outline) {
   for (int row = 0; row < kGh; ++row) {
     const std::uint8_t bits = glyph_row(c, row);
     for (int col = 0; col < kGw; ++col) {
-      if (!(bits & (0x10 >> col))) {
+      // Bit 7 = leftmost column.
+      if (!(bits & (0x80 >> col))) {
         continue;
       }
       for (int dy = 0; dy < scale; ++dy) {
@@ -171,15 +225,15 @@ void draw_char_pass(std::uint8_t* rgb, int w, int h, int x0, int y0, char c,
           const int x = x0 + col * scale + dx;
           const int y = y0 + row * scale + dy;
           if (outline) {
-            // Outline only — must run before fill or neighbors paint over yellow.
-            put_px(rgb, w, h, x - 1, y, 0, 0, 0);
-            put_px(rgb, w, h, x + 1, y, 0, 0, 0);
-            put_px(rgb, w, h, x, y - 1, 0, 0, 0);
-            put_px(rgb, w, h, x, y + 1, 0, 0, 0);
-            put_px(rgb, w, h, x - 1, y - 1, 0, 0, 0);
-            put_px(rgb, w, h, x + 1, y - 1, 0, 0, 0);
-            put_px(rgb, w, h, x - 1, y + 1, 0, 0, 0);
-            put_px(rgb, w, h, x + 1, y + 1, 0, 0, 0);
+            // Thick black halo before yellow fill (readable on any photo).
+            for (int oy = -outline_px; oy <= outline_px; ++oy) {
+              for (int ox = -outline_px; ox <= outline_px; ++ox) {
+                if (ox == 0 && oy == 0) {
+                  continue;
+                }
+                put_px(rgb, w, h, x + ox, y + oy, 0, 0, 0);
+              }
+            }
           } else {
             // Bright yellow fill (final pass).
             put_px(rgb, w, h, x, y, 255, 230, 40);
@@ -192,11 +246,13 @@ void draw_char_pass(std::uint8_t* rgb, int w, int h, int x0, int y0, char c,
 
 void draw_text_line(std::uint8_t* rgb, int w, int h, int x0, int y0,
                     const std::string& s, int scale) {
+  // Outline thickness grows with scale so large stamps keep a clear edge.
+  const int outline_px = std::max(1, (scale + 2) / 3);
   // Two passes so outline of one glyph pixel cannot erase fill of another.
   auto run = [&](bool outline) {
     int x = x0;
     for (char c : s) {
-      draw_char_pass(rgb, w, h, x, y0, c, scale, outline);
+      draw_char_pass(rgb, w, h, x, y0, c, scale, outline_px, outline);
       x += (kGw + kGGap) * scale;
       if (x >= w - 4) {
         break;
@@ -334,7 +390,7 @@ void debug_overlay_rgb888(std::uint8_t* rgb, int width, int height,
 
   // Glyph scale from sample size so text stays readable and covers most of
   // the tile/soft cell (hosts orient the bitmap — stamp is source-space).
-  // Prior fixed scale=2 + top-left grid was tiny when biltoo zoomed out.
+  // 8×12 base glyphs read cleanly; nearest-neighbour scale fills the cell.
   int longest = 1;
   for (const auto& line : lines) {
     longest = std::max(longest, static_cast<int>(line.size()));
@@ -344,7 +400,8 @@ void debug_overlay_rgb888(std::uint8_t* rgb, int width, int height,
   const int fit = std::max(8, std::min(width, height) * 4 / 5);
   const int scale_w = fit / std::max(1, longest * (kGw + kGGap));
   const int scale_h = fit / std::max(1, nlines * (kGh + 2));
-  const int scale = std::max(2, std::min(24, std::min(scale_w, scale_h)));
+  // Cap scale so large tiles do not turn three lines into a solid yellow slab.
+  const int scale = std::max(1, std::min(16, std::min(scale_w, scale_h)));
 
   int max_line_w = 0;
   for (const auto& line : lines) {

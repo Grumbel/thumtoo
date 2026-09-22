@@ -17,6 +17,9 @@ namespace thumtoo {
  * text). Soft: SOFT / le=N. Tile: TILE / s=N / x,y. Hosts orient/flip the
  * bitmap — stamps follow automatically. Off by default; applied on read path
  * only (durable Store bytes unchanged).
+ *
+ * Text uses an embedded 8×12 bitmap font (no fontconfig/Pango) so worker
+ * threads stay self-contained and labels stay readable when scaled up.
  */
 [[nodiscard]] bool debug_overlay_enabled();
 

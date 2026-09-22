@@ -2,6 +2,30 @@
 
 ## Status (2026-09-22)
 
+**Tip: thumtoo-315-debug-overlay-font.** DEBUG_OVERLAY text font:
+
+- Replace crude 5×7 hand glyphs with an **8×12** embedded bitmap font
+  (digits, A–Z, common punctuation). No fontconfig/Pango — workers stay
+  self-contained.
+- Scale-aware black outline thickness; max scale capped at 16 so large
+  cells stay legible rather than a solid yellow block.
+- Same layout as 314: centred TILE / SOFT stamps in source space.
+
+Prior: **314** large centred TILE/SOFT labels.
+
+### Apply
+```bash
+git pull /path/to/thumtoo-315-debug-overlay-font-084a7b6.bundle HEAD
+```
+
+Next: **316**.
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-22)
+
 **Tip: thumtoo-314-debug-overlay-tile-labels.** DEBUG_OVERLAY stamps:
 
 - **Tile:** TILE / s=N / x,y only — large centred glyphs (scale from cell size).
