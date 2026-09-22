@@ -2,6 +2,24 @@
 
 ## Status (2026-09-22)
 
+**Tip: thumtoo-315.1-debug-overlay-unused-x0.** Drop unused `x0`/`max_line_w` in
+`debug_overlay_rgb888` (each line is centred on its own width; -Wunused-variable).
+
+Prior: **315** 8×12 bitmap font.
+
+### Apply
+```bash
+git pull /path/to/thumtoo-315.1-debug-overlay-unused-x0-084a7b6.bundle HEAD
+```
+
+Next: **316**.
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-22)
+
 **Tip: thumtoo-315-debug-overlay-font.** DEBUG_OVERLAY text font:
 
 - Replace crude 5×7 hand glyphs with an **8×12** embedded bitmap font

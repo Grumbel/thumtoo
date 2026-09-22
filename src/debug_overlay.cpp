@@ -403,16 +403,9 @@ void debug_overlay_rgb888(std::uint8_t* rgb, int width, int height,
   // Cap scale so large tiles do not turn three lines into a solid yellow slab.
   const int scale = std::max(1, std::min(16, std::min(scale_w, scale_h)));
 
-  int max_line_w = 0;
-  for (const auto& line : lines) {
-    max_line_w = std::max(
-        max_line_w,
-        static_cast<int>(line.size()) * (kGw + kGGap) * scale);
-  }
   const int line_h = (kGh + 2) * scale;
   const int block_h = line_h * nlines;
-  // Single centred block — not a repeated grid (grid made labels unreadable).
-  const int x0 = std::max(border, (width - max_line_w) / 2);
+  // Single centred block — each line centred independently (widths differ).
   const int y0 = std::max(border, (height - block_h) / 2);
   int yy = y0;
   for (const auto& line : lines) {
