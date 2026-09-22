@@ -146,6 +146,7 @@ add_library(thumtoo
   src/store.cpp
   src/uri.cpp
   src/client.cpp
+  src/activity.cpp
   src/layout.cpp
   src/image.cpp
   src/debug_overlay.cpp
@@ -315,6 +316,9 @@ if(THUMTOO_BUILD_TESTS)
   add_executable(thumtoo-test-queue-stats tests/test_queue_stats.cpp)
   target_link_libraries(thumtoo-test-queue-stats PRIVATE thumtoo)
   add_test(NAME queue_stats COMMAND thumtoo-test-queue-stats)
+  add_executable(thumtoo-test-activity tests/test_activity.cpp)
+  target_link_libraries(thumtoo-test-activity PRIVATE thumtoo)
+  add_test(NAME activity COMMAND thumtoo-test-activity)
   add_executable(thumtoo-test-pdf-text tests/test_pdf_text.cpp)
   target_link_libraries(thumtoo-test-pdf-text PRIVATE thumtoo)
   add_test(NAME pdf_text COMMAND thumtoo-test-pdf-text)

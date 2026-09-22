@@ -7,6 +7,7 @@
 #include "thumtoo/executor.hpp"
 #include "thumtoo/store.hpp"
 #include "thumtoo/types.hpp"
+#include "thumtoo/activity.hpp"
 #include "thumtoo/text.hpp"
 #include "thumtoo/pdf.hpp"
 #include "thumtoo/epub.hpp"
@@ -357,8 +358,12 @@ class Client {
     int inflight = 0;
     int focus_full_inflight = 0;
     std::uint64_t interest_epoch = 0;
+    std::size_t size_probe_queued = 0;
+    std::size_t size_probe_running = 0;
   };
   [[nodiscard]] QueueStats queue_stats() const;
+  /** Live activity snapshot (size probes in phase 1). */
+  [[nodiscard]] ActivitySnapshot activity_snapshot() const;
   /// Increment epoch and purge stale queued jobs. Returns the new epoch.
   std::uint64_t bump_interest_epoch();
   /// Drop all queued jobs (any epoch); does not touch in-flight work.
@@ -440,6 +445,7 @@ class Client {
   struct Job {
     JobKind kind = JobKind::ProbeSize;
     std::uint64_t epoch = 0;  // interest epoch at enqueue time
+    std::uint64_t activity_id = 0;  // ActivityLedger id (0 = none)
     std::string uri;
     int max_edge = 0;
     int frame_idx = 0;

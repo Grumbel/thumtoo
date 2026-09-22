@@ -2,6 +2,27 @@
 
 ## Status (2026-09-22)
 
+**Tip: thumtoo-317-activity-size-probe.**
+
+Phase 1 activity ledger (`include/thumtoo/activity.hpp`):
+- `ActivityLedger` tracks size-probe queued/running/completed
+- Wired into `Client::request_size` + worker/batch/cancel
+- `Client::activity_snapshot()` + `QueueStats.size_probe_*`
+- Test: `activity`
+
+Next: **318** (tiles/soft) or biltoo WorkLedger status bar.
+
+### Apply
+```bash
+git pull --ff-only /path/to/thumtoo-317-activity-size-probe-8ea52ea.bundle HEAD
+```
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-22)
+
 **Tip: thumtoo-316-debug-overlay-raw-rgb888.**
 
 `DEBUG_OVERLAY decode failed (bytes=196608)` was live **rgb888** tiles

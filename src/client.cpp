@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "thumtoo/client.hpp"
+
+#include "thumtoo/activity.hpp"
 #include "thumtoo/text.hpp"
 #include "thumtoo/build_stats.hpp"
 #include "thumtoo/constants.hpp"
@@ -1590,6 +1592,7 @@ void Client::request_size(std::string uri, SizeCallback cb) {
   job.kind = JobKind::ProbeSize;
   job.uri = std::move(uri);
   job.size_cb = std::move(cb);
+  job.activity_id = global_activity_ledger().note_size_probe_queued(job.uri);
   // Size is the layout pass — run ahead of EnsurePixels / tiles / LQIP.
   enqueue(std::move(job), /*front=*/true);
 }
@@ -1904,16 +1907,31 @@ std::uint64_t Client::interest_epoch() const {
 }
 
 Client::QueueStats Client::queue_stats() const {
-  std::lock_guard lock(mu_);
   QueueStats s;
-  s.pending = queue_.size();
-  s.inflight = inflight_;
-  s.focus_full_inflight = focus_full_inflight_;
-  s.interest_epoch = interest_epoch_;
+  {
+    std::lock_guard lock(mu_);
+    s.pending = queue_.size();
+    s.inflight = inflight_;
+    s.focus_full_inflight = focus_full_inflight_;
+    s.interest_epoch = interest_epoch_;
+  }
+  const auto act = global_activity_ledger().snapshot();
+  s.size_probe_queued = act.size_probe_queued;
+  s.size_probe_running = act.size_probe_running;
   return s;
 }
 
+ActivitySnapshot Client::activity_snapshot() const {
+  return global_activity_ledger().snapshot();
+}
+
 void Client::reply_cancelled_job(Job& job) {
+  if (job.kind == JobKind::ProbeSize) {
+    if (job.activity_id != 0) {
+      global_activity_ledger().note_size_probe_finished(job.activity_id, false);
+      job.activity_id = 0;
+    }
+  }
   if (job.kind == JobKind::ProbeSize && job.size_cb) {
     auto cb = std::move(job.size_cb);
     auto uri = job.uri;
@@ -2300,8 +2318,19 @@ void Client::worker_main() {
           if (auto sz = get_size(j.uri); sz && sz->width > 0 && sz->height > 0) {
             need_extract[i] = 0;
             try {
+              if (j.activity_id != 0) {
+                global_activity_ledger().note_size_probe_running(j.activity_id);
+              }
               handle_probe_size(j, std::nullopt);
+              if (j.activity_id != 0) {
+                global_activity_ledger().note_size_probe_finished(j.activity_id, true);
+                j.activity_id = 0;
+              }
             } catch (...) {
+              if (j.activity_id != 0) {
+                global_activity_ledger().note_size_probe_finished(j.activity_id, false);
+                j.activity_id = 0;
+              }
             }
             std::lock_guard lock(mu_);
             --inflight_;
@@ -2377,15 +2406,27 @@ void Client::worker_main() {
       auto run_one = [&](BatchItem& it) {
         try {
           Job& j = batch[it.index];
-          if (batch_kind == JobKind::ProbeSize)
+          if (batch_kind == JobKind::ProbeSize) {
+            if (j.activity_id != 0) {
+              global_activity_ledger().note_size_probe_running(j.activity_id);
+            }
             handle_probe_size(j, it.pre);
-          else if (batch_kind == JobKind::EnsureTiles)
+            if (j.activity_id != 0) {
+              global_activity_ledger().note_size_probe_finished(j.activity_id, true);
+              j.activity_id = 0;
+            }
+          } else if (batch_kind == JobKind::EnsureTiles)
             handle_ensure_tiles(j, it.pre);
           else if (batch_kind == JobKind::EnsurePixels)
             handle_ensure_pixels(j, it.pre);
           else if (batch_kind == JobKind::EnsureLqip)
             handle_ensure_lqip(j);
         } catch (...) {
+          Job& j = batch[it.index];
+          if (j.activity_id != 0) {
+            global_activity_ledger().note_size_probe_finished(j.activity_id, false);
+            j.activity_id = 0;
+          }
         }
         {
           std::lock_guard lock(mu_);
@@ -2434,11 +2475,23 @@ void Client::worker_main() {
       }
     }
     try {
-      if (single.kind == JobKind::ProbeSize) handle_probe_size(single);
-      else if (single.kind == JobKind::EnsurePixels) handle_ensure_pixels(single);
+      if (single.kind == JobKind::ProbeSize) {
+        if (single.activity_id != 0) {
+          global_activity_ledger().note_size_probe_running(single.activity_id);
+        }
+        handle_probe_size(single);
+        if (single.activity_id != 0) {
+          global_activity_ledger().note_size_probe_finished(single.activity_id, true);
+          single.activity_id = 0;
+        }
+      } else if (single.kind == JobKind::EnsurePixels) handle_ensure_pixels(single);
       else if (single.kind == JobKind::EnsureTiles) handle_ensure_tiles(single);
       else if (single.kind == JobKind::EnsureLqip) handle_ensure_lqip(single);
     } catch (...) {
+      if (single.activity_id != 0) {
+        global_activity_ledger().note_size_probe_finished(single.activity_id, false);
+        single.activity_id = 0;
+      }
       // Always release inflight_; status stays pending/failed for retry.
     }
     {
