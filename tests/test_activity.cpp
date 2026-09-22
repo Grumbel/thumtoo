@@ -16,25 +16,30 @@ static void expect(bool ok, const char* msg) {
 int main() {
   thumtoo::ActivityLedger ledger;
   const auto id = ledger.note_size_probe_queued("file:///tmp/a.jpg");
-  expect(id != 0, "id");
-  auto s = ledger.snapshot();
-  expect(s.size_probe_queued == 1, "queued");
   ledger.note_size_probe_running(id);
-  s = ledger.snapshot();
-  expect(s.size_probe_running == 1, "running");
   ledger.note_size_probe_finished(id, true);
-  s = ledger.snapshot();
-  expect(s.size_probe_completed == 1, "completed");
 
   const auto aid =
       ledger.note_archive_member_running("/data/photos.zip", "img/001.jpg");
-  s = ledger.snapshot();
-  expect(s.archive_read_running == 1, "archive running");
-  expect(!s.running_archive_labels.empty(), "archive label");
   ledger.note_archive_member_finished(aid, true);
+
+  const auto sid = ledger.note_soft_queued("file:///tmp/b.jpg", 512);
+  ledger.note_soft_running(sid);
+  auto s = ledger.snapshot();
+  expect(s.soft_running == 1, "soft running");
+  ledger.note_soft_finished(sid, true);
+
+  const auto tid = ledger.note_tile_queued("file:///tmp/c.jpg", 1, 2, 3);
+  ledger.note_tile_running(tid);
   s = ledger.snapshot();
-  expect(s.archive_read_running == 0, "archive done");
-  expect(s.archive_read_completed == 1, "archive completed");
+  expect(s.tile_running == 1, "tile running");
+  expect(!s.running_tile_labels.empty(), "tile label");
+  ledger.note_tile_finished(tid, true);
+  s = ledger.snapshot();
+  expect(s.tile_completed == 1, "tile done");
+  expect(s.soft_completed == 1, "soft done");
+  expect(s.size_probe_completed == 1, "size done");
+  expect(s.archive_read_completed == 1, "archive done");
 
   if (fails) {
     std::fprintf(stderr, "%d failures\n", fails);

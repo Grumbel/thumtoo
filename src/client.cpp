@@ -904,6 +904,8 @@ void Client::request_pixels(std::string uri, int max_edge, PixelsCallback cb,
   job.max_edge = max_edge;
   job.frame_idx = frame_idx;
   job.pixels_cb = std::move(cb);
+  job.activity_id =
+      global_activity_ledger().note_soft_queued(job.uri, job.max_edge);
   enqueue(std::move(job));
 }
 
@@ -943,6 +945,8 @@ void Client::request_overview_pixels(std::string uri, int max_edge,
   job.frame_idx = 0;
   job.overview = true;
   job.pixels_cb = std::move(cb);
+  job.activity_id =
+      global_activity_ledger().note_soft_queued(job.uri, job.max_edge);
   enqueue(std::move(job));
 }
 
@@ -1124,6 +1128,8 @@ void Client::request_full_pixels(std::string uri, int max_edge,
   job.overview = false;
   job.full_native = true;
   job.pixels_cb = std::move(cb);
+  job.activity_id =
+      global_activity_ledger().note_soft_queued(job.uri, job.max_edge);
   enqueue(std::move(job));
 }
 
@@ -1216,6 +1222,8 @@ void Client::request_tile(std::string uri, int scale, int x, int y,
   job.tile_max_scale = scale;
   job.tile_pyramid = false;
   job.tile_cb = std::move(cb);
+  job.activity_id = global_activity_ledger().note_tile_queued(
+      job.uri, job.tile_scale, job.tile_x, job.tile_y);
   // FIFO: every issued cell eventually runs. LIFO starved older archive/grid
   // cells forever under continuous pan/zoom (Galapix saw permanent REQUESTED).
   enqueue(std::move(job), /*front=*/false);
@@ -1262,6 +1270,7 @@ void Client::request_tiles(std::string uri, std::vector<TileCoord> coords,
                                    std::optional<TileBlob> tb) {
         on_cell(idx, std::move(tb));
       };
+      job.activity_id = global_activity_ledger().note_tile_queued(job.uri, sc, tx, ty);
       enqueue(std::move(job), /*front=*/false);
     }
   }
@@ -1280,6 +1289,9 @@ void Client::request_tile_pyramid(std::string uri, int min_scale, int max_scale,
   job.tile_max_scale = max_scale;
   job.tile_pyramid = true;
   job.tile_cb = std::move(on_done);
+  // Pyramid = many cells; one TileCell activity covers the job.
+  job.activity_id = global_activity_ledger().note_tile_queued(
+      job.uri, min_scale, 0, 0);
   enqueue(std::move(job));
 }
 
@@ -1935,11 +1947,15 @@ ActivitySnapshot Client::activity_snapshot() const {
 }
 
 void Client::reply_cancelled_job(Job& job) {
-  if (job.kind == JobKind::ProbeSize) {
-    if (job.activity_id != 0) {
+  if (job.activity_id != 0) {
+    if (job.kind == JobKind::ProbeSize) {
       global_activity_ledger().note_size_probe_finished(job.activity_id, false);
-      job.activity_id = 0;
+    } else if (job.kind == JobKind::EnsurePixels) {
+      global_activity_ledger().note_soft_finished(job.activity_id, false);
+    } else if (job.kind == JobKind::EnsureTiles) {
+      global_activity_ledger().note_tile_finished(job.activity_id, false);
     }
+    job.activity_id = 0;
   }
   if (job.kind == JobKind::ProbeSize && job.size_cb) {
     auto cb = std::move(job.size_cb);
@@ -2433,16 +2449,36 @@ void Client::worker_main() {
               global_activity_ledger().note_size_probe_finished(j.activity_id, true);
               j.activity_id = 0;
             }
-          } else if (batch_kind == JobKind::EnsureTiles)
+          } else if (batch_kind == JobKind::EnsureTiles) {
+            if (j.activity_id != 0) {
+              global_activity_ledger().note_tile_running(j.activity_id);
+            }
             handle_ensure_tiles(j, it.pre);
-          else if (batch_kind == JobKind::EnsurePixels)
+            if (j.activity_id != 0) {
+              global_activity_ledger().note_tile_finished(j.activity_id, true);
+              j.activity_id = 0;
+            }
+          } else if (batch_kind == JobKind::EnsurePixels) {
+            if (j.activity_id != 0) {
+              global_activity_ledger().note_soft_running(j.activity_id);
+            }
             handle_ensure_pixels(j, it.pre);
-          else if (batch_kind == JobKind::EnsureLqip)
+            if (j.activity_id != 0) {
+              global_activity_ledger().note_soft_finished(j.activity_id, true);
+              j.activity_id = 0;
+            }
+          } else if (batch_kind == JobKind::EnsureLqip)
             handle_ensure_lqip(j);
         } catch (...) {
           Job& j = batch[it.index];
           if (j.activity_id != 0) {
-            global_activity_ledger().note_size_probe_finished(j.activity_id, false);
+            if (j.kind == JobKind::ProbeSize) {
+              global_activity_ledger().note_size_probe_finished(j.activity_id, false);
+            } else if (j.kind == JobKind::EnsurePixels) {
+              global_activity_ledger().note_soft_finished(j.activity_id, false);
+            } else if (j.kind == JobKind::EnsureTiles) {
+              global_activity_ledger().note_tile_finished(j.activity_id, false);
+            }
             j.activity_id = 0;
           }
         }
@@ -2502,12 +2538,34 @@ void Client::worker_main() {
           global_activity_ledger().note_size_probe_finished(single.activity_id, true);
           single.activity_id = 0;
         }
-      } else if (single.kind == JobKind::EnsurePixels) handle_ensure_pixels(single);
-      else if (single.kind == JobKind::EnsureTiles) handle_ensure_tiles(single);
-      else if (single.kind == JobKind::EnsureLqip) handle_ensure_lqip(single);
+      } else if (single.kind == JobKind::EnsurePixels) {
+        if (single.activity_id != 0) {
+          global_activity_ledger().note_soft_running(single.activity_id);
+        }
+        handle_ensure_pixels(single);
+        if (single.activity_id != 0) {
+          global_activity_ledger().note_soft_finished(single.activity_id, true);
+          single.activity_id = 0;
+        }
+      } else if (single.kind == JobKind::EnsureTiles) {
+        if (single.activity_id != 0) {
+          global_activity_ledger().note_tile_running(single.activity_id);
+        }
+        handle_ensure_tiles(single);
+        if (single.activity_id != 0) {
+          global_activity_ledger().note_tile_finished(single.activity_id, true);
+          single.activity_id = 0;
+        }
+      } else if (single.kind == JobKind::EnsureLqip) handle_ensure_lqip(single);
     } catch (...) {
       if (single.activity_id != 0) {
-        global_activity_ledger().note_size_probe_finished(single.activity_id, false);
+        if (single.kind == JobKind::ProbeSize) {
+          global_activity_ledger().note_size_probe_finished(single.activity_id, false);
+        } else if (single.kind == JobKind::EnsurePixels) {
+          global_activity_ledger().note_soft_finished(single.activity_id, false);
+        } else if (single.kind == JobKind::EnsureTiles) {
+          global_activity_ledger().note_tile_finished(single.activity_id, false);
+        }
         single.activity_id = 0;
       }
       // Always release inflight_; status stays pending/failed for retry.
