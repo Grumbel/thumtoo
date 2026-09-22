@@ -332,8 +332,20 @@ void debug_overlay_rgb888(std::uint8_t* rgb, int width, int height,
   const int border = std::max(2, std::min(width, height) / 64);
   draw_debug_border(rgb, width, height, border);
 
-  // scale 2 (~2× prior small glyphs); yellow text, top-left grid (thumtoo).
-  const int scale = 2;
+  // Glyph scale from sample size so text stays readable and covers most of
+  // the tile/soft cell (hosts orient the bitmap — stamp is source-space).
+  // Prior fixed scale=2 + top-left grid was tiny when biltoo zoomed out.
+  int longest = 1;
+  for (const auto& line : lines) {
+    longest = std::max(longest, static_cast<int>(line.size()));
+  }
+  const int nlines = static_cast<int>(lines.size());
+  // Fit block to ~80% of the shorter side.
+  const int fit = std::max(8, std::min(width, height) * 4 / 5);
+  const int scale_w = fit / std::max(1, longest * (kGw + kGGap));
+  const int scale_h = fit / std::max(1, nlines * (kGh + 2));
+  const int scale = std::max(2, std::min(24, std::min(scale_w, scale_h)));
+
   int max_line_w = 0;
   for (const auto& line : lines) {
     max_line_w = std::max(
@@ -341,20 +353,16 @@ void debug_overlay_rgb888(std::uint8_t* rgb, int width, int height,
         static_cast<int>(line.size()) * (kGw + kGGap) * scale);
   }
   const int line_h = (kGh + 2) * scale;
-  const int block_h = line_h * static_cast<int>(lines.size()) + 4;
-  const int step_x = std::max(max_line_w + 24, width / 4);
-  const int step_y = std::max(block_h + 20, height / 5);
-  // Top-left half only so biltoo cyan (bottom-right) does not compete.
-  const int x_max = std::max(border + 8, width / 2);
-  const int y_max = std::max(border + 8, height / 2);
-  for (int y = border + 2; y + block_h < y_max; y += step_y) {
-    for (int x = border + 2; x + 8 < x_max; x += step_x) {
-      int yy = y;
-      for (const auto& line : lines) {
-        draw_text_line(rgb, width, height, x, yy, line, scale);
-        yy += line_h;
-      }
-    }
+  const int block_h = line_h * nlines;
+  // Single centred block — not a repeated grid (grid made labels unreadable).
+  const int x0 = std::max(border, (width - max_line_w) / 2);
+  const int y0 = std::max(border, (height - block_h) / 2);
+  int yy = y0;
+  for (const auto& line : lines) {
+    const int lw = static_cast<int>(line.size()) * (kGw + kGGap) * scale;
+    const int x = std::max(border, (width - lw) / 2);
+    draw_text_line(rgb, width, height, x, yy, line, scale);
+    yy += line_h;
   }
 }
 
@@ -375,17 +383,13 @@ void debug_overlay_pixel_level(PixelLevel& px, std::string_view uri_tail,
   if (!rgb_from_encoded(px.bytes, w, h, rgb)) {
     return;
   }
-  // Labels must read as "soft ladder" not "tile" — hosts paint both.
+  // Soft ladder only — not grid TILE. No filename / pixel size (unreadable
+  // on small samples). Hosts orient the bitmap; stamp stays source-aligned.
+  (void)uri_tail;
+  (void)request_edge;
   std::vector<std::string> lines;
-  lines.push_back("LADDER");  // soft overview, not grid tile
-  lines.push_back(basename_tail(uri_tail));
-  lines.push_back("SOFT " + std::to_string(w) + "x" + std::to_string(h));
-  lines.push_back("req=" + std::to_string(request_edge) +
-                  " have=" + std::to_string(px.max_edge));
-  lines.push_back(std::string("src=") + std::string(to_string(px.source)));
-  if (!px.codec.empty()) {
-    lines.push_back(px.codec);
-  }
+  lines.push_back("SOFT");
+  lines.push_back("le=" + std::to_string(px.max_edge));
   debug_overlay_rgb888(rgb.data(), w, h, lines);
 
   std::vector<std::uint8_t> out;
@@ -411,21 +415,13 @@ void debug_overlay_tile(TileBlob& tile, std::string_view uri_tail) {
   if (!rgb_from_encoded(tile.bytes, w, h, rgb)) {
     return;
   }
-  // Grid tile: scale 0 = full-res cell; each +1 is 2x coarser (half linear).
+  // Grid tile in source space — host orient/flip rotates the stamp with the
+  // patch. Label: TILE / s=N / x,y only (no filename or pixel size).
+  (void)uri_tail;
   std::vector<std::string> lines;
   lines.push_back("TILE");
-  lines.push_back(basename_tail(uri_tail));
-  lines.push_back(std::to_string(w) + "x" + std::to_string(h));
-  {
-    const int s = tile.scale;
-    const int factor = (s <= 0) ? 1 : (1 << s);
-    lines.push_back("scale=" + std::to_string(s) + " (1:" +
-                    std::to_string(factor) + ")");
-  }
-  lines.push_back("xy=" + std::to_string(tile.x) + "," +
-                  std::to_string(tile.y));
-  lines.push_back(std::string("src=") +
-                  std::to_string(static_cast<int>(tile.source)));
+  lines.push_back("s=" + std::to_string(tile.scale));
+  lines.push_back(std::to_string(tile.x) + "," + std::to_string(tile.y));
   debug_overlay_rgb888(rgb.data(), w, h, lines);
 
   std::vector<std::uint8_t> out;

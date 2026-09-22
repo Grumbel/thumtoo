@@ -13,8 +13,10 @@ namespace thumtoo {
 
 /**
  * THUMTOO_DEBUG_OVERLAY=1 (or non-empty non-0): stamp returned PixelLevel and
- * TileBlob rasters with a black outline plus size / scale / source / coords.
- * Off by default — does not affect durable cache bytes (applied on read path).
+ * TileBlob rasters in **source** pixel space (magenta border + large centred
+ * text). Soft: SOFT / le=N. Tile: TILE / s=N / x,y. Hosts orient/flip the
+ * bitmap — stamps follow automatically. Off by default; applied on read path
+ * only (durable Store bytes unchanged).
  */
 [[nodiscard]] bool debug_overlay_enabled();
 

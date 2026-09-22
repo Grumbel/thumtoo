@@ -1,5 +1,27 @@
 # TODO / agent handoff
 
+## Status (2026-09-22)
+
+**Tip: thumtoo-314-debug-overlay-tile-labels.** DEBUG_OVERLAY stamps:
+
+- **Tile:** TILE / s=N / x,y only — large centred glyphs (scale from cell size).
+- **Soft:** SOFT / le=N — same layout.
+- No filename, pixel size, or tiled grid of labels.
+- Source-space stamps so biltoo orient/flip follows the patch automatically.
+
+Prior: **313** LQIP free-data only.
+
+### Apply
+```bash
+git pull /path/to/thumtoo-314-debug-overlay-tile-labels.bundle HEAD
+```
+
+Next: **315**.
+
+---
+
+# TODO / agent handoff
+
 ## Status (2026-09-18)
 
 **Tip: thumtoo-313-lqip-free-data-only.** LQIP never opens the source; opportunistic only.
