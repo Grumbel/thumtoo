@@ -2,6 +2,25 @@
 
 ## Status (2026-09-22)
 
+**Tip: thumtoo-318-activity-archive-member.**
+
+Activity phase 2: `ArchiveMemberRead` on disk extract in `member_bytes` and
+batch sequential extract. Snapshot exposes `archive_read_*` + labels
+`basename:member`.
+
+Next: **319** (tiles/soft activity).
+
+### Apply
+```bash
+git pull --ff-only /path/to/thumtoo-318-activity-archive-member-8ea52ea.bundle HEAD
+```
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-22)
+
 **Tip: thumtoo-317-activity-size-probe.**
 
 Phase 1 activity ledger (`include/thumtoo/activity.hpp`):

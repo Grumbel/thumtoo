@@ -1482,6 +1482,10 @@ std::optional<std::vector<std::uint8_t>> Client::member_bytes(
     return cached;
   }
 
+  // Disk extract — report as live archive activity for host status bars.
+  const std::uint64_t act_id = global_activity_ledger().note_archive_member_running(
+      archive.string(), std::string(member));
+
   // Sequential archives (tar, solid RAR/7z): one libarchive/unarr pass for a
   // TOC-ordered window around the interest member, fill extract cache, return
   // the requested member. Avoids N independent full-stream walks for neighbors.
@@ -1497,12 +1501,15 @@ std::optional<std::vector<std::uint8_t>> Client::member_bytes(
       extract_cache_put(archive, kv.first, kv.second);
     }
     if (auto it = from_disk.find(member_s); it != from_disk.end()) {
+      global_activity_ledger().note_archive_member_finished(act_id, true);
       return it->second;
     }
     // Path equality may differ (./ prefix); fall back to cache get after put.
     if (auto cached = extract_cache_get(archive, member)) {
+      global_activity_ledger().note_archive_member_finished(act_id, true);
       return cached;
     }
+    global_activity_ledger().note_archive_member_finished(act_id, false);
     return std::nullopt;
   }
 
@@ -1510,6 +1517,8 @@ std::optional<std::vector<std::uint8_t>> Client::member_bytes(
   if (bytes && !bytes->empty()) {
     extract_cache_put(archive, member, *bytes);
   }
+  global_activity_ledger().note_archive_member_finished(act_id,
+                                                         bytes && !bytes->empty());
   return bytes;
 }
 
@@ -2369,7 +2378,16 @@ void Client::worker_main() {
             extract_members.resize(static_cast<size_t>(kBatchWindowMembers));
           }
         }
+        const std::uint64_t batch_act =
+            extract_members.empty()
+                ? 0
+                : global_activity_ledger().note_archive_member_running(
+                      archive_path.string(), extract_members.front());
         auto from_disk = extract_archive_members(archive_path, extract_members);
+        if (batch_act != 0) {
+          global_activity_ledger().note_archive_member_finished(
+              batch_act, !from_disk.empty());
+        }
         for (auto& kv : from_disk) {
           extract_cache_put(archive_path, kv.first, kv.second);
           extracted[kv.first] = std::move(kv.second);
