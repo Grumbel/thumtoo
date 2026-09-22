@@ -18,6 +18,8 @@ namespace thumtoo {
 inline constexpr int kLqipKindNone = 0;
 inline constexpr int kLqipKindThumbHash = 1;
 inline constexpr int kLqipKindHandsum = 2;
+/// Durable EXIF/container JPEG preview — not ThumbHash; never tile cells.
+inline constexpr int kLqipKindEmbeddedJpeg = 3;
 
 struct LqipRgba {
   int width = 0;

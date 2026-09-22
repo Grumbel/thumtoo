@@ -195,6 +195,10 @@ class Client {
   [[nodiscard]] std::optional<std::vector<std::uint8_t>> get_lqip(
       std::string_view uri) const;
 
+  /// Cache-only EXIF/container JPEG preview (kind EmbeddedJpeg). Not LQIP.
+  [[nodiscard]] std::optional<EmbeddedPreview> get_embedded_preview(
+      std::string_view uri) const;
+
   /// Free-data only: if LQIP is missing, encode from an already-available soft
   /// or TileSynth overview (≤64 long edge). **Never opens the source.** Returns
   /// get_lqip. No-op when LQIP is already stored (does not upgrade kinds).

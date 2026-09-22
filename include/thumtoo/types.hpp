@@ -17,12 +17,32 @@ struct Size {
   int height = 0;
 };
 
-/// Result of request_size / ProbeSize — native size plus cache-only LQIP when
-/// already backfilled (never generated on the size path).
+/// Origin of an embedded container preview (not content-derived tiles/LQIP).
+enum class EmbeddedOrigin : int {
+  Unknown = 0,
+  ExifJpeg = 1,     ///< EXIF IFD1 / APP1 JPEG thumbnail
+  PdfPageThumb = 2, ///< PDF page /Thumb stream (when present)
+  Other = 3,
+};
+
+/// Cheap first-paint underlay from container metadata (EXIF, PDF /Thumb, …).
+/// Never written into the tile pyramid. Hosts must tag provenance and still
+/// schedule tiles / content-derived work.
+struct EmbeddedPreview {
+  std::vector<std::uint8_t> bytes;  ///< typically JPEG
+  int width = 0;
+  int height = 0;
+  EmbeddedOrigin origin = EmbeddedOrigin::Unknown;
+};
+
+/// Result of request_size / ProbeSize — native size plus cache-only underlays.
 struct SizeReply {
   std::optional<Size> size;
   /// ThumbHash / Handsum blob from the content row; empty if not stored yet.
+  /// Never Embedded JPEG (see embedded).
   std::optional<std::vector<std::uint8_t>> lqip;
+  /// EXIF / container preview when available — distinct from tiles and LQIP.
+  std::optional<EmbeddedPreview> embedded;
 };
 
 struct ContentMeta {

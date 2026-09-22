@@ -57,6 +57,13 @@ void image_library_init();
 [[nodiscard]] std::optional<ProbeResult> probe_image_buffer(
     const std::uint8_t* data, std::size_t size, std::string_view hint_format = {});
 
+/// EXIF IFD1 JPEG thumbnail when present (no full decode of the primary image).
+/// Dimensions from the embedded JPEG header when decodable; bytes are JPEG.
+[[nodiscard]] std::optional<EmbeddedPreview> try_exif_embedded_preview_file(
+    const std::filesystem::path& path);
+[[nodiscard]] std::optional<EmbeddedPreview> try_exif_embedded_preview_buffer(
+    const std::uint8_t* data, std::size_t size);
+
 /// Encode one durable preview level: the largest kLadderEdges entry that is
 /// ≤ max_edge_limit and ≤ the source long edge (single vips_thumbnail pass).
 /// max_edge_limit ≤ 0 means "largest ladder edge that fits the source".

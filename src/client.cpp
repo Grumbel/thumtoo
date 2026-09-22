@@ -845,7 +845,29 @@ std::optional<std::vector<std::uint8_t>> Client::get_lqip(
   if (!store_ || uri.empty()) return std::nullopt;
   auto key = lqip_key_lookup(*store_, uri);
   if (!key) return std::nullopt;
+  // Embedded JPEG previews share blob_lqip storage under a distinct kind —
+  // never treat them as ThumbHash/Handsum LQIP.
+  if (auto kind = store_->get_blob_lqip_kind(key->blob_id, key->page_1based);
+      kind && *kind == kLqipKindEmbeddedJpeg) {
+    return std::nullopt;
+  }
   return store_->get_blob_lqip(key->blob_id, key->page_1based);
+}
+
+std::optional<EmbeddedPreview> Client::get_embedded_preview(
+    std::string_view uri) const {
+  if (!store_ || uri.empty()) return std::nullopt;
+  auto key = lqip_key_lookup(*store_, uri);
+  if (!key) return std::nullopt;
+  auto kind = store_->get_blob_lqip_kind(key->blob_id, key->page_1based);
+  if (!kind || *kind != kLqipKindEmbeddedJpeg) return std::nullopt;
+  auto bytes = store_->get_blob_lqip(key->blob_id, key->page_1based);
+  if (!bytes || bytes->empty()) return std::nullopt;
+  EmbeddedPreview out;
+  out.bytes = std::move(*bytes);
+  out.origin = EmbeddedOrigin::ExifJpeg;
+  // Dimensions optional — host may decode; leave 0 if not stored separately.
+  return out;
 }
 
 std::optional<std::vector<std::uint8_t>> Client::ensure_lqip(
@@ -2641,18 +2663,42 @@ void Client::handle_probe_size_store(Job& job) {
   // EnsureLqip from size probe: LQIP must not open the source. It is filled
   // opportunistically only when tile/soft encode already holds a free raster
   // (see PIXEL_AND_ARCHIVE_POLICY §1.1).
-  auto reply_size = [&](Size sz) {
+  auto reply_size = [&](Size sz, std::optional<EmbeddedPreview> emb = std::nullopt) {
     if (!job.size_cb) return;
     auto cb = std::move(job.size_cb);
     auto uri = job.uri;
     SizeReply reply;
     reply.size = sz;
     reply.lqip = get_lqip(uri);
+    if (emb) {
+      reply.embedded = std::move(emb);
+    } else {
+      reply.embedded = get_embedded_preview(uri);
+    }
     executor_.post([cb = std::move(cb), uri = std::move(uri),
                     reply = std::move(reply)]() mutable {
       cb(std::move(uri), std::move(reply));
     });
   };
+
+    auto maybe_store_embedded = [&](std::int64_t bid,
+                                    const std::uint8_t* data, std::size_t n)
+        -> std::optional<EmbeddedPreview> {
+      auto e = try_exif_embedded_preview_buffer(data, n);
+      if (!e) return std::nullopt;
+      auto existing_kind = store_->get_blob_lqip_kind(bid, 0);
+      if (!existing_kind || *existing_kind == kLqipKindNone
+          || *existing_kind == kLqipKindEmbeddedJpeg) {
+        try {
+          store_->put_blob_lqip(bid, kLqipKindEmbeddedJpeg, e->bytes, 0);
+        } catch (...) {
+        }
+      }
+      global_build_stats().exif_thumb_hits.fetch_add(1,
+                                                     std::memory_order_relaxed);
+      return e;
+    };
+
   if (!store_) {
     reply_empty();
     return;
@@ -2838,7 +2884,8 @@ void Client::handle_probe_size_store(Job& job) {
                                         byte_size, blob_id);
         store_->set_container_member_blob(*cid, arch->member_path, blob_id);
       }
-      reply_size(probe->size);
+      reply_size(probe->size,
+                 maybe_store_embedded(blob_id, bytes->data(), bytes->size()));
       return;
     }
 
@@ -2881,7 +2928,8 @@ void Client::handle_probe_size_store(Job& job) {
       store_->upsert_locator(job.uri, blob_id, byte_size, {});
       (void)store_->ensure_image_media(blob_id, probe->size.width,
                                        probe->size.height);
-      reply_size(probe->size);
+      reply_size(probe->size,
+                   maybe_store_embedded(blob_id, bytes->data(), bytes->size()));
       return;
     }
 
@@ -2921,7 +2969,22 @@ void Client::handle_probe_size_store(Job& job) {
                            std::nullopt);
     (void)store_->ensure_image_media(blob_id, probe->size.width,
                                      probe->size.height);
-    reply_size(probe->size);
+    std::optional<EmbeddedPreview> emb;
+    if (auto e = try_exif_embedded_preview_file(*path)) {
+      emb = std::move(*e);
+      auto existing_kind = store_->get_blob_lqip_kind(blob_id, 0);
+      if (!existing_kind || *existing_kind == kLqipKindNone
+          || *existing_kind == kLqipKindEmbeddedJpeg) {
+        try {
+          store_->put_blob_lqip(blob_id, kLqipKindEmbeddedJpeg, emb->bytes,
+                                /*page_1based=*/0);
+        } catch (...) {
+        }
+      }
+      global_build_stats().exif_thumb_hits.fetch_add(1,
+                                                     std::memory_order_relaxed);
+    }
+    reply_size(probe->size, std::move(emb));
   } catch (const std::exception& ex) {
     if (debug_enabled()) {
       dbg("handle_probe_size_store: %s", ex.what());

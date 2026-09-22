@@ -386,6 +386,45 @@ std::optional<std::vector<std::uint8_t>> extract_exif_jpeg_thumbnail_file(
   return extract_exif_jpeg_thumbnail(buf.data(), buf.size());
 }
 
+namespace {
+
+std::optional<EmbeddedPreview> embedded_from_exif_jpeg(
+    std::vector<std::uint8_t> jpeg) {
+  if (jpeg.size() < 4) return std::nullopt;
+  image_library_init();
+  VipsImage* emb = nullptr;
+  if (vips_jpegload_buffer(jpeg.data(), jpeg.size(), &emb, nullptr) != 0 || !emb) {
+    // Still usable as opaque JPEG if host can decode; dimensions unknown.
+    EmbeddedPreview out;
+    out.bytes = std::move(jpeg);
+    out.origin = EmbeddedOrigin::ExifJpeg;
+    return out;
+  }
+  EmbeddedPreview out;
+  out.width = vips_image_get_width(emb);
+  out.height = vips_image_get_height(emb);
+  g_object_unref(emb);
+  out.bytes = std::move(jpeg);
+  out.origin = EmbeddedOrigin::ExifJpeg;
+  return out;
+}
+
+}  // namespace
+
+std::optional<EmbeddedPreview> try_exif_embedded_preview_buffer(
+    const std::uint8_t* data, std::size_t size) {
+  auto jpeg = extract_exif_jpeg_thumbnail(data, size);
+  if (!jpeg) return std::nullopt;
+  return embedded_from_exif_jpeg(std::move(*jpeg));
+}
+
+std::optional<EmbeddedPreview> try_exif_embedded_preview_file(
+    const std::filesystem::path& path) {
+  auto jpeg = extract_exif_jpeg_thumbnail_file(path);
+  if (!jpeg) return std::nullopt;
+  return embedded_from_exif_jpeg(std::move(*jpeg));
+}
+
 /// Largest policy edge ≤ both the request limit and the source long edge.
 /// max_edge_limit ≤ 0 → no request cap (still capped by source / kLadderEdges).
 int pick_preview_edge(int long_edge, int max_edge_limit) {
