@@ -2,16 +2,16 @@
 
 ## Status (2026-09-22)
 
-**Tip: thumtoo-319-activity-tiles-soft.**
+**Tip: thumtoo-320-activity-batch-warm-finish.**
 
-Activity phase 3: SoftLadder + TileCell on EnsurePixels / EnsureTiles enqueue
-and worker paths. Snapshot: soft_*/tile_* counts and labels.
+Fix: batch cache-hit path for EnsureTiles/EnsurePixels now finishes
+activity_id (was leaving soft/tile forever "queued").
 
-Verified: `tests/test_activity` (standalone compile) ok.
-
-Next: **320**.
+Verified: `test_activity` ok.
 
 ### Apply
 ```bash
-git pull --ff-only /path/to/thumtoo-319-activity-tiles-soft-8ea52ea.bundle HEAD
+git pull --ff-only /path/to/thumtoo-320-activity-batch-warm-finish-8ea52ea.bundle HEAD
 ```
+
+Next: **321**.

@@ -2316,8 +2316,19 @@ void Client::worker_main() {
               get_tile(j.uri, j.tile_scale, j.tile_x, j.tile_y)) {
             need_extract[i] = 0;
             try {
+              if (j.activity_id != 0) {
+                global_activity_ledger().note_tile_running(j.activity_id);
+              }
               handle_ensure_tiles(j, std::nullopt);
+              if (j.activity_id != 0) {
+                global_activity_ledger().note_tile_finished(j.activity_id, true);
+                j.activity_id = 0;
+              }
             } catch (...) {
+              if (j.activity_id != 0) {
+                global_activity_ledger().note_tile_finished(j.activity_id, false);
+                j.activity_id = 0;
+              }
             }
             std::lock_guard lock(mu_);
             --inflight_;
@@ -2329,8 +2340,19 @@ void Client::worker_main() {
           if (get_pixels(j.uri, j.max_edge, j.frame_idx)) {
             need_extract[i] = 0;
             try {
+              if (j.activity_id != 0) {
+                global_activity_ledger().note_soft_running(j.activity_id);
+              }
               handle_ensure_pixels(j, std::nullopt);
+              if (j.activity_id != 0) {
+                global_activity_ledger().note_soft_finished(j.activity_id, true);
+                j.activity_id = 0;
+              }
             } catch (...) {
+              if (j.activity_id != 0) {
+                global_activity_ledger().note_soft_finished(j.activity_id, false);
+                j.activity_id = 0;
+              }
             }
             std::lock_guard lock(mu_);
             --inflight_;
