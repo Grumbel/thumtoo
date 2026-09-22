@@ -328,4 +328,16 @@ std::optional<DocumentOutline> pdf_document_outline(const std::filesystem::path&
 #endif
 }
 
+std::optional<PdfRaster> pdf_page_thumb_rgb(const std::filesystem::path& path,
+                                            int page_1based, PdfBackend backend) {
+  (void)backend;
+#if defined(THUMTOO_HAVE_MUPDF)
+  return mupdf_page_thumb_rgb(path, page_1based);
+#else
+  (void)path;
+  (void)page_1based;
+  return std::nullopt;
+#endif
+}
+
 }  // namespace thumtoo

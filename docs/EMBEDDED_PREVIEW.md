@@ -11,7 +11,7 @@ tiles or ThumbHash LQIP.
 | Origin | Source | API |
 |--------|--------|-----|
 | `ExifJpeg` | EXIF IFD1 / APP1 JPEG | `try_exif_embedded_preview_*`, size probe |
-| `PdfPageThumb` | PDF page `/Thumb` | reserved (not yet) |
+| `PdfPageThumb` | PDF page `/Thumb` stream | `pdf_page_thumb_rgb` on size probe |
 
 ## Rules
 

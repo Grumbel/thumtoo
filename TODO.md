@@ -2,15 +2,15 @@
 
 ## Status (2026-09-23)
 
-**Tip: thumtoo-321-embedded-preview-exif.**
+**Tip: thumtoo-322-pdf-page-thumb-embedded.**
 
-EXIF IFD1 JPEG as `SizeReply.embedded` / `get_embedded_preview` (kind
-`kLqipKindEmbeddedJpeg`). Distinct from tiles and ThumbHash LQIP. Extracted
-on JPEG size probe (file, archive member, http). See docs/EMBEDDED_PREVIEW.md.
+PDF page dictionary `/Thumb` → SizeReply.embedded (PdfPageThumb), same
+durable EmbeddedJpeg slot as EXIF (per page_1based). No full page raster.
+Includes **321** (EXIF embedded). See docs/EMBEDDED_PREVIEW.md.
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-321.1-embedded-preview-exif-bd9cca0.bundle HEAD
+git pull --ff-only …/thumtoo-322.1-pdf-page-thumb-embedded-bd9cca0.bundle HEAD
 ```
 
-Next: **322** (PDF page /Thumb; host provenance stamps).
+Next: **323**.

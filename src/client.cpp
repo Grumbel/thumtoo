@@ -865,7 +865,11 @@ std::optional<EmbeddedPreview> Client::get_embedded_preview(
   if (!bytes || bytes->empty()) return std::nullopt;
   EmbeddedPreview out;
   out.bytes = std::move(*bytes);
-  out.origin = EmbeddedOrigin::ExifJpeg;
+  if (parse_pdf_uri(uri)) {
+    out.origin = EmbeddedOrigin::PdfPageThumb;
+  } else {
+    out.origin = EmbeddedOrigin::ExifJpeg;
+  }
   // Dimensions optional — host may decode; leave 0 if not stored separately.
   return out;
 }
@@ -2699,6 +2703,30 @@ void Client::handle_probe_size_store(Job& job) {
       return e;
     };
 
+
+    auto jpeg_from_rgb = [](const std::uint8_t* rgb, int w, int h)
+        -> std::optional<std::vector<std::uint8_t>> {
+      if (!rgb || w <= 0 || h <= 0) return std::nullopt;
+      image_library_init();
+      VipsImage* im = vips_image_new_from_memory(
+          const_cast<std::uint8_t*>(rgb),
+          static_cast<size_t>(w) * static_cast<size_t>(h) * 3u, w, h, 3,
+          VIPS_FORMAT_UCHAR);
+      if (!im) return std::nullopt;
+      void* buf = nullptr;
+      size_t len = 0;
+      if (vips_jpegsave_buffer(im, &buf, &len, "Q", 80, nullptr) != 0 || !buf
+          || len == 0) {
+        g_object_unref(im);
+        return std::nullopt;
+      }
+      g_object_unref(im);
+      std::vector<std::uint8_t> out(static_cast<const std::uint8_t*>(buf),
+                                    static_cast<const std::uint8_t*>(buf) + len);
+      g_free(buf);
+      return out;
+    };
+
   if (!store_) {
     reply_empty();
     return;
@@ -2750,7 +2778,27 @@ void Client::handle_probe_size_store(Job& job) {
       // Stash page pixel size on document media for meta_from_store (last page
       // wins for multi-page; page-specific size still comes from layout below).
       store_->set_media_size(media_id, layout->width, layout->height);
-      reply_size(*layout);
+      std::optional<EmbeddedPreview> emb;
+      if (auto rgb = pdf_page_thumb_rgb(pdf->pdf_path, pdf->page, pdf->backend)) {
+        if (auto jpeg = jpeg_from_rgb(rgb->rgb.data(), rgb->width, rgb->height)) {
+          emb = EmbeddedPreview{};
+          emb->bytes = std::move(*jpeg);
+          emb->width = rgb->width;
+          emb->height = rgb->height;
+          emb->origin = EmbeddedOrigin::PdfPageThumb;
+          auto existing_kind =
+              store_->get_blob_lqip_kind(blob_id, pdf->page);
+          if (!existing_kind || *existing_kind == kLqipKindNone
+              || *existing_kind == kLqipKindEmbeddedJpeg) {
+            try {
+              store_->put_blob_lqip(blob_id, kLqipKindEmbeddedJpeg, emb->bytes,
+                                    pdf->page);
+            } catch (...) {
+            }
+          }
+        }
+      }
+      reply_size(*layout, std::move(emb));
       return;
     }
 

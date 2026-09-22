@@ -170,4 +170,9 @@ struct PdfPageContentStats {
     const std::filesystem::path& path,
     PdfBackend backend = PdfBackend::Default);
 
+/// Page /Thumb embedded preview RGB when the PDF provides it (cheap).
+[[nodiscard]] std::optional<PdfRaster> pdf_page_thumb_rgb(
+    const std::filesystem::path& path, int page_1based,
+    PdfBackend backend = PdfBackend::Default);
+
 }  // namespace thumtoo

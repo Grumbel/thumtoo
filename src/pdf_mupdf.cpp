@@ -694,6 +694,70 @@ std::optional<Size> mupdf_embedded_image_size(const std::filesystem::path& path,
 }
 
 
+
+std::optional<PdfRaster> mupdf_page_thumb_rgb(const std::filesystem::path& path,
+                                              int page_1based) {
+#if !defined(THUMTOO_HAVE_MUPDF)
+  (void)path;
+  (void)page_1based;
+  return std::nullopt;
+#else
+  if (page_1based < 1) return std::nullopt;
+  fz_context* ctx = tls_ctx();
+  fz_document* doc = tls_document(path);
+  if (!ctx || !doc) return std::nullopt;
+  pdf_document* pdf = pdf_document_from_fz_document(ctx, doc);
+  if (!pdf) return std::nullopt;
+
+  // Page /Thumb is an optional Image stream on the page dictionary — not a
+  // full page render. Missing on many PDFs; cheap when present.
+  pdf_obj* page_obj = nullptr;
+  pdf_obj* thumb = nullptr;
+  fz_image* image = nullptr;
+  fz_pixmap* pix = nullptr;
+  fz_var(page_obj);
+  fz_var(thumb);
+  fz_var(image);
+  fz_var(pix);
+  std::optional<PdfRaster> out;
+  fz_try(ctx) {
+    page_obj = pdf_lookup_page_obj(ctx, pdf, page_1based - 1);
+    if (!page_obj) {
+      fz_throw(ctx, FZ_ERROR_GENERIC, "pdf thumb: no page obj");
+    }
+    thumb = pdf_dict_get(ctx, page_obj, PDF_NAME(Thumb));
+    if (!thumb || pdf_is_null(ctx, thumb)) {
+      fz_throw(ctx, FZ_ERROR_GENERIC, "pdf thumb: no /Thumb");
+    }
+    // Keep a strong ref — dict_get does not always own for load_image.
+    thumb = pdf_keep_obj(ctx, thumb);
+    if (!mupdf_obj_is_raster_image(ctx, thumb)) {
+      fz_throw(ctx, FZ_ERROR_GENERIC, "pdf thumb: not a raster image");
+    }
+    image = pdf_load_image(ctx, pdf, thumb);
+    pix = fz_get_pixmap_from_image(ctx, image, nullptr, nullptr, nullptr, nullptr);
+    if (!pix) {
+      fz_throw(ctx, FZ_ERROR_GENERIC, "pdf thumb: empty pixmap");
+    }
+    fz_colorspace* cs = fz_pixmap_colorspace(ctx, pix);
+    if (cs && fz_colorspace_n(ctx, cs) != 3 && fz_colorspace_n(ctx, cs) != 1) {
+      fz_pixmap* rgb = fz_convert_pixmap(ctx, pix, fz_device_rgb(ctx), nullptr,
+                                         nullptr, fz_default_color_params, 0);
+      fz_drop_pixmap(ctx, pix);
+      pix = rgb;
+    }
+    out = pixmap_to_rgb(ctx, pix);
+  }
+  fz_always(ctx) {
+    if (pix) fz_drop_pixmap(ctx, pix);
+    if (image) fz_drop_image(ctx, image);
+    if (thumb) pdf_drop_obj(ctx, thumb);
+  }
+  fz_catch(ctx) { out = std::nullopt; }
+  return out;
+#endif
+}
+
 [[nodiscard]] bool is_external_link_uri(const char* uri) {
   if (!uri || !uri[0]) return true;
   auto starts_ci = [](const char* s, const char* prefix) {

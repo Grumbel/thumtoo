@@ -52,4 +52,8 @@ namespace thumtoo {
 [[nodiscard]] std::optional<DocumentOutline> mupdf_document_outline(
     const std::filesystem::path& path);
 
+/// Page dictionary /Thumb stream as RGB888 when present (no full page render).
+[[nodiscard]] std::optional<PdfRaster> mupdf_page_thumb_rgb(
+    const std::filesystem::path& path, int page_1based);
+
 }  // namespace thumtoo
