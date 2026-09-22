@@ -411,20 +411,6 @@ std::optional<EmbeddedPreview> embedded_from_exif_jpeg(
 
 }  // namespace
 
-std::optional<EmbeddedPreview> try_exif_embedded_preview_buffer(
-    const std::uint8_t* data, std::size_t size) {
-  auto jpeg = extract_exif_jpeg_thumbnail(data, size);
-  if (!jpeg) return std::nullopt;
-  return embedded_from_exif_jpeg(std::move(*jpeg));
-}
-
-std::optional<EmbeddedPreview> try_exif_embedded_preview_file(
-    const std::filesystem::path& path) {
-  auto jpeg = extract_exif_jpeg_thumbnail_file(path);
-  if (!jpeg) return std::nullopt;
-  return embedded_from_exif_jpeg(std::move(*jpeg));
-}
-
 /// Largest policy edge ≤ both the request limit and the source long edge.
 /// max_edge_limit ≤ 0 → no request cap (still capped by source / kLadderEdges).
 int pick_preview_edge(int long_edge, int max_edge_limit) {
@@ -484,6 +470,20 @@ LevelBlob encode_jxl_level(VipsImage* thumb, int edge,
 }
 
 }  // namespace
+
+std::optional<EmbeddedPreview> try_exif_embedded_preview_buffer(
+    const std::uint8_t* data, std::size_t size) {
+  auto jpeg = extract_exif_jpeg_thumbnail(data, size);
+  if (!jpeg) return std::nullopt;
+  return embedded_from_exif_jpeg(std::move(*jpeg));
+}
+
+std::optional<EmbeddedPreview> try_exif_embedded_preview_file(
+    const std::filesystem::path& path) {
+  auto jpeg = extract_exif_jpeg_thumbnail_file(path);
+  if (!jpeg) return std::nullopt;
+  return embedded_from_exif_jpeg(std::move(*jpeg));
+}
 
 std::vector<LevelBlob> build_ladder(const std::filesystem::path& path,
                                     const std::string& content_id,

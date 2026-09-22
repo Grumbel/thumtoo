@@ -2,15 +2,17 @@
 
 ## Status (2026-09-23)
 
-**Tip: thumtoo-322-pdf-page-thumb-embedded.**
+**Tip: thumtoo-323-try-exif-external-linkage.**
 
-PDF page dictionary `/Thumb` → SizeReply.embedded (PdfPageThumb), same
-durable EmbeddedJpeg slot as EXIF (per page_1based). No full page raster.
-Includes **321** (EXIF embedded). See docs/EMBEDDED_PREVIEW.md.
+Fix: `try_exif_embedded_preview_{file,buffer}` were defined inside an
+anonymous namespace (internal linkage) → undefined reference when linking
+biltoo against libthumtoo. Moved to `namespace thumtoo` after the anon block.
+
+Includes **321–322**. Base still `bd9cca0` (thumtoo-320 tip).
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-322.1-pdf-page-thumb-embedded-bd9cca0.bundle HEAD
+git pull --ff-only …/thumtoo-323.1-try-exif-external-linkage-bd9cca0.bundle HEAD
 ```
 
-Next: **323**.
+Next: **324**.
