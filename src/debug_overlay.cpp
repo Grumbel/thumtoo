@@ -309,9 +309,21 @@ bool rgb_from_encoded(const std::vector<std::uint8_t>& bytes, int& w, int& h,
                               bytes.size(), &img, nullptr);
   }
   if (!img) {
-    std::fprintf(stderr,
-                 "thumtoo: DEBUG_OVERLAY decode failed (bytes=%zu)\n",
-                 bytes.size());
+    // Live tiles are often raw rgb888 (e.g. 256×256×3 = 196608) — those must
+    // not go through this path (see rgb_from_tile_blob). Log once per size.
+    static std::mutex fail_mu;
+    static std::size_t last_bytes = 0;
+    static int fail_count = 0;
+    {
+      std::lock_guard<std::mutex> lock(fail_mu);
+      ++fail_count;
+      if (bytes.size() != last_bytes || fail_count <= 3 || (fail_count % 64) == 0) {
+        last_bytes = bytes.size();
+        std::fprintf(stderr,
+                     "thumtoo: DEBUG_OVERLAY decode failed (bytes=%zu, n=%d)\n",
+                     bytes.size(), fail_count);
+      }
+    }
     return false;
   }
   VipsImage* rgb = nullptr;
@@ -373,6 +385,51 @@ bool encode_jpeg(const std::uint8_t* rgb, int w, int h,
   return true;
 }
 
+/** Raw rgb888 / rgba8 tiles (live PDF/image cells) — no VIPS decode. */
+bool rgb_from_raw_codec(const std::string& codec, int width, int height,
+                        const std::vector<std::uint8_t>& bytes, int& w, int& h,
+                        std::vector<std::uint8_t>& out_rgb) {
+  if (width < 1 || height < 1 || bytes.empty()) {
+    return false;
+  }
+  const bool is_rgb =
+      (codec == kTileCodecRgb888 || codec == "rgb888" || codec.empty());
+  const bool is_rgba = (codec == "rgba8" || codec == "rgba8888");
+  if (is_rgb) {
+    const std::size_t need =
+        static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 3u;
+    if (bytes.size() < need) {
+      return false;
+    }
+    w = width;
+    h = height;
+    out_rgb.assign(bytes.begin(),
+                    bytes.begin() + static_cast<std::ptrdiff_t>(need));
+    return true;
+  }
+  if (is_rgba) {
+    const std::size_t need =
+        static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4u;
+    if (bytes.size() < need) {
+      return false;
+    }
+    w = width;
+    h = height;
+    out_rgb.resize(static_cast<std::size_t>(width) *
+                    static_cast<std::size_t>(height) * 3u);
+    for (int i = 0; i < width * height; ++i) {
+      out_rgb[static_cast<std::size_t>(i * 3 + 0)] =
+          bytes[static_cast<std::size_t>(i * 4 + 0)];
+      out_rgb[static_cast<std::size_t>(i * 3 + 1)] =
+          bytes[static_cast<std::size_t>(i * 4 + 1)];
+      out_rgb[static_cast<std::size_t>(i * 3 + 2)] =
+          bytes[static_cast<std::size_t>(i * 4 + 2)];
+    }
+    return true;
+  }
+  return false;
+}
+
 }  // namespace
 
 bool debug_overlay_enabled() {
@@ -430,7 +487,8 @@ void debug_overlay_pixel_level(PixelLevel& px, std::string_view uri_tail,
   int w = 0;
   int h = 0;
   std::vector<std::uint8_t> rgb;
-  if (!rgb_from_encoded(px.bytes, w, h, rgb)) {
+  if (!rgb_from_raw_codec(px.codec, px.width, px.height, px.bytes, w, h, rgb) &&
+      !rgb_from_encoded(px.bytes, w, h, rgb)) {
     return;
   }
   // Soft ladder only — not grid TILE. No filename / pixel size (unreadable
@@ -462,7 +520,11 @@ void debug_overlay_tile(TileBlob& tile, std::string_view uri_tail) {
   int w = 0;
   int h = 0;
   std::vector<std::uint8_t> rgb;
-  if (!rgb_from_encoded(tile.bytes, w, h, rgb)) {
+  // Live cells are rgb888 (e.g. 256×256×3 = 196608) — not a container format.
+  // rgb_from_encoded would fail every time and spam the host.
+  if (!rgb_from_raw_codec(tile.codec, tile.width, tile.height, tile.bytes, w, h,
+                          rgb) &&
+      !rgb_from_encoded(tile.bytes, w, h, rgb)) {
     return;
   }
   // Grid tile in source space — host orient/flip rotates the stamp with the

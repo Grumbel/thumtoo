@@ -2,6 +2,30 @@
 
 ## Status (2026-09-22)
 
+**Tip: thumtoo-316-debug-overlay-raw-rgb888.**
+
+`DEBUG_OVERLAY decode failed (bytes=196608)` was live **rgb888** tiles
+(256×256×3). Overlay always ran `vips_image_new_from_buffer` (encoded only).
+
+- Stamp raw `rgb888` / `rgba8` via codec + width/height (tiles + soft).
+- Rate-limit remaining encoded-decode failure logs.
+
+Does not by itself spin biltoo CPU; failed stamp left the tile bytes intact.
+If host still spins, look at tile Failed + generation retries.
+
+### Apply
+```bash
+git pull --ff-only /path/to/thumtoo-316-debug-overlay-raw-rgb888-8ea52ea.bundle HEAD
+```
+
+Next: **317**.
+
+---
+
+# TODO / agent handoff
+
+## Status (2026-09-22)
+
 **Tip: thumtoo-315.1-debug-overlay-unused-x0.** Drop unused `x0`/`max_line_w` in
 `debug_overlay_rgb888` (each line is centred on its own width; -Wunused-variable).
 
