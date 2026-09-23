@@ -1228,22 +1228,10 @@ void Client::invalidate_tile(std::string_view /*uri*/, int /*scale*/, int /*x*/,
 
 void Client::request_tile(std::string uri, int scale, int x, int y,
                           TileCallback cb) {
-  // Warm path: same as request_size — serve durable Store hits without waiting
-  // on the worker queue (second open felt slow: every cell paid queue latency).
-  // Blob read stays here; host JPEG decode still runs on the Executor thread.
-  if (cb) {
-    if (auto t = get_tile(uri, scale, x, y)) {
-      if (debug_enabled()) {
-        dbg("request_tile HIT uri=%s scale=%d cell=%d,%d", uri.c_str(), scale, x,
-            y);
-      }
-      executor_.post([cb = std::move(cb), uri, scale, x, y,
-                      t = std::move(*t)]() mutable {
-        cb(std::move(uri), scale, x, y, std::move(t));
-      });
-      return;
-    }
-  }
+  // Always queue a worker job — even Store hits. Callers (biltoo GUI tick)
+  // must not run get_tile / blob I/O on the event thread; that blew
+  // TileLoadCoordinator budgets (hundreds of ms–seconds) after prepare --tiles.
+  // Workers still short-circuit on get_tile inside handle_ensure_tiles.
   if (debug_enabled()) {
     dbg("request_tile QUEUE uri=%s scale=%d cell=%d,%d", uri.c_str(), scale, x,
         y);
@@ -1279,41 +1267,32 @@ void Client::request_tiles(std::string uri, std::vector<TileCoord> coords,
                  });
     return;
   }
-  // Serve durable hits immediately; only enqueue cells that still need encode.
-  std::vector<TileCoord> misses;
-  misses.reserve(coords.size());
+  // Always enqueue per-cell jobs (worker does get_tile). Do not SQLite-read
+  // on the caller thread — biltoo TileLoadCoordinator issues from the GUI.
   for (std::size_t i = 0; i < coords.size(); ++i) {
     const auto& c = coords[i];
-    if (auto t = get_tile(uri, c.scale, c.x, c.y)) {
-      executor_.post([on_cell, i, t = std::move(*t)]() mutable {
-        on_cell(i, std::move(t));
-      });
-    } else {
-      // Preserve original indices via a small job per miss (correct completion
-      // index). Batch-miss encode path still goes through the worker.
-      misses.push_back(c);
-      const std::size_t idx = i;
-      const int sc = c.scale, tx = c.x, ty = c.y;
-      Job job;
-      job.kind = JobKind::EnsureTiles;
-      job.uri = uri;
-      job.tile_scale = sc;
-      job.tile_x = tx;
-      job.tile_y = ty;
-      job.tile_min_scale = sc;
-      job.tile_max_scale = sc;
-      job.tile_pyramid = false;
-      job.tile_cb = [on_cell, idx](std::string, int, int, int,
-                                   std::optional<TileBlob> tb) {
-        on_cell(idx, std::move(tb));
-      };
-      job.activity_id = global_activity_ledger().note_tile_queued(job.uri, sc, tx, ty);
-      enqueue(std::move(job), /*front=*/false);
-    }
+    const std::size_t idx = i;
+    const int sc = c.scale, tx = c.x, ty = c.y;
+    Job job;
+    job.kind = JobKind::EnsureTiles;
+    job.uri = uri;
+    job.tile_scale = sc;
+    job.tile_x = tx;
+    job.tile_y = ty;
+    job.tile_min_scale = sc;
+    job.tile_max_scale = sc;
+    job.tile_pyramid = false;
+    job.tile_cb = [on_cell, idx](std::string, int, int, int,
+                                 std::optional<TileBlob> tb) {
+      on_cell(idx, std::move(tb));
+    };
+    job.activity_id =
+        global_activity_ledger().note_tile_queued(job.uri, sc, tx, ty);
+    enqueue(std::move(job), /*front=*/false);
   }
-  if (debug_enabled() && !misses.empty()) {
-    dbg("request_tiles uri=%s hits=%zu misses=%zu", uri.c_str(),
-        coords.size() - misses.size(), misses.size());
+  if (debug_enabled()) {
+    dbg("request_tiles uri=%s cells=%zu (all queued)", uri.c_str(),
+        coords.size());
   }
 }
 
