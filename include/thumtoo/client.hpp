@@ -564,8 +564,7 @@ class Client {
   [[nodiscard]] bool extract_staging_has(
       const std::filesystem::path& archive, std::string_view member) const;
 
-  /// Copy sequential-archive source to local disk once (NFS-safe). Returns
-  /// mirror path or original on failure / already local mirror.
+  /// Optional local mirror (THUMTOO_MIRROR_ARCHIVES=1). Default no-op.
   [[nodiscard]] std::filesystem::path ensure_local_archive(
       const std::filesystem::path& archive);
 

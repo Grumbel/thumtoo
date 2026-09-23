@@ -1621,6 +1621,16 @@ bool Client::extract_staging_has(const std::filesystem::path& archive,
 
 std::filesystem::path Client::ensure_local_archive(
     const std::filesystem::path& archive) {
+  // Opt-in only. Default off: one solid pass over NFS is fine for this RAR
+  // class (~17s cold / ~5s warm). Always-on mirroring filled disk with 700MB+
+  // copies and is deferred until a pathological solid case + network detect.
+  {
+    const char* e = std::getenv("THUMTOO_MIRROR_ARCHIVES");
+    if (!e || !e[0] || e[0] == '0' || e[0] == 'f' || e[0] == 'F' ||
+        e[0] == 'n' || e[0] == 'N') {
+      return archive;
+    }
+  }
   std::error_code ec;
   if (!std::filesystem::is_regular_file(archive, ec) || ec) {
     return archive;

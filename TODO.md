@@ -2,25 +2,32 @@
 
 ## Status (2026-09-23)
 
-**Tip: thumtoo-331-use-preextracted-size** (base `f71d183`, includes 324–330).
+**Tip: thumtoo-332-mirror-opt-in** (base `f71d183`, includes 324–331).
 
-### Bug
-`handle_probe_size` discarded `preextracted` (`(void)preextracted`) and always
-called `member_bytes` again. Sequential size visit extracted each member, then
-re-read staging (or worse) for every probe. Local RAR sizes-only ~46s wall /
-~44s user for 164 members.
+### Sizes-only performance (resolved for current RAR class)
+| Case | Wall |
+|------|------|
+| Local | ~4.2s |
+| Network cold | ~17s |
+| Network warm | ~5s |
 
-### Fix
-Wire preextracted into `handle_probe_size_store` archive path. Size visit puts
-extract_cache only (no full-album staging writes during sizes-only).
+Root fix was 331: `preextracted` was discarded; every size probe re-fetched members.
 
-### Goal
-~15s sizes-only on local 716MB solid RAR (extract ~1–2s + probe/hash).
+### 332 — Archive mirror opt-in only
+`ensure_local_archive` is a no-op unless `THUMTOO_MIRROR_ARCHIVES=1`.
+No automatic 700MB copies.
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-331.1-use-preextracted-size-f71d183.bundle HEAD
+git pull --ff-only …/thumtoo-332.1-mirror-opt-in-f71d183.bundle HEAD
 ```
 
-Next: **332** — network-drive detect for mirror; staging GC; THUMTOO_DEBUG_ARCHIVE.
-Defer until sizes-only is near the 15s goal.
+### Deferred
+- Network-drive detect + mirror + GC
+- THUMTOO_DEBUG_ARCHIVE traces
+- Pathological solid-archive microbench
+
+### ECS?
+thumtoo is not a GUI session: Store is durable ground truth; Client is the
+job/scheduler + process caches. No biltoo-style ECS refactor needed. Remaining
+cleanup is pipeline (extract → probe → tiles), not entity components.
