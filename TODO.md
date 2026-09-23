@@ -2,28 +2,32 @@
 
 ## Status (2026-09-23)
 
-**Tip: thumtoo-334-unarr-close-no-extra-toc** (base `f71d183`, includes 324–333).
+**Tip: thumtoo-335-prepare-doc-tile-pyramid** (base `f71d183`, includes 324–334).
 
-### Extra unarr opens (sizes-only solid RAR)
-Log showed **4× open + 3× TOC** for one album. Expected **2** (TOC + visit).
+### prepare --tiles for PDF/DjVu/EPUB
+`request_tile_pyramid` only baked file:// + archive members. Document page
+URIs (`//page:N`) always got `reply_pyramid_done(false)` → prepare reported
+`miss` / `tiles=0` even after successful size probes.
 
-| # | Source | Fix |
-|---|--------|-----|
-| 1 | `prepare_paths` → `refresh_archive_toc` | keep (writes Store) |
-| 2 | `ensure_archive_cursor` → `read_archive_toc` | prefer Store `list_container_members` |
-| 3 | `visit_archive_members_unarr` | keep (extract) |
-| 4 | `order_uris_for_sequential_extract` after phase 1 | skip when `--sizes-only`; else Store via Client |
+**Fix:** Pyramid path now region-renders PDF (`pdf_build_tile_cell`), DjVu
+(`djvu_build_tile_cell`), and EPUB (`epub_render_tile_cell` + JPEG) for each
+scale/cell, stores durable JPEG (floor `kPdfMinDurableTileScale` = -2),
+opportunistic LQIP unchanged.
 
-Also **`unarr close path=…`** on `UnarrHolder` dtor.
+`thumtoo-prepare --min-scale` may be negative down to -2 (document durable
+floor). Help text documents PDF/DjVu/EPUB expand + tile support.
 
 ```bash
-THUMTOO_DEBUG_ARCHIVE=1 thumtoo-prepare --sizes-only --no-cache album.rar
-# expect: open → TOC → close → visit start → open → … → close
+thumtoo-prepare --tiles /tmp/Mondo.2000.Issue.01.1989_text.pdf
+# expect: phase 1 probes ok; tile phase ready (not miss); tiles>0 in summary
 ```
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-334.1-unarr-close-no-extra-toc-f71d183.bundle HEAD
+git pull --ff-only …/thumtoo-335.1-prepare-doc-tile-pyramid-f71d183.bundle HEAD
 ```
 
-Next: **335**.
+Next: **336**.
+
+## Prior — 334
+unarr close log; ensure_archive_cursor + order_uris avoid extra TOC opens.

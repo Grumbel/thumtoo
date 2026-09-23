@@ -3981,7 +3981,9 @@ void Client::handle_ensure_tiles_store(Job& job) {
     return;
   }
 
-  // Pyramid: durable JPEG cells for file:// and archive members (size known).
+  // Pyramid: durable JPEG cells (size known).
+  // Covers file://, archive members, and document pages (PDF/DjVu/EPUB).
+  // prepare --tiles relies on this; interactive biltoo uses single-cell path.
   if (!sm->size || sm->size->width <= 0 || sm->size->height <= 0) {
     reply_pyramid_done(false);
     return;
@@ -4002,6 +4004,29 @@ void Client::handle_ensure_tiles_store(Job& job) {
   }
 
   std::vector<TileBlob> tiles;
+
+  auto append_doc_pyramid = [&](auto render_cell, TileSource src) {
+    // Document page size is layout (scale 0). Finer than kPdfMinDurableTileScale
+    // may still be rendered live by interactive hosts but is not written here.
+    const int s0 = std::max(min_scale, kPdfMinDurableTileScale);
+    if (s0 > max_scale) return;
+    const Size layout{sm->size->width, sm->size->height};
+    for (int s = s0; s <= max_scale; ++s) {
+      const Size full = pdf_page_size_at_scale(layout, s);
+      if (full.width < 1 || full.height < 1) continue;
+      const int nx = (full.width + kTileSize - 1) / kTileSize;
+      const int ny = (full.height + kTileSize - 1) / kTileSize;
+      for (int ty = 0; ty < ny; ++ty) {
+        for (int tx = 0; tx < nx; ++tx) {
+          if (auto cell = render_cell(s, tx, ty)) {
+            cell->source = src;
+            tiles.push_back(std::move(*cell));
+          }
+        }
+      }
+    }
+  };
+
   if (auto arch = parse_archive_uri(job.uri)) {
     if (arch->member_path.empty()) {
       reply_pyramid_done(false);
@@ -4014,6 +4039,30 @@ void Client::handle_ensure_tiles_store(Job& job) {
     }
     tiles = build_tile_pyramid_buffer(bytes->data(), bytes->size(), min_scale,
                                       max_scale, kDefaultTileQuality);
+  } else if (auto pdf = parse_pdf_uri(job.uri)) {
+    append_doc_pyramid(
+        [&](int s, int x, int y) {
+          return pdf_build_tile_cell(pdf->pdf_path, pdf->page, s, x, y,
+                                     kPdfTileQuality, pdf->backend);
+        },
+        TileSource::PdfRegion);
+  } else if (auto dj = parse_djvu_uri(job.uri)) {
+    append_doc_pyramid(
+        [&](int s, int x, int y) {
+          return djvu_build_tile_cell(dj->djvu_path, dj->page, s, x, y,
+                                      kPdfTileQuality);
+        },
+        TileSource::DjvuRegion);
+  } else if (auto ep = parse_epub_uri(job.uri)) {
+    append_doc_pyramid(
+        [&](int s, int x, int y) -> std::optional<TileBlob> {
+          auto raster = epub_render_tile_cell(ep->epub_path, ep->page, ep->layout,
+                                              s, x, y);
+          if (!raster || raster->rgb.empty()) return std::nullopt;
+          return encode_tile_cell_rgb(raster->rgb.data(), raster->width,
+                                      raster->height, s, x, y, kPdfTileQuality);
+        },
+        TileSource::Full);
   } else if (auto path = path_from_file_uri(job.uri)) {
     if (!std::filesystem::is_regular_file(*path)) {
       reply_pyramid_done(false);

@@ -8,6 +8,7 @@
 #include "thumtoo/status.hpp"
 #include "thumtoo/archive.hpp"
 #include "thumtoo/uri.hpp"
+#include "thumtoo/constants.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -136,7 +137,7 @@ void usage(const char* argv0) {
       << "Register PATH(s) in the thumtoo cache and run size probes.\n"
       << "Default is size-only (no soft/tiles) so you can time cold probes\n"
       << "without biltoo. Archives (zip/cbz/rar/…) expand to image member URIs;\n"
-      << "PDFs expand to page URIs (//page:N, 1-based, capped at 512 pages).\n"
+      << "PDF/DjVu/EPUB expand to page URIs (//page:N, 1-based, capped at 512).\n"
       << "\n"
       << "Options:\n"
       << "  -h, --help         show this help and exit\n"
@@ -152,9 +153,11 @@ void usage(const char* argv0) {
       << "      --lqip         after probes, report LQIP presence (no generation;\n"
       << "                      LQIP only opportunistically with --tiles)\n"
       << "      --tiles        after probes, build Galapix-style 256×256 JPEG\n"
-      << "                      tile pyramid for each ready URI\n"
-      << "      --min-scale N  finest tile scale to generate (default: 0 = full res)\n"
-      << "                      higher N skips finer detail (e.g. 1 = no full-res)\n"
+      << "                      tile pyramid for each ready URI (images, archive\n"
+      << "                      members, and PDF/DjVu/EPUB pages)\n"
+      << "      --min-scale N  finest tile scale (default: 0). For rasters 0 is\n"
+      << "                      full res; for PDF pages 0 is layout (144 dpi).\n"
+      << "                      Negative allowed down to -2 (document durable floor)\n"
       << "      --max-scale M  coarsest tile scale (default: -1 = until single tile)\n"
       << "      --stats        print detailed timings on stderr (pretty multi-line)\n"
       << "                      (also implied when --tiles / --ladder / --lqip is used)\n"
@@ -172,6 +175,7 @@ void usage(const char* argv0) {
       << "  " << argv0 << " --sizes-only --stats /path/to/album.rar\n"
       << "  " << argv0 << " --sizes-only --jobs 1 /path/to/album.rar\n"
       << "  " << argv0 << " --tiles /path/to/album/\n"
+      << "  " << argv0 << " --tiles /path/to/doc.pdf\n"
       << "\n"
       << "Output:\n"
       << "  Progress and timings go to stderr; a one-line cache summary to stdout.\n"
@@ -233,7 +237,11 @@ int main(int argc, char** argv) {
     }
     if (a == "--min-scale" && i + 1 < argc) {
       tile_min_scale = std::atoi(argv[++i]);
-      if (tile_min_scale < 0) tile_min_scale = 0;
+      // PDF/DjVu/EPUB durable floor is kPdfMinDurableTileScale (-2). Raster
+      // pyramids treat negative as "full" (scale 0) in the encode path.
+      if (tile_min_scale < thumtoo::kPdfMinDurableTileScale) {
+        tile_min_scale = thumtoo::kPdfMinDurableTileScale;
+      }
       do_tiles = true;
       continue;
     }
