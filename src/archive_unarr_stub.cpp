@@ -22,4 +22,10 @@ extract_archive_members_unarr(const std::filesystem::path&,
   return {};
 }
 
+std::size_t visit_archive_members_unarr(const std::filesystem::path&,
+                                        const std::vector<std::string>&,
+                                        const ArchiveMemberVisitor&) {
+  return 0;
+}
+
 }  // namespace thumtoo

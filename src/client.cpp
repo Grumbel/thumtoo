@@ -2500,13 +2500,10 @@ void Client::worker_main() {
         // missing member restarted a full solid decompress (~0.8 probes/s).
         const bool sequential =
             archive_access_class(archive_path) == ArchiveAccess::Sequential;
-        if (sequential && (batch_kind == JobKind::ProbeSize ||
-                           batch_kind == JobKind::EnsurePixels ||
-                           batch_kind == JobKind::EnsureLqip)) {
-          // Solid extract: one open walks the archive once. Passing all interest
-          // members (TOC order) lets unarr/libarchive fill them in a single
-          // forward pass. Windowed re-open would re-decompress the prefix each
-          // time (O(n²) solid cost) — that was ~0.8 size probes/s on RAR.
+        if (sequential && batch_kind == JobKind::ProbeSize) {
+          // Size-only solid pass: one open, probe each member, discard bytes.
+          // Holding all N images in RAM (old extract_archive_members) swapped
+          // and stalled; deeper members got slower as the working set grew.
           ensure_archive_cursor(archive_path);
           std::vector<std::string> ordered;
           {
@@ -2520,7 +2517,6 @@ void Client::worker_main() {
           std::vector<std::string> extract_members;
           extract_members.reserve(interest_need.size());
           if (!ordered.empty()) {
-            // TOC order via archive_member_toc_index (path-normalized match).
             std::vector<std::pair<std::size_t, std::string>> ranked;
             ranked.reserve(interest_need.size());
             for (const auto& need : interest_need) {
@@ -2536,6 +2532,101 @@ void Client::worker_main() {
                       });
             for (auto& p : ranked) {
               extract_members.push_back(std::move(p.second));
+            }
+          } else {
+            extract_members = interest_need;
+          }
+          // Map member path → job indices still needing extract.
+          std::unordered_map<std::string, std::vector<size_t>> jobs_by_member;
+          for (size_t i = 0; i < batch.size(); ++i) {
+            if (!need_extract[i] || i >= members.size() || members[i].empty()) {
+              continue;
+            }
+            jobs_by_member[members[i]].push_back(i);
+          }
+          const std::uint64_t batch_act =
+              extract_members.empty()
+                  ? 0
+                  : global_activity_ledger().note_archive_member_running(
+                        archive_path.string(), extract_members.front());
+          const std::size_t delivered = visit_archive_members(
+              archive_path, extract_members,
+              [&](const std::string& key, std::vector<std::uint8_t> bytes) {
+                auto it = jobs_by_member.find(key);
+                if (it == jobs_by_member.end()) {
+                  // Path-normalized key may differ; scan.
+                  for (auto& kv : jobs_by_member) {
+                    if (archive_member_toc_index(
+                            std::vector<std::string>{kv.first}, key)) {
+                      it = jobs_by_member.find(kv.first);
+                      break;
+                    }
+                  }
+                }
+                if (it == jobs_by_member.end()) return;
+                for (size_t ji : it->second) {
+                  Job& j = batch[ji];
+                  try {
+                    if (j.activity_id != 0) {
+                      global_activity_ledger().note_size_probe_running(
+                          j.activity_id);
+                    }
+                    handle_probe_size(j, std::optional(std::move(bytes)));
+                    if (j.activity_id != 0) {
+                      global_activity_ledger().note_size_probe_finished(
+                          j.activity_id, true);
+                      j.activity_id = 0;
+                    }
+                  } catch (...) {
+                    if (j.activity_id != 0) {
+                      global_activity_ledger().note_size_probe_finished(
+                          j.activity_id, false);
+                      j.activity_id = 0;
+                    }
+                  }
+                  need_extract[ji] = 0;
+                  {
+                    std::lock_guard lock(mu_);
+                    release_inflight_locked();
+                  }
+                  // Only first job of this member may move bytes; rest need a
+                  // fresh extract only if still marked — size is Store-backed.
+                  bytes.clear();
+                }
+              });
+          if (batch_act != 0) {
+            global_activity_ledger().note_archive_member_finished(
+                batch_act, delivered > 0);
+          }
+          if (delivered > 0) {
+            (void)plan_and_maybe_advance_cursor(archive_path, extract_members,
+                                                /*advance_after=*/true);
+          }
+        } else if (sequential && (batch_kind == JobKind::EnsurePixels ||
+                                  batch_kind == JobKind::EnsureLqip)) {
+          // Soft/LQIP still need retained bytes for encode — one solid pass
+          // into extract cache (windowed if huge). Prefer visit for ProbeSize.
+          ensure_archive_cursor(archive_path);
+          std::vector<std::string> ordered;
+          {
+            std::lock_guard lock(archive_cursor_mu_);
+            const std::string key = archive_path.lexically_normal().string();
+            auto it = archive_cursors_.find(key);
+            if (it != archive_cursors_.end()) {
+              ordered = it->second.ordered_members;
+            }
+          }
+          std::vector<std::string> extract_members;
+          if (!ordered.empty()) {
+            for (const auto& m : ordered) {
+              if (archive_member_toc_index(interest_need, m)) {
+                extract_members.push_back(m);
+              }
+            }
+            for (const auto& need : interest_need) {
+              if (!archive_member_toc_index(extract_members, need)) {
+                extract_members.push_back(need);
+              }
             }
           } else {
             extract_members = interest_need;

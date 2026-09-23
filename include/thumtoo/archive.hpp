@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -70,6 +71,21 @@ extract_archive_members(const std::filesystem::path& archive_path,
 [[nodiscard]] std::unordered_map<std::string, std::vector<std::uint8_t>>
 extract_archive_members_unarr(const std::filesystem::path& archive_path,
                               const std::vector<std::string>& member_paths);
+
+/// One archive open; for each requested member (archive order), uncompress and
+/// invoke @p visitor (bytes moved). Bytes are not retained after the call —
+/// use for size probes so solid RAR does not hold N full images in RAM.
+/// Returns how many members were delivered to the visitor.
+using ArchiveMemberVisitor = std::function<void(
+    const std::string& member_key, std::vector<std::uint8_t> bytes)>;
+[[nodiscard]] std::size_t visit_archive_members(
+    const std::filesystem::path& archive_path,
+    const std::vector<std::string>& member_paths,
+    const ArchiveMemberVisitor& visitor);
+[[nodiscard]] std::size_t visit_archive_members_unarr(
+    const std::filesystem::path& archive_path,
+    const std::vector<std::string>& member_paths,
+    const ArchiveMemberVisitor& visitor);
 
 /// file:///abs.zip//archive  or  file:///abs.zip//archive:member
 [[nodiscard]] std::string archive_uri(const std::filesystem::path& archive_path,

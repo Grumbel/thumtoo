@@ -243,7 +243,66 @@ std::optional<std::vector<std::uint8_t>> extract_archive_member(
   return std::move(it->second);
 }
 
+std::size_t visit_archive_members(const std::filesystem::path& archive_path,
+                                  const std::vector<std::string>& member_paths,
+                                  const ArchiveMemberVisitor& visitor) {
+  if (!visitor || member_paths.empty()) return 0;
+  if (unarr_backend_available() && archive_prefers_unarr(archive_path)) {
+    return visit_archive_members_unarr(archive_path, member_paths, visitor);
+  }
 
+  ScopedNsAccumulator timer(global_build_stats().archive_extract_ns);
+  std::vector<std::string> wanted;
+  wanted.reserve(member_paths.size());
+  for (const auto& m : member_paths) {
+    if (!is_unsafe_archive_member_path(m)) wanted.push_back(m);
+  }
+  if (wanted.empty()) return 0;
+
+  struct archive* a = archive_read_new();
+  if (!a) return 0;
+  archive_read_support_filter_all(a);
+  archive_read_support_format_all(a);
+  if (archive_read_open_filename(a, archive_path.string().c_str(), 10240) !=
+      ARCHIVE_OK) {
+    archive_read_free(a);
+    return 0;
+  }
+
+  std::size_t delivered = 0;
+  std::vector<char> done(wanted.size(), 0);
+  struct archive_entry* entry = nullptr;
+  while (archive_read_next_header(a, &entry) == ARCHIVE_OK &&
+         delivered < wanted.size()) {
+    const char* path = archive_entry_pathname(entry);
+    if (!path) {
+      archive_read_data_skip(a);
+      continue;
+    }
+    std::size_t match = wanted.size();
+    for (std::size_t i = 0; i < wanted.size(); ++i) {
+      if (done[i]) continue;
+      if (member_paths_equal(path, wanted[i])) {
+        match = i;
+        break;
+      }
+    }
+    if (match >= wanted.size()) {
+      archive_read_data_skip(a);
+      continue;
+    }
+    auto buf = read_entry_bytes(a, entry);
+    if (buf) {
+      global_build_stats().archive_bytes.fetch_add(
+          buf->size(), std::memory_order_relaxed);
+      done[match] = 1;
+      ++delivered;
+      visitor(wanted[match], std::move(*buf));
+    }
+  }
+  archive_read_free(a);
+  return delivered;
+}
 
 ArchiveAccess archive_access_class(const std::filesystem::path& archive_path) {
   // Filename heuristic (lowercased). Multi-dot suffixes checked longest-first

@@ -176,4 +176,56 @@ extract_archive_members_unarr(const std::filesystem::path& archive_path,
   return out;
 }
 
+std::size_t visit_archive_members_unarr(
+    const std::filesystem::path& archive_path,
+    const std::vector<std::string>& member_paths,
+    const ArchiveMemberVisitor& visitor) {
+  ScopedNsAccumulator timer(global_build_stats().archive_extract_ns);
+  if (!visitor || member_paths.empty()) return 0;
+
+  std::vector<std::string> wanted;
+  for (const auto& m : member_paths) {
+    if (!is_unsafe_archive_member_path(m)) wanted.push_back(m);
+  }
+  if (wanted.empty()) return 0;
+
+  auto u = open_rar(archive_path);
+  if (!u) return 0;
+
+  std::size_t delivered = 0;
+  // Track delivered by index into wanted (path-normalized match).
+  std::vector<char> done(wanted.size(), 0);
+  while (ar_parse_entry(u->ar) && delivered < wanted.size()) {
+    const char* path = ar_entry_get_name(u->ar);
+    if (!path) continue;
+
+    std::size_t match = wanted.size();
+    for (std::size_t i = 0; i < wanted.size(); ++i) {
+      if (done[i]) continue;
+      if (member_paths_equal(path, wanted[i])) {
+        match = i;
+        break;
+      }
+    }
+    if (match >= wanted.size()) {
+      const size_t sz = ar_entry_get_size(u->ar);
+      if (sz == 0) continue;
+      if (sz > kArchiveMaxMemberUncompressedBytes) break;
+      std::vector<std::uint8_t> discard(sz);
+      (void)ar_entry_uncompress(u->ar, discard.data(), sz);
+      continue;
+    }
+
+    auto buf = uncompress_current(u->ar);
+    if (buf) {
+      global_build_stats().archive_bytes.fetch_add(
+          buf->size(), std::memory_order_relaxed);
+      done[match] = 1;
+      ++delivered;
+      visitor(wanted[match], std::move(*buf));
+    }
+  }
+  return delivered;
+}
+
 }  // namespace thumtoo
