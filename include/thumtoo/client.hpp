@@ -485,6 +485,12 @@ class Client {
   void reply_cancelled_job(Job& job);
   /// \param front true → LIFO (interactive tiles); false → FIFO (bulk).
   void enqueue(Job job, bool front = false);
+  /// Enqueue many jobs under one lock, then notify_all once. Critical for
+  /// prepare_paths / archive size batches so coalesce sees the full set
+  /// instead of racing partial queues (N solid RAR restarts).
+  void enqueue_jobs(std::vector<Job> jobs, bool front = false);
+  /// Decrement inflight_; notify drain waiters when queue empty and idle.
+  void release_inflight_locked();
   /// Write newly encoded tiles into Store bulk (by content_id hash).
   void put_tiles_to_store(const std::string& content_id,
                              const std::vector<TileBlob>& tiles);

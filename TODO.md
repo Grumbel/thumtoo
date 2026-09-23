@@ -2,21 +2,19 @@
 
 ## Status (2026-09-23)
 
-**Tip: thumtoo-326-no-cache-memory-store** (base `f71d183`, includes 324–325).
+**Tip: thumtoo-327-bulk-enqueue-no-sleep** (base `f71d183`, includes 324–326).
 
-### 326 — `--no-cache` / `:memory:` Store
-`Store::open_memory()` + `Client::open_memory()` — three SQLite `:memory:` DBs.
-`thumtoo-prepare --no-cache` for pure cold size timing (ignores `--cache`).
-
-### 325 — Sequential size one-pass
-### 324 — prepare sizes-only timing
+### 327 — Bulk size enqueue + drop worker sleep
+prepare_paths enqueued one-by-one while workers raced → coalesce saw ~12 jobs,
+solid RAR re-opened each wave. Fix: `enqueue_jobs` + notify_all; no 50ms
+wait_for; drain on cv (not sleep 5ms).
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-326.1-no-cache-memory-store-f71d183.bundle HEAD
+git pull --ff-only …/thumtoo-327.1-bulk-enqueue-no-sleep-f71d183.bundle HEAD
 ```
 
-Next: **327**.
+Next: **328**.
 
 ---
 

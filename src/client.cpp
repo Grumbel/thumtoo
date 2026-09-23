@@ -1389,6 +1389,34 @@ void Client::enqueue(Job job, bool front) {
   cv_.notify_one();
 }
 
+void Client::enqueue_jobs(std::vector<Job> jobs, bool front) {
+  if (jobs.empty()) return;
+  {
+    std::lock_guard lock(mu_);
+    for (auto& job : jobs) {
+      if (job.epoch == 0) {
+        job.epoch = interest_epoch_;
+      }
+      if (front) {
+        queue_.push_front(std::move(job));
+      } else {
+        queue_.push_back(std::move(job));
+      }
+    }
+  }
+  // Wake every worker so one can coalesce the full same-archive set.
+  cv_.notify_all();
+}
+
+void Client::release_inflight_locked() {
+  if (inflight_ > 0) {
+    --inflight_;
+  }
+  if (queue_.empty() && inflight_ == 0) {
+    cv_.notify_all();
+  }
+}
+
 void Client::ensure_archive_cursor(const std::filesystem::path& archive_path) {
   const std::string key = archive_path.lexically_normal().string();
   {
@@ -1793,10 +1821,37 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
     enqueue_plain(abs);
   }
 
+  // Bulk enqueue under one lock. Per-URI request_size() would interleave with
+  // workers: each worker claimed a partial queue, coalesce saw ~worker-count
+  // members, sequential RAR re-opened for every wave (~12 then stall).
+  std::vector<Job> size_jobs;
+  size_jobs.reserve(pending.size());
   for (auto& item : pending) {
     (void)item.need_register;  // Store probe registers on size job
-    request_size(item.uri, on_each);
+    if (auto m = get_meta(item.uri)) {
+      if (m->size && (m->status == ContentStatus::Ready ||
+                      m->status == ContentStatus::Incomplete)) {
+        if (on_each) {
+          SizeReply reply;
+          reply.size = m->size;
+          reply.lqip = get_lqip(item.uri);
+          executor_.post([on_each, uri = item.uri,
+                          reply = std::move(reply)]() mutable {
+            on_each(std::move(uri), std::move(reply));
+          });
+        }
+        continue;
+      }
+    }
+    Job job;
+    job.kind = JobKind::ProbeSize;
+    job.uri = item.uri;
+    job.size_cb = on_each;
+    job.activity_id = global_activity_ledger().note_size_probe_queued(job.uri);
+    size_jobs.push_back(std::move(job));
   }
+  // FIFO bulk — worker ProbeSize priority still pulls these ahead of tiles.
+  enqueue_jobs(std::move(size_jobs), /*front=*/false);
   return pending.size();
 }
 
@@ -1953,13 +2008,8 @@ bool Client::is_pdf_path(const std::filesystem::path& path) {
 }
 
 void Client::drain() {
-  for (;;) {
-    {
-      std::lock_guard lock(mu_);
-      if (queue_.empty() && inflight_ == 0) return;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
+  std::unique_lock lock(mu_);
+  cv_.wait(lock, [this] { return queue_.empty() && inflight_ == 0; });
 }
 
 
@@ -2217,9 +2267,8 @@ void Client::worker_main() {
     bool use_batch = false;
     {
       std::unique_lock lock(mu_);
-      cv_.wait_for(lock, std::chrono::milliseconds(50), [this] {
-        return stop_ || !queue_.empty();
-      });
+      // No timed sleep — wait until work or shutdown (was wait_for 50ms).
+      cv_.wait(lock, [this] { return stop_ || !queue_.empty(); });
       if (stop_ && queue_.empty()) return;
       if (queue_.empty()) {
         continue;
@@ -2372,7 +2421,7 @@ void Client::worker_main() {
               }
             }
             std::lock_guard lock(mu_);
-            --inflight_;
+            release_inflight_locked();
           }
         }
       } else if (batch_kind == JobKind::EnsurePixels) {
@@ -2396,7 +2445,7 @@ void Client::worker_main() {
               }
             }
             std::lock_guard lock(mu_);
-            --inflight_;
+            release_inflight_locked();
           }
         }
       } else if (batch_kind == JobKind::ProbeSize) {
@@ -2421,7 +2470,7 @@ void Client::worker_main() {
               }
             }
             std::lock_guard lock(mu_);
-            --inflight_;
+            release_inflight_locked();
           }
         }
       }
@@ -2613,11 +2662,11 @@ void Client::worker_main() {
         }
         {
           std::lock_guard lock(mu_);
-          --inflight_;
           if (batch[it.index].kind == JobKind::EnsureTiles &&
               batch[it.index].tile_pyramid && focus_full_inflight_ > 0) {
             --focus_full_inflight_;
           }
+          release_inflight_locked();
         }
       };
 
@@ -2649,11 +2698,11 @@ void Client::worker_main() {
       std::lock_guard lock(mu_);
       if (stop_) {
         // Shutdown: do not start new encode work.
-        --inflight_;
         if (single.kind == JobKind::EnsureTiles && single.tile_pyramid &&
             focus_full_inflight_ > 0) {
           --focus_full_inflight_;
         }
+        release_inflight_locked();
         continue;
       }
     }
@@ -2701,12 +2750,12 @@ void Client::worker_main() {
     }
     {
       std::lock_guard lock(mu_);
-      --inflight_;
       if (single.kind == JobKind::EnsureTiles && single.tile_pyramid) {
         if (focus_full_inflight_ > 0) {
           --focus_full_inflight_;
         }
       }
+      release_inflight_locked();
     }
   }
 }
