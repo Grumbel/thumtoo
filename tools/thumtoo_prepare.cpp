@@ -26,7 +26,8 @@ namespace {
 /// Order URIs so Sequential archives are processed in TOC member order (one
 /// extract stream warms neighbors). Random archives and plain files keep
 /// relative order.
-void order_uris_for_sequential_extract(std::vector<std::string>& uris) {
+void order_uris_for_sequential_extract(std::vector<std::string>& uris,
+                                       thumtoo::Client* client = nullptr) {
   if (uris.size() < 2) return;
 
   struct ArchGroup {
@@ -67,10 +68,26 @@ void order_uris_for_sequential_extract(std::vector<std::string>& uris) {
 
   for (auto& g : seq_groups) {
     std::vector<std::string> toc_order;
-    if (auto toc = thumtoo::read_archive_toc(g.archive)) {
-      for (const auto& m : *toc) {
+    // Prefer Store TOC (already written by prepare_paths/refresh) — no disk open.
+    if (client) {
+      const auto root = thumtoo::archive_uri(g.archive);
+      auto entries = client->get_archive_entries(root);
+      if (entries.empty()) {
+        entries = client->get_archive_entries(
+            thumtoo::file_uri_from_path(g.archive.lexically_normal()));
+      }
+      for (const auto& m : entries) {
         if (thumtoo::is_likely_image_member_path(m.member_path)) {
           toc_order.push_back(m.member_path);
+        }
+      }
+    }
+    if (toc_order.empty()) {
+      if (auto toc = thumtoo::read_archive_toc(g.archive)) {
+        for (const auto& m : *toc) {
+          if (thumtoo::is_likely_image_member_path(m.member_path)) {
+            toc_order.push_back(m.member_path);
+          }
         }
       }
     }
@@ -386,7 +403,11 @@ int main(int argc, char** argv) {
     }
 
     // Sequential archives: TOC order so one extract pass warms neighbors.
-    order_uris_for_sequential_extract(sized_uris);
+    // Skip when sizes-only (nothing consumes the reorder). Prefer Store TOC
+    // when client is available so we do not re-open the archive for ordering.
+    if (!sizes_only) {
+      order_uris_for_sequential_extract(sized_uris, client.get());
+    }
 
     if (do_lqip && !sized_uris.empty()) {
       if (!quiet) {

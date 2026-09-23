@@ -1427,13 +1427,30 @@ void Client::ensure_archive_cursor(const std::filesystem::path& archive_path) {
       return;
     }
   }
-  // TOC read outside lock (source I/O).
+  // Prefer Store TOC written by refresh_archive_toc — avoids a second unarr open.
   std::vector<std::string> ordered;
-  if (auto toc = read_archive_toc(archive_path)) {
-    ordered.reserve(toc->size());
-    for (const auto& m : *toc) {
+  {
+    const auto root_uri = archive_uri(archive_path);
+    auto entries = get_archive_entries(root_uri);
+    if (entries.empty()) {
+      // Member URIs may still resolve the container; try file URI form.
+      entries = get_archive_entries(file_uri_from_path(archive_path.lexically_normal()));
+    }
+    ordered.reserve(entries.size());
+    for (const auto& m : entries) {
       if (is_likely_image_member_path(m.member_path)) {
         ordered.push_back(m.member_path);
+      }
+    }
+  }
+  if (ordered.empty()) {
+    // Cold path: disk TOC (source I/O).
+    if (auto toc = read_archive_toc(archive_path)) {
+      ordered.reserve(toc->size());
+      for (const auto& m : *toc) {
+        if (is_likely_image_member_path(m.member_path)) {
+          ordered.push_back(m.member_path);
+        }
       }
     }
   }

@@ -67,7 +67,11 @@ bool file_is_rar5(const std::filesystem::path& path) {
 struct UnarrHolder {
   ar_stream* stream = nullptr;
   ar_archive* ar = nullptr;
+  std::string path_for_log;
   ~UnarrHolder() {
+    if (ar || stream) {
+      THUMTOO_ARCHIVE_DBG("unarr close path=%s", path_for_log.c_str());
+    }
     if (ar) ar_close_archive(ar);
     if (stream) ar_close(stream);
   }
@@ -80,6 +84,7 @@ std::unique_ptr<UnarrHolder> open_rar(const std::filesystem::path& path) {
   }
   const auto t0 = std::chrono::steady_clock::now();
   auto u = std::make_unique<UnarrHolder>();
+  u->path_for_log = path.string();
   u->stream = ar_open_file(path.string().c_str());
   if (!u->stream) {
     THUMTOO_ARCHIVE_DBG("unarr open file FAILED path=%s", path.string().c_str());
