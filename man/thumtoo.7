@@ -129,6 +129,20 @@ When on, enables debug overlay helpers (also accepted as
 When on, traces appearance/grade paths (also accepted as
 .BR BILTOO_DEBUG_APPEARANCE ).
 .TP
+.B THUMTOO_DEBUG_ARCHIVE
+When on, prints archive open / TOC / extract / visit lines to
+.B stderr
+(prefix
+.BR thumtoo-archive: ).
+Also enabled when
+.B THUMTOO_DEBUG
+is on. Useful for solid RAR timing without full Client task noise.
+.TP
+.B THUMTOO_MIRROR_ARCHIVES
+When on, sequential extract may copy the archive once under
+.I cache/archive_mirror/
+before opening (default off).
+.TP
 .B XDG_CACHE_HOME
 Parent of the default cache directory
 .IR thumtoo/ .

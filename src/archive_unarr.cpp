@@ -8,10 +8,12 @@
 #include "thumtoo/archive.hpp"
 #include "thumtoo/constants.hpp"
 #include "thumtoo/build_stats.hpp"
+#include "thumtoo/debug.hpp"
 
 #include <unarr.h>
 
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <memory>
 #include <string>
@@ -72,12 +74,27 @@ struct UnarrHolder {
 };
 
 std::unique_ptr<UnarrHolder> open_rar(const std::filesystem::path& path) {
-  if (file_is_rar5(path)) return nullptr;
+  if (file_is_rar5(path)) {
+    THUMTOO_ARCHIVE_DBG("unarr open skip RAR5 path=%s", path.string().c_str());
+    return nullptr;
+  }
+  const auto t0 = std::chrono::steady_clock::now();
   auto u = std::make_unique<UnarrHolder>();
   u->stream = ar_open_file(path.string().c_str());
-  if (!u->stream) return nullptr;
+  if (!u->stream) {
+    THUMTOO_ARCHIVE_DBG("unarr open file FAILED path=%s", path.string().c_str());
+    return nullptr;
+  }
   u->ar = ar_open_rar_archive(u->stream);
-  if (!u->ar) return nullptr;
+  if (!u->ar) {
+    THUMTOO_ARCHIVE_DBG("unarr open rar FAILED path=%s", path.string().c_str());
+    return nullptr;
+  }
+  const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      std::chrono::steady_clock::now() - t0)
+                      .count();
+  THUMTOO_ARCHIVE_DBG("unarr open ok ms=%lld path=%s",
+                      static_cast<long long>(ms), path.string().c_str());
   return u;
 }
 
@@ -107,6 +124,7 @@ bool archive_prefers_unarr(const std::filesystem::path& archive_path) {
 
 std::optional<std::vector<ArchiveMember>> read_archive_toc_unarr(
     const std::filesystem::path& archive_path) {
+  const auto t0 = std::chrono::steady_clock::now();
   auto u = open_rar(archive_path);
   if (!u) return std::nullopt;
 
@@ -124,6 +142,11 @@ std::optional<std::vector<ArchiveMember>> read_archive_toc_unarr(
     if (sz > 0) m.uncompressed_size = static_cast<std::int64_t>(sz);
     out.push_back(std::move(m));
   }
+  const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      std::chrono::steady_clock::now() - t0)
+                      .count();
+  THUMTOO_ARCHIVE_DBG("unarr TOC entries=%zu ms=%lld path=%s", out.size(),
+                      static_cast<long long>(ms), archive_path.string().c_str());
   return out;
 }
 
@@ -140,8 +163,15 @@ extract_archive_members_unarr(const std::filesystem::path& archive_path,
   }
   if (wanted.empty()) return out;
 
+  const auto t0 = std::chrono::steady_clock::now();
+  THUMTOO_ARCHIVE_DBG("unarr extract start wanted=%zu path=%s", wanted.size(),
+                      archive_path.string().c_str());
   auto u = open_rar(archive_path);
-  if (!u) return out;
+  if (!u) {
+    THUMTOO_ARCHIVE_DBG("unarr extract open FAILED path=%s",
+                        archive_path.string().c_str());
+    return out;
+  }
 
   // Solid: walk in archive order; discard-uncompress non-wanted members so the
   // solid dictionary stays consistent (no out-of-order parse_entry_at).
@@ -166,13 +196,28 @@ extract_archive_members_unarr(const std::filesystem::path& archive_path,
       continue;
     }
 
+    const auto ts = std::chrono::steady_clock::now();
     auto buf = uncompress_current(u->ar);
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - ts)
+                        .count();
     if (buf) {
       global_build_stats().archive_bytes.fetch_add(
           buf->size(), std::memory_order_relaxed);
+      THUMTOO_ARCHIVE_DBG("unarr extract member ms=%lld bytes=%zu name=%s",
+                          static_cast<long long>(ms), buf->size(), key->c_str());
       out.emplace(*key, std::move(*buf));
+    } else {
+      THUMTOO_ARCHIVE_DBG("unarr extract member FAIL ms=%lld name=%s",
+                          static_cast<long long>(ms), key->c_str());
     }
   }
+  const auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - t0)
+                            .count();
+  THUMTOO_ARCHIVE_DBG("unarr extract done got=%zu wanted=%zu total_ms=%lld path=%s",
+                      out.size(), wanted.size(), static_cast<long long>(total_ms),
+                      archive_path.string().c_str());
   return out;
 }
 
@@ -189,10 +234,18 @@ std::size_t visit_archive_members_unarr(
   }
   if (wanted.empty()) return 0;
 
+  const auto t0 = std::chrono::steady_clock::now();
+  THUMTOO_ARCHIVE_DBG("unarr visit start wanted=%zu path=%s", wanted.size(),
+                      archive_path.string().c_str());
   auto u = open_rar(archive_path);
-  if (!u) return 0;
+  if (!u) {
+    THUMTOO_ARCHIVE_DBG("unarr visit open FAILED path=%s",
+                        archive_path.string().c_str());
+    return 0;
+  }
 
   std::size_t delivered = 0;
+  std::size_t solid_discards = 0;
   // Track delivered by index into wanted (path-normalized match).
   std::vector<char> done(wanted.size(), 0);
   while (ar_parse_entry(u->ar) && delivered < wanted.size()) {
@@ -210,21 +263,53 @@ std::size_t visit_archive_members_unarr(
     if (match >= wanted.size()) {
       const size_t sz = ar_entry_get_size(u->ar);
       if (sz == 0) continue;
-      if (sz > kArchiveMaxMemberUncompressedBytes) break;
+      if (sz > kArchiveMaxMemberUncompressedBytes) {
+        THUMTOO_ARCHIVE_DBG("unarr visit stop oversized non-interest sz=%zu path=%s",
+                            sz, path);
+        break;
+      }
+      const auto ts = std::chrono::steady_clock::now();
       std::vector<std::uint8_t> discard(sz);
       (void)ar_entry_uncompress(u->ar, discard.data(), sz);
+      ++solid_discards;
+      const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          std::chrono::steady_clock::now() - ts)
+                          .count();
+      if (ms >= 50) {
+        THUMTOO_ARCHIVE_DBG(
+            "unarr solid-discard ms=%lld sz=%zu path=%s",
+            static_cast<long long>(ms), sz, path);
+      }
       continue;
     }
 
+    const auto ts = std::chrono::steady_clock::now();
     auto buf = uncompress_current(u->ar);
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - ts)
+                        .count();
     if (buf) {
       global_build_stats().archive_bytes.fetch_add(
           buf->size(), std::memory_order_relaxed);
       done[match] = 1;
       ++delivered;
+      THUMTOO_ARCHIVE_DBG(
+          "unarr visit [%zu/%zu] ms=%lld bytes=%zu member=%s", delivered,
+          wanted.size(), static_cast<long long>(ms), buf->size(),
+          wanted[match].c_str());
       visitor(wanted[match], std::move(*buf));
+    } else {
+      THUMTOO_ARCHIVE_DBG("unarr visit FAIL ms=%lld member=%s",
+                          static_cast<long long>(ms), wanted[match].c_str());
     }
   }
+  const auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - t0)
+                            .count();
+  THUMTOO_ARCHIVE_DBG(
+      "unarr visit done delivered=%zu wanted=%zu solid_discards=%zu total_ms=%lld path=%s",
+      delivered, wanted.size(), solid_discards, static_cast<long long>(total_ms),
+      archive_path.string().c_str());
   return delivered;
 }
 

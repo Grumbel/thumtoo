@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "thumtoo/archive.hpp"
+#include "thumtoo/debug.hpp"
 #include "thumtoo/format.hpp"
 #include "thumtoo/constants.hpp"
 #include "thumtoo/uri.hpp"
@@ -10,6 +11,7 @@
 #include <archive_entry.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <cctype>
 #include <unordered_map>
@@ -186,6 +188,9 @@ extract_archive_members(const std::filesystem::path& archive_path,
   }
   if (wanted.empty()) return out;
 
+  const auto t0 = std::chrono::steady_clock::now();
+  THUMTOO_ARCHIVE_DBG("libarchive extract start wanted=%zu path=%s",
+                      wanted.size(), archive_path.string().c_str());
   struct archive* a = archive_read_new();
   if (!a) return out;
   archive_read_support_filter_all(a);
@@ -193,6 +198,8 @@ extract_archive_members(const std::filesystem::path& archive_path,
 
   if (archive_read_open_filename(a, archive_path.string().c_str(), 10240) !=
       ARCHIVE_OK) {
+    THUMTOO_ARCHIVE_DBG("libarchive open FAILED path=%s",
+                        archive_path.string().c_str());
     archive_read_free(a);
     return out;
   }
@@ -226,11 +233,20 @@ extract_archive_members(const std::filesystem::path& archive_path,
     if (buf) {
       global_build_stats().archive_bytes.fetch_add(
           buf->size(), std::memory_order_relaxed);
+      THUMTOO_ARCHIVE_DBG("libarchive extract member bytes=%zu name=%s",
+                          buf->size(), key->c_str());
       out.emplace(*key, std::move(*buf));
     }
   }
 
   archive_read_free(a);
+  const auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - t0)
+                            .count();
+  THUMTOO_ARCHIVE_DBG(
+      "libarchive extract done got=%zu wanted=%zu total_ms=%lld path=%s",
+      out.size(), wanted.size(), static_cast<long long>(total_ms),
+      archive_path.string().c_str());
   return out;
 }
 
@@ -259,12 +275,17 @@ std::size_t visit_archive_members(const std::filesystem::path& archive_path,
   }
   if (wanted.empty()) return 0;
 
+  const auto t0 = std::chrono::steady_clock::now();
+  THUMTOO_ARCHIVE_DBG("libarchive visit start wanted=%zu path=%s",
+                      wanted.size(), archive_path.string().c_str());
   struct archive* a = archive_read_new();
   if (!a) return 0;
   archive_read_support_filter_all(a);
   archive_read_support_format_all(a);
   if (archive_read_open_filename(a, archive_path.string().c_str(), 10240) !=
       ARCHIVE_OK) {
+    THUMTOO_ARCHIVE_DBG("libarchive visit open FAILED path=%s",
+                        archive_path.string().c_str());
     archive_read_free(a);
     return 0;
   }
@@ -297,10 +318,20 @@ std::size_t visit_archive_members(const std::filesystem::path& archive_path,
           buf->size(), std::memory_order_relaxed);
       done[match] = 1;
       ++delivered;
+      THUMTOO_ARCHIVE_DBG("libarchive visit [%zu/%zu] bytes=%zu member=%s",
+                          delivered, wanted.size(), buf->size(),
+                          wanted[match].c_str());
       visitor(wanted[match], std::move(*buf));
     }
   }
   archive_read_free(a);
+  const auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - t0)
+                            .count();
+  THUMTOO_ARCHIVE_DBG(
+      "libarchive visit done delivered=%zu wanted=%zu total_ms=%lld path=%s",
+      delivered, wanted.size(), static_cast<long long>(total_ms),
+      archive_path.string().c_str());
   return delivered;
 }
 
