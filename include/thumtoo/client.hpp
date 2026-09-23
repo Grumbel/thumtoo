@@ -516,8 +516,12 @@ class Client {
   void handle_probe_size(
       Job& job,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);
-  /// Probe plain file:// images into Store (hash, media, size).
-  void handle_probe_size_store(Job& job);
+  /// Probe into Store. When @p preextracted is set (archive batch extract),
+  /// do not call member_bytes again — that was re-reading/re-extracting every
+  /// size probe and dominated cold RAR timing (~46s local for 164 members).
+  void handle_probe_size_store(
+      Job& job,
+      const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);
   void handle_ensure_pixels(
       Job& job,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);

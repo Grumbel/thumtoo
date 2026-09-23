@@ -2708,9 +2708,10 @@ void Client::worker_main() {
                   }
                 }
                 if (it == jobs_by_member.end()) return;
-                // Persist member once so later soft/tiles/prepare do not redo
-                // solid decompress (RAM LRU alone is too small for full albums).
-                extract_staging_put(archive_path, key, bytes);
+                // Size path: keep bytes in RAM for handle_probe_size only.
+                // Do not stage-to-disk here (sizes-only was writing ~full album
+                // to TMP for no gain). Soft/tiles stage via member_bytes later.
+                extract_cache_put(archive_path, key, bytes);
                 for (size_t ji : it->second) {
                   Job& j = batch[ji];
                   try {
@@ -3023,7 +3024,9 @@ void Client::handle_ensure_lqip(Job& job) {
 }
 
 
-void Client::handle_probe_size_store(Job& job) {
+void Client::handle_probe_size_store(
+    Job& job,
+    const std::optional<std::vector<std::uint8_t>>& preextracted) {
   auto reply_empty = [&]() {
     if (!job.size_cb) return;
     auto cb = std::move(job.size_cb);
@@ -3259,18 +3262,30 @@ void Client::handle_probe_size_store(Job& job) {
         reply_empty();
         return;
       }
-      auto bytes = member_bytes(arch->archive_path, arch->member_path);
-      if (!bytes || bytes->empty()) {
-        reply_empty();
-        return;
+      // Prefer bytes from the sequential batch extract. member_bytes() after
+      // a solid visit used to re-open/re-read every member (staging or worse
+      // another solid walk) — that alone kept local sizes-only at ~46s.
+      std::optional<std::vector<std::uint8_t>> owned;
+      const std::vector<std::uint8_t>* bytes_ptr = nullptr;
+      if (preextracted && !preextracted->empty()) {
+        bytes_ptr = &(*preextracted);
+        extract_cache_put(arch->archive_path, arch->member_path, *preextracted);
+      } else {
+        owned = member_bytes(arch->archive_path, arch->member_path);
+        if (!owned || owned->empty()) {
+          reply_empty();
+          return;
+        }
+        bytes_ptr = &(*owned);
       }
-      auto probe = probe_image_buffer(bytes->data(), bytes->size(),
+      const auto& bytes = *bytes_ptr;
+      auto probe = probe_image_buffer(bytes.data(), bytes.size(),
                                       format_from_member(arch->member_path));
       if (!probe) {
         reply_empty();
         return;
       }
-      const auto hex = sha256_bytes_hex(bytes->data(), bytes->size());
+      const auto hex = sha256_bytes_hex(bytes.data(), bytes.size());
       if (hex.empty()) {
         reply_empty();
         return;
@@ -3280,8 +3295,7 @@ void Client::handle_probe_size_store(Job& job) {
         reply_empty();
         return;
       }
-      const auto byte_size =
-          static_cast<std::int64_t>(bytes->size());
+      const auto byte_size = static_cast<std::int64_t>(bytes.size());
       std::int64_t blob_id = 0;
       if (auto existing =
               store_->find_blob_by_hash(HashAlgoId::Sha256, *digest)) {
@@ -3302,7 +3316,7 @@ void Client::handle_probe_size_store(Job& job) {
         store_->set_container_member_blob(*cid, arch->member_path, blob_id);
       }
       reply_size(probe->size,
-                 maybe_store_embedded(blob_id, bytes->data(), bytes->size()));
+                 maybe_store_embedded(blob_id, bytes.data(), bytes.size()));
       return;
     }
 
@@ -3552,9 +3566,8 @@ void Client::handle_ensure_pixels_store(Job& job) {
 void Client::handle_probe_size(
     Job& job,
     const std::optional<std::vector<std::uint8_t>>& preextracted) {
-  (void)preextracted;
   global_build_stats().probes_done.fetch_add(1, std::memory_order_relaxed);
-  handle_probe_size_store(job);
+  handle_probe_size_store(job, preextracted);
 }
 
 

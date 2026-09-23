@@ -2,24 +2,25 @@
 
 ## Status (2026-09-23)
 
-**Tip: thumtoo-330-local-archive-mirror** (base `f71d183`, includes 324–329).
+**Tip: thumtoo-331-use-preextracted-size** (base `f71d183`, includes 324–330).
 
-### Diagnosis
-Solid extract locally ~1–2s; NFS `cp` of the same RAR ~11s. Multi-minute
-`thumtoo-prepare --sizes-only` on `/net/...` was **repeated remote reads**, not
-JPEG decode and not unarr itself.
+### Bug
+`handle_probe_size` discarded `preextracted` (`(void)preextracted`) and always
+called `member_bytes` again. Sequential size visit extracted each member, then
+re-read staging (or worse) for every probe. Local RAR sizes-only ~46s wall /
+~44s user for 164 members.
 
-### 330 — Local archive mirror
-`ensure_local_archive()` copies the RAR once under
-`cache_root/archive_mirror/` (or `$TMPDIR/.../archive_mirror` for `--no-cache`).
-Sequential extract/visit uses the local copy.
+### Fix
+Wire preextracted into `handle_probe_size_store` archive path. Size visit puts
+extract_cache only (no full-album staging writes during sizes-only).
+
+### Goal
+~15s sizes-only on local 716MB solid RAR (extract ~1–2s + probe/hash).
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-330.1-local-archive-mirror-f71d183.bundle HEAD
+git pull --ff-only …/thumtoo-331.1-use-preextracted-size-f71d183.bundle HEAD
 ```
 
-Expect cold: ~copy time + ~2s extract + probe. Warm mirror: extract+probe only.
-
-Next: **331** — THUMTOO_DEBUG_ARCHIVE traces; sizes-only skip member staging;
-optional skip mirror when already local FS.
+Next: **332** — network-drive detect for mirror; staging GC; THUMTOO_DEBUG_ARCHIVE.
+Defer until sizes-only is near the 15s goal.
