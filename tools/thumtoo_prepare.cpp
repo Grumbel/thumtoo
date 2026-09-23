@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -115,14 +116,17 @@ void usage(const char* argv0) {
       << "Usage: " << argv0 << " [OPTION]... PATH [PATH...]\n"
       << "\n"
       << "Register PATH(s) in the thumtoo cache and run size probes.\n"
-      << "Archives (zip/cbz/rar/…) expand to image member URIs; PDFs expand to\n"
-      << "page URIs (//page:N, 1-based, capped at 512 pages).\n"
+      << "Default is size-only (no soft/tiles) so you can time cold probes\n"
+      << "without biltoo. Archives (zip/cbz/rar/…) expand to image member URIs;\n"
+      << "PDFs expand to page URIs (//page:N, 1-based, capped at 512 pages).\n"
       << "\n"
       << "Options:\n"
       << "  -h, --help         show this help and exit\n"
       << "  -q, --quiet        suppress per-job progress on stderr\n"
       << "      --cache DIR    cache root (default: $XDG_CACHE_HOME/thumtoo\n"
       << "                      or ~/.cache/thumtoo)\n"
+      << "      --sizes-only    size probes only (default when no encode flags);\n"
+      << "                      prints wall time, ok/fail, probes/s\n"
       << "      --ladder EDGE  after probes, encode ephemeral soft ≤ EDGE\n"
       << "                      (NOT stored in cache; prefer --tiles)\n"
       << "      --lqip         after probes, report LQIP presence (no generation;\n"
@@ -138,6 +142,16 @@ void usage(const char* argv0) {
       << "      --jobs N       worker threads for the job queue (default: CPUs,\n"
       << "                      max 32; 1 restores the old single-worker behaviour)\n"
       << "\n"
+      << "Notes:\n"
+      << "  Sequential archives (.rar/.cbr, tar, solid 7z) share one extract\n"
+      << "  cursor per archive — many --jobs cannot parallelize members of the\n"
+      << "  same solid RAR. Compare zip vs rar and --jobs 1 vs auto.\n"
+      << "\n"
+      << "Examples:\n"
+      << "  " << argv0 << " --sizes-only --stats /path/to/album.rar\n"
+      << "  " << argv0 << " --sizes-only --jobs 1 /path/to/album.rar\n"
+      << "  " << argv0 << " --tiles /path/to/album/\n"
+      << "\n"
       << "Output:\n"
       << "  Progress and timings go to stderr; a one-line cache summary to stdout.\n"
       << "  Size probes store native width×height (content stays Incomplete until\n"
@@ -152,6 +166,7 @@ int main(int argc, char** argv) {
   bool quiet = false;
   bool show_stats = false;
   bool stats_line = false;
+  bool sizes_only = false;  // explicit; also implied when no encode flags
   int ladder_edge = 0;
   bool do_lqip = false;
   bool do_tiles = false;
@@ -210,6 +225,10 @@ int main(int argc, char** argv) {
       stats_line = true;
       continue;
     }
+    if (a == "--sizes-only" || a == "--size-only") {
+      sizes_only = true;
+      continue;
+    }
     if (a == "--jobs" && i + 1 < argc) {
       int v = std::atoi(argv[++i]);
       if (v < 0) v = 0;
@@ -217,6 +236,16 @@ int main(int argc, char** argv) {
       continue;
     }
     paths.emplace_back(a);
+  }
+
+  // Size-only is the default when no encode phase is requested.
+  if (!do_tiles && ladder_edge <= 0 && !do_lqip) {
+    sizes_only = true;
+  }
+  if (sizes_only) {
+    do_tiles = false;
+    do_lqip = false;
+    ladder_edge = 0;
   }
 
   if (paths.empty()) {
@@ -229,11 +258,35 @@ int main(int argc, char** argv) {
     thumtoo::global_build_stats().reset();
     auto client = thumtoo::Client::open(cache, {}, jobs);
 
+    unsigned workers = jobs;
+    if (workers == 0) {
+      workers = std::thread::hardware_concurrency();
+      if (workers == 0) workers = 1;
+    }
+
     std::mutex progress_mu;
     std::atomic<int> completed{0};
+    std::atomic<int> ok_count{0};
+    std::atomic<int> fail_count{0};
     std::atomic<size_t> total_atom{0};
     std::vector<std::string> sized_uris;
     sized_uris.reserve(256);
+
+    // Surface sequential archives early — multi-job cannot parallelize members.
+    if (!quiet) {
+      for (const auto& p : paths) {
+        std::error_code ec;
+        const auto abs = std::filesystem::weakly_canonical(p, ec);
+        const auto path = ec ? p : abs;
+        if (!thumtoo::is_likely_archive_path(path)) continue;
+        const auto access = thumtoo::archive_access_class(path);
+        if (access == thumtoo::ArchiveAccess::Sequential) {
+          std::cerr << "note: sequential archive (one extract cursor per file; "
+                       "members will not parallelize): "
+                    << path.string() << "\n";
+        }
+      }
+    }
 
     if (!quiet) {
       std::cerr
@@ -244,16 +297,21 @@ int main(int argc, char** argv) {
           << "  failed     = could not probe this URI\n"
           << "Cache hits skip decoding the file; cold probes read the source.\n"
           << "cache=" << cache << "  paths=" << paths.size()
-          << "  jobs=" << (jobs ? jobs : 0) << "\n";
+          << "  workers=" << workers
+          << (sizes_only ? "  mode=sizes-only" : "") << "\n";
     }
 
+    const auto phase1_t0 = std::chrono::steady_clock::now();
     const size_t total = client->prepare_paths(
         paths,
         [&](std::string uri, thumtoo::SizeReply reply) {
           auto size = reply.size;
-          if (size && (ladder_edge > 0 || do_tiles || do_lqip)) {
+          if (size) {
+            ok_count.fetch_add(1, std::memory_order_relaxed);
             std::lock_guard lock(progress_mu);
             sized_uris.push_back(uri);
+          } else {
+            fail_count.fetch_add(1, std::memory_order_relaxed);
           }
           if (quiet) return;
           const int n = ++completed;
@@ -289,9 +347,25 @@ int main(int argc, char** argv) {
     }
 
     client->drain();
+    const auto phase1_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                               std::chrono::steady_clock::now() - phase1_t0)
+                               .count();
+    const int ok = ok_count.load();
+    const int fail = fail_count.load();
+    const double rate =
+        phase1_ms > 0 ? (1000.0 * static_cast<double>(ok + fail) /
+                         static_cast<double>(phase1_ms))
+                      : 0.0;
     if (!quiet) {
-      std::cerr << "phase 1 done: " << completed.load() << " probe callback(s), "
-                << sized_uris.size() << " URI(s) eligible for encode\n";
+      std::cerr << "phase 1 done: queued=" << total
+                << "  ok=" << ok << "  fail=" << fail
+                << "  wall_ms=" << phase1_ms
+                << "  probes_per_s=" << rate
+                << "  workers=" << workers << "\n";
+      if (sizes_only) {
+        std::cerr << "sizes-only: no soft/tiles phase. Re-run with --tiles to "
+                     "warm previews.\n";
+      }
     }
 
     // Sequential archives: TOC order so one extract pass warms neighbors.
@@ -383,18 +457,15 @@ int main(int argc, char** argv) {
           << "Inspect one URI: thumtoo-status path <URI|PATH>\n"
           << "(per-scale have/expected/missing, LQIP, min/max scale)\n";
     }
-    if (show_stats || do_tiles || ladder_edge > 0 || do_lqip) {
-      if (stats_line)
-        std::cerr << thumtoo::global_build_stats().summary_line() << "\n";
-      else
-        std::cerr << thumtoo::global_build_stats().summary_pretty();
-      if (jobs == 0) {
-        unsigned hw = std::thread::hardware_concurrency();
-        if (hw == 0) hw = 1;
-        std::cerr << "workers: " << hw << " (auto)\n";
-      } else {
-        std::cerr << "workers: " << jobs << "\n";
+    if (show_stats || do_tiles || ladder_edge > 0 || do_lqip || sizes_only) {
+      if (show_stats || do_tiles || ladder_edge > 0 || do_lqip) {
+        if (stats_line)
+          std::cerr << thumtoo::global_build_stats().summary_line() << "\n";
+        else
+          std::cerr << thumtoo::global_build_stats().summary_pretty();
       }
+      std::cerr << "workers: " << workers
+                << (jobs == 0 ? " (auto)" : "") << "\n";
     }
   } catch (const std::exception& e) {
     std::cerr << "error: " << e.what() << "\n";

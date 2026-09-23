@@ -9,8 +9,10 @@ thumtoo-prepare \- probe sizes and optionally warm soft ladder / tile cache
 \fIPATH\fR...
 .SH DESCRIPTION
 Register paths in the thumtoo Store cache and measure native image dimensions.
-Optionally encode durable soft previews and Galapix-style 256\(mu256 JPEG tile
-pyramids so viewers (galapix, biltoo) can open without on-demand encode cost.
+Default is size-only (no soft/tiles) so cold size probes can be timed without a
+GUI host. Optionally encode durable soft previews and Galapix-style 256\(mu256
+JPEG tile pyramids so viewers (galapix, biltoo) can open without on-demand
+encode cost.
 .PP
 Work is done in phases printed on stderr (unless
 .BR \-q ):
@@ -26,6 +28,11 @@ means size is stored (normal after a successful probe).
 means soft/full content was already considered ready.
 .B failed
 means the probe could not obtain dimensions.
+Phase end prints wall_ms, ok/fail, and probes_per_s.
+.B Sequential
+archives (RAR/CBR, tar, solid 7z) share one extract cursor per file — extra
+.B \-\-jobs
+do not parallelize members of the same archive.
 .TP
 .B phase 2: soft ladder
 Only with
@@ -75,6 +82,11 @@ One-line timings (script-friendly).
 .TP
 .BI \-\-jobs " N"
 Worker threads (default: CPUs, max 32).
+.TP
+.BR \-\-sizes\-only ", " \-\-size\-only
+Size probes only (default when no
+.BR \-\-tiles / \-\-ladder / \-\-lqip ).
+Prints wall time and throughput; no soft or tile phase.
 .SH EXIT STATUS
 .TP
 .B 0
@@ -84,6 +96,9 @@ Success.
 Usage error or fatal exception.
 .SH EXAMPLES
 .nf
+# Time cold size probes only (no biltoo):
+thumtoo-prepare --sizes-only --stats /path/to/archive.rar
+thumtoo-prepare --sizes-only --jobs 1 /path/to/archive.rar
 thumtoo-prepare --tiles /path/to/album/
 thumtoo-prepare --tiles /path/to/archive.rar
 thumtoo-prepare --ladder 512 --tiles photo.jpg

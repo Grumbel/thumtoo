@@ -2,17 +2,20 @@
 
 ## Status (2026-09-23)
 
-**Tip: thumtoo-323-try-exif-external-linkage.**
+**Tip: thumtoo-324-prepare-sizes-only-timing** (base `f71d183`).
 
-Fix: `try_exif_embedded_preview_{file,buffer}` were defined inside an
-anonymous namespace (internal linkage) → undefined reference when linking
-biltoo against libthumtoo. Moved to `namespace thumtoo` after the anon block.
-
-Includes **321–322**. Base still `bd9cca0` (thumtoo-320 tip).
+`thumtoo-prepare` size-probe diagnostics for cold-cache triage (no biltoo):
+- `--sizes-only` (default when no encode flags): wall_ms, ok/fail, probes/s
+- Note sequential archives (RAR/CBR/tar) — one extract cursor; jobs do not fan out
+- Print real worker count
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-323.1-try-exif-external-linkage-bd9cca0.bundle HEAD
+git pull --ff-only …/thumtoo-324.1-prepare-sizes-only-timing-f71d183.bundle HEAD
 ```
 
-Next: **324**.
+Next: **325**.
+
+---
+
+**Prior: thumtoo-323-try-exif-external-linkage** (`f71d183`).
