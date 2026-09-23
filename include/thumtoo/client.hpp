@@ -112,6 +112,10 @@ class Client {
                                       unsigned worker_threads = 0,
                                       const std::filesystem::path& data_root = {});
 
+  /// Ephemeral Store (`:memory:` SQLite). No disk cache; for size-probe
+  /// benchmarks without durable Store I/O (`thumtoo-prepare --no-cache`).
+  static std::unique_ptr<Client> open_memory(Executor executor = {},
+                                             unsigned worker_threads = 0);
 
   /// Redesign index/bulk/user (Store-only).
   [[nodiscard]] Store& store() { return *store_; }

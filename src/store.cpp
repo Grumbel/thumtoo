@@ -391,6 +391,37 @@ sqlite3* Store::open_sqlite(const std::filesystem::path& path) {
   return db;
 }
 
+namespace {
+
+sqlite3* open_sqlite_memory() {
+  sqlite3* db = nullptr;
+  // Each open is an independent private in-memory database.
+  if (sqlite3_open(":memory:", &db) != SQLITE_OK) {
+    const char* msg = db ? sqlite3_errmsg(db) : "open failed";
+    std::string err = std::string(":memory: ") + (msg ? msg : "");
+    if (db) sqlite3_close(db);
+    throw std::runtime_error(err);
+  }
+  // WAL is for on-disk files; MEMORY journal fits ephemeral DBs.
+  exec_sql(db, "PRAGMA journal_mode=MEMORY;");
+  exec_sql(db, "PRAGMA foreign_keys=ON;");
+  return db;
+}
+
+}  // namespace
+
+Store Store::open_memory() {
+  sqlite3* index = open_sqlite_memory();
+  sqlite3* bulk = open_sqlite_memory();
+  sqlite3* user = open_sqlite_memory();
+  Store store(index, bulk, user, /*cache_root=*/{}, /*data_root=*/{}, 0);
+  store.migrate_or_init_index();
+  store.ensure_optional_index_tables();
+  store.migrate_or_init_bulk();
+  store.migrate_or_init_user();
+  return store;
+}
+
 void Store::exec_index(const char* sql) const { exec_sql(index_, sql); }
 void Store::exec_bulk(const char* sql) const { exec_sql(bulk_, sql); }
 void Store::exec_user(const char* sql) const { exec_sql(user_, sql); }

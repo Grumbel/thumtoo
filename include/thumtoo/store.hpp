@@ -97,6 +97,11 @@ class Store {
   /// under the same path (tests). Production should pass XDG data for user.
   static Store open(const std::filesystem::path& cache_root);
 
+  /// Ephemeral index/bulk/user as three independent SQLite `:memory:` DBs.
+  /// Nothing is written to disk; process exit discards all rows. For cold
+  /// probe benchmarks (`thumtoo-prepare --no-cache`) without Store I/O.
+  static Store open_memory();
+
   [[nodiscard]] const std::filesystem::path& cache_root() const {
     return cache_root_;
   }

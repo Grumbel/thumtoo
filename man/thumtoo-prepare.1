@@ -87,6 +87,13 @@ Worker threads (default: CPUs, max 32).
 Size probes only (default when no
 .BR \-\-tiles / \-\-ladder / \-\-lqip ).
 Prints wall time and throughput; no soft or tile phase.
+.TP
+.B \-\-no\-cache
+Ephemeral Store: three SQLite
+.B :memory:
+databases (index/bulk/user). Nothing is written under
+.BR \-\-cache .
+Use for pure cold-probe timing without durable Store I/O.
 .SH EXIT STATUS
 .TP
 .B 0
@@ -97,6 +104,7 @@ Usage error or fatal exception.
 .SH EXAMPLES
 .nf
 # Time cold size probes only (no biltoo):
+thumtoo-prepare --sizes-only --no-cache /path/to/archive.rar
 thumtoo-prepare --sizes-only --stats /path/to/archive.rar
 thumtoo-prepare --sizes-only --jobs 1 /path/to/archive.rar
 thumtoo-prepare --tiles /path/to/album/

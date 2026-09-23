@@ -199,6 +199,16 @@ std::unique_ptr<Client> Client::open(const std::filesystem::path& cache_root,
       new Client(std::move(store), std::move(executor), worker_threads));
 }
 
+std::unique_ptr<Client> Client::open_memory(Executor executor,
+                                            unsigned worker_threads) {
+  auto store = std::make_unique<Store>(Store::open_memory());
+  if (debug_enabled()) {
+    dbg("Client::open_memory (ephemeral :memory: Store)");
+  }
+  return std::unique_ptr<Client>(
+      new Client(std::move(store), std::move(executor), worker_threads));
+}
+
 std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
   if (!store_) return std::nullopt;
   auto loc = store_->find_locator(uri);

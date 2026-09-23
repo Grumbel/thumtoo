@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <string>
@@ -125,6 +126,8 @@ void usage(const char* argv0) {
       << "  -q, --quiet        suppress per-job progress on stderr\n"
       << "      --cache DIR    cache root (default: $XDG_CACHE_HOME/thumtoo\n"
       << "                      or ~/.cache/thumtoo)\n"
+      << "      --no-cache     ephemeral Store (SQLite :memory:); nothing on disk\n"
+      << "                      (cold probes only; ignores --cache)\n"
       << "      --sizes-only    size probes only (default when no encode flags);\n"
       << "                      prints wall time, ok/fail, probes/s\n"
       << "      --ladder EDGE  after probes, encode ephemeral soft ≤ EDGE\n"
@@ -148,6 +151,7 @@ void usage(const char* argv0) {
       << "  same solid RAR. Compare zip vs rar and --jobs 1 vs auto.\n"
       << "\n"
       << "Examples:\n"
+      << "  " << argv0 << " --sizes-only --no-cache /path/to/album.rar\n"
       << "  " << argv0 << " --sizes-only --stats /path/to/album.rar\n"
       << "  " << argv0 << " --sizes-only --jobs 1 /path/to/album.rar\n"
       << "  " << argv0 << " --tiles /path/to/album/\n"
@@ -167,6 +171,7 @@ int main(int argc, char** argv) {
   bool show_stats = false;
   bool stats_line = false;
   bool sizes_only = false;  // explicit; also implied when no encode flags
+  bool no_cache = false;    // ephemeral :memory: Store
   int ladder_edge = 0;
   bool do_lqip = false;
   bool do_tiles = false;
@@ -190,6 +195,10 @@ int main(int argc, char** argv) {
     }
     if (a == "--cache" && i + 1 < argc) {
       cache = argv[++i];
+      continue;
+    }
+    if (a == "--no-cache") {
+      no_cache = true;
       continue;
     }
     if (a == "--ladder" && i + 1 < argc) {
@@ -256,7 +265,13 @@ int main(int argc, char** argv) {
   try {
     thumtoo::image_library_init();
     thumtoo::global_build_stats().reset();
-    auto client = thumtoo::Client::open(cache, {}, jobs);
+    std::unique_ptr<thumtoo::Client> client;
+    if (no_cache) {
+      client = thumtoo::Client::open_memory({}, jobs);
+      cache = std::filesystem::path(":memory:");
+    } else {
+      client = thumtoo::Client::open(cache, {}, jobs);
+    }
 
     unsigned workers = jobs;
     if (workers == 0) {
@@ -296,9 +311,11 @@ int main(int argc, char** argv) {
           << "  ready      = soft/full content already considered ready\n"
           << "  failed     = could not probe this URI\n"
           << "Cache hits skip decoding the file; cold probes read the source.\n"
-          << "cache=" << cache << "  paths=" << paths.size()
+          << "cache=" << (no_cache ? ":memory:" : cache.string())
+          << "  paths=" << paths.size()
           << "  workers=" << workers
-          << (sizes_only ? "  mode=sizes-only" : "") << "\n";
+          << (sizes_only ? "  mode=sizes-only" : "")
+          << (no_cache ? "  no-cache" : "") << "\n";
     }
 
     const auto phase1_t0 = std::chrono::steady_clock::now();
@@ -447,7 +464,8 @@ int main(int argc, char** argv) {
       std::cerr << "=== summary ===\n";
     }
     std::cout << "registered " << paths.size() << " path(s), queued " << total
-              << " probe(s) under " << cache << "\n"
+              << " probe(s) under "
+              << (no_cache ? ":memory:" : cache.string()) << "\n"
               << "blobs=" << store.count_blobs()
               << " locators=" << store.count_locators()
               << " media=" << store.count_media()
