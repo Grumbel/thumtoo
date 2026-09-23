@@ -556,6 +556,10 @@ class Client {
   mutable std::mutex archive_cursor_mu_;
   std::unordered_map<std::string, ArchiveCursor> archive_cursors_;
 
+  /// Serialize solid/sequential disk extracts so concurrent member_bytes calls
+  /// do not each restart a full RAR/tar walk (second caller hits extract cache).
+  mutable std::mutex sequential_extract_mu_;
+
   mutable std::mutex extract_cache_mu_;
 
   /// LRU: front = most recently used. Values hold bytes + list iterator.

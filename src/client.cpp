@@ -1526,8 +1526,14 @@ std::optional<std::vector<std::uint8_t>> Client::member_bytes(
 
   // Sequential archives (tar, solid RAR/7z): one libarchive/unarr pass for a
   // TOC-ordered window around the interest member, fill extract cache, return
-  // the requested member. Avoids N independent full-stream walks for neighbors.
+  // the requested member. Serialize disk opens so concurrent callers share one
+  // walk (second thread re-checks cache under the lock).
   if (archive_access_class(archive) == ArchiveAccess::Sequential) {
+    std::lock_guard lock(sequential_extract_mu_);
+    if (auto cached = extract_cache_get(archive, member)) {
+      global_activity_ledger().note_archive_member_finished(act_id, true);
+      return cached;
+    }
     const std::string member_s(member);
     auto planned =
         plan_and_maybe_advance_cursor(archive, {member_s}, /*advance_after=*/true);
@@ -1542,7 +1548,6 @@ std::optional<std::vector<std::uint8_t>> Client::member_bytes(
       global_activity_ledger().note_archive_member_finished(act_id, true);
       return it->second;
     }
-    // Path equality may differ (./ prefix); fall back to cache get after put.
     if (auto cached = extract_cache_get(archive, member)) {
       global_activity_ledger().note_archive_member_finished(act_id, true);
       return cached;
@@ -2428,38 +2433,106 @@ void Client::worker_main() {
         }
       }
 
-      std::vector<std::string> extract_members;
       if (!interest_need.empty() && !archive_path.empty()) {
-        // Plan TOC-ordered window; advance cursor past last extracted on success.
-        extract_members =
-            plan_and_maybe_advance_cursor(archive_path, interest_need, false);
-        // Always include every interest member that is inside the planned
-        // window; if planner returned empty (no TOC yet), fall back to interest.
-        if (extract_members.empty()) {
-          extract_members = interest_need;
-          if (extract_members.size() >
-              static_cast<size_t>(kBatchWindowMembers)) {
-            extract_members.resize(static_cast<size_t>(kBatchWindowMembers));
+        // Sequential archives (solid RAR/tar/7z): walk TOC in windows until every
+        // interest member is in the extract cache. A coalesced batch can hold
+        // hundreds of ProbeSize jobs; the old path extracted one
+        // kBatchWindowMembers window then parallel handle_* without pre → each
+        // missing member restarted a full solid decompress (~0.8 probes/s).
+        const bool sequential =
+            archive_access_class(archive_path) == ArchiveAccess::Sequential;
+        if (sequential && (batch_kind == JobKind::ProbeSize ||
+                           batch_kind == JobKind::EnsurePixels ||
+                           batch_kind == JobKind::EnsureLqip)) {
+          // Solid extract: one open walks the archive once. Passing all interest
+          // members (TOC order) lets unarr/libarchive fill them in a single
+          // forward pass. Windowed re-open would re-decompress the prefix each
+          // time (O(n²) solid cost) — that was ~0.8 size probes/s on RAR.
+          ensure_archive_cursor(archive_path);
+          std::vector<std::string> ordered;
+          {
+            std::lock_guard lock(archive_cursor_mu_);
+            const std::string key = archive_path.lexically_normal().string();
+            auto it = archive_cursors_.find(key);
+            if (it != archive_cursors_.end()) {
+              ordered = it->second.ordered_members;
+            }
           }
-        }
-        const std::uint64_t batch_act =
-            extract_members.empty()
-                ? 0
-                : global_activity_ledger().note_archive_member_running(
-                      archive_path.string(), extract_members.front());
-        auto from_disk = extract_archive_members(archive_path, extract_members);
-        if (batch_act != 0) {
-          global_activity_ledger().note_archive_member_finished(
-              batch_act, !from_disk.empty());
-        }
-        for (auto& kv : from_disk) {
-          extract_cache_put(archive_path, kv.first, kv.second);
-          extracted[kv.first] = std::move(kv.second);
-        }
-        if (!from_disk.empty()) {
-          // Advance cursor using the planned list (even if some members missed).
-          (void)plan_and_maybe_advance_cursor(archive_path, extract_members,
-                                              true);
+          std::vector<std::string> extract_members;
+          extract_members.reserve(interest_need.size());
+          if (!ordered.empty()) {
+            for (const auto& m : ordered) {
+              for (const auto& need : interest_need) {
+                if (member_paths_equal(m, need)) {
+                  extract_members.push_back(need);
+                  break;
+                }
+              }
+            }
+            // Interest not in TOC: append so we still try.
+            for (const auto& need : interest_need) {
+              bool have = false;
+              for (const auto& m : extract_members) {
+                if (member_paths_equal(m, need)) {
+                  have = true;
+                  break;
+                }
+              }
+              if (!have) extract_members.push_back(need);
+            }
+          } else {
+            extract_members = interest_need;
+          }
+          const std::uint64_t batch_act =
+              extract_members.empty()
+                  ? 0
+                  : global_activity_ledger().note_archive_member_running(
+                        archive_path.string(), extract_members.front());
+          auto from_disk =
+              extract_archive_members(archive_path, extract_members);
+          if (batch_act != 0) {
+            global_activity_ledger().note_archive_member_finished(
+                batch_act, !from_disk.empty());
+          }
+          for (auto& kv : from_disk) {
+            extract_cache_put(archive_path, kv.first, kv.second);
+            extracted[kv.first] = std::move(kv.second);
+          }
+          if (!from_disk.empty()) {
+            (void)plan_and_maybe_advance_cursor(archive_path, extract_members,
+                                                /*advance_after=*/true);
+          }
+        } else {
+          // Random-access or tile jobs: one TOC window (cap kBatchWindowMembers).
+          std::vector<std::string> extract_members =
+              plan_and_maybe_advance_cursor(archive_path, interest_need,
+                                            /*advance_after=*/false);
+          if (extract_members.empty()) {
+            extract_members = interest_need;
+            if (extract_members.size() >
+                static_cast<size_t>(kBatchWindowMembers)) {
+              extract_members.resize(static_cast<size_t>(kBatchWindowMembers));
+            }
+          }
+          const std::uint64_t batch_act =
+              extract_members.empty()
+                  ? 0
+                  : global_activity_ledger().note_archive_member_running(
+                        archive_path.string(), extract_members.front());
+          auto from_disk =
+              extract_archive_members(archive_path, extract_members);
+          if (batch_act != 0) {
+            global_activity_ledger().note_archive_member_finished(
+                batch_act, !from_disk.empty());
+          }
+          for (auto& kv : from_disk) {
+            extract_cache_put(archive_path, kv.first, kv.second);
+            extracted[kv.first] = std::move(kv.second);
+          }
+          if (!from_disk.empty()) {
+            (void)plan_and_maybe_advance_cursor(archive_path, extract_members,
+                                                /*advance_after=*/true);
+          }
         }
       }
 
