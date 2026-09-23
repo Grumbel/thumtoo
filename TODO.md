@@ -2,26 +2,24 @@
 
 ## Status (2026-09-23)
 
-**Tip: thumtoo-329-extract-staging** (base `f71d183`, includes 324–328).
+**Tip: thumtoo-330-local-archive-mirror** (base `f71d183`, includes 324–329).
 
-### 329 — Disk extract staging for sequential archives
-Solid RAR decompress is too expensive to repeat. Members are written under
-`cache_root/extract_staging/` (or `$TMPDIR/thumtoo-extract-$PID` for
-`--no-cache`). `member_bytes` checks staging before opening the archive again.
-Size stream path stages each member as it probes.
+### Diagnosis
+Solid extract locally ~1–2s; NFS `cp` of the same RAR ~11s. Multi-minute
+`thumtoo-prepare --sizes-only` on `/net/...` was **repeated remote reads**, not
+JPEG decode and not unarr itself.
 
-Header-only size without decompress is not available for solid RAR (stream
-depends on prior members). Unpacked dirs stay ~0.5s; RAR pays extract once.
+### 330 — Local archive mirror
+`ensure_local_archive()` copies the RAR once under
+`cache_root/archive_mirror/` (or `$TMPDIR/.../archive_mirror` for `--no-cache`).
+Sequential extract/visit uses the local copy.
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-329.1-extract-staging-f71d183.bundle HEAD
+git pull --ff-only …/thumtoo-330.1-local-archive-mirror-f71d183.bundle HEAD
 ```
 
-Next: **330** — optional: probe from staged path without re-reading full bytes;
-GC for extract_staging; prepare --tiles reuse staging.
+Expect cold: ~copy time + ~2s extract + probe. Warm mirror: extract+probe only.
 
----
-
-**Prior tips:** 324 sizes-only, 325 one-pass, 326 :memory:, 327 bulk enqueue,
-328 stream size (no N-image RAM).
+Next: **331** — THUMTOO_DEBUG_ARCHIVE traces; sizes-only skip member staging;
+optional skip mirror when already local FS.

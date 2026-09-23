@@ -560,6 +560,11 @@ class Client {
   [[nodiscard]] bool extract_staging_has(
       const std::filesystem::path& archive, std::string_view member) const;
 
+  /// Copy sequential-archive source to local disk once (NFS-safe). Returns
+  /// mirror path or original on failure / already local mirror.
+  [[nodiscard]] std::filesystem::path ensure_local_archive(
+      const std::filesystem::path& archive);
+
   /// GET with in-process cache (session only; not durable across runs).
   [[nodiscard]] std::optional<std::vector<std::uint8_t>> fetch_http_cached(
       std::string_view url);

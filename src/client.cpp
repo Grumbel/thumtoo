@@ -1619,6 +1619,62 @@ bool Client::extract_staging_has(const std::filesystem::path& archive,
          !ec;
 }
 
+std::filesystem::path Client::ensure_local_archive(
+    const std::filesystem::path& archive) {
+  std::error_code ec;
+  if (!std::filesystem::is_regular_file(archive, ec) || ec) {
+    return archive;
+  }
+  std::string arch_key = archive.lexically_normal().string();
+  auto sz = file_size_bytes(archive);
+  auto mt = file_mtime_ns(archive);
+  if (sz) {
+    arch_key.push_back(':');
+    arch_key += std::to_string(*sz);
+  }
+  if (mt) {
+    arch_key.push_back(':');
+    arch_key += std::to_string(*mt);
+  }
+  const std::string arch_hex = sha256_bytes_hex(
+      reinterpret_cast<const std::uint8_t*>(arch_key.data()), arch_key.size());
+  const auto mirror_root =
+      extract_staging_root().parent_path() / "archive_mirror";
+  // Skip copy if the source already lives under our mirror root.
+  {
+    const auto norm = archive.lexically_normal();
+    const auto root = mirror_root.lexically_normal();
+    const auto ns = norm.string();
+    const auto rs = root.string();
+    if (ns.size() >= rs.size() && ns.compare(0, rs.size(), rs) == 0) {
+      return archive;
+    }
+  }
+  const auto dest =
+      mirror_root / (arch_hex.substr(0, 32) + archive.extension().string());
+  if (std::filesystem::is_regular_file(dest, ec) && !ec) {
+    auto dsz = file_size_bytes(dest);
+    if (sz && dsz && *dsz == *sz) {
+      return dest;
+    }
+  }
+  std::filesystem::create_directories(mirror_root, ec);
+  if (ec) return archive;
+  const auto tmp = dest.string() + ".tmp";
+  std::filesystem::copy_file(
+      archive, tmp, std::filesystem::copy_options::overwrite_existing, ec);
+  if (ec) {
+    std::filesystem::remove(tmp, ec);
+    return archive;
+  }
+  std::filesystem::rename(tmp, dest, ec);
+  if (ec) {
+    std::filesystem::remove(tmp, ec);
+    return archive;
+  }
+  return dest;
+}
+
 std::optional<std::vector<std::uint8_t>> Client::member_bytes(
     const std::filesystem::path& archive, std::string_view member,
     const std::optional<std::vector<std::uint8_t>>& preextracted) {
@@ -1658,7 +1714,8 @@ std::optional<std::vector<std::uint8_t>> Client::member_bytes(
     if (planned.empty()) {
       planned.push_back(member_s);
     }
-    auto from_disk = extract_archive_members(archive, planned);
+    const auto local = ensure_local_archive(archive);
+    auto from_disk = extract_archive_members(local, planned);
     for (auto& kv : from_disk) {
       extract_cache_put(archive, kv.first, kv.second);
       extract_staging_put(archive, kv.first, kv.second);
@@ -2631,8 +2688,13 @@ void Client::worker_main() {
                   ? 0
                   : global_activity_ledger().note_archive_member_running(
                         archive_path.string(), extract_members.front());
+          // NFS / slow storage: one local copy of the archive, then solid walk
+          // is ~seconds not minutes (re-reading solid RAR over the network is
+          // the dominant cost — extract itself is ~1–2s on a local file).
+          const std::filesystem::path local_archive =
+              ensure_local_archive(archive_path);
           const std::size_t delivered = visit_archive_members(
-              archive_path, extract_members,
+              local_archive, extract_members,
               [&](const std::string& key, std::vector<std::uint8_t> bytes) {
                 auto it = jobs_by_member.find(key);
                 if (it == jobs_by_member.end()) {
@@ -2721,14 +2783,15 @@ void Client::worker_main() {
                   ? 0
                   : global_activity_ledger().note_archive_member_running(
                         archive_path.string(), extract_members.front());
-          auto from_disk =
-              extract_archive_members(archive_path, extract_members);
+          const auto local = ensure_local_archive(archive_path);
+          auto from_disk = extract_archive_members(local, extract_members);
           if (batch_act != 0) {
             global_activity_ledger().note_archive_member_finished(
                 batch_act, !from_disk.empty());
           }
           for (auto& kv : from_disk) {
             extract_cache_put(archive_path, kv.first, kv.second);
+            extract_staging_put(archive_path, kv.first, kv.second);
             extracted[kv.first] = std::move(kv.second);
           }
           if (!from_disk.empty()) {
