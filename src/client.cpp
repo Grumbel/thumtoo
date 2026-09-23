@@ -2471,24 +2471,22 @@ void Client::worker_main() {
           std::vector<std::string> extract_members;
           extract_members.reserve(interest_need.size());
           if (!ordered.empty()) {
-            for (const auto& m : ordered) {
-              for (const auto& need : interest_need) {
-                if (member_paths_equal(m, need)) {
-                  extract_members.push_back(need);
-                  break;
-                }
+            // TOC order via archive_member_toc_index (path-normalized match).
+            std::vector<std::pair<std::size_t, std::string>> ranked;
+            ranked.reserve(interest_need.size());
+            for (const auto& need : interest_need) {
+              if (auto idx = archive_member_toc_index(ordered, need)) {
+                ranked.emplace_back(*idx, need);
+              } else {
+                ranked.emplace_back(ordered.size(), need);
               }
             }
-            // Interest not in TOC: append so we still try.
-            for (const auto& need : interest_need) {
-              bool have = false;
-              for (const auto& m : extract_members) {
-                if (member_paths_equal(m, need)) {
-                  have = true;
-                  break;
-                }
-              }
-              if (!have) extract_members.push_back(need);
+            std::sort(ranked.begin(), ranked.end(),
+                      [](const auto& a, const auto& b) {
+                        return a.first < b.first;
+                      });
+            for (auto& p : ranked) {
+              extract_members.push_back(std::move(p.second));
             }
           } else {
             extract_members = interest_need;
