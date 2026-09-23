@@ -41,6 +41,7 @@
 #include <string_view>
 #include <span>
 #include <cstring>
+#include <unistd.h>
 
 namespace thumtoo {
 
@@ -1547,15 +1548,91 @@ std::optional<std::vector<std::uint8_t>> Client::extract_cache_get(
   return it->second.bytes;
 }
 
+std::filesystem::path Client::extract_staging_root() const {
+  if (store_ && !store_->cache_root().empty()) {
+    return store_->cache_root() / "extract_staging";
+  }
+  const char* tmp = std::getenv("TMPDIR");
+  if (!tmp || !*tmp) tmp = "/tmp";
+  return std::filesystem::path(tmp) /
+         ("thumtoo-extract-" + std::to_string(static_cast<long>(::getpid())));
+}
+
+std::filesystem::path Client::extract_staging_path(
+    const std::filesystem::path& archive, std::string_view member) const {
+  // Archive identity: path + size + mtime (cheap; avoid hashing multi‑GB RAR).
+  std::string arch_key = archive.lexically_normal().string();
+  if (auto sz = file_size_bytes(archive)) {
+    arch_key.push_back(':');
+    arch_key += std::to_string(*sz);
+  }
+  if (auto mt = file_mtime_ns(archive)) {
+    arch_key.push_back(':');
+    arch_key += std::to_string(*mt);
+  }
+  const std::string arch_hex = sha256_bytes_hex(
+      reinterpret_cast<const std::uint8_t*>(arch_key.data()), arch_key.size());
+  const std::string mem_hex = sha256_bytes_hex(
+      reinterpret_cast<const std::uint8_t*>(member.data()), member.size());
+  return extract_staging_root() / arch_hex.substr(0, 32) /
+         (mem_hex.substr(0, 32) + ".bin");
+}
+
+void Client::extract_staging_put(const std::filesystem::path& archive,
+                                 std::string_view member,
+                                 const std::vector<std::uint8_t>& bytes) {
+  if (bytes.empty()) return;
+  const auto dest = extract_staging_path(archive, member);
+  std::error_code ec;
+  std::filesystem::create_directories(dest.parent_path(), ec);
+  if (ec) return;
+  const auto tmp = dest.string() + ".tmp";
+  {
+    std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+    if (!out) return;
+    out.write(reinterpret_cast<const char*>(bytes.data()),
+              static_cast<std::streamsize>(bytes.size()));
+    if (!out) {
+      std::filesystem::remove(tmp, ec);
+      return;
+    }
+  }
+  std::filesystem::rename(tmp, dest, ec);
+  if (ec) {
+    std::filesystem::remove(tmp, ec);
+  }
+}
+
+std::optional<std::vector<std::uint8_t>> Client::extract_staging_get(
+    const std::filesystem::path& archive, std::string_view member) const {
+  const auto path = extract_staging_path(archive, member);
+  std::error_code ec;
+  if (!std::filesystem::is_regular_file(path, ec) || ec) return std::nullopt;
+  return read_file_bytes(path, kArchiveMaxMemberUncompressedBytes);
+}
+
+bool Client::extract_staging_has(const std::filesystem::path& archive,
+                                 std::string_view member) const {
+  std::error_code ec;
+  return std::filesystem::is_regular_file(extract_staging_path(archive, member),
+                                          ec) &&
+         !ec;
+}
+
 std::optional<std::vector<std::uint8_t>> Client::member_bytes(
     const std::filesystem::path& archive, std::string_view member,
     const std::optional<std::vector<std::uint8_t>>& preextracted) {
   if (preextracted && !preextracted->empty()) {
     extract_cache_put(archive, member, *preextracted);
+    extract_staging_put(archive, member, *preextracted);
     return *preextracted;
   }
   if (auto cached = extract_cache_get(archive, member)) {
     return cached;
+  }
+  if (auto staged = extract_staging_get(archive, member)) {
+    extract_cache_put(archive, member, *staged);
+    return staged;
   }
 
   // Disk extract — report as live archive activity for host status bars.
@@ -1563,14 +1640,17 @@ std::optional<std::vector<std::uint8_t>> Client::member_bytes(
       archive.string(), std::string(member));
 
   // Sequential archives (tar, solid RAR/7z): one libarchive/unarr pass for a
-  // TOC-ordered window around the interest member, fill extract cache, return
-  // the requested member. Serialize disk opens so concurrent callers share one
-  // walk (second thread re-checks cache under the lock).
+  // TOC-ordered window around the interest member, fill extract cache + staging.
   if (archive_access_class(archive) == ArchiveAccess::Sequential) {
     std::lock_guard lock(sequential_extract_mu_);
     if (auto cached = extract_cache_get(archive, member)) {
       global_activity_ledger().note_archive_member_finished(act_id, true);
       return cached;
+    }
+    if (auto staged = extract_staging_get(archive, member)) {
+      extract_cache_put(archive, member, *staged);
+      global_activity_ledger().note_archive_member_finished(act_id, true);
+      return staged;
     }
     const std::string member_s(member);
     auto planned =
@@ -1581,6 +1661,7 @@ std::optional<std::vector<std::uint8_t>> Client::member_bytes(
     auto from_disk = extract_archive_members(archive, planned);
     for (auto& kv : from_disk) {
       extract_cache_put(archive, kv.first, kv.second);
+      extract_staging_put(archive, kv.first, kv.second);
     }
     if (auto it = from_disk.find(member_s); it != from_disk.end()) {
       global_activity_ledger().note_archive_member_finished(act_id, true);
@@ -1597,6 +1678,7 @@ std::optional<std::vector<std::uint8_t>> Client::member_bytes(
   auto bytes = extract_archive_member(archive, member);
   if (bytes && !bytes->empty()) {
     extract_cache_put(archive, member, *bytes);
+    extract_staging_put(archive, member, *bytes);
   }
   global_activity_ledger().note_archive_member_finished(act_id,
                                                          bytes && !bytes->empty());
@@ -2564,6 +2646,9 @@ void Client::worker_main() {
                   }
                 }
                 if (it == jobs_by_member.end()) return;
+                // Persist member once so later soft/tiles/prepare do not redo
+                // solid decompress (RAM LRU alone is too small for full albums).
+                extract_staging_put(archive_path, key, bytes);
                 for (size_t ji : it->second) {
                   Job& j = batch[ji];
                   try {

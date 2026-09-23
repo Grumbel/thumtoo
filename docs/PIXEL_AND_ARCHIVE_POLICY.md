@@ -117,7 +117,8 @@ or from a prior offset), other formats where “member N” implies decoding
 | Member extract | Expensive if random; order matters |
 | Interactive policy | **One logical cursor per archive path** (`ArchiveCursor`); windowed extract via `plan_archive_batch_window`; never fan out N independent solid streams for different members |
 | Concurrent cells | Same-archive coalesce **required**; prefer continuing forward from `next_index` |
-| Prepare | **Single sequential walk**: TOC → size/LQIP → optional coarse tiles while the stream is hot |
+| Prepare | **Single sequential walk**: TOC → size → stage members on disk → optional tiles while hot |
+| Disk staging | After first solid extract, members live under `cache_root/extract_staging/` (or `$TMPDIR/thumtoo-extract-*` for `:memory:`). Soft/tiles/re-open must hit staging, not re-decompress the RAR |
 
 ### 2.3 Classification (heuristic, refine with measurement)
 

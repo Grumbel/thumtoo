@@ -546,6 +546,20 @@ class Client {
       const std::filesystem::path& archive, std::string_view member,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);
 
+  /// Disk extract staging (sequential archives). Survives process RAM LRU so
+  /// solid RAR is not re-decompressed for size → soft → tiles. Under
+  /// cache_root/extract_staging when durable; else $TMPDIR/thumtoo-extract-*.
+  [[nodiscard]] std::filesystem::path extract_staging_root() const;
+  [[nodiscard]] std::filesystem::path extract_staging_path(
+      const std::filesystem::path& archive, std::string_view member) const;
+  void extract_staging_put(const std::filesystem::path& archive,
+                           std::string_view member,
+                           const std::vector<std::uint8_t>& bytes);
+  [[nodiscard]] std::optional<std::vector<std::uint8_t>> extract_staging_get(
+      const std::filesystem::path& archive, std::string_view member) const;
+  [[nodiscard]] bool extract_staging_has(
+      const std::filesystem::path& archive, std::string_view member) const;
+
   /// GET with in-process cache (session only; not durable across runs).
   [[nodiscard]] std::optional<std::vector<std::uint8_t>> fetch_http_cached(
       std::string_view url);
