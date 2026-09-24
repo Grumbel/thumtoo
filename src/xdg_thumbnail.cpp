@@ -465,7 +465,7 @@ struct XdgThumbnailer::Impl {
         if (uri) {
           XdgThumbnailReply r;
           r.uri = uri;
-          // Prefer large then normal
+          // Prefer requested flavor, then xx-large → normal
           // URI → path is reverse of file:// only for local files
           std::filesystem::path file;
           if (r.uri.size() > 7 && r.uri.compare(0, 7, "file://") == 0) {
