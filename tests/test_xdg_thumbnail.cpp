@@ -46,6 +46,39 @@ int main() {
     CHECK(!hit.has_value());
   }
 
+  // Flavor names match XDG subdirs
+  {
+    CHECK(std::string(thumtoo::xdg_thumbnail_flavor_name(
+              thumtoo::XdgThumbnailFlavor::Normal)) == "normal");
+    CHECK(std::string(thumtoo::xdg_thumbnail_flavor_name(
+              thumtoo::XdgThumbnailFlavor::Large)) == "large");
+    CHECK(std::string(thumtoo::xdg_thumbnail_flavor_name(
+              thumtoo::XdgThumbnailFlavor::XLarge)) == "x-large");
+    CHECK(std::string(thumtoo::xdg_thumbnail_flavor_name(
+              thumtoo::XdgThumbnailFlavor::XXLarge)) == "xx-large");
+  }
+
+  // Different paths → different digests; same path different flavors → different dirs
+  {
+    setenv("XDG_CACHE_HOME", "/tmp/thumtoo-xdg-test-cache2", 1);
+    const auto a = thumtoo::xdg_thumbnail_cache_path("/tmp/a.jpg");
+    const auto b = thumtoo::xdg_thumbnail_cache_path("/tmp/b.jpg");
+    CHECK(a.filename() != b.filename());
+    const auto n = thumtoo::xdg_thumbnail_cache_path(
+        "/tmp/a.jpg", thumtoo::XdgThumbnailFlavor::Normal);
+    const auto l = thumtoo::xdg_thumbnail_cache_path(
+        "/tmp/a.jpg", thumtoo::XdgThumbnailFlavor::Large);
+    CHECK(n.filename() == l.filename());
+    CHECK(n.parent_path().filename() == "normal");
+    CHECK(l.parent_path().filename() == "large");
+  }
+
+  // remove_cache on missing files is zero / non-negative
+  {
+    const int n = thumtoo::xdg_thumbnail_remove_cache("/tmp/thumtoo-no-thumb-xyz.jpg");
+    CHECK(n >= 0);
+  }
+
   // D-Bus feature flag is consistent
   {
     CHECK(thumtoo::xdg_thumbnail_dbus_built() ==

@@ -2,27 +2,20 @@
 
 ## Status (2026-09-24)
 
-**Tip: thumtoo-337-xdg-thumbnails** (base `f71d183`, includes 324–336).
+**Tip: thumtoo-337.2-xdg-thumbnails** (base `f71d183`).
 
-### XDG / Freedesktop thumbnails (optional path)
-Standalone module — **not** wired into Client tiles/ladder/LQIP.
-
-| Piece | Notes |
-|-------|--------|
-| `include/thumtoo/xdg_thumbnail.hpp` | Cache URI/path/lookup + `XdgThumbnailer` |
-| Cache | Always: MD5(`file://`) under `$XDG_CACHE_HOME/thumbnails/<flavor>/` |
-| D-Bus | Optional `THUMTOO_HAVE_DBUS` (libdbus-1): Thumbnailer1 `Queue` / Ready / Error |
-| CLI | `thumtoo-xdg-thumb [--request] PATH` |
-| Docs | `docs/XDG_THUMBNAILS.md` |
-
-Inspired by dirtoo `dirtoo-thumbnail` (Qt); this is Qt-free for embedding.
+### XDG thumbnails verified (cache path)
+- Unit test: URI encode, MD5 digests, flavors, remove_cache, HAVE_DBUS flag
+- MD5 cross-check vs system `md5sum` for `file:///tmp/foo.jpg`
+- Compiled with `-DTHUMTOO_HAVE_DBUS=0` (no dbus-1 in agent sandbox)
+- D-Bus Queue path: needs host with libdbus-1 + session Thumbnailer1
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-337.1-xdg-thumbnails-f71d183.bundle HEAD
+git pull --ff-only …/thumtoo-337.2-xdg-thumbnails-f71d183.bundle HEAD
 ```
 
 Next: **338**.
 
-## Prior — 336
-request_tile(s) always queue workers (no caller get_tile).
+## Prior — 337.1
+Initial XDG module + CLI + docs.
