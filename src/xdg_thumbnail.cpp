@@ -347,10 +347,15 @@ int xdg_thumbnail_remove_cache(const std::filesystem::path& absolute_file) {
 
 // --- D-Bus client ------------------------------------------------------------
 
+struct PendingRequest {
+  std::vector<XdgThumbnailCallback> callbacks;
+  XdgThumbnailFlavor flavor = XdgThumbnailFlavor::Large;
+};
+
 struct XdgThumbnailer::Impl {
   Executor executor;
   std::mutex mu;
-  std::unordered_map<std::string, std::vector<XdgThumbnailCallback>> by_uri;
+  std::unordered_map<std::string, PendingRequest> by_uri;
   std::vector<std::uint32_t> handles;
 
 #if defined(THUMTOO_HAVE_DBUS) && THUMTOO_HAVE_DBUS
@@ -412,7 +417,7 @@ struct XdgThumbnailer::Impl {
       if (it == by_uri.end()) {
         return;
       }
-      cbs = std::move(it->second);
+      cbs = std::move(it->second.callbacks);
       by_uri.erase(it);
     }
     for (auto& cb : cbs) {
@@ -425,6 +430,15 @@ struct XdgThumbnailer::Impl {
         fn(std::move(copy));
       });
     }
+  }
+
+  [[nodiscard]] XdgThumbnailFlavor pending_flavor(const std::string& uri) {
+    std::lock_guard lock(mu);
+    auto it = by_uri.find(uri);
+    if (it != by_uri.end()) {
+      return it->second.flavor;
+    }
+    return XdgThumbnailFlavor::Large;
   }
 
   void handle_signal(DBusMessage* msg) {
@@ -480,13 +494,25 @@ struct XdgThumbnailer::Impl {
             file = decoded;
           }
           if (!file.empty()) {
-            auto large = xdg_thumbnail_cache_path(file, XdgThumbnailFlavor::Large);
-            auto normal = xdg_thumbnail_cache_path(file, XdgThumbnailFlavor::Normal);
+            const XdgThumbnailFlavor want = pending_flavor(r.uri);
+            static const XdgThumbnailFlavor kOrder[] = {
+                XdgThumbnailFlavor::XXLarge, XdgThumbnailFlavor::XLarge,
+                XdgThumbnailFlavor::Large, XdgThumbnailFlavor::Normal};
             std::error_code ec;
-            if (std::filesystem::is_regular_file(large, ec)) {
-              r.path = large;
-            } else if (std::filesystem::is_regular_file(normal, ec)) {
-              r.path = normal;
+            auto try_flavor = [&](XdgThumbnailFlavor f) {
+              const auto p = xdg_thumbnail_cache_path(file, f);
+              if (std::filesystem::is_regular_file(p, ec)) {
+                r.path = p;
+                return true;
+              }
+              return false;
+            };
+            if (!try_flavor(want)) {
+              for (auto f : kOrder) {
+                if (f != want && try_flavor(f)) {
+                  break;
+                }
+              }
             }
           }
           if (!r.path) {
@@ -680,7 +706,7 @@ struct XdgThumbnailer::Impl {
       if (it == by_uri.end()) {
         return;
       }
-      cbs = std::move(it->second);
+      cbs = std::move(it->second.callbacks);
       by_uri.erase(it);
     }
     for (auto& cb : cbs) {
@@ -757,7 +783,9 @@ void XdgThumbnailer::request_many(
                                                : "application/octet-stream");
     if (cb) {
       std::lock_guard lock(impl_->mu);
-      impl_->by_uri[uri].push_back(cb);
+      auto& pend = impl_->by_uri[uri];
+      pend.flavor = flavor;
+      pend.callbacks.push_back(cb);
     }
   }
 
