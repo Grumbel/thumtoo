@@ -42,6 +42,7 @@
         djvulibre.dev
         curl
         openssl        # libcrypto.pc
+        dbus           # dbus-1.pc (XDG Thumbnailer1)
 
         # vips Requires.private (and common transitive .pc names)
         fftw

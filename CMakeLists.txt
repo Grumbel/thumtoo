@@ -163,6 +163,7 @@ add_library(thumtoo
   src/network.cpp
   src/text.cpp
   src/appearance.cpp
+  src/xdg_thumbnail.cpp
 )
 add_library(thumtoo::thumtoo ALIAS thumtoo)
 
@@ -239,6 +240,25 @@ else()
 endif()
 thumtoo_export_to_parent(THUMTOO_HAVE_CURL)
 
+# Optional: session-bus Thumbnailer1 (XDG thumbnails). Cache paths work without it.
+option(THUMTOO_WITH_DBUS "XDG Thumbnailer1 via libdbus-1" ON)
+set(THUMTOO_HAVE_DBUS 0)
+if(THUMTOO_WITH_DBUS)
+  pkg_check_modules(DBUS IMPORTED_TARGET dbus-1)
+  if(DBUS_FOUND)
+    set(THUMTOO_HAVE_DBUS 1)
+  endif()
+endif()
+thumtoo_export_to_parent(THUMTOO_HAVE_DBUS)
+
+
+if(THUMTOO_HAVE_DBUS)
+  target_link_libraries(thumtoo PUBLIC PkgConfig::DBUS)
+  target_compile_definitions(thumtoo PUBLIC THUMTOO_HAVE_DBUS=1)
+else()
+  target_compile_definitions(thumtoo PUBLIC THUMTOO_HAVE_DBUS=0)
+endif()
+
 # version.hpp after all THUMTOO_HAVE_* are set (optional feature macros).
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/include/thumtoo/version.hpp.in"
@@ -258,6 +278,9 @@ if(THUMTOO_BUILD_TOOLS)
   add_executable(thumtoo-tile tools/thumtoo_tile.cpp)
   add_executable(thumtoo-gc tools/thumtoo_gc.cpp)
   target_link_libraries(thumtoo-gc PRIVATE thumtoo)
+
+  add_executable(thumtoo-xdg-thumb tools/thumtoo_xdg_thumb.cpp)
+  target_link_libraries(thumtoo-xdg-thumb PRIVATE thumtoo)
   add_executable(thumtoo-archive tools/thumtoo_archive.cpp)
   target_link_libraries(thumtoo-archive PRIVATE thumtoo)
   target_link_libraries(thumtoo-tile PRIVATE thumtoo)
@@ -272,6 +295,10 @@ if(THUMTOO_BUILD_TESTS)
   add_executable(thumtoo-test-store tests/test_store.cpp)
   target_link_libraries(thumtoo-test-store PRIVATE thumtoo)
   add_test(NAME store COMMAND thumtoo-test-store)
+
+  add_executable(thumtoo-test-xdg-thumbnail tests/test_xdg_thumbnail.cpp)
+  target_link_libraries(thumtoo-test-xdg-thumbnail PRIVATE thumtoo)
+  add_test(NAME xdg_thumbnail COMMAND thumtoo-test-xdg-thumbnail)
   add_executable(thumtoo-test-store-root tests/test_store_root.cpp)
   target_link_libraries(thumtoo-test-store-root PRIVATE thumtoo)
   add_test(NAME store_root COMMAND thumtoo-test-store-root)
@@ -339,7 +366,7 @@ install(TARGETS thumtoo
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY include/thumtoo DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 if(THUMTOO_BUILD_TOOLS)
-  install(TARGETS thumtoo-tile thumtoo-status thumtoo-prepare thumtoo-bench
+  install(TARGETS thumtoo-tile thumtoo-status thumtoo-prepare thumtoo-bench thumtoo-xdg-thumb
                   thumtoo-gc thumtoo-archive thumtoo-microbench-decode
           RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
   install(FILES
@@ -400,6 +427,11 @@ else()
 endif()
 message(STATUS "  Archives (libarchive):       ON")
 message(STATUS "  Ladder/tiles (libvips):      ON")
+if(THUMTOO_HAVE_DBUS)
+  message(STATUS "  XDG Thumbnailer1 (dbus-1):  ON")
+else()
+  message(STATUS "  XDG Thumbnailer1 (dbus-1):  OFF (cache path only)")
+endif()
 message(STATUS "  SQLite cache:                ON")
 message(STATUS "================================")
 message(STATUS "")

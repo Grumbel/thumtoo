@@ -28,6 +28,9 @@
 #ifndef THUMTOO_HAVE_CURL
 #define THUMTOO_HAVE_CURL @THUMTOO_HAVE_CURL@
 #endif
+#ifndef THUMTOO_HAVE_DBUS
+#define THUMTOO_HAVE_DBUS @THUMTOO_HAVE_DBUS@
+#endif
 
 namespace thumtoo {
 
@@ -58,6 +61,9 @@ namespace thumtoo {
 [[nodiscard]] inline constexpr bool feature_curl() noexcept {
   return THUMTOO_HAVE_CURL != 0;
 }
+[[nodiscard]] inline constexpr bool feature_dbus() noexcept {
+  return THUMTOO_HAVE_DBUS != 0;
+}
 
 /// Write "thumtoo <version>" plus optional feature lines (for --version).
 inline void print_version(std::ostream& os) {
@@ -73,6 +79,7 @@ inline void print_version(std::ostream& os) {
   line("MuPDF (PDF/EPUB pages)", feature_mupdf());
   line("DjVuLibre (DjVu pages)", feature_djvu());
   line("libcurl (HTTP/S fetch)", feature_curl());
+  line("D-Bus XDG Thumbnailer1", feature_dbus());
 }
 
 }  // namespace thumtoo
