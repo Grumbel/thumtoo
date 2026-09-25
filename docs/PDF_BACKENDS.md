@@ -9,13 +9,17 @@ PDF pages use **MuPDF** only (`THUMTOO_HAVE_MUPDF`). Poppler was removed.
 | `//page:N` | Default page (MuPDF) |
 | `//mupdf-page:N` | Explicit MuPDF |
 | `//poppler-page:N` | Accepted for old paths; normalized to `PdfPage` / `//page:N` on format |
+| `//pdfimage:N` | Embedded Image XObject extract (1-based, native resolution) |
+| `//pdfimages` | Collection expand → `//pdfimage:1..N` |
 
 ```
 file:///data/doc.pdf//page:1
 file:///data/doc.pdf//mupdf-page:1
+file:///book.pdf//pdfimage:3
+file:///book.pdf//pdfimages
 ```
 
-`prepare_paths` / expand emit `//page:N`.
+`prepare_paths` / expand emit `//page:N` by default for PDFs.
 
 ## Layout
 
@@ -43,3 +47,15 @@ file:///book.pdf//pdfimages
 
 Expand helpers: `expand_pdf_image_uris` / `expand_pdf_images_collection_uri`.
 Default expand for PDFs uses rendered `//page:N`.
+
+### Client plumbing (Store path)
+
+`//pdfimage:N` is a first-class locator, not a page render:
+
+| Job | Behaviour |
+|-----|-----------|
+| ProbeSize | `pdf_embedded_image_size` (dict `/Width`/`/Height` when possible) |
+| EnsurePixels | `pdf_rasterize_embedded_image` → soft ladder |
+| EnsureTiles | full extract → `build_tile_cell_rgb` / pyramid |
+
+Store keys: content_id `sha256:…:pdfimage:N`, Document media, `RegionKind::Fragment` key `N`.

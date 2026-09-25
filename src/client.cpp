@@ -245,6 +245,30 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
     return cm;
   }
 
+  if (auto pimg = parse_pdf_image_uri(uri)) {
+    auto media =
+        store_->find_media_for_blob(*loc->blob_id, MediaKind::Document);
+    if (!media) return std::nullopt;
+    const std::string key = std::to_string(pimg->image);
+    auto region =
+        store_->find_region_by_key(media->id, RegionKind::Fragment, key);
+    if (!region) return std::nullopt;
+    cm.content_id += ":pdfimage:" + key;
+    cm.format = "pdfimage";
+    cm.status = ContentStatus::Incomplete;
+    if (!store_->list_tile_scales(media->id, region->id).empty()) {
+      cm.status = ContentStatus::Ready;
+    }
+    // Dict /Width /Height is cheap; prefer live size over shared media dims
+    // (one Document media holds many embeds of different sizes).
+    if (auto sz = pdf_embedded_image_size(pimg->pdf_path, pimg->image)) {
+      cm.size = *sz;
+    } else if (media->width && media->height) {
+      cm.size = Size{*media->width, *media->height};
+    }
+    return cm;
+  }
+
   if (auto dj = parse_djvu_uri(uri)) {
     auto media =
         store_->find_media_for_blob(*loc->blob_id, MediaKind::Document);
@@ -1048,8 +1072,10 @@ std::optional<Client::StoreTileTarget> Client::store_tile_target_for_content_id(
   }
 
   std::optional<int> page_1based;
+  std::optional<int> pdfimage_1based;
   if (rest.size() > 64) {
     constexpr std::string_view kPage = ":page:";
+    constexpr std::string_view kPdfImage = ":pdfimage:";
     if (rest.size() > 64 + kPage.size() &&
         rest.substr(64, kPage.size()) == kPage) {
       try {
@@ -1058,6 +1084,15 @@ std::optional<Client::StoreTileTarget> Client::store_tile_target_for_content_id(
         return std::nullopt;
       }
       if (*page_1based < 1) return std::nullopt;
+    } else if (rest.size() > 64 + kPdfImage.size() &&
+               rest.substr(64, kPdfImage.size()) == kPdfImage) {
+      try {
+        pdfimage_1based =
+            std::stoi(std::string(rest.substr(64 + kPdfImage.size())));
+      } catch (...) {
+        return std::nullopt;
+      }
+      if (*pdfimage_1based < 1) return std::nullopt;
     } else {
       return std::nullopt;
     }
@@ -1074,6 +1109,15 @@ std::optional<Client::StoreTileTarget> Client::store_tile_target_for_content_id(
     if (!media) return std::nullopt;
     auto region = store_->find_region_by_key(
         media->id, RegionKind::Page, std::to_string(*page_1based));
+    if (!region) return std::nullopt;
+    return StoreTileTarget{media->id, region->id};
+  }
+
+  if (pdfimage_1based) {
+    auto media = store_->find_media_for_blob(*blob_id, MediaKind::Document);
+    if (!media) return std::nullopt;
+    auto region = store_->find_region_by_key(
+        media->id, RegionKind::Fragment, std::to_string(*pdfimage_1based));
     if (!region) return std::nullopt;
     return StoreTileTarget{media->id, region->id};
   }
@@ -3180,6 +3224,50 @@ void Client::handle_probe_size_store(
       return;
     }
 
+    if (auto pimg = parse_pdf_image_uri(job.uri)) {
+      if (!std::filesystem::is_regular_file(pimg->pdf_path)) {
+        reply_empty();
+        return;
+      }
+      auto layout = pdf_embedded_image_size(pimg->pdf_path, pimg->image);
+      if (!layout) {
+        reply_empty();
+        return;
+      }
+      const auto hex = sha256_file_hex(pimg->pdf_path);
+      if (hex.empty()) {
+        reply_empty();
+        return;
+      }
+      auto digest = Store::parse_sha256_digest(hex);
+      if (!digest) {
+        reply_empty();
+        return;
+      }
+      const auto byte_size = file_size_bytes(pimg->pdf_path);
+      const auto mtime = file_mtime_ns(pimg->pdf_path);
+      std::int64_t blob_id = 0;
+      if (auto existing =
+              store_->find_blob_by_hash(HashAlgoId::Sha256, *digest)) {
+        blob_id = *existing;
+        if (byte_size) store_->set_blob_size(blob_id, *byte_size);
+        store_->set_blob_status(blob_id, BlobStatus::Ok);
+      } else {
+        blob_id = store_->insert_blob(byte_size, BlobStatus::Ok);
+        store_->put_hash(blob_id, HashAlgoId::Sha256, *digest);
+      }
+      store_->upsert_locator(job.uri, blob_id, byte_size, mtime,
+                             pimg->pdf_path.string(),
+                             std::to_string(pimg->image));
+      const auto media_id = store_->ensure_document_media(blob_id, {});
+      (void)store_->ensure_region(media_id, RegionKind::Fragment,
+                                  std::to_string(pimg->image), pimg->image);
+      // Per-embed size on media is best-effort (shared Document media).
+      store_->set_media_size(media_id, layout->width, layout->height);
+      reply_size(*layout);
+      return;
+    }
+
     if (auto dj = parse_djvu_uri(job.uri)) {
       if (!std::filesystem::is_regular_file(dj->djvu_path)) {
         reply_empty();
@@ -3480,6 +3568,15 @@ void Client::handle_ensure_pixels_store(Job& job) {
       levels = build_ladder_rgb(raster->rgb.data(), raster->width, raster->height,
                                 content_id, kDefaultJxlQuality, edge_limit);
     }
+  } else if (auto pimg = parse_pdf_image_uri(job.uri)) {
+    auto sm = meta_from_store(job.uri);
+    if (sm) content_id = sm->content_id;
+    auto raster = pdf_rasterize_embedded_image(pimg->pdf_path, pimg->image,
+                                               edge_limit);
+    if (raster && !raster->rgb.empty() && !content_id.empty()) {
+      levels = build_ladder_rgb(raster->rgb.data(), raster->width, raster->height,
+                                content_id, kDefaultJxlQuality, edge_limit);
+    }
   } else if (auto dj = parse_djvu_uri(job.uri)) {
     auto sm = meta_from_store(job.uri);
     if (sm) content_id = sm->content_id;
@@ -3649,8 +3746,10 @@ void Client::put_tiles_to_store(const std::string& content_id,
   }
 
   std::optional<int> page_1based;
+  std::optional<int> pdfimage_1based;
   if (rest.size() > 64) {
     constexpr std::string_view kPage = ":page:";
+    constexpr std::string_view kPdfImage = ":pdfimage:";
     if (rest.size() > 64 + kPage.size() &&
         rest.substr(64, kPage.size()) == kPage) {
       try {
@@ -3659,8 +3758,17 @@ void Client::put_tiles_to_store(const std::string& content_id,
         return;
       }
       if (*page_1based < 1) return;
+    } else if (rest.size() > 64 + kPdfImage.size() &&
+               rest.substr(64, kPdfImage.size()) == kPdfImage) {
+      try {
+        pdfimage_1based =
+            std::stoi(std::string(rest.substr(64 + kPdfImage.size())));
+      } catch (...) {
+        return;
+      }
+      if (*pdfimage_1based < 1) return;
     } else {
-      return;  // composite ids without page mapping
+      return;  // composite ids without page/pdfimage mapping
     }
   }
 
@@ -3686,6 +3794,11 @@ void Client::put_tiles_to_store(const std::string& content_id,
     if (page_1based) {
       media_id = store_->ensure_document_media(*blob_id, {});
       region_id = store_->ensure_page_region(media_id, *page_1based);
+    } else if (pdfimage_1based) {
+      media_id = store_->ensure_document_media(*blob_id, {});
+      region_id = store_->ensure_region(media_id, RegionKind::Fragment,
+                                         std::to_string(*pdfimage_1based),
+                                         *pdfimage_1based);
     } else {
       media_id = store_->ensure_image_media(*blob_id, {}, {});
       if (auto full = store_->find_full_region(media_id)) {
@@ -3857,6 +3970,19 @@ void Client::handle_ensure_tiles_store(Job& job) {
         reply_one(std::move(live));
         return;
       }
+    } else if (auto pimg = parse_pdf_image_uri(job.uri)) {
+      // Native embedded Image XObject — extract full RGB once, cut cell.
+      auto full = pdf_rasterize_embedded_image(pimg->pdf_path, pimg->image, 0);
+      if (full && !full->rgb.empty()) {
+        if (auto cell = build_tile_cell_rgb(
+                full->rgb.data(), full->width, full->height, job.tile_scale,
+                job.tile_x, job.tile_y, kDefaultTileQuality)) {
+          cell->source = TileSource::Full;
+          store_tiles(content_id, std::vector<TileBlob>{*cell});
+          reply_one(std::move(cell));
+          return;
+        }
+      }
     } else if (auto dj = parse_djvu_uri(job.uri)) {
       auto raster = djvu_render_tile_cell(dj->djvu_path, dj->page, job.tile_scale,
                                           job.tile_x, job.tile_y);
@@ -4025,6 +4151,17 @@ void Client::handle_ensure_tiles_store(Job& job) {
                                      kPdfTileQuality, pdf->backend);
         },
         TileSource::PdfRegion);
+  } else if (auto pimg = parse_pdf_image_uri(job.uri)) {
+    auto full = pdf_rasterize_embedded_image(pimg->pdf_path, pimg->image, 0);
+    if (!full || full->rgb.empty()) {
+      reply_pyramid_done(false);
+      return;
+    }
+    tiles = build_tile_pyramid_rgb(full->rgb.data(), full->width, full->height,
+                                   min_scale, max_scale, kDefaultTileQuality);
+    for (auto& t : tiles) {
+      t.source = TileSource::Full;
+    }
   } else if (auto dj = parse_djvu_uri(job.uri)) {
     append_doc_pyramid(
         [&](int s, int x, int y) {
