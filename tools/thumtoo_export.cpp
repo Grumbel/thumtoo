@@ -44,6 +44,7 @@ void usage(const char* argv0) {
       << "URI examples:\n"
       << "  file:///abs/photo.jpg\n"
       << "  file:///abs/doc.pdf//page:1\n"
+      << "  /abs/doc.pdf//page:1\n"
       << "\n"
       << "Options:\n"
       << "  -h, --help           show this help\n"
@@ -216,14 +217,29 @@ int main(int argc, char** argv) {
   }
   if (out.empty()) {
     out = "export-s" + std::to_string(scale) + ".png";
+  } else {
+    std::error_code ec;
+    if (std::filesystem::is_directory(out, ec) ||
+        (!ec && out.string().back() == '/')) {
+      out /= ("export-s" + std::to_string(scale) + ".png");
+    }
   }
 
-  // Normalize path-like args to file URIs.
-  if (uri.find("://") == std::string::npos) {
+  // Normalize path-like args to file URIs. Preserve //page: (and other)
+  // pipe suffixes — lexically_normal() would collapse // to /.
+  if (!uri.starts_with("file:") && !uri.starts_with("http:") &&
+      !uri.starts_with("https:") && !uri.starts_with("content:")) {
+    std::string path_part = uri;
+    std::string suffix;
+    const auto pipe = uri.find("//");
+    if (pipe != std::string::npos && pipe > 0) {
+      path_part = uri.substr(0, pipe);
+      suffix = uri.substr(pipe);
+    }
     std::error_code ec;
-    auto abs = std::filesystem::absolute(uri, ec);
+    auto abs = std::filesystem::absolute(path_part, ec);
     if (!ec) {
-      uri = thumtoo::file_uri_from_path(abs.lexically_normal());
+      uri = thumtoo::file_uri_from_path(abs.lexically_normal()) + suffix;
     }
   }
 
