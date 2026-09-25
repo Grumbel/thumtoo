@@ -455,7 +455,45 @@ std::optional<PdfRaster> mupdf_render_tile_cell(const std::filesystem::path& pat
   }
 
   const double dpi = pdf_dpi_for_scale(scale);
-  return mupdf_rasterize_page_region(path, page_1based, dpi, left, top, tw, th);
+
+  // Exclusive cells are independently region-rasterized. Glyph AA that
+  // straddles a tile edge needs 1px of neighbour context or the edge row/
+  // column of ink is lost (hairlines / bottoms of letters at 256 boundaries).
+  // Overscan the MuPDF region, then crop back to the exclusive payload so
+  // stored dimensions stay exclusive (kTileOverlap stays 0).
+  constexpr int kPad = 1;
+  const int rl = std::max(0, left - kPad);
+  const int rt = std::max(0, top - kPad);
+  const int rr = std::min(full.width, left + tw + kPad);
+  const int rb = std::min(full.height, top + th + kPad);
+  const int rw = rr - rl;
+  const int rh = rb - rt;
+  auto big = mupdf_rasterize_page_region(path, page_1based, dpi, rl, rt, rw, rh);
+  if (!big || big->width != rw || big->height != rh ||
+      static_cast<int>(big->rgb.size()) < rw * rh * 3) {
+    return big;  // fall through: exact exclusive or failure
+  }
+  const int ox = left - rl;
+  const int oy = top - rt;
+  if (ox == 0 && oy == 0 && rw == tw && rh == th) {
+    return big;
+  }
+  PdfRaster out;
+  out.width = tw;
+  out.height = th;
+  out.rgb.resize(static_cast<std::size_t>(tw) * static_cast<std::size_t>(th) * 3u);
+  for (int row = 0; row < th; ++row) {
+    const std::uint8_t* src =
+        big->rgb.data() +
+        (static_cast<std::size_t>(oy + row) * static_cast<std::size_t>(rw) +
+         static_cast<std::size_t>(ox)) *
+            3u;
+    std::uint8_t* dst =
+        out.rgb.data() +
+        static_cast<std::size_t>(row) * static_cast<std::size_t>(tw) * 3u;
+    std::memcpy(dst, src, static_cast<std::size_t>(tw) * 3u);
+  }
+  return out;
 }
 
 

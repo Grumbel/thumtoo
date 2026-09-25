@@ -291,14 +291,14 @@ int main(int argc, char** argv) {
       std::cerr << "--raw-pdf requires a //page:N PDF URI\n";
       return 1;
     }
-    const double dpi = thumtoo::pdf_dpi_for_scale(scale);
     for (int ty = 0; ty < ny; ++ty) {
       for (int tx = 0; tx < nx; ++tx) {
         int left = 0, top = 0, tw = 0, th = 0;
         thumtoo::tile_cell_pixel_rect(sw, sh, tx, ty, &left, &top, &tw, &th);
         if (tw < 1 || th < 1) continue;
-        auto raster = thumtoo::pdf_rasterize_page_region(
-            parsed->pdf_path, parsed->page, dpi, left, top, tw, th);
+        // Same path as durable/live tiles (1px overscan + exclusive crop).
+        auto raster = thumtoo::pdf_render_tile_cell(parsed->pdf_path,
+                                                   parsed->page, scale, tx, ty);
         if (!raster || raster->rgb.empty()) {
           std::cerr << "raw-pdf rasterize failed at " << tx << "," << ty << "\n";
           return 1;
