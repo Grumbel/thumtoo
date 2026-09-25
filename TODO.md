@@ -2,19 +2,18 @@
 
 ## Status (2026-09-25)
 
-**Tip: thumtoo-340.1-tile-overlap-zero** (base `75b1f60`).
+**Tip: thumtoo-340.2-test-data-root** (base `75b1f60`).
+
+### 340.2 — tests pass data_root = cache
+After user.sqlite moved to `default_data_root()` (XDG_STATE_HOME), tests that
+called `Client::open(cache)` tried to create `~/.local/state/thumtoo` and
+aborted with `create data_root: Permission denied` in restricted environments.
+All unit tests now pass `data_root = cache` (4th arg).
 
 ### 340.1 — kTileOverlap = 0
-QPainter hosts (biltoo) assemble exclusive tiles then smooth-scale once; the
-257 strip did not fix seams and caused scale/paint-order bugs. New encodes are
-exclusive 256×256. Legacy 257 Store tiles remain readable.
-
-### Prior on this base
-- 339.2 cmake feature-summary align
-- 339.1 Client `//pdfimage:N` size/soft/tiles
-- 1px overlap experiment (f0c0055) — superseded by 340.1
+Exclusive 256 tiles; biltoo assemble-then-smooth.
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-340.1-tile-overlap-zero-75b1f60.bundle HEAD
+git pull --ff-only …/thumtoo-340.2-test-data-root-75b1f60.bundle HEAD
 ```

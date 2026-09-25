@@ -100,7 +100,7 @@ int main() {
   const fs::path img = root / "tiny.bmp";
   write_tiny_bmp(img, 64, 48);
 
-  auto client = thumtoo::Client::open(cache);
+  auto client = thumtoo::Client::open(cache, {}, 0, cache);
   expect(client != nullptr, "Client::open STORE_ONLY");
 
   expect(file_nonempty(cache / "index.sqlite"), "Store index on disk");

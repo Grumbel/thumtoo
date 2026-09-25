@@ -36,7 +36,7 @@ int main() {
   fs::create_directories(root);
   const fs::path cache = root / "cache";
 
-  auto client = Client::open(cache);
+  auto client = Client::open(cache, {}, 0, cache);
   expect(static_cast<bool>(client), "client open");
 
   const std::string uri = "file:///nonexistent/does-not-exist.jpg";

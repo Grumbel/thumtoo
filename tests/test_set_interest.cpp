@@ -30,7 +30,7 @@ int main() {
   fs::create_directories(root);
   const auto cache = root / "cache";
 
-  auto client = Client::open(cache, {}, 1);
+  auto client = Client::open(cache, {}, 1, cache);
   expect(!!client, "open");
   if (!client) return 1;
 

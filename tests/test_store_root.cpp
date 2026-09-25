@@ -111,7 +111,7 @@ int main() {
   // --- A: fresh open places Store at cache root; no legacy Client open ---
   {
     const fs::path cache = make_tmpdir("store-root-fresh");
-    auto client = thumtoo::Client::open(cache);
+    auto client = thumtoo::Client::open(cache, {}, 0, cache);
     expect(client != nullptr, "Client::open top-level Store");
     expect(file_nonempty(cache / "index.sqlite"),
            "fresh: Store index at cache root");
@@ -148,7 +148,7 @@ int main() {
     expect(file_nonempty(cache / "blobs.sqlite"), "pre: top legacy blobs");
     expect(file_nonempty(cache / "store" / "index.sqlite"), "pre: store/ index");
 
-    auto client = thumtoo::Client::open(cache);
+    auto client = thumtoo::Client::open(cache, {}, 0, cache);
     expect(client != nullptr, "Client::open migrates dual-path");
 
     const bool legacy_index_ok =
@@ -180,7 +180,7 @@ int main() {
     unsetenv("THUMTOO_STORE_ROOT");
     unsetenv("THUMTOO_STORE_ONLY");
     const fs::path cache = make_tmpdir("store-root-default");
-    auto client = thumtoo::Client::open(cache);
+    auto client = thumtoo::Client::open(cache, {}, 0, cache);
     expect(client != nullptr, "Client::open default");
     expect(file_nonempty(cache / "index.sqlite"),
            "default: Store index at cache root");

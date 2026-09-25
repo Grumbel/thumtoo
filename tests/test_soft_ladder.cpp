@@ -145,7 +145,7 @@ int main() {
   if (!pdf) return 1;
 
   const fs::path cache = tmp / "cache";
-  auto client = thumtoo::Client::open(cache);
+  auto client = thumtoo::Client::open(cache, {}, 0, cache);
   if (!client) {
     std::cerr << "FAIL: Client::open\n";
     return 1;

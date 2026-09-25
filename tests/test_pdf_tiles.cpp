@@ -157,7 +157,7 @@ int main() {
   const std::string uri = thumtoo::pdf_page_uri(*pdf_path, 1);
   const fs::path cache = work / "cache";
 
-  auto client = thumtoo::Client::open(cache);
+  auto client = thumtoo::Client::open(cache, {}, 0, cache);
   expect(static_cast<bool>(client), "Client::open");
   if (!client) return 1;
 

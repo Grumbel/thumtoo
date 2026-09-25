@@ -83,7 +83,7 @@ int main() {
 
   {
     image_library_init();
-    auto client = Client::open(cache);
+    auto client = Client::open(cache, {}, 0, cache);
     expect(!client->get_size(uri).has_value(), "no size before request");
 
     // --- probe ---
