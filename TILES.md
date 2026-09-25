@@ -167,9 +167,13 @@ Let `L` = layout size at 144 dpi. Tile size `T = 256`.
 
 Interactive `request_tile` for `//page:N` builds exclusive cells from a
 **full-page raster** at that scale’s dpi (thread-local page level cache), then
-crops — same model as image tiles. Per-cell MuPDF region clips are only a
-fallback when the page level would exceed `kTileMaxSourcePixels`. This avoids
-vector strokes being culled on the exclusive grid without `kTileOverlap`.
+crops — same model as image tiles. Per-cell region draws are only a fallback
+when the page level would exceed `kTileMaxSourcePixels`.
+
+**Layout pixels:** one `lround(page_pt * dpi/72)` from the continuous page
+bound (`fz_bound_page`). Do not round to integer 72dpi points and scale again
+(that drifts by up to 1 device pixel vs the region ctm).
+
 Each cell is ≤ `T²` pixels. Durable cache keys `(content_id, scale, x, y)`.
 PDF cells finer than `kPdfMinDurableTileScale` (−2, 576 dpi) are generated
 live and **not** stored. Interactive PDF `request_tile` replies with

@@ -437,37 +437,6 @@ bool debug_overlay_enabled() {
          env_flag_on("BILTOO_DEBUG_OVERLAY");
 }
 
-bool debug_tile_overlap_enabled() {
-  return env_flag_on("THUMTOO_DEBUG_TILE_OVERLAP") ||
-         env_flag_on("BILTOO_DEBUG_TILE_OVERLAP");
-}
-
-/// Hot pink on the +kTileOverlap right/bottom strip (when payload is larger
-/// than the exclusive kTileSize interior).
-void paint_tile_overlap_strip(std::uint8_t* rgb, int w, int h) {
-  if (!rgb || w < 1 || h < 1 || kTileOverlap < 1) {
-    return;
-  }
-  // Bright pink — distinct from DEBUG_OVERLAY magenta border.
-  constexpr std::uint8_t R = 255, G = 20, B = 147;
-  if (w > kTileSize) {
-    const int x0 = w - kTileOverlap;
-    for (int y = 0; y < h; ++y) {
-      for (int x = x0; x < w; ++x) {
-        put_px(rgb, w, h, x, y, R, G, B);
-      }
-    }
-  }
-  if (h > kTileSize) {
-    const int y0 = h - kTileOverlap;
-    for (int y = y0; y < h; ++y) {
-      for (int x = 0; x < w; ++x) {
-        put_px(rgb, w, h, x, y, R, G, B);
-      }
-    }
-  }
-}
-
 void debug_overlay_rgb888(std::uint8_t* rgb, int width, int height,
                           const std::vector<std::string>& lines) {
   if (!rgb || width < 8 || height < 8 || lines.empty()) {
@@ -545,9 +514,7 @@ void debug_overlay_pixel_level(PixelLevel& px, std::string_view uri_tail,
 }
 
 void debug_overlay_tile(TileBlob& tile, std::string_view uri_tail) {
-  const bool overlay = debug_overlay_enabled();
-  const bool overlap = debug_tile_overlap_enabled();
-  if ((!overlay && !overlap) || tile.bytes.empty()) {
+  if (!debug_overlay_enabled() || tile.bytes.empty()) {
     return;
   }
   int w = 0;
@@ -560,21 +527,10 @@ void debug_overlay_tile(TileBlob& tile, std::string_view uri_tail) {
       !rgb_from_encoded(tile.bytes, w, h, rgb)) {
     return;
   }
-  if (overlap) {
-    static bool once_ov = false;
-    if (!once_ov) {
-      once_ov = true;
-      std::fprintf(stderr,
-                   "thumtoo: DEBUG_TILE_OVERLAP active "
-                   "(pink right/bottom +%d px strip)\n",
-                   kTileOverlap);
-    }
-    paint_tile_overlap_strip(rgb.data(), w, h);
-  }
   // Grid tile in source space — host orient/flip rotates the stamp with the
   // patch. Label: TILE / s=N / x,y only (no filename or pixel size).
   (void)uri_tail;
-  if (overlay) {
+  {
     std::vector<std::string> lines;
     lines.push_back("TILE");
     lines.push_back("s=" + std::to_string(tile.scale));

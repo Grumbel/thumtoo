@@ -236,8 +236,41 @@ std::optional<Size> mupdf_page_size_72dpi(const std::filesystem::path& path,
   }
   fz_catch(ctx) { ok = 0; }
   if (!ok) return std::nullopt;
+  // Integer page-space points (legacy / reporting). Prefer
+  // mupdf_page_layout_size for the device pixel grid.
   const int w = std::max(1, static_cast<int>(std::lround(box.x1 - box.x0)));
   const int h = std::max(1, static_cast<int>(std::lround(box.y1 - box.y0)));
+  return Size{w, h};
+#endif
+}
+
+std::optional<Size> mupdf_page_layout_size(const std::filesystem::path& path,
+                                           int page_1based) {
+#if !defined(THUMTOO_HAVE_MUPDF)
+  (void)path;
+  (void)page_1based;
+  return std::nullopt;
+#else
+  fz_context* ctx = tls_ctx();
+  fz_page* page = tls_page(path, page_1based);
+  if (!ctx || !page) return std::nullopt;
+  fz_rect box = fz_empty_rect;
+  fz_var(box);
+  int ok = 0;
+  fz_var(ok);
+  fz_try(ctx) {
+    box = fz_bound_page(ctx, page);
+    ok = 1;
+  }
+  fz_catch(ctx) { ok = 0; }
+  if (!ok) return std::nullopt;
+  // One conversion: continuous page points → layout pixels at kPdfLayoutDpi.
+  // lround(lround(pt) * dpi/72) can differ by 1px from lround(pt * dpi/72).
+  const double sx = static_cast<double>(kPdfLayoutDpi) / 72.0;
+  const int w =
+      std::max(1, static_cast<int>(std::lround((box.x1 - box.x0) * sx)));
+  const int h =
+      std::max(1, static_cast<int>(std::lround((box.y1 - box.y0) * sx)));
   return Size{w, h};
 #endif
 }
@@ -377,18 +410,22 @@ std::optional<PdfRaster> mupdf_rasterize_page_region(
   fz_display_list* list = tls_display_list(path, page_1based);
   if (!ctx || !list) return std::nullopt;
 
+  // Unit chain (scan image or vector — same path):
+  //   page space: continuous points (fz_bound_page)
+  //   ctm:        page_pt → device_px via scale = dpi/72
+  //   (px,py,pw,ph): exclusive integer device rect
+  //   pixmap:     fz_irect [px, px+pw) × [py, py+ph) — size pw×ph
+  //   clip:       same rect as continuous fz_rect (device-space scissor)
+  //
+  // Layout size must be a single lround(page_pt * dpi/72) so the integer
+  // grid matches this ctm. Integer 72dpi points then ×2 drifts by up to 1px.
   const float s = static_cast<float>(dpi / 72.0);
   fz_matrix ctm = fz_scale(s, s);
-  // Pixmap origin at (px,py) in *device* space (pixels after ctm). Identity
-  // draw-device transform maps device coords onto this pixmap.
   fz_irect bbox;
   bbox.x0 = px;
   bbox.y0 = py;
   bbox.x1 = px + pw;
   bbox.y1 = py + ph;
-  // fz_run_display_list scissor is in *device* space (same as pixmap), not
-  // page points. Passing page-space (px/s) made bottom tiles miss the
-  // pixmap entirely → solid white cells at scales where s != 1.
   fz_rect clip = fz_rect_from_irect(bbox);
 
   // fz_var: used inside fz_try; GCC -Wclobbered otherwise (even when set
@@ -434,9 +471,8 @@ std::optional<PdfRaster> mupdf_rasterize_page_region(
 
 namespace {
 
-/// One full-page RGB level per worker thread. Cutting exclusive cells from a
-/// whole-page raster (same model as image tiles) means vector strokes are never
-/// culled by a per-cell clip — no kTileOverlap / overscan.
+/// One full-page RGB level per worker thread. Exclusive cells are cropped from
+/// this buffer (image-tile model) so the page is sampled once, continuously.
 struct TlsPageLevel {
   std::string key;
   int width = 0;
@@ -481,15 +517,11 @@ std::optional<PdfRaster> mupdf_render_tile_cell(const std::filesystem::path& pat
                                                  int page_1based, int scale,
                                                  int x, int y) {
   if (x < 0 || y < 0) return std::nullopt;
-  auto s72 = mupdf_page_size_72dpi(path, page_1based);
-  if (!s72 || s72->width <= 0 || s72->height <= 0) return std::nullopt;
+  // Single-round layout (continuous page_pt * kPdfLayoutDpi/72).
+  auto layout = mupdf_page_layout_size(path, page_1based);
+  if (!layout || layout->width <= 0 || layout->height <= 0) return std::nullopt;
 
-  // Layout size: media box scaled to kPdfLayoutDpi.
-  const double layout_scale = static_cast<double>(kPdfLayoutDpi) / 72.0;
-  Size layout{
-      std::max(1, static_cast<int>(std::lround(s72->width * layout_scale))),
-      std::max(1, static_cast<int>(std::lround(s72->height * layout_scale)))};
-  const Size full = pdf_page_size_at_scale(layout, scale);
+  const Size full = pdf_page_size_at_scale(*layout, scale);
   int left = 0, top = 0, tw = 0, th = 0;
   tile_cell_pixel_rect(full.width, full.height, x, y, &left, &top, &tw, &th);
   if (tw <= 0 || th <= 0) return std::nullopt;
@@ -504,11 +536,10 @@ std::optional<PdfRaster> mupdf_render_tile_cell(const std::filesystem::path& pat
       static_cast<std::int64_t>(full.width) *
       static_cast<std::int64_t>(full.height);
 
-  // Prefer full-page raster + exclusive crop (image-tile model). Independent
-  // per-cell region clips cull vector strokes whose centre falls on a grid
-  // line; that is the real missing-line bug, not something host paint can fix.
-  // Fall back to region only when the page level would exceed the tile source
-  // pixel guard (huge page × deep zoom).
+  // Full-page raster + exclusive crop (same as image tiles). Per-cell region
+  // draws of a page-covering scan image can disagree at grid lines with a
+  // continuous full-page sample; crop from one pixmap does not. Fall back to
+  // region only when the page level exceeds kTileMaxSourcePixels.
   if (page_pixels > 0 && page_pixels <= kTileMaxSourcePixels) {
     const std::string key = page_level_key(path, page_1based, scale);
     if (g_page_level.key != key || g_page_level.width != full.width ||

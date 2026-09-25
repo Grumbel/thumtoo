@@ -207,12 +207,14 @@ std::optional<Size> pdf_page_size_72dpi(const std::filesystem::path& path,
 
 std::optional<Size> pdf_page_layout_size(const std::filesystem::path& path,
                                          int page_1based, PdfBackend backend) {
-  auto s72 = pdf_page_size_72dpi(path, page_1based, backend);
-  if (!s72) return std::nullopt;
-  const double scale = static_cast<double>(kPdfLayoutDpi) / 72.0;
-  const int w = std::max(1, static_cast<int>(std::lround(s72->width * scale)));
-  const int h = std::max(1, static_cast<int>(std::lround(s72->height * scale)));
-  return Size{w, h};
+  (void)backend;
+#if defined(THUMTOO_HAVE_MUPDF)
+  return mupdf_page_layout_size(path, page_1based);
+#else
+  (void)path;
+  (void)page_1based;
+  return std::nullopt;
+#endif
 }
 
 Size pdf_page_size_at_scale(Size layout, int scale) {

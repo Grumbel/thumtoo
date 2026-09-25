@@ -19,6 +19,11 @@ namespace thumtoo {
 [[nodiscard]] std::optional<Size> mupdf_page_size_72dpi(const std::filesystem::path& path,
                                                         int page_1based);
 
+/// Layout pixels at kPdfLayoutDpi: one lround from continuous page bounds.
+/// Do not route through integer 72dpi size (double-round drifts by up to 1px).
+[[nodiscard]] std::optional<Size> mupdf_page_layout_size(
+    const std::filesystem::path& path, int page_1based);
+
 [[nodiscard]] PdfPageContentStats mupdf_page_content_stats(
     const std::filesystem::path& path, int page_1based);
 

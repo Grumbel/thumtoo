@@ -109,11 +109,8 @@ inline constexpr int kEpubDefaultLineHeightPercent = 140;
 inline constexpr int kEpubLayoutDpi = 144;
 
 /// Grid tiles (Phase 4 / Galapix-compatible). See TILES.md.
+/// Exclusive ≤256×256 cells; grid step is kTileSize. No edge overlap.
 inline constexpr int kTileSize = 256;
-/// Always 0. Historical +1 edge strip experiments are abandoned (host paint
-/// and PDF edge cases were worse with 257 payloads). Kept so debug overlay
-/// and call sites compile; do not set non-zero without a full design review.
-inline constexpr int kTileOverlap = 0;
 
 /// Exclusive pixel crop for tile (x,y) on a level of size (sw,sh).
 inline void tile_cell_pixel_rect(int sw, int sh, int x, int y,
