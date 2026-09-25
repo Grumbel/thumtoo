@@ -3,32 +3,33 @@ SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
-# Tile edge overlap (retired for QPainter hosts)
+# Tile edge overlap (encode only)
 
-`kTileOverlap` is **0**. New encodes are exclusive **256×256** (edge tiles
-smaller). Grid step remains `kTileSize`.
+`kTileOverlap` is **1**. Each cell **payload** may be up to **257×257** with a
+shared strip on the **right and bottom**. The content **grid step stays 256**.
 
-## Why it was tried
+## Why encode overlap
 
-A 1px right/bottom strip (257×257) was meant to help host bilinear filtering
-at cell edges (“paint expands dest”). That model does not work with QPainter:
-per-tile `SmoothPixmapTransform` clamps at each `drawImage` edge, and mapping
-257→256 dest scales every cell.
+Exclusive 256×256 PDF/vector raster clips (MuPDF region render) drop
+hairlines that sit on the tile grid. Including +1 px past the exclusive edge
+captures those strokes in the neighbour cell as well.
 
-## Host fix (biltoo)
+## Host paint (biltoo)
 
-Assemble exclusive tile pixels into one buffer at 1:1, then smooth-scale once.
-See biltoo `docs/RESEARCH_TILE_OVERLAP.md` §18.
+Do **not** map full 257 → exclusive 256 dest (scales the cell). Paint the
+**exclusive** subrect only (`src` width/height ≤ 256). Per-tile
+`SmoothPixmapTransform` can still show mild seams; that is separate from
+missing line content.
 
-## Legacy Store
+## Cache
 
-Caches may still contain 257-wide tiles until re-prepared. Hosts should paint
-the exclusive subrect (first 256 columns/rows). Debug:
+Re-prepare after changing `kTileOverlap` so Store tiles match. Mixed caches
+are readable: host exclusive-crops when `w > 256`.
+
+## Debug
 
 ```bash
 export THUMTOO_DEBUG_TILE_OVERLAP=1
 ```
 
-Paints a pink strip on the extra right/bottom pixels when payload is larger
-than exclusive (read-path only). No effect when `kTileOverlap == 0` and the
-tile is exclusive-sized.
+Pink strip on the extra right/bottom pixels (read-path only).

@@ -2,18 +2,18 @@
 
 ## Status (2026-09-25)
 
-**Tip: thumtoo-340.2-test-data-root** (base `75b1f60`).
+**Tip: thumtoo-340.3-encode-overlap** (base `75b1f60`).
 
-### 340.2 — tests pass data_root = cache
-After user.sqlite moved to `default_data_root()` (XDG_STATE_HOME), tests that
-called `Client::open(cache)` tried to create `~/.local/state/thumtoo` and
-aborted with `create data_root: Permission denied` in restricted environments.
-All unit tests now pass `data_root = cache` (4th arg).
+### 340.3 — kTileOverlap=1 again (encode only)
+Exclusive PDF region clips were dropping H/V hairlines on the 256 grid.
+Restore +1 right/bottom in the **encoded** payload. Hosts paint exclusive
+subrect only (no 257→256 dest scale).
 
-### 340.1 — kTileOverlap = 0
-Exclusive 256 tiles; biltoo assemble-then-smooth.
+### Also
+- 340.2 tests data_root=cache
+- 340.1 had set overlap to 0 — superseded for encode
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-340.2-test-data-root-75b1f60.bundle HEAD
+git pull --ff-only …/thumtoo-340.3-encode-overlap-75b1f60.bundle HEAD
 ```
