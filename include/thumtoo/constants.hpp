@@ -110,15 +110,12 @@ inline constexpr int kEpubLayoutDpi = 144;
 
 /// Grid tiles (Phase 4 / Galapix-compatible). See TILES.md.
 inline constexpr int kTileSize = 256;
-/// Extra right/bottom pixels in the **encoded** cell payload.
-/// Grid step stays kTileSize (exclusive layout). Overlap exists so PDF/vector
-/// strokes that fall on a cell boundary are rasterized into both neighbours
-/// (exclusive clips drop hairlines). Hosts must paint only the exclusive
-/// subrect (first min(kTileSize, w) × min(kTileSize, h)) — not scale 257→256.
-inline constexpr int kTileOverlap = 1;
+/// Always 0. Historical +1 edge strip experiments are abandoned (host paint
+/// and PDF edge cases were worse with 257 payloads). Kept so debug overlay
+/// and call sites compile; do not set non-zero without a full design review.
+inline constexpr int kTileOverlap = 0;
 
-/// Pixel crop for tile (x,y) on a level of size (sw,sh): exclusive interior
-/// plus kTileOverlap when pixels remain past the interior edge.
+/// Exclusive pixel crop for tile (x,y) on a level of size (sw,sh).
 inline void tile_cell_pixel_rect(int sw, int sh, int x, int y,
                                  int* left, int* top, int* tw, int* th) noexcept {
   if (!left || !top || !tw || !th) {
@@ -131,20 +128,10 @@ inline void tile_cell_pixel_rect(int sw, int sh, int x, int y,
     *th = 0;
     return;
   }
-  const int interior_w = (kTileSize < (sw - *left)) ? kTileSize : (sw - *left);
-  const int interior_h = (kTileSize < (sh - *top)) ? kTileSize : (sh - *top);
   const int max_w = sw - *left;
   const int max_h = sh - *top;
-  int pw = interior_w + kTileOverlap;
-  int ph = interior_h + kTileOverlap;
-  if (pw > max_w) {
-    pw = max_w;
-  }
-  if (ph > max_h) {
-    ph = max_h;
-  }
-  *tw = pw;
-  *th = ph;
+  *tw = (kTileSize < max_w) ? kTileSize : max_w;
+  *th = (kTileSize < max_h) ? kTileSize : max_h;
 }
 
 /// Dimension at pyramid @p scale matching successive integer factor-2 shrink
