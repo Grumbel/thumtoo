@@ -566,8 +566,7 @@ void debug_overlay_tile(TileBlob& tile, std::string_view uri_tail) {
       once_ov = true;
       std::fprintf(stderr,
                    "thumtoo: DEBUG_TILE_OVERLAP active "
-                   "(pink right/bottom +%d px strip)
-",
+                   "(pink right/bottom +%d px strip)\n",
                    kTileOverlap);
     }
     paint_tile_overlap_strip(rgb.data(), w, h);
