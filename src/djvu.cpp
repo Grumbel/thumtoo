@@ -399,11 +399,8 @@ std::optional<DjvuRaster> djvu_render_tile_cell(const std::filesystem::path& pat
   const Size full = djvu_page_size_at_scale(*layout, scale);
   if (full.width <= 0 || full.height <= 0) return std::nullopt;
 
-  const int x0 = x * kTileSize;
-  const int y0 = y * kTileSize;
-  if (x0 >= full.width || y0 >= full.height) return std::nullopt;
-  const int pw = std::min(kTileSize, full.width - x0);
-  const int ph = std::min(kTileSize, full.height - y0);
+  int x0 = 0, y0 = 0, pw = 0, ph = 0;
+  tile_cell_pixel_rect(full.width, full.height, x, y, &x0, &y0, &pw, &ph);
   if (pw <= 0 || ph <= 0) return std::nullopt;
 
   const double factor = std::ldexp(1.0, -scale);

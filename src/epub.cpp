@@ -575,11 +575,8 @@ std::optional<PdfRaster> epub_render_tile_cell(const std::filesystem::path& path
     return std::nullopt;
   }
   const Size full = pdf_page_size_at_scale(*layout_px, scale);
-  const int left = x * kTileSize;
-  const int top = y * kTileSize;
-  if (left >= full.width || top >= full.height) return std::nullopt;
-  const int tw = std::min(kTileSize, full.width - left);
-  const int th = std::min(kTileSize, full.height - top);
+  int left = 0, top = 0, tw = 0, th = 0;
+  tile_cell_pixel_rect(full.width, full.height, x, y, &left, &top, &tw, &th);
   if (tw <= 0 || th <= 0) return std::nullopt;
 
   const double dpi =

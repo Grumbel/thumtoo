@@ -711,8 +711,8 @@ std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
           return std::nullopt;
         }
       }
-      const int tw = std::min(kTileSize, sw - tx * kTileSize);
-      const int th = std::min(kTileSize, sh - ty * kTileSize);
+      int left = 0, top = 0, tw = 0, th = 0;
+      tile_cell_pixel_rect(sw, sh, tx, ty, &left, &top, &tw, &th);
       const int cw = std::min(tw, im->Xsize);
       const int ch = std::min(th, im->Ysize);
       const int bands = im->Bands;

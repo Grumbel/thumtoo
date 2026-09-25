@@ -919,10 +919,8 @@ std::vector<TileBlob> cut_pyramid_from_vips(VipsImage* full, int min_scale,
     cells.reserve(static_cast<std::size_t>(tiles_x * tiles_y));
     for (int ty = 0; ty < tiles_y; ++ty) {
       for (int tx = 0; tx < tiles_x; ++tx) {
-        const int left = tx * kTileSize;
-        const int top = ty * kTileSize;
-        const int tw = std::min(kTileSize, sw - left);
-        const int th = std::min(kTileSize, sh - top);
+        int left = 0, top = 0, tw = 0, th = 0;
+        tile_cell_pixel_rect(sw, sh, tx, ty, &left, &top, &tw, &th);
         if (tw <= 0 || th <= 0) continue;
         cells.push_back(Cell{tx, ty, tw, th});
       }
@@ -1247,11 +1245,8 @@ std::optional<TileBlob> extract_rgb_cell_from_level(VipsImage* level, int scale,
   const int sh = vips_image_get_height(level);
   if (sw <= 0 || sh <= 0) return std::nullopt;
 
-  const int left = x * kTileSize;
-  const int top = y * kTileSize;
-  if (left >= sw || top >= sh) return std::nullopt;
-  const int tw = std::min(kTileSize, sw - left);
-  const int th = std::min(kTileSize, sh - top);
+  int left = 0, top = 0, tw = 0, th = 0;
+  tile_cell_pixel_rect(sw, sh, x, y, &left, &top, &tw, &th);
   if (tw <= 0 || th <= 0) return std::nullopt;
 
   VipsImage* crop = nullptr;
@@ -1339,14 +1334,8 @@ std::optional<TileBlob> cut_cell_from_vips(VipsImage* full, int scale, int x,
 
   const int sw = vips_image_get_width(current);
   const int sh = vips_image_get_height(current);
-  const int left = x * kTileSize;
-  const int top = y * kTileSize;
-  if (left >= sw || top >= sh) {
-    g_object_unref(current);
-    return std::nullopt;
-  }
-  const int tw = std::min(kTileSize, sw - left);
-  const int th = std::min(kTileSize, sh - top);
+  int left = 0, top = 0, tw = 0, th = 0;
+  tile_cell_pixel_rect(sw, sh, x, y, &left, &top, &tw, &th);
   if (tw <= 0 || th <= 0) {
     g_object_unref(current);
     return std::nullopt;

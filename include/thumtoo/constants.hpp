@@ -110,6 +110,42 @@ inline constexpr int kEpubLayoutDpi = 144;
 
 /// Grid tiles (Phase 4 / Galapix-compatible). See TILES.md.
 inline constexpr int kTileSize = 256;
+/// Extra pixels on the **right and bottom** of each cell so adjacent tiles
+/// share a 1px strip. Content grid step stays kTileSize; paint expands dest
+/// from the bitmap size (SmoothPixmapTransform blends the seam). Old 256×256
+/// Store tiles remain valid (no expand). New encodes invalidate seam quality
+/// until re-prepared — optional full tile purge.
+inline constexpr int kTileOverlap = 1;
+
+/// Pixel crop for tile (x,y) on a level of size (sw,sh): origin + payload
+/// including overlap when the level has more pixels past the interior edge.
+inline void tile_cell_pixel_rect(int sw, int sh, int x, int y,
+                                 int* left, int* top, int* tw, int* th) noexcept {
+  if (!left || !top || !tw || !th) {
+    return;
+  }
+  *left = x * kTileSize;
+  *top = y * kTileSize;
+  if (*left >= sw || *top >= sh || x < 0 || y < 0) {
+    *tw = 0;
+    *th = 0;
+    return;
+  }
+  const int interior_w = (kTileSize < (sw - *left)) ? kTileSize : (sw - *left);
+  const int interior_h = (kTileSize < (sh - *top)) ? kTileSize : (sh - *top);
+  const int max_w = sw - *left;
+  const int max_h = sh - *top;
+  int pw = interior_w + kTileOverlap;
+  int ph = interior_h + kTileOverlap;
+  if (pw > max_w) {
+    pw = max_w;
+  }
+  if (ph > max_h) {
+    ph = max_h;
+  }
+  *tw = pw;
+  *th = ph;
+}
 
 /// Dimension at pyramid @p scale matching successive integer factor-2 shrink
 /// (Galapix / vips_shrink 2.0: floor-half each step). Not ceil(n / 2^scale),
