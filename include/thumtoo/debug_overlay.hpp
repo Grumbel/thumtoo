@@ -18,10 +18,17 @@ namespace thumtoo {
  * bitmap — stamps follow automatically. Off by default; applied on read path
  * only (durable Store bytes unchanged).
  *
+ * THUMTOO_DEBUG_TILE_OVERLAP=1: paint the extra right/bottom kTileOverlap strip
+ * bright pink (hot magenta) on returned tiles so hosts can verify 257 cells.
+ * Independent of DEBUG_OVERLAY; also read-path only.
+ *
  * Text uses an embedded 8×12 bitmap font (no fontconfig/Pango) so worker
  * threads stay self-contained and labels stay readable when scaled up.
  */
 [[nodiscard]] bool debug_overlay_enabled();
+
+/** True when THUMTOO_DEBUG_TILE_OVERLAP is set (non-empty, not "0"). */
+[[nodiscard]] bool debug_tile_overlap_enabled();
 
 /** Stamp in-place RGB888 (tight row, 3 bytes/pixel). Draws border + text lines. */
 void debug_overlay_rgb888(std::uint8_t* rgb, int width, int height,

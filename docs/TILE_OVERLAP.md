@@ -15,3 +15,13 @@ samples the shared strip. Legacy 256×256 Store tiles still paint (no expand).
 **Cache:** re-prepare or purge tiles for full seam quality; mixed caches are
 safe (old tiles sharp but seamed, new tiles blended).
 
+
+## Debug
+
+```bash
+export THUMTOO_DEBUG_TILE_OVERLAP=1
+```
+
+Returned tiles get a **bright pink** strip on the extra right/bottom
+`kTileOverlap` pixels (when width/height > 256). Read-path only — Store bytes
+unchanged. Combine with `THUMTOO_DEBUG_OVERLAY=1` for TILE labels plus the strip.
