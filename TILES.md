@@ -159,7 +159,10 @@ Let `L` = layout size at 144 dpi. Tile size `T = 256`.
 | +1 | `L/2` | 72 | 2× coarser |
 | −1 | `2L` | 288 | half the linear span of a scale-0 tile |
 
-`full = pdf_page_size_at_scale(L, s)` → `round(L * 2^{-s})`  
+`full = pdf_page_size_at_scale(L, s)`:
+- `s >= 0`: successive floor-half (`dim_at_tile_scale`) — matches image pyramid
+- `s < 0`: exact `L * 2^{-s}` (integer)
+
 `dpi = kPdfLayoutDpi * 2^{-s}`
 
 Interactive `request_tile` for `//page:N` region-rasterizes one cell (MuPDF
