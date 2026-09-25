@@ -739,8 +739,10 @@ std::optional<PageTextLayer> epub_page_text_layer(const std::filesystem::path& p
   fz_try(ctx) { stext = fz_new_stext_page_from_page(ctx, page, &opts); }
   fz_catch(ctx) { stext = nullptr; }
   if (stext) {
+    int block_index = 0;
     for (fz_stext_block* block = stext->first_block; block; block = block->next) {
       if (block->type != FZ_STEXT_BLOCK_TEXT) continue;
+      const int this_block = block_index++;
       for (fz_stext_line* line = block->u.t.first_line; line; line = line->next) {
         std::string line_text;
         line_text.reserve(64);
@@ -756,6 +758,7 @@ std::optional<PageTextLayer> epub_page_text_layer(const std::filesystem::path& p
         if (line_text.empty()) continue;
         TextRegion reg;
         reg.role = TextRegionRole::Text;
+        reg.block_id = this_block;
         reg.text = std::move(line_text);
         reg.bbox = TextRect{line->bbox.x0, line->bbox.y0, line->bbox.x1, line->bbox.y1};
         if (!reg.bbox.empty()) layer.regions.push_back(std::move(reg));

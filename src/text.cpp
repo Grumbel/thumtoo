@@ -62,7 +62,8 @@ bool read_str(const std::uint8_t*& p, const std::uint8_t* end, std::string& s) {
   return true;
 }
 
-constexpr std::uint32_t kLayerMagic = 0x334C5454;  // "TTL3" — valid UTF-8 text extract
+constexpr std::uint32_t kLayerMagicV3 = 0x334C5454;  // "TTL3" — legacy (no block_id)
+constexpr std::uint32_t kLayerMagic = 0x344C5454;    // "TTL4" — + block_id per region
 constexpr std::uint32_t kOutlineMagic = 0x324F5454; // "TTO2" — spine path → page
 
 }  // namespace
@@ -80,6 +81,7 @@ std::vector<std::uint8_t> serialize_page_text_layer(const PageTextLayer& layer) 
   append_u32(out, static_cast<std::uint32_t>(layer.regions.size()));
   for (const auto& r : layer.regions) {
     out.push_back(static_cast<std::uint8_t>(r.role));
+    append_u32(out, static_cast<std::uint32_t>(r.block_id < 0 ? 0xFFFFFFFFu : static_cast<std::uint32_t>(r.block_id)));
     append_f64(out, r.bbox.x0);
     append_f64(out, r.bbox.y0);
     append_f64(out, r.bbox.x1);
@@ -99,7 +101,9 @@ std::optional<PageTextLayer> deserialize_page_text_layer(
   const std::uint8_t* p = bytes.data();
   const std::uint8_t* end = p + bytes.size();
   std::uint32_t magic = 0;
-  if (!read_u32(p, end, magic) || magic != kLayerMagic) return std::nullopt;
+  if (!read_u32(p, end, magic)) return std::nullopt;
+  const bool has_block_id = (magic == kLayerMagic);
+  if (magic != kLayerMagic && magic != kLayerMagicV3) return std::nullopt;
 
   PageTextLayer layer;
   std::uint32_t page = 0;
@@ -117,6 +121,13 @@ std::optional<PageTextLayer> deserialize_page_text_layer(
     if (p >= end) return std::nullopt;
     TextRegion r;
     r.role = static_cast<TextRegionRole>(*p++);
+    if (has_block_id) {
+      std::uint32_t bid = 0;
+      if (!read_u32(p, end, bid)) return std::nullopt;
+      r.block_id = (bid == 0xFFFFFFFFu) ? -1 : static_cast<int>(bid);
+    } else {
+      r.block_id = -1;
+    }
     if (!read_f64(p, end, r.bbox.x0)) return std::nullopt;
     if (!read_f64(p, end, r.bbox.y0)) return std::nullopt;
     if (!read_f64(p, end, r.bbox.x1)) return std::nullopt;

@@ -50,6 +50,10 @@ struct TextRegion {
   TextRegionRole role = TextRegionRole::Text;
   std::string text;  ///< role=Text: content; role=Link: optional label
   TextLinkTarget target;
+  /// MuPDF structured-text block index (0-based) when known; -1 otherwise.
+  /// Lines from the same block share an id — do not LTR-merge across blocks
+  /// (multi-column pages). Assigned in extraction order.
+  int block_id = -1;
 };
 
 struct PageTextLayer {
