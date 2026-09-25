@@ -217,11 +217,10 @@ std::optional<Size> pdf_page_layout_size(const std::filesystem::path& path,
 
 Size pdf_page_size_at_scale(Size layout, int scale) {
   if (layout.width <= 0 || layout.height <= 0) return Size{0, 0};
-  if (scale == 0) return layout;
-  const double factor = std::ldexp(1.0, -scale);
-  const int w = std::max(1, static_cast<int>(std::lround(layout.width * factor)));
-  const int h = std::max(1, static_cast<int>(std::lround(layout.height * factor)));
-  return Size{w, h};
+  // Same successive floor-half as dim_at_tile_scale / image pyramid. lround(layout
+  // * 2^-s) drifted from the host tile grid on right/bottom edge cells.
+  return Size{dim_at_tile_scale(layout.width, scale),
+              dim_at_tile_scale(layout.height, scale)};
 }
 
 double pdf_dpi_for_scale(int scale) {
