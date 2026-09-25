@@ -236,7 +236,7 @@ int main(int argc, char** argv) {
   // Ensure size is known (probe if needed).
   if (!client->get_size(uri)) {
     bool done = false;
-    client->request_size(uri, [&](auto) { done = true; });
+    client->request_size(uri, [&](std::string, thumtoo::SizeReply) { done = true; });
     client->drain();
     if (!done) {
       std::cerr << "size probe did not complete for " << uri << "\n";
