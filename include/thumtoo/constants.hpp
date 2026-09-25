@@ -110,15 +110,15 @@ inline constexpr int kEpubLayoutDpi = 144;
 
 /// Grid tiles (Phase 4 / Galapix-compatible). See TILES.md.
 inline constexpr int kTileSize = 256;
-/// Extra pixels on the **right and bottom** of each cell so adjacent tiles
-/// share a 1px strip. Content grid step stays kTileSize; paint expands dest
-/// from the bitmap size (SmoothPixmapTransform blends the seam). Old 256×256
-/// Store tiles remain valid (no expand). New encodes invalidate seam quality
-/// until re-prepared — optional full tile purge.
-inline constexpr int kTileOverlap = 1;
+/// Extra right/bottom pixels per cell (0 = exclusive 256×256 grid).
+/// Was 1 for a QPainter "paint expand" seam experiment; host biltoo now
+/// assembles exclusive tiles then smooth-scales once, so overlap is unused.
+/// Kept as a constant so a future GL border-texel path can set it again.
+/// Old Store tiles wider than exclusive remain readable by hosts.
+inline constexpr int kTileOverlap = 0;
 
-/// Pixel crop for tile (x,y) on a level of size (sw,sh): origin + payload
-/// including overlap when the level has more pixels past the interior edge.
+/// Pixel crop for tile (x,y) on a level of size (sw,sh): origin + exclusive
+/// payload (plus kTileOverlap when non-zero and pixels remain past the edge).
 inline void tile_cell_pixel_rect(int sw, int sh, int x, int y,
                                  int* left, int* top, int* tw, int* th) noexcept {
   if (!left || !top || !tw || !th) {
