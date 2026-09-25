@@ -207,6 +207,7 @@
             "thumtoo-prepare"
             "thumtoo-bench"
             "thumtoo-tile"
+            "thumtoo-export"
             "thumtoo-gc"
             "thumtoo-archive"
             "thumtoo-microbench-decode"
