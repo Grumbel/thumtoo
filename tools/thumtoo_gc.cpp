@@ -55,7 +55,7 @@ void usage(const char* argv0) {
 void print_store_summary(const fs::path& cache) {
   thumtoo::Store::Paths sp;
   sp.cache_root = thumtoo::redesign_store_root(cache);
-  sp.data_root = cache;
+  sp.data_root = thumtoo::default_data_root();
   std::error_code ec;
   if (!fs::is_regular_file(sp.cache_root / "index.sqlite", ec)) {
     std::cout << "store:         (no index.sqlite at " << sp.cache_root << ")\n";
@@ -149,7 +149,7 @@ int main(int argc, char** argv) {
 
     thumtoo::Store::Paths sp;
     sp.cache_root = thumtoo::redesign_store_root(cache);
-    sp.data_root = cache;
+    sp.data_root = thumtoo::default_data_root();
     std::error_code ec;
     if (!fs::is_regular_file(sp.cache_root / "index.sqlite", ec)) {
       std::cerr << "thumtoo-gc: no Store index at " << sp.cache_root << "\n";

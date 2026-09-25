@@ -19,7 +19,7 @@ Status: **complete for Client** (Store-only ≥262). Normative schema:
 | On-disk legacy (migrated only) | `$cache/legacy/` | unused by Client |
 
 `Client::open(cache_root, …, data_root)` opens **Store only**. Production should
-pass `$XDG_DATA_HOME/thumtoo` (or equivalent) as `data_root` so user tags
+empty `data_root` uses `$XDG_STATE_HOME/thumtoo` (or pass an explicit path) so user tags
 survive a cache wipe.
 
 Classic dual-path trees are migrated once at open: top-level schema-4 files

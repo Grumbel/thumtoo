@@ -105,8 +105,9 @@ class Client {
   ~Client();
 
   /// \param worker_threads 0 → std::thread::hardware_concurrency() (min 1, max 32).
-  /// \param data_root user.sqlite root (tags/collections). Empty → same as
-  ///        cache_root. Store files live at `cache_root/` (HOST_CUTOVER.md).
+  /// \param data_root user.sqlite root (tags/collections). Empty →
+  ///        `default_data_root()` (`$XDG_STATE_HOME/thumtoo`, not cache).
+  ///        Store index/blobs live at `cache_root/` (HOST_CUTOVER.md).
   static std::unique_ptr<Client> open(const std::filesystem::path& cache_root,
                                       Executor executor = {},
                                       unsigned worker_threads = 0,

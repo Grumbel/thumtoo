@@ -188,7 +188,8 @@ std::unique_ptr<Client> Client::open(const std::filesystem::path& cache_root,
   migrate_dual_path_to_store_root(cache_root);
   Store::Paths sp;
   sp.cache_root = redesign_store_root(cache_root);
-  sp.data_root = data_root.empty() ? cache_root : data_root;
+  sp.data_root = data_root.empty() ? default_data_root() : data_root;
+  migrate_user_sqlite_to_data_root(sp.cache_root, sp.data_root);
   auto store = std::make_unique<Store>(Store::open(sp));
   if (debug_enabled()) {
     dbg("Client::open cache=%s store=%s data=%s",

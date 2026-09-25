@@ -13,7 +13,7 @@ labels when the bytes are unchanged.
 | System | Content key | Store location |
 |--------|-------------|----------------|
 | **dirtoo** `TagStore` | bare SHA-256 hex (64 chars) | `$XDG_DATA_HOME/dirtoo/tags.sqlite` |
-| **thumtoo** | `blob_ref` = `blob:sha256:` + hex | `$XDG_DATA_HOME/thumtoo/user.sqlite` (when `data_root` is set) |
+| **thumtoo** | `blob_ref` = `blob:sha256:` + hex | `$XDG_STATE_HOME/thumtoo/user.sqlite` (default `data_root`) |
 
 Wire form used inside thumtoo:
 

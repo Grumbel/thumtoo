@@ -93,8 +93,8 @@ class Store {
   ///   data_root/user.sqlite
   static Store open(const Paths& paths);
 
-  /// Convenience: cache_root for index+bulk, data_root = cache_root/user side
-  /// under the same path (tests). Production should pass XDG data for user.
+  /// Convenience: index+bulk under cache_root; user.sqlite also under
+  /// cache_root (tests only). Production: Client::open uses default_data_root().
   static Store open(const std::filesystem::path& cache_root);
 
   /// Ephemeral index/bulk/user as three independent SQLite `:memory:` DBs.

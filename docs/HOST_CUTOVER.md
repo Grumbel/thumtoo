@@ -17,7 +17,7 @@ for tile-native behaviour on the Store-only Client (≥262).
 
 | Open args | Layout |
 |-----------|--------|
-| `Client::open(cache_root, executor, workers, data_root)` | Store at `cache_root/` (`index.sqlite` + `bulk.sqlite`); `user.sqlite` under `data_root` (XDG data). No legacy `Database` / `BlobStore`. |
+| `Client::open(cache_root, executor, workers, data_root)` | Store at `cache_root/` (`index.sqlite` + `bulk.sqlite`); `user.sqlite` under `data_root` (default `$XDG_STATE_HOME/thumtoo`). No legacy `Database` / `BlobStore`. |
 
 | Path | Behaviour |
 |------|-----------|

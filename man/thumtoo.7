@@ -73,14 +73,17 @@ Typical contents (schema \(>= 100):
 .I blobs/
 \(em content-addressed payloads
 .PP
-Optional user overlay (tags and related data) when the host sets
-.IR data_root ,
-commonly:
-.IP
-.I $XDG_DATA_HOME/thumtoo/
-.br
-or
-.IR ~/.local/share/thumtoo/ .
+User overlay (tags and related data) defaults to
+.IR data_root
+=
+.I $XDG_STATE_HOME/thumtoo/
+(or
+.IR ~/.local/state/thumtoo/ )
+when
+.B Client::open
+is called with an empty
+.IR data_root .
+Hosts may still pass an explicit path.
 .PP
 The Store is always rooted at the cache directory itself (legacy nested
 .I store/
@@ -150,17 +153,18 @@ CLI tools that take
 .B \-\-cache
 override this for that invocation only.
 .TP
-.B XDG_DATA_HOME
-Suggested parent for a host-supplied
-.I data_root
-(user tags and related overlays). Not opened automatically unless the host
-passes it to
-.BR Client::open .
-.TP
 .B XDG_STATE_HOME
-Used by appearance-related state paths when present; otherwise
+Default parent for
+.I data_root
+.RI ( user.sqlite
+tags/collections) and appearance state when present; otherwise
 .B HOME
-is used.
+.RI ( ~/.local/state ).
+.TP
+.B XDG_DATA_HOME
+Legacy location for
+.IR user.sqlite ;
+on open, a missing state-root file is migrated from here when present.
 .TP
 .B HOME
 Fallback for cache and state paths when XDG variables are unset.
@@ -180,10 +184,11 @@ for API availability.
 .I $XDG_CACHE_HOME/thumtoo/
 Default Store root (index, blobs, optional debug.log).
 .TP
-.I $XDG_DATA_HOME/thumtoo/
-Typical host
+.I $XDG_STATE_HOME/thumtoo/
+Default
 .I data_root
-for user overlays.
+.RI ( user.sqlite )
+and appearance state.
 .SH SEE ALSO
 .BR thumtoo-prepare (1),
 .BR thumtoo-status (1),

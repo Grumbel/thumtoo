@@ -68,7 +68,7 @@ void print_store_summary(const fs::path& cache) {
   }
   thumtoo::Store::Paths sp;
   sp.cache_root = store_root;
-  sp.data_root = cache;
+  sp.data_root = thumtoo::default_data_root();
   auto store = thumtoo::Store::open(sp);
   std::cout << "index_schema:  " << store.index_schema_version() << "\n"
             << "blobs:         " << store.count_blobs() << "\n"
@@ -116,7 +116,7 @@ void print_file_mtime_wall(const fs::path& path) {
 int cmd_path_store(const fs::path& cache, std::string_view query) {
   thumtoo::Store::Paths sp;
   sp.cache_root = thumtoo::redesign_store_root(cache);
-  sp.data_root = cache;
+  sp.data_root = thumtoo::default_data_root();
   std::error_code ec;
   if (!fs::is_regular_file(sp.cache_root / "index.sqlite", ec)) {
     std::cout << "result:        no Store index at " << sp.cache_root << "\n";

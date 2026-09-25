@@ -59,7 +59,7 @@ Related: [DESIGN.md](../DESIGN.md) (current shipping model), [TAGS.md](../TAGS.m
 |------|--------------------------------------|----------|
 | **Index** | `$XDG_CACHE_HOME/thumtoo/index.sqlite` | Small meta: blob, hash, locator, members, media, region, directory snapshots, schema_meta, extracted structure metadata |
 | **Bulk** | `$XDG_CACHE_HOME/thumtoo/bulk.sqlite` | Large BLOBs: tile payloads, HTTP body cache |
-| **User** | `$XDG_DATA_HOME/thumtoo/user.sqlite` | Tags, tag defs, collections, bookmarks, user link edges, user annotations |
+| **User** | `$XDG_STATE_HOME/thumtoo/user.sqlite` | Tags, tag defs, collections, bookmarks, user link edges, user annotations |
 
 Rationale: cache wipe rebuilds index+bulk without destroying tags/bookmarks.
 Bulk growth (tiles) must not bloat the hot index. User data may later be

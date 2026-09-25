@@ -7,6 +7,7 @@
 #include "sqlite3.h"
 
 #include <optional>
+#include <cstdlib>
 #include <string>
 
 namespace thumtoo {
@@ -126,6 +127,83 @@ void migrate_dual_path_to_store_root(const std::filesystem::path& cache_root) {
   if (store_ver && *store_ver >= 100 && !top_ver) {
     rename_sqlite_bundle(store_dir, cache_root, "index.sqlite");
     rename_sqlite_bundle(store_dir, cache_root, "bulk.sqlite");
+  }
+}
+
+
+std::filesystem::path default_data_root() {
+  if (const char* xdg = std::getenv("XDG_STATE_HOME"); xdg && xdg[0]) {
+    return std::filesystem::path(xdg) / "thumtoo";
+  }
+  if (const char* home = std::getenv("HOME"); home && home[0]) {
+    return std::filesystem::path(home) / ".local" / "state" / "thumtoo";
+  }
+  return std::filesystem::path("/tmp/thumtoo-state");
+}
+
+namespace {
+
+std::filesystem::path xdg_data_home_thumtoo() {
+  if (const char* xdg = std::getenv("XDG_DATA_HOME"); xdg && xdg[0]) {
+    return std::filesystem::path(xdg) / "thumtoo";
+  }
+  if (const char* home = std::getenv("HOME"); home && home[0]) {
+    return std::filesystem::path(home) / ".local" / "share" / "thumtoo";
+  }
+  return {};
+}
+
+bool try_relocate_user_sqlite(const std::filesystem::path& from,
+                              const std::filesystem::path& to_dir) {
+  namespace fs = std::filesystem;
+  std::error_code ec;
+  if (!fs::is_regular_file(from, ec)) {
+    return false;
+  }
+  fs::create_directories(to_dir, ec);
+  if (ec) {
+    return false;
+  }
+  const fs::path dest = to_dir / "user.sqlite";
+  if (fs::exists(dest, ec)) {
+    return false;
+  }
+  ec.clear();
+  fs::rename(from, dest, ec);
+  if (!ec) {
+    return true;
+  }
+  ec.clear();
+  fs::copy_file(from, dest, fs::copy_options::none, ec);
+  if (!ec) {
+    fs::remove(from, ec);
+    return true;
+  }
+  return false;
+}
+
+}  // namespace
+
+void migrate_user_sqlite_to_data_root(const std::filesystem::path& cache_root,
+                                      const std::filesystem::path& data_root) {
+  namespace fs = std::filesystem;
+  if (data_root.empty()) {
+    return;
+  }
+  std::error_code ec;
+  const fs::path dest = data_root / "user.sqlite";
+  if (fs::is_regular_file(dest, ec)) {
+    return;
+  }
+  // Prefer cache_root (old default when data_root == cache).
+  if (!cache_root.empty()
+      && try_relocate_user_sqlite(cache_root / "user.sqlite", data_root)) {
+    return;
+  }
+  // Pre-STATE default was XDG_DATA_HOME/thumtoo.
+  const fs::path legacy = xdg_data_home_thumtoo();
+  if (!legacy.empty() && legacy != data_root) {
+    (void)try_relocate_user_sqlite(legacy / "user.sqlite", data_root);
   }
 }
 

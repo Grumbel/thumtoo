@@ -59,8 +59,10 @@ including `<thumtoo/version.hpp>`.
 
 ## Using the cache
 
-By default durable data is under `$XDG_CACHE_HOME/thumtoo/` (or
-`~/.cache/thumtoo/`). User overlays such as tags use `$XDG_DATA_HOME/thumtoo/`
+By default the **Store** (index, tiles, previews) is under `$XDG_CACHE_HOME/thumtoo/`
+(or `~/.cache/thumtoo/`). **User overlays** (`user.sqlite` tags/collections) live
+under `$XDG_STATE_HOME/thumtoo/` (or `~/.local/state/thumtoo/`) so a cache wipe
+does not drop them.
 when the host sets a data root.
 
 Useful tools after install:

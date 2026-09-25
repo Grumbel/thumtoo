@@ -25,7 +25,7 @@ content identity so reopening the same bytes restores orientation.
 
 - Source files and directories are **never** modified.
 - Durable ladder / tags stay under `XDG_CACHE_HOME` (cache).
-- Appearance state lives under **`XDG_STATE_HOME/thumtoo`** (user state).
+- Appearance state and **`user.sqlite`** (tags/collections) live under **`XDG_STATE_HOME/thumtoo`** (user state, not cache).
 - `SessionImageId` must **not** key this store (session-local; not durable).
 - Same content opened twice in one session still gets **two** session ids;
   both may *seed* from this store, then diverge independently.
