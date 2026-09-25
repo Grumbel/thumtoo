@@ -165,14 +165,17 @@ Let `L` = layout size at 144 dpi. Tile size `T = 256`.
 
 `dpi = kPdfLayoutDpi * 2^{-s}`
 
-Interactive `request_tile` for `//page:N` region-rasterizes one cell (MuPDF
-crop) or full-page + software crop fallback. Each cell is ≤ `T²` pixels.
-**Edge AA:** exclusive cells overscan the MuPDF region by 1px (clamped to the
-level) then crop back to the exclusive payload — glyph strokes that straddle
-a 256 boundary keep their antialiased fringe without `kTileOverlap` payloads.
-Durable cache keys `(content_id, scale, x, y)`. PDF cells finer than
-`kPdfMinDurableTileScale` (−2, 576 dpi) are generated live and **not** stored.
-Interactive PDF `request_tile` replies with **`codec=rgb888` raw pixels** (no JPEG). Durable store (scale ≥ `kPdfMinDurableTileScale`) still writes JPEG at `kPdfTileQuality` for the next cache hit.
+Interactive `request_tile` for `//page:N` builds exclusive cells from a
+**full-page raster** at that scale’s dpi (thread-local page level cache), then
+crops — same model as image tiles. Per-cell MuPDF region clips are only a
+fallback when the page level would exceed `kTileMaxSourcePixels`. This avoids
+vector strokes being culled on the exclusive grid without `kTileOverlap`.
+Each cell is ≤ `T²` pixels. Durable cache keys `(content_id, scale, x, y)`.
+PDF cells finer than `kPdfMinDurableTileScale` (−2, 576 dpi) are generated
+live and **not** stored. Interactive PDF `request_tile` replies with
+**`codec=rgb888` raw pixels** (no JPEG). Durable store (scale ≥
+`kPdfMinDurableTileScale`) still writes JPEG at `kPdfTileQuality` for the
+next cache hit.
 
 Raster images never use negative scale.
 

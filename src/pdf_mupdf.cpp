@@ -432,6 +432,51 @@ std::optional<PdfRaster> mupdf_rasterize_page_region(
 #endif
 }
 
+namespace {
+
+/// One full-page RGB level per worker thread. Cutting exclusive cells from a
+/// whole-page raster (same model as image tiles) means vector strokes are never
+/// culled by a per-cell clip — no kTileOverlap / overscan.
+struct TlsPageLevel {
+  std::string key;
+  int width = 0;
+  int height = 0;
+  std::vector<std::uint8_t> rgb;
+};
+thread_local TlsPageLevel g_page_level;
+
+[[nodiscard]] std::string page_level_key(const std::filesystem::path& path,
+                                         int page_1based, int scale) {
+  return path.lexically_normal().string() + "#" + std::to_string(page_1based) +
+         "#s" + std::to_string(scale);
+}
+
+/// Crop exclusive cell from a full-page RGB888 buffer.
+[[nodiscard]] std::optional<PdfRaster> crop_cell_rgb(
+    const std::uint8_t* rgb, int sw, int sh, int left, int top, int tw,
+    int th) {
+  if (!rgb || sw < 1 || sh < 1 || tw < 1 || th < 1) return std::nullopt;
+  if (left < 0 || top < 0 || left + tw > sw || top + th > sh) return std::nullopt;
+  PdfRaster out;
+  out.width = tw;
+  out.height = th;
+  out.rgb.resize(static_cast<std::size_t>(tw) * static_cast<std::size_t>(th) * 3u);
+  for (int row = 0; row < th; ++row) {
+    const std::uint8_t* src =
+        rgb +
+        (static_cast<std::size_t>(top + row) * static_cast<std::size_t>(sw) +
+         static_cast<std::size_t>(left)) *
+            3u;
+    std::uint8_t* dst =
+        out.rgb.data() +
+        static_cast<std::size_t>(row) * static_cast<std::size_t>(tw) * 3u;
+    std::memcpy(dst, src, static_cast<std::size_t>(tw) * 3u);
+  }
+  return out;
+}
+
+}  // namespace
+
 std::optional<PdfRaster> mupdf_render_tile_cell(const std::filesystem::path& path,
                                                  int page_1based, int scale,
                                                  int x, int y) {
@@ -455,45 +500,38 @@ std::optional<PdfRaster> mupdf_render_tile_cell(const std::filesystem::path& pat
   }
 
   const double dpi = pdf_dpi_for_scale(scale);
+  const std::int64_t page_pixels =
+      static_cast<std::int64_t>(full.width) *
+      static_cast<std::int64_t>(full.height);
 
-  // Exclusive cells are independently region-rasterized. Glyph AA that
-  // straddles a tile edge needs 1px of neighbour context or the edge row/
-  // column of ink is lost (hairlines / bottoms of letters at 256 boundaries).
-  // Overscan the MuPDF region, then crop back to the exclusive payload so
-  // stored dimensions stay exclusive (kTileOverlap stays 0).
-  constexpr int kPad = 1;
-  const int rl = std::max(0, left - kPad);
-  const int rt = std::max(0, top - kPad);
-  const int rr = std::min(full.width, left + tw + kPad);
-  const int rb = std::min(full.height, top + th + kPad);
-  const int rw = rr - rl;
-  const int rh = rb - rt;
-  auto big = mupdf_rasterize_page_region(path, page_1based, dpi, rl, rt, rw, rh);
-  if (!big || big->width != rw || big->height != rh ||
-      static_cast<int>(big->rgb.size()) < rw * rh * 3) {
-    return big;  // fall through: exact exclusive or failure
+  // Prefer full-page raster + exclusive crop (image-tile model). Independent
+  // per-cell region clips cull vector strokes whose centre falls on a grid
+  // line; that is the real missing-line bug, not something host paint can fix.
+  // Fall back to region only when the page level would exceed the tile source
+  // pixel guard (huge page × deep zoom).
+  if (page_pixels > 0 && page_pixels <= kTileMaxSourcePixels) {
+    const std::string key = page_level_key(path, page_1based, scale);
+    if (g_page_level.key != key || g_page_level.width != full.width ||
+        g_page_level.height != full.height ||
+        static_cast<int>(g_page_level.rgb.size()) !=
+            full.width * full.height * 3) {
+      auto page = mupdf_rasterize_page_region(path, page_1based, dpi, 0, 0,
+                                              full.width, full.height);
+      if (!page || page->width != full.width || page->height != full.height ||
+          static_cast<int>(page->rgb.size()) < full.width * full.height * 3) {
+        return mupdf_rasterize_page_region(path, page_1based, dpi, left, top, tw,
+                                           th);
+      }
+      g_page_level.key = key;
+      g_page_level.width = full.width;
+      g_page_level.height = full.height;
+      g_page_level.rgb = std::move(page->rgb);
+    }
+    return crop_cell_rgb(g_page_level.rgb.data(), g_page_level.width,
+                         g_page_level.height, left, top, tw, th);
   }
-  const int ox = left - rl;
-  const int oy = top - rt;
-  if (ox == 0 && oy == 0 && rw == tw && rh == th) {
-    return big;
-  }
-  PdfRaster out;
-  out.width = tw;
-  out.height = th;
-  out.rgb.resize(static_cast<std::size_t>(tw) * static_cast<std::size_t>(th) * 3u);
-  for (int row = 0; row < th; ++row) {
-    const std::uint8_t* src =
-        big->rgb.data() +
-        (static_cast<std::size_t>(oy + row) * static_cast<std::size_t>(rw) +
-         static_cast<std::size_t>(ox)) *
-            3u;
-    std::uint8_t* dst =
-        out.rgb.data() +
-        static_cast<std::size_t>(row) * static_cast<std::size_t>(tw) * 3u;
-    std::memcpy(dst, src, static_cast<std::size_t>(tw) * 3u);
-  }
-  return out;
+
+  return mupdf_rasterize_page_region(path, page_1based, dpi, left, top, tw, th);
 }
 
 

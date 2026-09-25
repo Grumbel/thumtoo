@@ -2,22 +2,22 @@
 
 ## Status (2026-09-25)
 
-**Tip: thumtoo-341.3-pdf-tile-edge-overscan** (base `75b1f60`).
+**Tip: thumtoo-341.4-pdf-fullpage-then-cut** (base `75b1f60`).
 
-### 341.3 — PDF tile exclusive cell 1px overscan
-Missing ink on tile boundaries in thumtoo-export (and host) for PDF pages:
-each exclusive cell was region-rasterized in isolation, so glyph AA that
-straddles the edge was clipped.
+### 341.4 — PDF tiles: full-page raster, exclusive crop
+Root cause of missing lines on PDF pages: independent per-cell MuPDF region
+clips cull vector strokes whose centre sits on a 256 grid line. Pad/overlap
+hacks paper over that; they are not used.
 
-`mupdf_render_tile_cell` now expands the MuPDF region by 1px (clamped to the
-level), rasterizes, then crops back to the exclusive payload. `kTileOverlap`
-stays 0. `--raw-pdf` export uses the same path.
+`mupdf_render_tile_cell` now rasterizes the **whole page level** once (TLS
+cache per path/page/scale), then crops exclusive cells — same model as image
+tiles. Region fallback only when `width*height > kTileMaxSourcePixels`.
+`kTileOverlap` stays 0.
 
-**Note:** existing durable JPEG tiles were encoded without overscan — purge
-or re-prepare affected PDF tile rows to pick up the fix.
+Re-export / invalidate old durable JPEG tiles encoded with region clips.
 
 ### 341.2 — thumtoo-export bare path + //page:
-Preserve `//page:` when normalizing path-like URIs (no `lexically_normal` collapse).
+Preserve pipe suffix when normalizing path-like URIs.
 
 ### 341.1 — pdf_page_size_at_scale negative scales
 - `s >= 0`: successive floor-half
@@ -25,5 +25,5 @@ Preserve `//page:` when normalizing path-like URIs (no `lexically_normal` collap
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-341.3-pdf-tile-edge-overscan-75b1f60.bundle HEAD
+git pull --ff-only …/thumtoo-341.4-pdf-fullpage-then-cut-75b1f60.bundle HEAD
 ```
