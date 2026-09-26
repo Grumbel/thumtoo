@@ -89,6 +89,65 @@ struct RgbPage {
 
 #if defined(THUMTOO_HAVE_TESSERACT)
 
+
+/// Label page numbers / running headers/footers from geometry + text shape.
+void annotate_region_kinds(PageTextLayer& layer) {
+  const double ph = layer.page_bounds.height();
+  const double pw = layer.page_bounds.width();
+  if (ph < 1.0 || pw < 1.0 || layer.regions.empty()) return;
+  const double top_band = layer.page_bounds.y0 + ph * 0.08;
+  const double bot_band = layer.page_bounds.y1 - ph * 0.08;
+  const double cx = layer.page_bounds.x0 + pw * 0.5;
+
+  auto is_page_number_text = [](const std::string& s) {
+    std::string t;
+    t.reserve(s.size());
+    for (char c : s) {
+      if (c != ' ' && c != '\t') t.push_back(c);
+    }
+    if (t.empty() || t.size() > 12) return false;
+    int digits = 0;
+    int roman = 0;
+    for (unsigned char c : t) {
+      if (c >= '0' && c <= '9') ++digits;
+      else if (c == 'i' || c == 'I' || c == 'v' || c == 'V' || c == 'x' || c == 'X'
+               || c == 'l' || c == 'L' || c == 'c' || c == 'C') {
+        ++roman;
+      } else if (c == '-' || c == '.' || c == '/') {
+        continue;
+      } else {
+        return false;
+      }
+    }
+    return digits > 0 || roman > 0;
+  };
+
+  for (auto& r : layer.regions) {
+    if (r.role != TextRegionRole::Text) continue;
+    r.kind = TextRegionKind::Body;
+    const double mid_y = 0.5 * (r.bbox.y0 + r.bbox.y1);
+    const double mid_x = 0.5 * (r.bbox.x0 + r.bbox.x1);
+    const bool in_top = mid_y <= top_band;
+    const bool in_bot = mid_y >= bot_band;
+    if (!in_top && !in_bot) continue;
+    if (is_page_number_text(r.text)) {
+      // Prefer outer/centered short tokens as page numbers.
+      const double edge = std::min(std::fabs(mid_x - layer.page_bounds.x0),
+                                   std::fabs(layer.page_bounds.x1 - mid_x));
+      const bool outer = edge < pw * 0.2;
+      const bool centered = std::fabs(mid_x - cx) < pw * 0.15;
+      if (outer || centered) {
+        r.kind = TextRegionKind::PageNumber;
+        continue;
+      }
+    }
+    // Non-numeric band text → header/footer candidate.
+    if (in_top) r.kind = TextRegionKind::Header;
+    else if (in_bot) r.kind = TextRegionKind::Footer;
+  }
+}
+
+
 [[nodiscard]] std::string tesseract_version_string() {
   const char* v = tesseract::TessBaseAPI::Version();
   return v ? std::string(v) : std::string{};
@@ -176,6 +235,7 @@ std::mutex g_tess_mu;
     } while (ri->Next(tesseract::RIL_TEXTLINE));
   }
 
+  annotate_region_kinds(layer);
   api.End();
   return layer;
 }

@@ -31,6 +31,14 @@ enum class TextRegionRole : std::uint8_t {
   Link = 1,
 };
 
+/// Semantic label (OCR post-pass / future LLM). Independent of Role.
+enum class TextRegionKind : std::uint8_t {
+  Body = 0,
+  PageNumber = 1,
+  Header = 2,
+  Footer = 3,
+};
+
 enum class TextLinkTargetKind : std::uint8_t {
   None = 0,
   InternalPage = 1,  ///< 1-based page index
@@ -53,6 +61,7 @@ struct TextRegion {
   TextLinkTarget target;
   /// MuPDF structured-text block index (0-based) when known; -1 otherwise.
   int block_id = -1;
+  TextRegionKind kind = TextRegionKind::Body;
 };
 
 /// Provenance of a page text layer (native extract vs OCR backend).

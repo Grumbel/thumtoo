@@ -64,7 +64,8 @@ bool read_str(const std::uint8_t*& p, const std::uint8_t* end, std::string& s) {
 
 constexpr std::uint32_t kLayerMagicV3 = 0x334C5454;  // "TTL3" — legacy (no block_id)
 constexpr std::uint32_t kLayerMagicV4 = 0x344C5454;  // "TTL4" — + block_id
-constexpr std::uint32_t kLayerMagic = 0x354C5454;    // "TTL5" — + source + OcrMeta
+constexpr std::uint32_t kLayerMagicV5 = 0x354C5454;  // "TTL5" — + source + OcrMeta
+constexpr std::uint32_t kLayerMagic = 0x364C5454;    // "TTL6" — + TextRegionKind
 constexpr std::uint32_t kOutlineMagic = 0x324F5454; // "TTO2" — spine path → page
 
 }  // namespace
@@ -105,8 +106,9 @@ std::vector<std::uint8_t> serialize_page_text_layer(const PageTextLayer& layer) 
     append_f64(out, r.target.x);
     append_f64(out, r.target.y);
     append_str(out, r.target.uri);
+    out.push_back(static_cast<std::uint8_t>(r.kind));
   }
-  // TTL5 trailer: source + optional OcrMeta
+  // Trailer: source + optional OcrMeta (TTL5+)
   out.push_back(static_cast<std::uint8_t>(layer.source));
   if (layer.source == TextLayerSource::Ocr && layer.ocr) {
     const OcrMeta& m = *layer.ocr;
@@ -132,9 +134,13 @@ std::optional<PageTextLayer> deserialize_page_text_layer(
   const std::uint8_t* end = p + bytes.size();
   std::uint32_t magic = 0;
   if (!read_u32(p, end, magic)) return std::nullopt;
-  const bool is_v5 = (magic == kLayerMagic);
-  const bool has_block_id = is_v5 || (magic == kLayerMagicV4);
-  if (magic != kLayerMagic && magic != kLayerMagicV4 && magic != kLayerMagicV3) {
+  const bool is_v6 = (magic == kLayerMagic);
+  const bool is_v5 = (magic == kLayerMagicV5);
+  const bool has_kind = is_v6;
+  const bool has_block_id = is_v6 || is_v5 || (magic == kLayerMagicV4);
+  const bool has_source_trailer = is_v6 || is_v5;
+  if (magic != kLayerMagic && magic != kLayerMagicV5 && magic != kLayerMagicV4
+      && magic != kLayerMagicV3) {
     return std::nullopt;
   }
 
@@ -174,10 +180,14 @@ std::optional<PageTextLayer> deserialize_page_text_layer(
     if (!read_f64(p, end, r.target.x)) return std::nullopt;
     if (!read_f64(p, end, r.target.y)) return std::nullopt;
     if (!read_str(p, end, r.target.uri)) return std::nullopt;
+    if (has_kind) {
+      if (p >= end) return std::nullopt;
+      r.kind = static_cast<TextRegionKind>(*p++);
+    }
     layer.regions.push_back(std::move(r));
   }
   layer.source = TextLayerSource::Native;
-  if (is_v5 && p < end) {
+  if (has_source_trailer && p < end) {
     layer.source = static_cast<TextLayerSource>(*p++);
     if (layer.source == TextLayerSource::Ocr) {
       OcrMeta m;

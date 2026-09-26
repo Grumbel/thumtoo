@@ -2,23 +2,16 @@
 
 ## Status (2026-09-26)
 
-**Tip: thumtoo-342.1-ocr-tesseract-text-layer** (base `241d2d3`).
+**Tip: thumtoo-342.2-ocr-region-kinds** (base `241d2d3`).
 
-### 342.1 — OCR text layers (Tesseract)
-- `PageTextLayer`: `source` (Native|Ocr) + optional `OcrMeta` (engine/model/lang/dpi/params)
-- Serialization TTL5 (TTL3/4 still read as Native)
-- Dual Store slot: `ocr_store_layout_key(base, engine, model)`
-- Optional Tesseract (`THUMTOO_HAVE_TESSERACT` / flake `tesseract`)
-- `ocr_page_text_layer`, `Client::get_ocr_page_text_layer`, `ensure_ocr_page_text_layer`
-- User-triggered only; no native-quality heuristic
-- Defaults: eng, max_edge 3000, PSM_AUTO, line regions
+### 342.2 — Region kinds (page number / header / footer)
+- `TextRegionKind`: Body | PageNumber | Header | Footer
+- TTL6 serialization (+kind); TTL3–5 still load
+- OCR post-pass `annotate_region_kinds` (geometry + numeric text heuristics)
 
-### Next
-- Batch OCR document API + biltoo progress
-- Semantic tags (page number / header) for crop assist
-- LLM engine slot (same OcrMeta shape)
+### 342.1 — Tesseract OCR dual-slot layers
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-342.1-ocr-tesseract-text-layer-241d2d3.bundle HEAD
+git pull --ff-only …/thumtoo-342.2-ocr-region-kinds-241d2d3.bundle HEAD
 ```
