@@ -171,6 +171,8 @@ CREATE TABLE IF NOT EXISTS region (
   kind       INTEGER NOT NULL,
   key        TEXT NOT NULL,
   ordinal    INTEGER,
+  width      INTEGER,
+  height     INTEGER,
   UNIQUE (media_id, kind, key)
 );
 CREATE INDEX IF NOT EXISTS idx_region_media ON region(media_id);
@@ -616,6 +618,10 @@ void Store::ensure_optional_index_tables() {
       "  data BLOB NOT NULL,"
       "  PRIMARY KEY (blob_id, layout_key)"
       ");");
+
+  // Per-page document layout size (not shared media dims).
+  ensure_table_column(index_, "region", "width", "INTEGER");
+  ensure_table_column(index_, "region", "height", "INTEGER");
 }
 
 void Store::migrate_or_init_index() {
@@ -1872,6 +1878,28 @@ void Store::set_media_size(std::int64_t media_id, int width, int height) {
   sqlite3_finalize(stmt);
 }
 
+void Store::set_region_size(std::int64_t region_id, int width, int height) {
+  if (width < 1 || height < 1) {
+    throw std::invalid_argument("set_region_size: width and height must be >= 1");
+  }
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(index_,
+                         "UPDATE region SET width = ?1, height = ?2 "
+                         "WHERE id = ?3;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare set_region_size");
+  }
+  sqlite3_bind_int(stmt, 1, width);
+  sqlite3_bind_int(stmt, 2, height);
+  sqlite3_bind_int64(stmt, 3, region_id);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(index_, "step set_region_size");
+  }
+  sqlite3_finalize(stmt);
+}
+
+
 void Store::set_media_page_count(std::int64_t media_id, int page_count) {
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(index_,
@@ -1955,7 +1983,7 @@ std::optional<Store::RegionRow> Store::find_region(
     std::int64_t region_id) const {
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(index_,
-                         "SELECT id, media_id, kind, key, ordinal FROM region "
+                         "SELECT id, media_id, kind, key, ordinal, width, height FROM region "
                          "WHERE id = ?1;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     throw_sqlite(index_, "prepare find_region");

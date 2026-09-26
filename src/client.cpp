@@ -213,44 +213,6 @@ std::unique_ptr<Client> Client::open_memory(Executor executor,
 }
 
 
-/// Native size for a page region from durable tiles (scale 0 preferred).
-/// Document media width/height is shared across pages — must not be used for
-/// mixed portrait/landscape books.
-[[nodiscard]] std::optional<Size> size_from_page_tiles(const Store& store,
-                                                       std::int64_t media_id,
-                                                       std::int64_t region_id) {
-  auto scales = store.list_tile_scales(media_id, region_id);
-  if (scales.empty()) return std::nullopt;
-  // Prefer scale 0 (file-native grid). Else coarsest present.
-  int s = scales.front();
-  for (int sc : scales) {
-    if (sc == 0) {
-      s = 0;
-      break;
-    }
-    if (sc > s) s = sc;
-  }
-  auto tiles = store.list_tiles_for_region(media_id, region_id);
-  int right = 0;
-  int bottom = 0;
-  bool any = false;
-  for (const auto& t : tiles) {
-    if (t.scale != s) continue;
-    any = true;
-    const int r = t.x * kTileSize + t.width;
-    const int b = t.y * kTileSize + t.height;
-    if (r > right) right = r;
-    if (b > bottom) bottom = b;
-  }
-  if (!any || right < 1 || bottom < 1) return std::nullopt;
-  if (s > 0) {
-    // Reverse dim_at_tile_scale truncation: lower bound only.
-    right <<= s;
-    bottom <<= s;
-  }
-  return Size{right, bottom};
-}
-
 std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
   if (!store_) return std::nullopt;
   auto loc = store_->find_locator(uri);
@@ -275,12 +237,11 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
     if (!store_->list_tile_scales(media->id, region->id).empty()) {
       cm.status = ContentStatus::Ready;
     }
-    // Per-page size only. Document media width/height is shared across all
-    // pages of the PDF — last probe wins and breaks mixed portrait/landscape
-    // books (wrong tile grid → out-of-bounds requests / ERROR holes).
-    if (auto from_tiles =
-            size_from_page_tiles(*store_, media->id, region->id)) {
-      cm.size = *from_tiles;
+    // One size only: page document layout (region.width/height at probe).
+    // Never shared media dims; never invent size from tiles.
+    if (region->width && region->height && *region->width > 0
+        && *region->height > 0) {
+      cm.size = Size{*region->width, *region->height};
     } else if (auto layout =
                    pdf_page_layout_size(pdf->pdf_path, pdf->page, pdf->backend)) {
       cm.size = *layout;
@@ -325,9 +286,9 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
     if (!store_->list_tile_scales(media->id, region->id).empty()) {
       cm.status = ContentStatus::Ready;
     }
-    if (auto from_tiles =
-            size_from_page_tiles(*store_, media->id, region->id)) {
-      cm.size = *from_tiles;
+    if (region->width && region->height && *region->width > 0
+        && *region->height > 0) {
+      cm.size = Size{*region->width, *region->height};
     } else if (auto layout = djvu_page_layout_size(dj->djvu_path, dj->page)) {
       cm.size = *layout;
     }
@@ -348,9 +309,9 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
     if (!store_->list_tile_scales(media->id, region->id).empty()) {
       cm.status = ContentStatus::Ready;
     }
-    if (auto from_tiles =
-            size_from_page_tiles(*store_, media->id, region->id)) {
-      cm.size = *from_tiles;
+    if (region->width && region->height && *region->width > 0
+        && *region->height > 0) {
+      cm.size = Size{*region->width, *region->height};
     } else if (auto layout =
                    epub_page_layout_size(ep->epub_path, ep->page, ep->layout)) {
       cm.size = *layout;
@@ -3317,10 +3278,14 @@ void Client::handle_probe_size_store(
       store_->upsert_locator(job.uri, blob_id, byte_size, mtime,
                              pdf->pdf_path.string(), std::to_string(pdf->page));
       const auto media_id = store_->ensure_document_media(blob_id, {});
-      (void)store_->ensure_page_region(media_id, pdf->page);
+      const auto region_id = store_->ensure_page_region(media_id, pdf->page);
       // Stash page pixel size on document media for meta_from_store (last page
       // wins for multi-page; page-specific size still comes from layout below).
       store_->set_media_size(media_id, layout->width, layout->height);
+      try {
+        store_->set_region_size(region_id, layout->width, layout->height);
+      } catch (...) {
+      }
       std::optional<EmbeddedPreview> emb;
       if (auto rgb = pdf_page_thumb_rgb(pdf->pdf_path, pdf->page, pdf->backend)) {
         if (auto jpeg = jpeg_from_rgb(rgb->rgb.data(), rgb->width, rgb->height)) {
@@ -3424,8 +3389,12 @@ void Client::handle_probe_size_store(
       store_->upsert_locator(job.uri, blob_id, byte_size, mtime,
                              dj->djvu_path.string(), std::to_string(dj->page));
       const auto media_id = store_->ensure_document_media(blob_id, {});
-      (void)store_->ensure_page_region(media_id, dj->page);
+      const auto region_id = store_->ensure_page_region(media_id, dj->page);
       store_->set_media_size(media_id, layout->width, layout->height);
+      try {
+        store_->set_region_size(region_id, layout->width, layout->height);
+      } catch (...) {
+      }
       reply_size(*layout);
       return;
     }
@@ -3466,8 +3435,12 @@ void Client::handle_probe_size_store(
       store_->upsert_locator(job.uri, blob_id, byte_size, mtime,
                              ep->epub_path.string(), std::to_string(ep->page));
       const auto media_id = store_->ensure_document_media(blob_id, {});
-      (void)store_->ensure_page_region(media_id, ep->page);
+      const auto region_id = store_->ensure_page_region(media_id, ep->page);
       store_->set_media_size(media_id, layout->width, layout->height);
+      try {
+        store_->set_region_size(region_id, layout->width, layout->height);
+      } catch (...) {
+      }
       reply_size(*layout);
       return;
     }

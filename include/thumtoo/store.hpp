@@ -289,6 +289,8 @@ class Store {
       std::int64_t blob_id, MediaKind kind) const;
 
   void set_media_size(std::int64_t media_id, int width, int height);
+  /// Per-page layout size from the document (PDF/DjVu/EPUB). Not media size.
+  void set_region_size(std::int64_t region_id, int width, int height);
   void set_media_page_count(std::int64_t media_id, int page_count);
   void set_media_status(std::int64_t media_id, MediaStatus status,
                         std::optional<std::string_view> error_code = {});
@@ -300,6 +302,9 @@ class Store {
     RegionKind kind = RegionKind::Full;
     std::string key;
     std::optional<int> ordinal;
+    /// Page layout size from the document (one size: PDF/DjVu/EPUB layout).
+    std::optional<int> width;
+    std::optional<int> height;
   };
 
   [[nodiscard]] std::int64_t insert_region(std::int64_t media_id, RegionKind kind,
