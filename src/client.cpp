@@ -1285,7 +1285,7 @@ std::optional<PixelLevel> Client::get_raster(const RasterRequest& req) const {
     edge = (req.policy == RasterPolicy::Overview) ? kBatchMaxEdge
                                                   : kMaxSoftLadderEdge;
   }
-  // PreferCache / Overview: get_pixels already tries soft then TileSynth.
+  // PreferCache / Overview: TileSynth when tiles exist (no soft Store read).
   return get_pixels(req.uri, edge, req.frame_idx);
 }
 
@@ -1301,6 +1301,7 @@ void Client::request_raster(RasterRequest req, PixelsCallback cb) {
   int edge = req.max_edge;
   if (req.policy == RasterPolicy::SoftOnly) {
     if (edge <= 0) edge = kMaxSoftLadderEdge;
+    // SoftOnly: ephemeral whole-image API only — no TileSynth, no tile kick.
     request_pixels(std::move(req.uri), edge, std::move(cb), req.frame_idx);
     return;
   }
@@ -1309,8 +1310,26 @@ void Client::request_raster(RasterRequest req, PixelsCallback cb) {
     return;
   }
   if (edge <= 0) {
-    edge = kBatchMaxEdge;
+    edge = (req.policy == RasterPolicy::Overview) ? kBatchMaxEdge
+                                                  : kMaxSoftLadderEdge;
   }
+  // PreferCache / Overview: TileSynth first (durable product). Soft ladder
+  // encode is not the preferred path (PIXEL_AND_ARCHIVE_POLICY / Kill Soft D).
+  if (auto hit =
+          get_pixels(req.uri, edge, req.frame_idx, /*allow_tile_synth=*/true)) {
+    if (cb) {
+      executor_.post([cb = std::move(cb), uri = req.uri, edge,
+                      px = std::move(*hit)]() mutable {
+        cb(std::move(uri), edge, std::move(px));
+      });
+    }
+    return;
+  }
+  // No complete TileSynth: schedule durable pyramid so tile hosts do not
+  // depend on ephemeral soft forever (Kill Soft Phase D).
+  // request_tile_pyramid coalesces duplicate pyramid jobs for the same URI.
+  request_tile_pyramid(req.uri, /*min_scale=*/0, /*max_scale=*/-1, {});
+  // One-shot ephemeral reply for hosts that need a QImage while tiles build.
   if (edge > kMaxSoftLadderEdge || req.policy == RasterPolicy::Overview) {
     request_overview_pixels(std::move(req.uri), edge, std::move(cb));
   } else {

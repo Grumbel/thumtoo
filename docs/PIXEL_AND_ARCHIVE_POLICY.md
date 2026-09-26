@@ -74,8 +74,11 @@ still say “durable soft ≤ 512” describe the pre-redesign ladder epoch.
    - one-shot JPEG shrink / thumbnail encode in the worker, return, discard.
 3. Prefer generating **coarse tiles** over re-encoding ephemeral soft when the
    host is tile-capable (biltoo). Soft-only hosts can keep calling
-   `request_pixels`.
-4. Optional small process LRU for ephemeral soft is allowed; it is not a
+   `request_pixels` / SoftOnly.
+4. **`request_raster(PreferCache|Overview)`** (2026-09-26): on TileSynth miss,
+   schedules **`request_tile_pyramid`** before the one-shot EnsurePixels reply so
+   durable tiles advance even when the host only asked for a whole-frame sample.
+5. Optional small process LRU for ephemeral soft is allowed; it is not a
    Store product and must not be required for correctness.
 
 ### Migration

@@ -247,14 +247,16 @@ class Client {
 
   /**
    * Cache-only unified raster lookup (PIXEL_PIPELINE).
-   * SoftOnly: soft ladder only.
-   * PreferCache / Overview: get_pixels (soft + TileSynth fallthrough).
+   * SoftOnly: soft ladder only (no TileSynth).
+   * PreferCache / Overview: TileSynth via get_pixels when tiles exist.
    */
   [[nodiscard]] std::optional<PixelLevel> get_raster(const RasterRequest& req) const;
 
   /**
-   * Unified async raster: SoftOnly → request_pixels; Overview/PreferCache with
-   * edge > soft max → request_overview_pixels; else request_pixels.
+   * Unified async raster:
+   * SoftOnly → request_pixels (ephemeral soft encode only).
+   * PreferCache / Overview → TileSynth hit, else request_tile_pyramid + one-shot
+   * overview/soft reply while durable tiles build (Kill Soft Phase D).
    */
   void request_raster(RasterRequest req, PixelsCallback cb);
 
