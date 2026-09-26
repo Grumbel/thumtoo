@@ -1045,6 +1045,27 @@ std::optional<TileBlob> Client::get_tile(std::string_view uri, int scale, int x,
     } else {
       t.codec = kDefaultTileCodec;
     }
+    // Reject tiles whose pixel size does not match the current media size
+    // grid. Stale cells from a previous layout size (e.g. PDF dpi/round
+    // change) leave white strips on right/bottom when assembled into a
+    // larger canvas — treat as miss so request_tile re-encodes.
+    if (sm->size && sm->size->width > 0 && sm->size->height > 0 && row) {
+      int sw = sm->size->width;
+      int sh = sm->size->height;
+      if (scale > 0) {
+        sw = dim_at_tile_scale(sw, scale);
+        sh = dim_at_tile_scale(sh, scale);
+      } else if (scale < 0) {
+        const int mul = 1 << (-scale);
+        sw *= mul;
+        sh *= mul;
+      }
+      int left = 0, top = 0, tw = 0, th = 0;
+      tile_cell_pixel_rect(sw, sh, x, y, &left, &top, &tw, &th);
+      if (tw > 0 && th > 0 && (row->width != tw || row->height != th)) {
+        return std::nullopt;
+      }
+    }
     t.bytes = std::move(*bytes);
     t.source = TileSource::Full;
     debug_overlay_tile(t, uri);

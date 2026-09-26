@@ -363,8 +363,32 @@ int main(int argc, char** argv) {
         return 1;
       }
       if (bw != tw || bh != th) {
+        // Stale Store tile from a different native size — drop and re-encode.
         std::cerr << "warn: cell " << tx << "," << ty << " decoded " << bw << "x"
-                  << bh << " expected " << tw << "x" << th << "\n";
+                  << bh << " expected " << tw << "x" << th
+                  << " (stale size; re-encoding)\n";
+        if (!cache_only) {
+          client->invalidate_tile(uri, scale, tx, ty);
+          bool done = false;
+          bool ok = false;
+          client->request_tile(
+              uri, scale, tx, ty,
+              [&](std::string, int, int, int, std::optional<thumtoo::TileBlob> tb) {
+                done = true;
+                ok = static_cast<bool>(tb);
+              });
+          client->drain();
+          tile = client->get_tile(uri, scale, tx, ty);
+          if (done && ok && tile && !tile->bytes.empty() &&
+              jpeg_to_rgb(tile->bytes, &bw, &bh, &rgb) && bw == tw &&
+              bh == th) {
+            // refreshed
+          } else {
+            std::cerr << "error: re-encode still mismatched or failed at " << tx
+                      << "," << ty << "\n";
+            return 1;
+          }
+        }
       }
       blit_rgb(canvas, sw, sh, left, top, rgb.data(), bw, bh);
     }

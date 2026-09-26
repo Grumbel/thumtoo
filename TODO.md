@@ -1,31 +1,23 @@
 # TODO / agent handoff
 
-## Status (2026-09-25)
+## Status (2026-09-26)
 
-**Tip: thumtoo-341.6-defer-fullpage-bench-note** (base `75b1f60`).
+**Tip: thumtoo-341.7-stale-tile-size-reject** (base `241d2d3`).
 
-### 341.5 — kill kTileOverlap; fix layout double-round
-- Removed `kTileOverlap` and `THUMTOO_DEBUG_TILE_OVERLAP` entirely.
-- Layout size is one `lround(page_pt * kPdfLayoutDpi/72)` from continuous
-  `fz_bound_page` bounds — not `lround(pt)` then `×2` (up to 1px drift vs ctm).
-- PDF cells: full-page raster + exclusive crop when under
-  `kTileMaxSourcePixels` (TLS page-level cache); region fallback otherwise.
+### 341.7 — Stale PDF tiles vs current layout size
+Export assembled scale-0 on native 822×1292 while Store tiles matched an
+older ~794×1248 grid (edge cells 26×224, missing y=5). White right/bottom
+strip = uncovered canvas.
 
-### Deferred — full-page PDF cost / design
-Full-page-then-cut is already the default under the pixel guard. Treating it
-as a deliberate perf/quality design (vs per-cell region) needs:
+Fix:
+- `Client::get_tile`: if stored cell w/h ≠ `tile_cell_pixel_rect` for current
+  media size → miss (forces re-encode)
+- `thumtoo-export`: on decode size mismatch, invalidate + re-request once
 
-1. **Benchmark kit** — wall/cpu for single-cell, N-cell visible set, and
-   full pyramid prepare; compare region-only vs full-page+crop vs prepare
-   one-shot full level.
-2. **Test data** — scanned page PDFs (the missing-line case), text/vector
-   pages, large media boxes; fixed URIs in fixtures or a documented corpus.
-3. **Decision** — keep full-page default, region-only, or hybrid (e.g. prepare
-   full-page, interactive region) based on numbers — not anecdotes.
-
-Do not expand this path further until (1)+(2) exist.
+### Prior
+341.5–341.6 layout round, kTileOverlap kill, full-page crop default.
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-341.6-defer-fullpage-bench-note-75b1f60.bundle HEAD
+git pull --ff-only …/thumtoo-341.7-stale-tile-size-reject-241d2d3.bundle HEAD
 ```
