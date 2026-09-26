@@ -25,10 +25,13 @@ struct OcrOptions {
 /// True when built with THUMTOO_HAVE_TESSERACT and runtime init succeeds once.
 [[nodiscard]] bool ocr_available();
 
+/// Thread-local reason for the last failed ocr_page_text_layer / Init (empty if ok).
+[[nodiscard]] std::string_view ocr_last_error();
+
 /**
- * Rasterize @p uri (PDF/DjVu page or image) and run OCR → PageTextLayer with
- * source=Ocr. Does not touch Store. Returns nullopt if OCR is unavailable or
- * the locator cannot be rasterized.
+ * Rasterize @p uri (PDF/DjVu page, archive member, or image file) and run OCR →
+ * PageTextLayer with source=Ocr. Does not touch Store. Returns nullopt if OCR is
+ * unavailable or the locator cannot be rasterized; see ocr_last_error().
  */
 [[nodiscard]] std::optional<PageTextLayer> ocr_page_text_layer(
     std::string_view uri, const OcrOptions& opts = {});

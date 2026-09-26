@@ -2,13 +2,13 @@
 
 ## Status (2026-09-26)
 
-**Tip: thumtoo-343.2-ocr-images-tesseract** (base `66fc03e`).
+**Tip: thumtoo-343.3-ocr-rasterize-robust** (base `66fc03e`).
 
-### 343.2 — OCR plain images + louder Tesseract CMake status
-- `rasterize_uri_for_ocr` loads file:// images via Vips thumbnail → RGB888
-- CMake WARNING when tesseract.pc missing; STATUS of THUMTOO_HAVE_TESSERACT
+### 343.3 — Robust OCR rasterize + ocr_last_error
+- Greyscale/LA → RGB; archive members via extract + thumbnail_buffer
+- `ocr_last_error()` thread-local detail for failed OCR
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-343.2-ocr-images-tesseract-66fc03e.bundle HEAD
+git pull --ff-only …/thumtoo-343.3-ocr-rasterize-robust-66fc03e.bundle HEAD
 ```
