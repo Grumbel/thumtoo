@@ -1929,9 +1929,12 @@ void Client::request_size(std::string uri, SizeCallback cb) {
     if (m->size && (m->status == ContentStatus::Ready ||
                     m->status == ContentStatus::Incomplete)) {
       if (cb) {
+        // Same payload as handle_probe_size reply_size: size + ThumbHash LQIP
+        // + EMB (EXIF/PDF /Thumb). get_lqip deliberately excludes EmbeddedJpeg.
         SizeReply reply;
         reply.size = m->size;
         reply.lqip = get_lqip(uri);
+        reply.embedded = get_embedded_preview(uri);
         executor_.post([cb = std::move(cb), uri, reply = std::move(reply)]() mutable {
           cb(std::move(uri), std::move(reply));
         });
@@ -2098,6 +2101,7 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
           SizeReply reply;
           reply.size = m->size;
           reply.lqip = get_lqip(item.uri);
+          reply.embedded = get_embedded_preview(item.uri);
           executor_.post([on_each, uri = item.uri,
                           reply = std::move(reply)]() mutable {
             on_each(std::move(uri), std::move(reply));
