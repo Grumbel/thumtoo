@@ -4,6 +4,7 @@
 #include "thumtoo/ocr.hpp"
 
 #include "thumtoo/djvu.hpp"
+#include "thumtoo/epub.hpp"
 #include "thumtoo/pdf.hpp"
 #include "thumtoo/uri.hpp"
 #include "thumtoo/archive.hpp"
@@ -218,6 +219,9 @@ void clear_ocr_error() { g_ocr_last_error.clear(); }
         pdf_rasterize_page(pdf->pdf_path, pdf->page, max_edge, pdf->backend);
     if (!raster || raster->rgb.empty() || raster->width < 1 ||
         raster->height < 1) {
+      set_ocr_error(std::string("PDF rasterize failed: ") +
+                    pdf->pdf_path.string() + " page=" +
+                    std::to_string(pdf->page));
       return std::nullopt;
     }
     RgbPage out;
@@ -249,6 +253,41 @@ void clear_ocr_error() { g_ocr_last_error.clear(); }
   }
 #endif
 
+
+#if defined(THUMTOO_HAVE_MUPDF)
+  if (auto ep = parse_epub_uri(uri)) {
+    if (ep->page < 1) {
+      set_ocr_error(std::string("EPUB URI missing page pipe: ") + std::string(uri));
+      return std::nullopt;
+    }
+    auto layout = epub_page_layout_size(ep->epub_path, ep->page, ep->layout);
+    if (!layout || layout->width < 1 || layout->height < 1) {
+      set_ocr_error(std::string("EPUB page layout failed: ") + ep->epub_path.string() +
+                    " page=" + std::to_string(ep->page));
+      return std::nullopt;
+    }
+    auto raster =
+        epub_rasterize_page(ep->epub_path, ep->page, ep->layout, max_edge);
+    if (!raster || raster->rgb.empty() || raster->width < 1 || raster->height < 1) {
+      set_ocr_error(std::string("EPUB page rasterize failed: ") +
+                    ep->epub_path.string() + " page=" + std::to_string(ep->page));
+      return std::nullopt;
+    }
+    RgbPage out;
+    out.width = raster->width;
+    out.height = raster->height;
+    out.rgb = std::move(raster->rgb);
+    // EPUB text layer uses page-space points Y-up; layout size is pixels at
+    // layout DPI — same approach as DjVu: page box = layout pixels Y-down
+    // for OCR mapping consistency with the raster.
+    out.page_bounds =
+        TextRect{0, 0, static_cast<double>(layout->width),
+                 static_cast<double>(layout->height)};
+    out.page_1based = ep->page;
+    return out;
+  }
+#endif
+
   // Archive member image: file://…//archive:member
   if (auto arch = parse_archive_uri(uri)) {
     if (!arch->member_path.empty()) {
@@ -264,7 +303,8 @@ void clear_ocr_error() { g_ocr_last_error.clear(); }
   // Plain image files (non multipage containers).
   if (auto path = path_from_file_uri(uri)) {
     if (is_pdf_path(*path) || is_djvu_path(*path) || is_epub_path(*path)) {
-      set_ocr_error("path is a multipage document without a page pipe");
+      set_ocr_error(std::string("multipage document without usable page pipe: ") +
+                    std::string(uri));
       return std::nullopt;
     }
     if (is_likely_archive_path(*path)) {
@@ -274,7 +314,8 @@ void clear_ocr_error() { g_ocr_last_error.clear(); }
     return vips_file_to_rgb_page(*path, max_edge);
   }
 
-  set_ocr_error("unsupported URI for OCR rasterize");
+  set_ocr_error(std::string("unsupported URI for OCR rasterize: ") +
+                std::string(uri));
   return std::nullopt;
 }
 
