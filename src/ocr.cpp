@@ -32,6 +32,7 @@ struct RgbPage {
   int page_1based = 0;
 };
 
+#if defined(THUMTOO_HAVE_TESSERACT)
 [[nodiscard]] std::optional<RgbPage> rasterize_uri_for_ocr(std::string_view uri,
                                                            int max_edge) {
   if (max_edge < 64) max_edge = kDefaultOcrMaxEdge;
@@ -86,9 +87,6 @@ struct RgbPage {
 #endif
   return std::nullopt;
 }
-
-#if defined(THUMTOO_HAVE_TESSERACT)
-
 
 /// Label page numbers / running headers/footers from geometry + text shape.
 void annotate_region_kinds(PageTextLayer& layer) {

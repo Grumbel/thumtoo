@@ -2,16 +2,14 @@
 
 ## Status (2026-09-26)
 
-**Tip: thumtoo-342.2-ocr-region-kinds** (base `241d2d3`).
+**Tip: thumtoo-343.1-ocr-rasterize-ifdef** (base `66fc03e`).
+
+### 343.1 — Gate OCR rasterize helper on Tesseract
+- `rasterize_uri_for_ocr` only compiled when `THUMTOO_HAVE_TESSERACT` (fixes -Wunused-function without Tesseract)
 
 ### 342.2 — Region kinds (page number / header / footer)
-- `TextRegionKind`: Body | PageNumber | Header | Footer
-- TTL6 serialization (+kind); TTL3–5 still load
-- OCR post-pass `annotate_region_kinds` (geometry + numeric text heuristics)
-
-### 342.1 — Tesseract OCR dual-slot layers
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-342.2-ocr-region-kinds-241d2d3.bundle HEAD
+git pull --ff-only …/thumtoo-343.1-ocr-rasterize-ifdef-66fc03e.bundle HEAD
 ```
