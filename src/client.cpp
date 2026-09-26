@@ -212,6 +212,45 @@ std::unique_ptr<Client> Client::open_memory(Executor executor,
       new Client(std::move(store), std::move(executor), worker_threads));
 }
 
+
+/// Native size for a page region from durable tiles (scale 0 preferred).
+/// Document media width/height is shared across pages — must not be used for
+/// mixed portrait/landscape books.
+[[nodiscard]] std::optional<Size> size_from_page_tiles(const Store& store,
+                                                       std::int64_t media_id,
+                                                       std::int64_t region_id) {
+  auto scales = store.list_tile_scales(media_id, region_id);
+  if (scales.empty()) return std::nullopt;
+  // Prefer scale 0 (file-native grid). Else coarsest present.
+  int s = scales.front();
+  for (int sc : scales) {
+    if (sc == 0) {
+      s = 0;
+      break;
+    }
+    if (sc > s) s = sc;
+  }
+  auto tiles = store.list_tiles_for_region(media_id, region_id);
+  int right = 0;
+  int bottom = 0;
+  bool any = false;
+  for (const auto& t : tiles) {
+    if (t.scale != s) continue;
+    any = true;
+    const int r = t.x * kTileSize + t.width;
+    const int b = t.y * kTileSize + t.height;
+    if (r > right) right = r;
+    if (b > bottom) bottom = b;
+  }
+  if (!any || right < 1 || bottom < 1) return std::nullopt;
+  if (s > 0) {
+    // Reverse dim_at_tile_scale truncation: lower bound only.
+    right <<= s;
+    bottom <<= s;
+  }
+  return Size{right, bottom};
+}
+
 std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
   if (!store_) return std::nullopt;
   auto loc = store_->find_locator(uri);
@@ -236,10 +275,12 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
     if (!store_->list_tile_scales(media->id, region->id).empty()) {
       cm.status = ContentStatus::Ready;
     }
-    // Prefer durable media dims (warm cache must not re-open the PDF).
-    // Layout probe only when the Store has no size yet.
-    if (media->width && media->height) {
-      cm.size = Size{*media->width, *media->height};
+    // Per-page size only. Document media width/height is shared across all
+    // pages of the PDF — last probe wins and breaks mixed portrait/landscape
+    // books (wrong tile grid → out-of-bounds requests / ERROR holes).
+    if (auto from_tiles =
+            size_from_page_tiles(*store_, media->id, region->id)) {
+      cm.size = *from_tiles;
     } else if (auto layout =
                    pdf_page_layout_size(pdf->pdf_path, pdf->page, pdf->backend)) {
       cm.size = *layout;
@@ -284,8 +325,9 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
     if (!store_->list_tile_scales(media->id, region->id).empty()) {
       cm.status = ContentStatus::Ready;
     }
-    if (media->width && media->height) {
-      cm.size = Size{*media->width, *media->height};
+    if (auto from_tiles =
+            size_from_page_tiles(*store_, media->id, region->id)) {
+      cm.size = *from_tiles;
     } else if (auto layout = djvu_page_layout_size(dj->djvu_path, dj->page)) {
       cm.size = *layout;
     }
@@ -306,8 +348,9 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
     if (!store_->list_tile_scales(media->id, region->id).empty()) {
       cm.status = ContentStatus::Ready;
     }
-    if (media->width && media->height) {
-      cm.size = Size{*media->width, *media->height};
+    if (auto from_tiles =
+            size_from_page_tiles(*store_, media->id, region->id)) {
+      cm.size = *from_tiles;
     } else if (auto layout =
                    epub_page_layout_size(ep->epub_path, ep->page, ep->layout)) {
       cm.size = *layout;
