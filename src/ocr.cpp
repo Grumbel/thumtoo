@@ -150,6 +150,12 @@ void clear_ocr_error() { g_ocr_last_error.clear(); }
 [[nodiscard]] std::optional<RgbPage> vips_file_to_rgb_page(
     const std::filesystem::path& path, int max_edge) {
   image_library_init();
+  int full_w = 0;
+  int full_h = 0;
+  if (auto probe = probe_image_file(path)) {
+    full_w = probe->size.width;
+    full_h = probe->size.height;
+  }
   VipsImage* thumb = nullptr;
   if (vips_thumbnail(path.string().c_str(), &thumb, max_edge, "size",
                      VIPS_SIZE_DOWN, nullptr) != 0 ||
@@ -159,6 +165,14 @@ void clear_ocr_error() { g_ocr_last_error.clear(); }
   }
   auto page = vips_image_to_rgb_page(thumb);
   g_object_unref(thumb);
+  if (!page) return std::nullopt;
+  // Page space = full upright image pixels (biltoo source size). Tess boxes are
+  // in OCR-raster pixels; run_tesseract maps with uniform long-edge scale into
+  // page_bounds.
+  if (full_w > 0 && full_h > 0) {
+    page->page_bounds =
+        TextRect{0, 0, static_cast<double>(full_w), static_cast<double>(full_h)};
+  }
   return page;
 }
 
@@ -372,8 +386,25 @@ std::mutex g_tess_mu;
   const double ph = page.page_bounds.height();
   const double ox = page.page_bounds.x0;
   const double oy = page.page_bounds.y0;
-  const double sx = pw / static_cast<double>(page.width);
-  const double sy = ph / static_cast<double>(page.height);
+  // Uniform scale from the *fit* that produced the OCR raster (long-edge
+  // match). Using independent sx/sy from integer width/height lets aspect
+  // rounding accumulate along long lines ("drift").
+  const double page_long = std::max(pw, ph);
+  const double pix_long =
+      static_cast<double>(std::max(page.width, page.height));
+  const double unit_per_px =
+      (pix_long > 0.0 && page_long > 0.0) ? (page_long / pix_long)
+                                          : 1.0;
+  const double sx = unit_per_px;
+  const double sy = unit_per_px;
+  // If the raster is letterboxed inside page_bounds (should not happen with
+  // our fit), centre the pixel grid in page space.
+  const double raster_w_units = static_cast<double>(page.width) * unit_per_px;
+  const double raster_h_units = static_cast<double>(page.height) * unit_per_px;
+  const double pad_x = 0.5 * (pw - raster_w_units);
+  const double pad_y = 0.5 * (ph - raster_h_units);
+  const double origin_x = ox + pad_x;
+  const double origin_y = oy + pad_y;
 
   tesseract::ResultIterator* ri = api.GetIterator();
   if (ri != nullptr) {
@@ -400,10 +431,10 @@ std::mutex g_tess_mu;
       TextRegion reg;
       reg.role = TextRegionRole::Text;
       reg.text = std::move(text);
-      reg.bbox.x0 = ox + static_cast<double>(left) * sx;
-      reg.bbox.y0 = oy + static_cast<double>(top) * sy;
-      reg.bbox.x1 = ox + static_cast<double>(right) * sx;
-      reg.bbox.y1 = oy + static_cast<double>(bottom) * sy;
+      reg.bbox.x0 = origin_x + static_cast<double>(left) * sx;
+      reg.bbox.y0 = origin_y + static_cast<double>(top) * sy;
+      reg.bbox.x1 = origin_x + static_cast<double>(right) * sx;
+      reg.bbox.y1 = origin_y + static_cast<double>(bottom) * sy;
       if (ri->IsAtBeginningOf(tesseract::RIL_BLOCK)) {
         ++block_id;
       }
