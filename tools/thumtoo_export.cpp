@@ -328,8 +328,13 @@ int main(int argc, char** argv) {
       thumtoo::tile_cell_pixel_rect(sw, sh, tx, ty, &left, &top, &tw, &th);
       if (tw < 1 || th < 1) continue;
 
+      // get_tile treats wrong-dimension Store rows as miss (stale layout).
+      // One request_tile re-encodes; put_tile ON CONFLICT replaces the row.
+      // No retry loop — second mismatch is fatal. invalidate_tile is a no-op.
       if (force && client->has_tile(uri, scale, tx, ty)) {
-        client->invalidate_tile(uri, scale, tx, ty);
+        // force: still request even when has_tile; worker short-circuits only
+        // on get_tile hit (dimension-checked).
+        (void)0;
       }
 
       auto tile = client->get_tile(uri, scale, tx, ty);
@@ -363,32 +368,10 @@ int main(int argc, char** argv) {
         return 1;
       }
       if (bw != tw || bh != th) {
-        // Stale Store tile from a different native size — drop and re-encode.
-        std::cerr << "warn: cell " << tx << "," << ty << " decoded " << bw << "x"
-                  << bh << " expected " << tw << "x" << th
-                  << " (stale size; re-encoding)\n";
-        if (!cache_only) {
-          client->invalidate_tile(uri, scale, tx, ty);
-          bool done = false;
-          bool ok = false;
-          client->request_tile(
-              uri, scale, tx, ty,
-              [&](std::string, int, int, int, std::optional<thumtoo::TileBlob> tb) {
-                done = true;
-                ok = static_cast<bool>(tb);
-              });
-          client->drain();
-          tile = client->get_tile(uri, scale, tx, ty);
-          if (done && ok && tile && !tile->bytes.empty() &&
-              jpeg_to_rgb(tile->bytes, &bw, &bh, &rgb) && bw == tw &&
-              bh == th) {
-            // refreshed
-          } else {
-            std::cerr << "error: re-encode still mismatched or failed at " << tx
-                      << "," << ty << "\n";
-            return 1;
-          }
-        }
+        std::cerr << "error: cell " << tx << "," << ty << " decoded " << bw
+                  << "x" << bh << " expected " << tw << "x" << th
+                  << " after at most one encode (not retrying)\n";
+        return 1;
       }
       blit_rgb(canvas, sw, sh, left, top, rgb.data(), bw, bh);
     }

@@ -2,22 +2,17 @@
 
 ## Status (2026-09-26)
 
-**Tip: thumtoo-341.7-stale-tile-size-reject** (base `241d2d3`).
+**Tip: thumtoo-341.8-stale-tile-no-loop** (base `241d2d3`).
 
-### 341.7 — Stale PDF tiles vs current layout size
-Export assembled scale-0 on native 822×1292 while Store tiles matched an
-older ~794×1248 grid (edge cells 26×224, missing y=5). White right/bottom
-strip = uncovered canvas.
+### 341.8 — Stale tile reject without request storms
+- `has_tile` uses the same w/h grid check as `get_tile` (stale row ≠ hit)
+- `invalidate_tile` remains a Store no-op — do not rely on it
+- export: at most one encode per cell; second size mismatch is fatal (no loop)
+- `put_tile` ON CONFLICT replaces the row so one encode converges
 
-Fix:
-- `Client::get_tile`: if stored cell w/h ≠ `tile_cell_pixel_rect` for current
-  media size → miss (forces re-encode)
-- `thumtoo-export`: on decode size mismatch, invalidate + re-request once
-
-### Prior
-341.5–341.6 layout round, kTileOverlap kill, full-page crop default.
+### 341.7 — reject wrong-dimension Store tiles
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-341.7-stale-tile-size-reject-241d2d3.bundle HEAD
+git pull --ff-only …/thumtoo-341.8-stale-tile-no-loop-241d2d3.bundle HEAD
 ```

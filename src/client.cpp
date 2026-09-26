@@ -1012,12 +1012,53 @@ void Client::request_overview_pixels(std::string uri, int max_edge,
   enqueue(std::move(job));
 }
 
+namespace {
+
+/// Expected exclusive cell size for (scale,x,y) given media native size.
+/// Returns false if the cell is outside the grid.
+[[nodiscard]] bool expected_tile_cell_wh(int native_w, int native_h, int scale,
+                                         int x, int y, int* tw, int* th) {
+  if (!tw || !th || native_w < 1 || native_h < 1) return false;
+  int sw = native_w;
+  int sh = native_h;
+  if (scale > 0) {
+    sw = dim_at_tile_scale(sw, scale);
+    sh = dim_at_tile_scale(sh, scale);
+  } else if (scale < 0) {
+    const int mul = 1 << (-scale);
+    sw *= mul;
+    sh *= mul;
+  }
+  int left = 0, top = 0;
+  tile_cell_pixel_rect(sw, sh, x, y, &left, &top, tw, th);
+  return *tw > 0 && *th > 0;
+}
+
+}  // namespace
+
 bool Client::has_tile(std::string_view uri, int scale, int x, int y) const {
   auto sm = meta_from_store(uri);
   if (!sm) return false;
   const std::string& content_id = sm->content_id;
   if (auto tgt = store_tile_target_for_content_id(content_id)) {
-    return store_->has_tile(tgt->media_id, tgt->region_id, scale, x, y);
+    if (!store_->has_tile(tgt->media_id, tgt->region_id, scale, x, y)) {
+      return false;
+    }
+    // Same size-grid rule as get_tile: a row with wrong w/h is not a hit
+    // (stale PDF layout). Avoid has_tile==true / get_tile==miss request storms.
+    if (sm->size && sm->size->width > 0 && sm->size->height > 0) {
+      auto row =
+          store_->find_tile_meta(tgt->media_id, tgt->region_id, scale, x, y);
+      if (row) {
+        int tw = 0, th = 0;
+        if (expected_tile_cell_wh(sm->size->width, sm->size->height, scale, x, y,
+                                  &tw, &th) &&
+            (row->width != tw || row->height != th)) {
+          return false;
+        }
+      }
+    }
+    return true;
   }
   return false;
 }
@@ -1046,23 +1087,14 @@ std::optional<TileBlob> Client::get_tile(std::string_view uri, int scale, int x,
       t.codec = kDefaultTileCodec;
     }
     // Reject tiles whose pixel size does not match the current media size
-    // grid. Stale cells from a previous layout size (e.g. PDF dpi/round
-    // change) leave white strips on right/bottom when assembled into a
-    // larger canvas — treat as miss so request_tile re-encodes.
+    // grid. Stale cells from a previous layout size leave white strips on
+    // right/bottom when assembled into a larger canvas — miss so one
+    // request_tile re-encodes (put_tile ON CONFLICT replaces the row).
     if (sm->size && sm->size->width > 0 && sm->size->height > 0 && row) {
-      int sw = sm->size->width;
-      int sh = sm->size->height;
-      if (scale > 0) {
-        sw = dim_at_tile_scale(sw, scale);
-        sh = dim_at_tile_scale(sh, scale);
-      } else if (scale < 0) {
-        const int mul = 1 << (-scale);
-        sw *= mul;
-        sh *= mul;
-      }
-      int left = 0, top = 0, tw = 0, th = 0;
-      tile_cell_pixel_rect(sw, sh, x, y, &left, &top, &tw, &th);
-      if (tw > 0 && th > 0 && (row->width != tw || row->height != th)) {
+      int tw = 0, th = 0;
+      if (expected_tile_cell_wh(sm->size->width, sm->size->height, scale, x, y,
+                                &tw, &th) &&
+          (row->width != tw || row->height != th)) {
         return std::nullopt;
       }
     }
