@@ -16,6 +16,7 @@ path = [
   "TILES.md",
   "TAGS.md",
   "VERSION",
+  "PROJECT",
   "include/thumtoo/version.hpp.in",
   "docs/MICROBENCH_RESULTS.md",
   "docs/PDF_BACKENDS.md",
