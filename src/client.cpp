@@ -5,6 +5,7 @@
 
 #include "thumtoo/activity.hpp"
 #include "thumtoo/text.hpp"
+#include "thumtoo/ocr.hpp"
 #include "thumtoo/build_stats.hpp"
 #include "thumtoo/constants.hpp"
 #include "thumtoo/uri.hpp"
@@ -4414,6 +4415,44 @@ std::optional<PageTextLayer> Client::ensure_page_text_layer(
     if (!bytes.empty()) {
       store_->put_page_text_layer(key->blob_id, key->page_1based,
                                   key->layout_key, bytes);
+    }
+  }
+  return layer;
+}
+
+
+std::optional<PageTextLayer> Client::get_ocr_page_text_layer(
+    std::string_view uri, std::string_view engine,
+    std::string_view model) const {
+  if (!store_ || uri.empty()) return std::nullopt;
+  auto key = doc_blob_key_lookup(*store_, uri);
+  if (!key) return std::nullopt;
+  const std::string ocr_key =
+      ocr_store_layout_key(key->layout_key, engine, model);
+  auto bytes =
+      store_->get_page_text_layer(key->blob_id, key->page_1based, ocr_key);
+  if (!bytes) return std::nullopt;
+  return deserialize_page_text_layer(*bytes);
+}
+
+std::optional<PageTextLayer> Client::ensure_ocr_page_text_layer(
+    std::string_view uri, const OcrOptions& opts, bool force) {
+  if (uri.empty()) return std::nullopt;
+  const std::string eng = opts.engine.empty() ? "tesseract" : opts.engine;
+  const std::string mod = opts.model.empty() ? "default" : opts.model;
+  if (!force) {
+    if (auto hit = get_ocr_page_text_layer(uri, eng, mod)) return hit;
+  }
+  if (!ocr_available()) return std::nullopt;
+  auto layer = ocr_page_text_layer(uri, opts);
+  if (!layer || !store_) return layer;
+  auto key = doc_blob_key_ensure(*store_, uri);
+  if (key) {
+    layer->layout_key = ocr_store_layout_key(key->layout_key, eng, mod);
+    auto bytes = serialize_page_text_layer(*layer);
+    if (!bytes.empty()) {
+      store_->put_page_text_layer(key->blob_id, key->page_1based,
+                                  layer->layout_key, bytes);
     }
   }
   return layer;

@@ -162,6 +162,7 @@ add_library(thumtoo
   external/basic_handsum_decode_impl.c
   src/network.cpp
   src/text.cpp
+  src/ocr.cpp
   src/appearance.cpp
   src/xdg_thumbnail.cpp
 )
@@ -213,6 +214,22 @@ else()
   message(STATUS "thumtoo: MuPDF not found — PDF page support disabled")
 endif()
 thumtoo_export_to_parent(THUMTOO_HAVE_MUPDF)
+thumtoo_export_to_parent(THUMTOO_HAVE_MUPDF)
+
+# Optional Tesseract OCR (page text layers for scans).
+option(THUMTOO_WITH_TESSERACT "Build with Tesseract OCR" ON)
+pkg_check_modules(TESSERACT IMPORTED_TARGET tesseract)
+set(THUMTOO_HAVE_TESSERACT 0)
+if(THUMTOO_WITH_TESSERACT AND TESSERACT_FOUND)
+  target_link_libraries(thumtoo PRIVATE PkgConfig::TESSERACT)
+  target_compile_definitions(thumtoo PUBLIC THUMTOO_HAVE_TESSERACT=1)
+  set(THUMTOO_HAVE_TESSERACT 1)
+  message(STATUS "thumtoo: Tesseract enabled (OCR text layers)")
+else()
+  message(STATUS "thumtoo: Tesseract not found — OCR text layers disabled")
+endif()
+thumtoo_export_to_parent(THUMTOO_HAVE_TESSERACT)
+
 
 set(THUMTOO_HAVE_DJVU 0)
 if(DJVULIBRE_FOUND)

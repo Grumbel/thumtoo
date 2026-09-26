@@ -9,6 +9,7 @@
 #include "thumtoo/types.hpp"
 #include "thumtoo/activity.hpp"
 #include "thumtoo/text.hpp"
+#include "thumtoo/ocr.hpp"
 #include "thumtoo/pdf.hpp"
 #include "thumtoo/epub.hpp"
 #include "thumtoo/djvu.hpp"
@@ -420,7 +421,18 @@ class Client {
       std::string_view uri) const;
 
   /// Extract if missing, always store when content_id is known. Source I/O.
+  /// Native structured text only (not OCR).
   std::optional<PageTextLayer> ensure_page_text_layer(std::string_view uri);
+
+  /// Cache-only OCR text layer (dual Store slot). nullopt if never OCR'd.
+  [[nodiscard]] std::optional<PageTextLayer> get_ocr_page_text_layer(
+      std::string_view uri, std::string_view engine = "tesseract",
+      std::string_view model = "default") const;
+
+  /// Run OCR (or return cached OCR layer). User-triggered; does not replace
+  /// the native layer. force=true re-runs OCR even when a cached OCR layer exists.
+  std::optional<PageTextLayer> ensure_ocr_page_text_layer(
+      std::string_view uri, const OcrOptions& opts = {}, bool force = false);
 
   /// Cache-only outline.
   [[nodiscard]] std::optional<DocumentOutline> get_document_outline(

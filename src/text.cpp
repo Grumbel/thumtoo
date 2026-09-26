@@ -63,14 +63,25 @@ bool read_str(const std::uint8_t*& p, const std::uint8_t* end, std::string& s) {
 }
 
 constexpr std::uint32_t kLayerMagicV3 = 0x334C5454;  // "TTL3" — legacy (no block_id)
-constexpr std::uint32_t kLayerMagic = 0x344C5454;    // "TTL4" — + block_id per region
+constexpr std::uint32_t kLayerMagicV4 = 0x344C5454;  // "TTL4" — + block_id
+constexpr std::uint32_t kLayerMagic = 0x354C5454;    // "TTL5" — + source + OcrMeta
 constexpr std::uint32_t kOutlineMagic = 0x324F5454; // "TTO2" — spine path → page
 
 }  // namespace
 
+std::string ocr_store_layout_key(std::string_view base_layout_key,
+                                 std::string_view engine,
+                                 std::string_view model) {
+  std::string eng = engine.empty() ? "tesseract" : std::string(engine);
+  std::string mod = model.empty() ? "default" : std::string(model);
+  std::string suffix = "ocr:" + eng + ":" + mod;
+  if (base_layout_key.empty()) return suffix;
+  return std::string(base_layout_key) + "|" + suffix;
+}
+
 std::vector<std::uint8_t> serialize_page_text_layer(const PageTextLayer& layer) {
   std::vector<std::uint8_t> out;
-  out.reserve(64 + layer.regions.size() * 64);
+  out.reserve(96 + layer.regions.size() * 64);
   append_u32(out, kLayerMagic);
   append_u32(out, static_cast<std::uint32_t>(layer.page_1based));
   append_str(out, layer.layout_key);
@@ -81,7 +92,9 @@ std::vector<std::uint8_t> serialize_page_text_layer(const PageTextLayer& layer) 
   append_u32(out, static_cast<std::uint32_t>(layer.regions.size()));
   for (const auto& r : layer.regions) {
     out.push_back(static_cast<std::uint8_t>(r.role));
-    append_u32(out, static_cast<std::uint32_t>(r.block_id < 0 ? 0xFFFFFFFFu : static_cast<std::uint32_t>(r.block_id)));
+    append_u32(out, static_cast<std::uint32_t>(
+                        r.block_id < 0 ? 0xFFFFFFFFu
+                                       : static_cast<std::uint32_t>(r.block_id)));
     append_f64(out, r.bbox.x0);
     append_f64(out, r.bbox.y0);
     append_f64(out, r.bbox.x1);
@@ -93,6 +106,23 @@ std::vector<std::uint8_t> serialize_page_text_layer(const PageTextLayer& layer) 
     append_f64(out, r.target.y);
     append_str(out, r.target.uri);
   }
+  // TTL5 trailer: source + optional OcrMeta
+  out.push_back(static_cast<std::uint8_t>(layer.source));
+  if (layer.source == TextLayerSource::Ocr && layer.ocr) {
+    const OcrMeta& m = *layer.ocr;
+    append_str(out, m.engine);
+    append_str(out, m.engine_version);
+    append_str(out, m.model);
+    append_str(out, m.lang);
+    append_u32(out, static_cast<std::uint32_t>(m.dpi < 0 ? 0 : m.dpi));
+    append_u32(out, static_cast<std::uint32_t>(m.created_unix & 0xffffffffu));
+    append_u32(out, static_cast<std::uint32_t>((m.created_unix >> 32) & 0xffffffffu));
+    append_u32(out, static_cast<std::uint32_t>(m.params.size()));
+    for (const auto& kv : m.params) {
+      append_str(out, kv.first);
+      append_str(out, kv.second);
+    }
+  }
   return out;
 }
 
@@ -102,8 +132,11 @@ std::optional<PageTextLayer> deserialize_page_text_layer(
   const std::uint8_t* end = p + bytes.size();
   std::uint32_t magic = 0;
   if (!read_u32(p, end, magic)) return std::nullopt;
-  const bool has_block_id = (magic == kLayerMagic);
-  if (magic != kLayerMagic && magic != kLayerMagicV3) return std::nullopt;
+  const bool is_v5 = (magic == kLayerMagic);
+  const bool has_block_id = is_v5 || (magic == kLayerMagicV4);
+  if (magic != kLayerMagic && magic != kLayerMagicV4 && magic != kLayerMagicV3) {
+    return std::nullopt;
+  }
 
   PageTextLayer layer;
   std::uint32_t page = 0;
@@ -142,6 +175,33 @@ std::optional<PageTextLayer> deserialize_page_text_layer(
     if (!read_f64(p, end, r.target.y)) return std::nullopt;
     if (!read_str(p, end, r.target.uri)) return std::nullopt;
     layer.regions.push_back(std::move(r));
+  }
+  layer.source = TextLayerSource::Native;
+  if (is_v5 && p < end) {
+    layer.source = static_cast<TextLayerSource>(*p++);
+    if (layer.source == TextLayerSource::Ocr) {
+      OcrMeta m;
+      if (!read_str(p, end, m.engine)) return std::nullopt;
+      if (!read_str(p, end, m.engine_version)) return std::nullopt;
+      if (!read_str(p, end, m.model)) return std::nullopt;
+      if (!read_str(p, end, m.lang)) return std::nullopt;
+      std::uint32_t dpi = 0, lo = 0, hi = 0;
+      if (!read_u32(p, end, dpi)) return std::nullopt;
+      if (!read_u32(p, end, lo)) return std::nullopt;
+      if (!read_u32(p, end, hi)) return std::nullopt;
+      m.dpi = static_cast<int>(dpi);
+      m.created_unix = (static_cast<std::int64_t>(hi) << 32) | lo;
+      std::uint32_t np = 0;
+      if (!read_u32(p, end, np)) return std::nullopt;
+      m.params.reserve(np);
+      for (std::uint32_t i = 0; i < np; ++i) {
+        std::string k, v;
+        if (!read_str(p, end, k)) return std::nullopt;
+        if (!read_str(p, end, v)) return std::nullopt;
+        m.params.emplace_back(std::move(k), std::move(v));
+      }
+      layer.ocr = std::move(m);
+    }
   }
   return layer;
 }

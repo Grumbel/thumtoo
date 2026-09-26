@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace thumtoo {
@@ -51,33 +52,50 @@ struct TextRegion {
   std::string text;  ///< role=Text: content; role=Link: optional label
   TextLinkTarget target;
   /// MuPDF structured-text block index (0-based) when known; -1 otherwise.
-  /// Lines from the same block share an id — do not LTR-merge across blocks
-  /// (multi-column pages). Assigned in extraction order.
   int block_id = -1;
+};
+
+/// Provenance of a page text layer (native extract vs OCR backend).
+enum class TextLayerSource : std::uint8_t {
+  Native = 0,
+  Ocr = 1,
+};
+
+/// Backend metadata when source == Ocr. Engine-agnostic so LLM OCR can reuse.
+struct OcrMeta {
+  std::string engine;
+  std::string engine_version;
+  std::string model;
+  std::string lang;
+  int dpi = 0;
+  std::int64_t created_unix = 0;
+  std::vector<std::pair<std::string, std::string>> params;
 };
 
 struct PageTextLayer {
   int page_1based = 0;
-  /// Empty for PDF/DjVu. EPUB layout profile hash when geometry is layout-bound.
   std::string layout_key;
-  /// Page media box in the same space as region bboxes (points for PDF).
   TextRect page_bounds;
   std::vector<TextRegion> regions;
+  TextLayerSource source = TextLayerSource::Native;
+  std::optional<OcrMeta> ocr;
 };
 
 struct OutlineItem {
-  int level = 1;  ///< 1 = top-level
+  int level = 1;
   std::string title;
-  /// 1-based page when the dest resolves to a page; 0 if unknown / URI-only.
   int page_1based = 0;
-  std::string uri;  ///< set when dest is an external/URI action
+  std::string uri;
 };
 
 struct DocumentOutline {
   std::vector<OutlineItem> items;
 };
 
-/// Serialize page text layer to a compact durable payload (always-cache).
+[[nodiscard]] std::string ocr_store_layout_key(std::string_view base_layout_key,
+                                               std::string_view engine,
+                                               std::string_view model);
+
 [[nodiscard]] std::vector<std::uint8_t> serialize_page_text_layer(
     const PageTextLayer& layer);
 
@@ -90,10 +108,6 @@ struct DocumentOutline {
 [[nodiscard]] std::optional<DocumentOutline> deserialize_document_outline(
     const std::vector<std::uint8_t>& bytes);
 
-/**
- * Extract text layer for a location URI (//page: / //epub: / DjVu //page:).
- * Does not touch the cache — pure source extract.
- */
 [[nodiscard]] std::optional<PageTextLayer> extract_page_text_layer(
     std::string_view uri);
 

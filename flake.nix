@@ -38,6 +38,7 @@
         libunarr 
         libarchive
         mupdf
+        tesseract
         djvulibre
         djvulibre.dev
         curl
