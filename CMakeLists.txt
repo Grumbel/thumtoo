@@ -226,9 +226,14 @@ if(THUMTOO_WITH_TESSERACT AND TESSERACT_FOUND)
   set(THUMTOO_HAVE_TESSERACT 1)
   message(STATUS "thumtoo: Tesseract enabled (OCR text layers)")
 else()
-  message(STATUS "thumtoo: Tesseract not found — OCR text layers disabled")
+  message(WARNING
+    "thumtoo: Tesseract (tesseract.pc) not found — OCR text layers DISABLED. "
+    "Install tesseract and ensure PKG_CONFIG_PATH sees tesseract.pc. "
+    "Nix: pkgs.tesseract must be in buildInputs (thumtoo.lib.mkBuildInputs). "
+    "THUMTOO_HAVE_TESSERACT=0")
 endif()
 thumtoo_export_to_parent(THUMTOO_HAVE_TESSERACT)
+message(STATUS "thumtoo: THUMTOO_HAVE_TESSERACT=${THUMTOO_HAVE_TESSERACT}")
 
 
 set(THUMTOO_HAVE_DJVU 0)

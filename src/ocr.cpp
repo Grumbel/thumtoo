@@ -6,6 +6,8 @@
 #include "thumtoo/djvu.hpp"
 #include "thumtoo/pdf.hpp"
 #include "thumtoo/uri.hpp"
+#include "thumtoo/image.hpp"
+#include "thumtoo/format.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -15,6 +17,7 @@
 #include <string>
 
 #if defined(THUMTOO_HAVE_TESSERACT)
+#include <vips/vips.h>
 #include <tesseract/baseapi.h>
 #include <tesseract/resultiterator.h>
 #endif
@@ -85,6 +88,65 @@ struct RgbPage {
     }
   }
 #endif
+
+  // Plain image files (and any non-PDF/DjVu file:// URI).
+  if (auto path = path_from_file_uri(uri)) {
+    if (!is_pdf_path(*path) && !is_djvu_path(*path) && !is_epub_path(*path)) {
+      image_library_init();
+      VipsImage* thumb = nullptr;
+      if (vips_thumbnail(path->string().c_str(), &thumb, max_edge, "size",
+                         VIPS_SIZE_DOWN, nullptr) != 0 ||
+          !thumb) {
+        return std::nullopt;
+      }
+      // Force RGB uchar planar-interleaved for Tesseract.
+      VipsImage* rgb = nullptr;
+      if (vips_colourspace(thumb, &rgb, VIPS_INTERPRETATION_sRGB, nullptr) != 0 ||
+          !rgb) {
+        g_object_unref(thumb);
+        return std::nullopt;
+      }
+      g_object_unref(thumb);
+      VipsImage* packed = nullptr;
+      if (vips_cast(rgb, &packed, VIPS_FORMAT_UCHAR, nullptr) != 0 || !packed) {
+        g_object_unref(rgb);
+        return std::nullopt;
+      }
+      g_object_unref(rgb);
+      // Ensure 3 bands (drop alpha).
+      if (vips_image_get_bands(packed) == 4) {
+        VipsImage* noa = nullptr;
+        if (vips_extract_band(packed, &noa, 0, "n", 3, nullptr) == 0 && noa) {
+          g_object_unref(packed);
+          packed = noa;
+        }
+      }
+      if (vips_image_get_bands(packed) != 3 ||
+          vips_image_get_format(packed) != VIPS_FORMAT_UCHAR) {
+        g_object_unref(packed);
+        return std::nullopt;
+      }
+      const int w = vips_image_get_width(packed);
+      const int h = vips_image_get_height(packed);
+      if (w < 1 || h < 1) {
+        g_object_unref(packed);
+        return std::nullopt;
+      }
+      const size_t nbytes = static_cast<size_t>(w) * static_cast<size_t>(h) * 3;
+      void* data = vips_image_write_to_memory(packed, nullptr);
+      g_object_unref(packed);
+      if (!data) return std::nullopt;
+      RgbPage out;
+      out.width = w;
+      out.height = h;
+      out.rgb.resize(nbytes);
+      std::memcpy(out.rgb.data(), data, nbytes);
+      g_free(data);
+      out.page_bounds = TextRect{0, 0, static_cast<double>(w), static_cast<double>(h)};
+      out.page_1based = 1;
+      return out;
+    }
+  }
   return std::nullopt;
 }
 
