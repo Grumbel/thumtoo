@@ -282,14 +282,11 @@ void clear_ocr_error() { g_ocr_last_error.clear(); }
     out.width = raster->width;
     out.height = raster->height;
     out.rgb = std::move(raster->rgb);
-    // EPUB text layer uses page-space points Y-up; layout size is pixels at
-    // layout DPI — same approach as DjVu: page box = layout pixels Y-down
-    // for OCR mapping consistency with the raster.
-    // OCR uses layout-pixel page box; Y-up to match native EPUB MuPDF layer.
+    // Layout-pixel page box; Y-down to match MuPDF native EPUB text layer.
     out.page_bounds =
         TextRect{0, 0, static_cast<double>(layout->width),
                  static_cast<double>(layout->height)};
-    out.page_y_up = true;
+    out.page_y_up = false;
     out.page_1based = ep->page;
     return out;
   }

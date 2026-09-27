@@ -728,7 +728,8 @@ std::optional<PageTextLayer> epub_page_text_layer(const std::filesystem::path& p
   fz_catch(ctx) { ok = 0; }
   if (!ok) return std::nullopt;
   layer.page_bounds = TextRect{box.x0, box.y0, box.x1, box.y1};
-  layer.page_y_up = true;
+  // MuPDF page space for EPUB: top-left, Y down (same as PDF via MuPDF).
+  layer.page_y_up = false;
 
   fz_stext_options opts{};
   opts.flags = 0;

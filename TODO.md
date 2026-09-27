@@ -2,21 +2,16 @@
 
 ## Status (2026-09-27)
 
-**Tip:** `thumtoo-345.2-ocr-source-dpi` (base `aeb5159`).
+**Tip:** `thumtoo-346.1-mupdf-page-y-down` (base `e87420a`).
 
-### 345.2 — Tesseract source DPI
-- `OcrOptions::dpi` (0 = auto)
-- `SetSourceResolution` before Recognize (no more silent ~70 DPI)
-- Auto: document page box → `72×pix/bounds`; pixel page box → 300
-- See docs/PAGE_SPACE.md (OCR source DPI)
-
-### 345.1 — page_y_up (TTL7)
-Document Y-up for PDF/DjVu/EPUB native+OCR; plain images Y-down.
+### 346.1 — MuPDF page/stext is Y-down
+- PDF + EPUB native text layers: `page_y_up = false` (MuPDF top-left space).
+- OCR for PDF/EPUB matches (`page_y_up = false`). DjVu stays Y-up.
+- docs/PAGE_SPACE.md corrected (PDF *file* vs MuPDF *API* space).
+- Hosts must prefer `layer.page_y_up`. Re-extract cached PDF text layers
+  written with the old `true` flag.
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-345.2-ocr-source-dpi-aeb5159.bundle HEAD
+git pull --ff-only …/thumtoo-346.1-mupdf-page-y-down-e87420a.bundle HEAD
 ```
-
-## Prior
-344.4 region page size

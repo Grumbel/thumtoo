@@ -939,7 +939,9 @@ std::optional<PageTextLayer> mupdf_page_text_layer(const std::filesystem::path& 
   fz_catch(ctx) { ok = 0; }
   if (!ok) return std::nullopt;
   layer.page_bounds = TextRect{box.x0, box.y0, box.x1, box.y1};
-  layer.page_y_up = true;
+  // MuPDF page/stext space: origin top-left, Y down (not PDF user space).
+  // See https://mupdf.readthedocs.io/en/latest/coordinate-system.html
+  layer.page_y_up = false;
 
   // Text: one structured-text pass → line-level regions (good for search/select).
   fz_stext_options opts{};

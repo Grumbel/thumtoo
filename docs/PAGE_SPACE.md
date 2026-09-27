@@ -14,14 +14,18 @@ when a layer is present.
 
 | Kind | `page_y_up` | Units | Origin |
 |------|-------------|-------|--------|
-| PDF native / OCR | `true` | PDF points (media box) | lower-left |
-| DjVu native / OCR | `true` | page pixels | lower-left |
-| EPUB native / OCR | `true` | page box (MuPDF / layout) | lower-left |
+| PDF native / OCR (MuPDF) | `false` | MuPDF page points | **top-left** (Y down) |
+| DjVu native / OCR | `true` | page pixels | lower-left (Y up) |
+| EPUB native / OCR (MuPDF) | `false` | MuPDF page / layout box | **top-left** (Y down) |
 | Plain image / archive member OCR | `false` | source pixels | top-left |
 
-Native extractors set `page_y_up = true`. OCR for document pages maps Tesseract
-(top-left) boxes into the **same** Y-up page space. OCR for plain images keeps
-Y-down page_bounds = image size.
+**Important:** PDF *file* user space is bottom-left Y-up, but **MuPDF** exposes
+page and `fz_stext` geometry in **top-left Y-down** space (same as the rendered
+pixmap). Native extractors must set `page_y_up` to match the **coordinates they
+store**, not the PDF specification in isolation.
+
+OCR maps Tesseract (top-left) boxes into the **same** space as that document’s
+native layer. Plain-image OCR stays Y-down with page_bounds = image size.
 
 ## Wire format
 
@@ -36,8 +40,8 @@ Re-OCR refreshes stored OCR layers to TTL7 + Y-up for documents.
 ## Host contract
 
 1. Prefer `layer.page_y_up` for every page↔source map.
-2. Fallback when no layer yet: document page refs (PDF/DjVu/EPUB) → Y-up;
-   plain paths → Y-down.
+2. Fallback when no layer yet: DjVu page refs → Y-up; PDF/EPUB page refs and
+   plain paths → Y-down (MuPDF-aligned).
 3. Host-prepared RGB OCR (`ocr_rgb_page_text_layer`) returns boxes in the
    buffer’s top-left space (`page_y_up = false`); the host remaps to page space
    when installing overlays.
