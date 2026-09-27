@@ -566,4 +566,71 @@ std::optional<PageTextLayer> ocr_page_text_layer(std::string_view uri,
 #endif
 }
 
+std::optional<PageTextLayer> ocr_rgb_page_text_layer(
+    const std::uint8_t* rgb, int width, int height,
+    const TextRect& page_bounds, const OcrOptions& opts) {
+#if !defined(THUMTOO_HAVE_TESSERACT)
+  (void)rgb;
+  (void)width;
+  (void)height;
+  (void)page_bounds;
+  (void)opts;
+  set_ocr_error("Tesseract not compiled into thumtoo");
+  return std::nullopt;
+#else
+  clear_ocr_error();
+  if (!rgb || width < 8 || height < 8) {
+    set_ocr_error("OCR RGB buffer too small or null");
+    return std::nullopt;
+  }
+  if (page_bounds.width() <= 0.0 || page_bounds.height() <= 0.0) {
+    set_ocr_error("OCR page_bounds invalid");
+    return std::nullopt;
+  }
+  RgbPage page;
+  page.width = width;
+  page.height = height;
+  page.page_bounds = page_bounds;
+  page.page_1based = 0;
+  page.rgb.assign(rgb, rgb + static_cast<size_t>(width) * height * 3);
+
+  // Optional long-edge shrink for large host buffers.
+  const int max_edge = opts.max_edge > 0 ? opts.max_edge : kDefaultOcrMaxEdge;
+  const int long_edge = std::max(width, height);
+  if (long_edge > max_edge) {
+    const double scale = static_cast<double>(max_edge) / static_cast<double>(long_edge);
+    const int nw = std::max(8, static_cast<int>(std::lround(width * scale)));
+    const int nh = std::max(8, static_cast<int>(std::lround(height * scale)));
+    // Nearest-neighbor shrink (host already graded; quality secondary to speed).
+    std::vector<std::uint8_t> small(static_cast<size_t>(nw * nh * 3));
+    for (int y = 0; y < nh; ++y) {
+      const int sy = std::min(height - 1,
+                              static_cast<int>(std::lround(y / scale)));
+      for (int x = 0; x < nw; ++x) {
+        const int sx = std::min(width - 1,
+                                static_cast<int>(std::lround(x / scale)));
+        const std::uint8_t* s =
+            page.rgb.data() + (static_cast<size_t>(sy) * width + sx) * 3;
+        std::uint8_t* d = small.data() + (static_cast<size_t>(y) * nw + x) * 3;
+        d[0] = s[0];
+        d[1] = s[1];
+        d[2] = s[2];
+      }
+    }
+    page.rgb = std::move(small);
+    page.width = nw;
+    page.height = nh;
+    // page_bounds unchanged — run_tesseract scales uniformly into it.
+  }
+
+  auto layer = run_tesseract(page, opts);
+  if (!layer) {
+    if (g_ocr_last_error.empty()) set_ocr_error("Tesseract failed");
+    return std::nullopt;
+  }
+  clear_ocr_error();
+  return layer;
+#endif
+}
+
 }  // namespace thumtoo
