@@ -51,8 +51,10 @@ struct OcrOptions {
 /**
  * Run OCR on a caller-provided RGB888 buffer (row-major, 3 bytes/pixel).
  * @p page_bounds defines the coordinate system for region bboxes (same as
- * PageTextLayer). Does not touch Store. Used when the host has already
- * applied crop / orient / colour grade so OCR matches on-screen pixels.
+ * PageTextLayer). Boxes are top-left Y-down in that box (`page_y_up = false`);
+ * the host remaps to document page space when needed. Does not touch Store.
+ * Used when the host has already applied crop / orient / colour grade so OCR
+ * matches on-screen pixels.
  */
 [[nodiscard]] std::optional<PageTextLayer> ocr_rgb_page_text_layer(
     const std::uint8_t* rgb, int width, int height,

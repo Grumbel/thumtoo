@@ -627,6 +627,7 @@ std::optional<PageTextLayer> djvu_page_text_layer(const std::filesystem::path& p
   layer.page_1based = page_1based;
   layer.page_bounds = TextRect{0, 0, static_cast<double>(sz->width),
                                static_cast<double>(sz->height)};
+  layer.page_y_up = true;  // DjVu text zones: bottom-left origin
 
   // Wait for page text (may need to fetch page data).
   miniexp_t text = miniexp_dummy;

@@ -35,6 +35,8 @@ struct RgbPage {
   int height = 0;
   std::vector<std::uint8_t> rgb;  // RGB888
   TextRect page_bounds;
+  /// Matches PageTextLayer::page_y_up — document pages Y-up, plain images Y-down.
+  bool page_y_up = false;
   int page_1based = 0;
 };
 
@@ -144,6 +146,7 @@ void clear_ocr_error() { g_ocr_last_error.clear(); }
   std::memcpy(out.rgb.data(), data, need);
   g_free(data);
   out.page_bounds = TextRect{0, 0, static_cast<double>(w), static_cast<double>(h)};
+  out.page_y_up = false;  // source pixels, top-left
   out.page_1based = 1;
   return out;
 }
@@ -229,6 +232,7 @@ void clear_ocr_error() { g_ocr_last_error.clear(); }
     out.height = raster->height;
     out.rgb = std::move(raster->rgb);
     out.page_bounds = bounds;
+    out.page_y_up = true;  // same as native PDF text layer
     out.page_1based = pdf->page;
     return out;
   }
@@ -247,6 +251,7 @@ void clear_ocr_error() { g_ocr_last_error.clear(); }
       out.page_bounds =
           TextRect{0, 0, static_cast<double>(layout->width),
                    static_cast<double>(layout->height)};
+      out.page_y_up = true;  // same as native DjVu text (bottom-left)
       out.page_1based = dj->page;
       return out;
     }
@@ -280,9 +285,11 @@ void clear_ocr_error() { g_ocr_last_error.clear(); }
     // EPUB text layer uses page-space points Y-up; layout size is pixels at
     // layout DPI — same approach as DjVu: page box = layout pixels Y-down
     // for OCR mapping consistency with the raster.
+    // OCR uses layout-pixel page box; Y-up to match native EPUB MuPDF layer.
     out.page_bounds =
         TextRect{0, 0, static_cast<double>(layout->width),
                  static_cast<double>(layout->height)};
+    out.page_y_up = true;
     out.page_1based = ep->page;
     return out;
   }
@@ -347,6 +354,7 @@ std::mutex g_tess_mu;
   PageTextLayer layer;
   layer.page_1based = page.page_1based;
   layer.page_bounds = page.page_bounds;
+  layer.page_y_up = page.page_y_up;
   layer.source = TextLayerSource::Ocr;
 
   OcrMeta meta;
@@ -415,9 +423,21 @@ std::mutex g_tess_mu;
       reg.role = TextRegionRole::Text;
       reg.text = std::move(text);
       reg.bbox.x0 = origin_x + static_cast<double>(left) * sx;
-      reg.bbox.y0 = origin_y + static_cast<double>(top) * sy;
       reg.bbox.x1 = origin_x + static_cast<double>(right) * sx;
-      reg.bbox.y1 = origin_y + static_cast<double>(bottom) * sy;
+      // Tesseract boxes are top-left Y-down in the OCR raster. Map into page
+      // space: Y-up document pages flip about page_bounds; plain images stay
+      // top-left Y-down.
+      if (page.page_y_up) {
+        const double y_top =
+            oy + ph - pad_y - static_cast<double>(top) * sy;
+        const double y_bot =
+            oy + ph - pad_y - static_cast<double>(bottom) * sy;
+        reg.bbox.y0 = std::min(y_top, y_bot);
+        reg.bbox.y1 = std::max(y_top, y_bot);
+      } else {
+        reg.bbox.y0 = origin_y + static_cast<double>(top) * sy;
+        reg.bbox.y1 = origin_y + static_cast<double>(bottom) * sy;
+      }
       if (ri->IsAtBeginningOf(tesseract::RIL_BLOCK)) {
         ++block_id;
       }
@@ -495,9 +515,18 @@ std::string_view ocr_last_error() {
   const double origin_y = pb_y0 + pad_y;
 
   int left = static_cast<int>(std::floor((ix0 - origin_x) / unit_per_px));
-  int top = static_cast<int>(std::floor((iy0 - origin_y) / unit_per_px));
   int right = static_cast<int>(std::ceil((ix1 - origin_x) / unit_per_px));
-  int bottom = static_cast<int>(std::ceil((iy1 - origin_y) / unit_per_px));
+  int top = 0;
+  int bottom = 0;
+  if (page.page_y_up) {
+    // High page Y is the top of the raster.
+    const double top_page_y = pb_y0 + pb_h - pad_y;  // image row 0
+    top = static_cast<int>(std::floor((top_page_y - iy1) / unit_per_px));
+    bottom = static_cast<int>(std::ceil((top_page_y - iy0) / unit_per_px));
+  } else {
+    top = static_cast<int>(std::floor((iy0 - origin_y) / unit_per_px));
+    bottom = static_cast<int>(std::ceil((iy1 - origin_y) / unit_per_px));
+  }
   left = std::max(0, std::min(left, page.width - 1));
   top = std::max(0, std::min(top, page.height - 1));
   right = std::max(left + 1, std::min(right, page.width));
@@ -591,6 +620,8 @@ std::optional<PageTextLayer> ocr_rgb_page_text_layer(
   page.width = width;
   page.height = height;
   page.page_bounds = page_bounds;
+  // Caller buffer is top-left Y-down (host appearance path remaps to page space).
+  page.page_y_up = false;
   page.page_1based = 0;
   page.rgb.assign(rgb, rgb + static_cast<size_t>(width) * height * 3);
 

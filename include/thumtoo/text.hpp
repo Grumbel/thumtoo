@@ -12,9 +12,19 @@
 
 namespace thumtoo {
 
-/// Axis-aligned rectangle in page space (PDF: media-box points, 72 dpi;
-/// origin bottom-left in raw PDF user space; consumers may flip Y to match
-/// top-left raster orientation — see pdf_page_text_layer docs).
+/**
+ * Axis-aligned rectangle in **page space**.
+ *
+ * Page-space conventions (normative):
+ * - **PDF / DjVu / EPUB (document pages):** origin at the page box lower-left,
+ *   Y increases upward (`page_y_up == true`). Units are PDF points (72 dpi) for
+ *   PDF/EPUB media boxes, or page pixels for DjVu.
+ * - **Plain images / archive image members (OCR only):** origin top-left,
+ *   Y increases downward (`page_y_up == false`), units = source pixels.
+ *
+ * Raster (source) space is always top-left, Y-down. Hosts map with
+ * `page_y_up` — never guess from path alone when a layer is present.
+ */
 struct TextRect {
   double x0 = 0;
   double y0 = 0;
@@ -85,6 +95,12 @@ struct PageTextLayer {
   int page_1based = 0;
   std::string layout_key;
   TextRect page_bounds;
+  /**
+   * When true, region bboxes use bottom-left origin (Y up) inside page_bounds.
+   * When false, top-left origin (Y down). See TextRect docs.
+   * Always set by extractors / OCR; hosts must honour this flag.
+   */
+  bool page_y_up = true;
   std::vector<TextRegion> regions;
   TextLayerSource source = TextLayerSource::Native;
   std::optional<OcrMeta> ocr;

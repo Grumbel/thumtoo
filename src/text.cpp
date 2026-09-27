@@ -65,7 +65,8 @@ bool read_str(const std::uint8_t*& p, const std::uint8_t* end, std::string& s) {
 constexpr std::uint32_t kLayerMagicV3 = 0x334C5454;  // "TTL3" — legacy (no block_id)
 constexpr std::uint32_t kLayerMagicV4 = 0x344C5454;  // "TTL4" — + block_id
 constexpr std::uint32_t kLayerMagicV5 = 0x354C5454;  // "TTL5" — + source + OcrMeta
-constexpr std::uint32_t kLayerMagic = 0x364C5454;    // "TTL6" — + TextRegionKind
+constexpr std::uint32_t kLayerMagicV6 = 0x364C5454;  // "TTL6" — + TextRegionKind
+constexpr std::uint32_t kLayerMagic = 0x374C5454;    // "TTL7" — + page_y_up
 constexpr std::uint32_t kOutlineMagic = 0x324F5454; // "TTO2" — spine path → page
 
 }  // namespace
@@ -90,6 +91,7 @@ std::vector<std::uint8_t> serialize_page_text_layer(const PageTextLayer& layer) 
   append_f64(out, layer.page_bounds.y0);
   append_f64(out, layer.page_bounds.x1);
   append_f64(out, layer.page_bounds.y1);
+  out.push_back(static_cast<std::uint8_t>(layer.page_y_up ? 1 : 0));
   append_u32(out, static_cast<std::uint32_t>(layer.regions.size()));
   for (const auto& r : layer.regions) {
     out.push_back(static_cast<std::uint8_t>(r.role));
@@ -134,13 +136,15 @@ std::optional<PageTextLayer> deserialize_page_text_layer(
   const std::uint8_t* end = p + bytes.size();
   std::uint32_t magic = 0;
   if (!read_u32(p, end, magic)) return std::nullopt;
-  const bool is_v6 = (magic == kLayerMagic);
+  const bool is_v7 = (magic == kLayerMagic);
+  const bool is_v6 = (magic == kLayerMagicV6);
   const bool is_v5 = (magic == kLayerMagicV5);
-  const bool has_kind = is_v6;
-  const bool has_block_id = is_v6 || is_v5 || (magic == kLayerMagicV4);
-  const bool has_source_trailer = is_v6 || is_v5;
-  if (magic != kLayerMagic && magic != kLayerMagicV5 && magic != kLayerMagicV4
-      && magic != kLayerMagicV3) {
+  const bool has_kind = is_v7 || is_v6;
+  const bool has_block_id = is_v7 || is_v6 || is_v5 || (magic == kLayerMagicV4);
+  const bool has_source_trailer = is_v7 || is_v6 || is_v5;
+  const bool has_page_y_up = is_v7;
+  if (magic != kLayerMagic && magic != kLayerMagicV6 && magic != kLayerMagicV5
+      && magic != kLayerMagicV4 && magic != kLayerMagicV3) {
     return std::nullopt;
   }
 
@@ -153,6 +157,12 @@ std::optional<PageTextLayer> deserialize_page_text_layer(
   if (!read_f64(p, end, layer.page_bounds.y0)) return std::nullopt;
   if (!read_f64(p, end, layer.page_bounds.x1)) return std::nullopt;
   if (!read_f64(p, end, layer.page_bounds.y1)) return std::nullopt;
+  // TTL7+: explicit page_y_up. Older: Native → Y-up; Ocr → Y-down (legacy).
+  layer.page_y_up = true;
+  if (has_page_y_up) {
+    if (p >= end) return std::nullopt;
+    layer.page_y_up = (*p++ != 0);
+  }
   std::uint32_t n = 0;
   if (!read_u32(p, end, n)) return std::nullopt;
   layer.regions.reserve(n);
@@ -189,6 +199,10 @@ std::optional<PageTextLayer> deserialize_page_text_layer(
   layer.source = TextLayerSource::Native;
   if (has_source_trailer && p < end) {
     layer.source = static_cast<TextLayerSource>(*p++);
+    // Pre-TTL7 OCR used top-left Y-down boxes inside page_bounds.
+    if (!has_page_y_up && layer.source == TextLayerSource::Ocr) {
+      layer.page_y_up = false;
+    }
     if (layer.source == TextLayerSource::Ocr) {
       OcrMeta m;
       if (!read_str(p, end, m.engine)) return std::nullopt;
