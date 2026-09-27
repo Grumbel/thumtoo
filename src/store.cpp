@@ -917,6 +917,42 @@ std::optional<std::vector<std::uint8_t>> Store::get_page_text_layer(
   return out;
 }
 
+std::int64_t Store::delete_page_text_layers(std::int64_t blob_id, int page_1based) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(
+          index_,
+          "DELETE FROM page_text_layer WHERE blob_id = ?1 AND page_1based = ?2;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare delete_page_text_layers");
+  }
+  sqlite3_bind_int64(stmt, 1, blob_id);
+  sqlite3_bind_int(stmt, 2, page_1based);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(index_, "step delete_page_text_layers");
+  }
+  const std::int64_t n = sqlite3_changes(index_);
+  sqlite3_finalize(stmt);
+  return n;
+}
+
+std::int64_t Store::delete_page_text_layers_for_blob(std::int64_t blob_id) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(index_,
+                         "DELETE FROM page_text_layer WHERE blob_id = ?1;", -1,
+                         &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare delete_page_text_layers_for_blob");
+  }
+  sqlite3_bind_int64(stmt, 1, blob_id);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    throw_sqlite(index_, "step delete_page_text_layers_for_blob");
+  }
+  const std::int64_t n = sqlite3_changes(index_);
+  sqlite3_finalize(stmt);
+  return n;
+}
+
 void Store::put_document_outline(std::int64_t blob_id,
                                  std::string_view layout_key,
                                  std::span<const std::uint8_t> data) {

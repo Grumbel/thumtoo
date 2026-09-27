@@ -2419,6 +2419,40 @@ std::size_t Client::cancel_uri(std::string_view uri) {
 Client::PurgeStats Client::purge_uri(std::string_view uri, bool dry_run) {
   PurgeStats out;
   if (!store_ || uri.empty()) return out;
+  // Drop cached native/OCR text for this page (or whole blob) even when the
+  // PDF/DjVu blob stays shared across other page locators — hard reload must
+  // re-extract text, not reuse a stale page_text_layer row.
+  if (!dry_run) {
+    std::optional<std::int64_t> blob_id;
+    if (auto loc = store_->find_locator(uri); loc && loc->blob_id) {
+      blob_id = *loc->blob_id;
+    }
+    int page = 0;
+    std::filesystem::path file;
+    if (auto pdf = parse_pdf_uri(uri)) {
+      page = pdf->page;
+      file = pdf->pdf_path;
+    } else if (auto dj = parse_djvu_uri(uri)) {
+      page = dj->page;
+      file = dj->djvu_path;
+    } else if (auto ep = parse_epub_uri(uri)) {
+      page = ep->page;
+      file = ep->epub_path;
+    }
+    if (!blob_id && !file.empty()) {
+      const auto file_uri = file_uri_from_path(file);
+      if (auto loc = store_->find_locator(file_uri); loc && loc->blob_id) {
+        blob_id = *loc->blob_id;
+      }
+    }
+    if (blob_id) {
+      if (page > 0) {
+        (void)store_->delete_page_text_layers(*blob_id, page);
+      } else {
+        (void)store_->delete_page_text_layers_for_blob(*blob_id);
+      }
+    }
+  }
   auto st = store_->forget_uri(uri, dry_run);
   if (st.locator_removed) out.removed_uris.emplace_back(uri);
   if (st.blob_purged) out.purged_content_ids.emplace_back(std::string(uri));
@@ -2434,6 +2468,11 @@ Client::PurgeStats Client::purge_path(const std::filesystem::path& path,
   auto abs = std::filesystem::absolute(path, ec);
   if (ec) abs = path;
   const auto file_uri = file_uri_from_path(abs.lexically_normal());
+  if (!dry_run) {
+    if (auto loc = store_->find_locator(file_uri); loc && loc->blob_id) {
+      (void)store_->delete_page_text_layers_for_blob(*loc->blob_id);
+    }
+  }
   auto st = store_->forget_uri(file_uri, dry_run);
   if (st.locator_removed) out.removed_uris.push_back(file_uri);
   if (st.blob_purged) out.purged_content_ids.push_back(file_uri);

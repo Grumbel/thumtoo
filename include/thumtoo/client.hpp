@@ -390,6 +390,7 @@ class Client {
    * Leaves the source file on disk; next get_size/get_pixels miss (cold).
    * Shared content (multiple locators) only loses this URI until the last one.
    */
+  /// Also deletes page_text_layer rows for the URI page (or whole blob).
   [[nodiscard]] PurgeStats purge_uri(std::string_view uri,
                                                bool dry_run = false);
   /**

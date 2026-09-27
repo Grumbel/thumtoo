@@ -1,17 +1,16 @@
 # TODO / agent handoff
 
-## Status (2026-09-27)
+## Status (2026-09-28)
 
-**Tip:** `thumtoo-346.1-mupdf-page-y-down` (base `e87420a`).
+**Tip:** `thumtoo-347.1-purge-text-layers` (base `5758b37`).
 
-### 346.1 — MuPDF page/stext is Y-down
-- PDF + EPUB native text layers: `page_y_up = false` (MuPDF top-left space).
-- OCR for PDF/EPUB matches (`page_y_up = false`). DjVu stays Y-up.
-- docs/PAGE_SPACE.md corrected (PDF *file* vs MuPDF *API* space).
-- Hosts must prefer `layer.page_y_up`. Re-extract cached PDF text layers
-  written with the old `true` flag.
+### 347.1 — purge_uri/path drops page_text_layer
+- `Store::delete_page_text_layers` / `_for_blob`
+- `Client::purge_uri` deletes native+OCR text for the page even when the
+  document blob is shared; `purge_path` clears all text for the file blob.
+- Enables biltoo Shift+F5 to re-extract text after coord fixes.
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-346.1-mupdf-page-y-down-e87420a.bundle HEAD
+git pull --ff-only …/thumtoo-347.1-purge-text-layers-5758b37.bundle HEAD
 ```

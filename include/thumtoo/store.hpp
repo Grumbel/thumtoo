@@ -149,6 +149,12 @@ class Store {
       std::int64_t blob_id, int page_1based,
       std::string_view layout_key) const;
 
+  /** Delete all layout_key variants (native + OCR) for one page. Returns rows. */
+  std::int64_t delete_page_text_layers(std::int64_t blob_id, int page_1based);
+  /** Delete every page_text_layer row for a blob. Returns rows. */
+  std::int64_t delete_page_text_layers_for_blob(std::int64_t blob_id);
+
+
   void put_document_outline(std::int64_t blob_id, std::string_view layout_key,
                             std::span<const std::uint8_t> data);
   [[nodiscard]] std::optional<std::vector<std::uint8_t>> get_document_outline(
