@@ -446,6 +446,87 @@ std::string_view ocr_last_error() {
   return g_ocr_last_error;
 }
 
+/// Crop OCR raster to opts crop (page space). @p full_bounds keeps the
+/// original page box for the returned layer; @p page.page_bounds becomes the
+/// crop so Tesseract pixel→page mapping stays in absolute page coordinates.
+[[nodiscard]] bool apply_ocr_page_crop(RgbPage& page, const OcrOptions& opts,
+                                       TextRect* full_bounds_out) {
+  if (!opts.has_crop) {
+    return true;
+  }
+  const double cx0 = std::min(opts.crop_x0, opts.crop_x1);
+  const double cy0 = std::min(opts.crop_y0, opts.crop_y1);
+  const double cx1 = std::max(opts.crop_x0, opts.crop_x1);
+  const double cy1 = std::max(opts.crop_y0, opts.crop_y1);
+  if (!(cx1 > cx0) || !(cy1 > cy0)) {
+    set_ocr_error("OCR crop rect is empty");
+    return false;
+  }
+  const double pb_x0 = page.page_bounds.x0;
+  const double pb_y0 = page.page_bounds.y0;
+  const double pb_x1 = page.page_bounds.x1;
+  const double pb_y1 = page.page_bounds.y1;
+  const double pb_w = pb_x1 - pb_x0;
+  const double pb_h = pb_y1 - pb_y0;
+  if (!(pb_w > 0.0) || !(pb_h > 0.0) || page.width < 1 || page.height < 1) {
+    set_ocr_error("OCR page bounds invalid for crop");
+    return false;
+  }
+  const double ix0 = std::max(cx0, pb_x0);
+  const double iy0 = std::max(cy0, pb_y0);
+  const double ix1 = std::min(cx1, pb_x1);
+  const double iy1 = std::min(cy1, pb_y1);
+  if (!(ix1 > ix0) || !(iy1 > iy0)) {
+    set_ocr_error("OCR crop does not intersect page");
+    return false;
+  }
+
+  // Match run_tesseract long-edge scale + letterbox pad.
+  const double page_long = std::max(pb_w, pb_h);
+  const double pix_long =
+      static_cast<double>(std::max(page.width, page.height));
+  const double unit_per_px =
+      (pix_long > 0.0 && page_long > 0.0) ? (page_long / pix_long) : 1.0;
+  const double raster_w_units = static_cast<double>(page.width) * unit_per_px;
+  const double raster_h_units = static_cast<double>(page.height) * unit_per_px;
+  const double pad_x = 0.5 * (pb_w - raster_w_units);
+  const double pad_y = 0.5 * (pb_h - raster_h_units);
+  const double origin_x = pb_x0 + pad_x;
+  const double origin_y = pb_y0 + pad_y;
+
+  int left = static_cast<int>(std::floor((ix0 - origin_x) / unit_per_px));
+  int top = static_cast<int>(std::floor((iy0 - origin_y) / unit_per_px));
+  int right = static_cast<int>(std::ceil((ix1 - origin_x) / unit_per_px));
+  int bottom = static_cast<int>(std::ceil((iy1 - origin_y) / unit_per_px));
+  left = std::max(0, std::min(left, page.width - 1));
+  top = std::max(0, std::min(top, page.height - 1));
+  right = std::max(left + 1, std::min(right, page.width));
+  bottom = std::max(top + 1, std::min(bottom, page.height));
+  const int cw = right - left;
+  const int ch = bottom - top;
+  if (cw < 8 || ch < 8) {
+    set_ocr_error("OCR crop is too small after raster mapping");
+    return false;
+  }
+
+  std::vector<std::uint8_t> cropped(static_cast<size_t>(cw * ch * 3));
+  for (int y = 0; y < ch; ++y) {
+    const std::uint8_t* src =
+        page.rgb.data() + (static_cast<size_t>(top + y) * page.width + left) * 3;
+    std::uint8_t* dst = cropped.data() + static_cast<size_t>(y) * cw * 3;
+    std::memcpy(dst, src, static_cast<size_t>(cw) * 3);
+  }
+  page.rgb = std::move(cropped);
+  page.width = cw;
+  page.height = ch;
+  if (full_bounds_out) {
+    *full_bounds_out = page.page_bounds;
+  }
+  // Tesseract maps (0,0) pixel → crop origin in page space.
+  page.page_bounds = TextRect{ix0, iy0, ix1, iy1};
+  return true;
+}
+
 std::optional<PageTextLayer> ocr_page_text_layer(std::string_view uri,
                                                  const OcrOptions& opts) {
 #if !defined(THUMTOO_HAVE_TESSERACT)
@@ -466,11 +547,19 @@ std::optional<PageTextLayer> ocr_page_text_layer(std::string_view uri,
     if (g_ocr_last_error.empty()) set_ocr_error("rasterize failed");
     return std::nullopt;
   }
+  TextRect full_bounds = page->page_bounds;
+  if (opts.has_crop) {
+    if (!apply_ocr_page_crop(*page, opts, &full_bounds)) {
+      return std::nullopt;
+    }
+  }
   auto layer = run_tesseract(*page, opts);
   if (!layer) {
     if (g_ocr_last_error.empty()) set_ocr_error("Tesseract failed");
     return std::nullopt;
   }
+  // Keep full page bounds for consumers mapping overlays onto the page.
+  layer->page_bounds = full_bounds;
   clear_ocr_error();
   // layout_key filled by Client when storing (native base + ocr suffix).
   return layer;

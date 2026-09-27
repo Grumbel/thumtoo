@@ -4478,7 +4478,14 @@ std::optional<PageTextLayer> Client::ensure_ocr_page_text_layer(
     std::string_view uri, const OcrOptions& opts, bool force) {
   if (uri.empty()) return std::nullopt;
   const std::string eng = opts.engine.empty() ? "tesseract" : opts.engine;
-  const std::string mod = opts.model.empty() ? "default" : opts.model;
+  std::string mod = opts.model.empty() ? "default" : opts.model;
+  // Separate cache slot when OCR is restricted to a crop (page space).
+  if (opts.has_crop) {
+    char buf[128];
+    std::snprintf(buf, sizeof(buf), "|crop=%.3f,%.3f,%.3f,%.3f",
+                  opts.crop_x0, opts.crop_y0, opts.crop_x1, opts.crop_y1);
+    mod += buf;
+  }
   if (!force) {
     if (auto hit = get_ocr_page_text_layer(uri, eng, mod)) return hit;
   }

@@ -20,6 +20,17 @@ struct OcrOptions {
   std::string engine;
   /// Model / tessdata name. Empty → "default".
   std::string model;
+  /**
+   * Optional crop in the same page space as PageTextLayer::page_bounds /
+   * region bboxes. When set (has_crop && crop width/height > 0), the OCR
+   * raster is cropped before Tesseract so content outside the crop is not
+   * recognized. Result region bboxes remain in full page space.
+   */
+  bool has_crop = false;
+  double crop_x0 = 0;
+  double crop_y0 = 0;
+  double crop_x1 = 0;
+  double crop_y1 = 0;
 };
 
 /// True when built with THUMTOO_HAVE_TESSERACT and runtime init succeeds once.
