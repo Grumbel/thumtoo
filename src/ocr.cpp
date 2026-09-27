@@ -333,6 +333,53 @@ void clear_ocr_error() { g_ocr_last_error.clear(); }
 
 std::mutex g_tess_mu;
 
+
+/// Clamp Tesseract source DPI into a range where the layout analysis is stable.
+[[nodiscard]] int clamp_ocr_dpi(int dpi) {
+  if (dpi < 70) return 70;
+  if (dpi > 600) return 600;
+  return dpi;
+}
+
+/**
+ * Estimate source DPI for Tesseract.
+ *
+ * - opts.dpi > 0: host override (clamped).
+ * - Document page space (page_y_up, bounds not equal to pixel box): treat
+ *   page_bounds as PDF-style points (72/inch) → dpi = 72 * pix / bounds.
+ * - Pixel page box (bounds ≈ image size, typical for plain images / RGB host
+ *   buffers without a media box): default 300 so mixed body/caption sizes
+ *   segment reasonably. (72 would claim the buffer is ~1" wide.)
+ */
+[[nodiscard]] int estimate_ocr_dpi(const RgbPage& page, const OcrOptions& opts) {
+  if (opts.dpi > 0) {
+    return clamp_ocr_dpi(opts.dpi);
+  }
+  const double bw = page.page_bounds.width();
+  const double bh = page.page_bounds.height();
+  if (bw <= 1.0 || bh <= 1.0 || page.width < 1 || page.height < 1) {
+    return 300;
+  }
+  const double pix_w = static_cast<double>(page.width);
+  const double pix_h = static_cast<double>(page.height);
+  // Pixel page box: bounds match the raster (within 1 unit).
+  const bool pixel_box =
+      std::abs(bw - pix_w) < 1.5 && std::abs(bh - pix_h) < 1.5 &&
+      std::abs(page.page_bounds.x0) < 1.5 && std::abs(page.page_bounds.y0) < 1.5;
+  if (pixel_box && !page.page_y_up) {
+    return 300;
+  }
+  // Document page box in points (or DjVu pixels with Y-up): scale from width.
+  const int from_w =
+      static_cast<int>(std::lround(72.0 * pix_w / bw));
+  // DjVu Y-up page_bounds are often already in pixels (same magnitude as
+  // raster). If the implied DPI is absurd (>600 or <70), fall back to 300.
+  if (from_w < 70 || from_w > 600) {
+    return 300;
+  }
+  return from_w;
+}
+
 [[nodiscard]] std::optional<PageTextLayer> run_tesseract(
     const RgbPage& page, const OcrOptions& opts) {
   std::lock_guard<std::mutex> lock(g_tess_mu);
@@ -345,6 +392,10 @@ std::mutex g_tess_mu;
   }
   api.SetPageSegMode(tesseract::PSM_AUTO);
   api.SetImage(page.rgb.data(), page.width, page.height, 3, page.width * 3);
+  // Tesseract defaults to ~70 DPI when unset; that mis-scales mixed body /
+  // caption / header sizes (especially host appearance / crop bitmaps).
+  const int dpi = estimate_ocr_dpi(page, opts);
+  api.SetSourceResolution(dpi);
   if (api.Recognize(nullptr) != 0) {
     api.End();
     set_ocr_error("Tesseract Recognize failed");
@@ -362,15 +413,12 @@ std::mutex g_tess_mu;
   meta.engine_version = tesseract_version_string();
   meta.model = opts.model.empty() ? "default" : opts.model;
   meta.lang = lang;
-  // Approximate DPI from raster vs page box width (points → 72 dpi).
-  if (page.page_bounds.width() > 1.0) {
-    meta.dpi = static_cast<int>(std::lround(
-        72.0 * static_cast<double>(page.width) / page.page_bounds.width()));
-  }
+  meta.dpi = dpi;
   meta.created_unix = std::chrono::duration_cast<std::chrono::seconds>(
                           std::chrono::system_clock::now().time_since_epoch())
                           .count();
   meta.params.emplace_back("psm", "auto");
+  meta.params.emplace_back("dpi", std::to_string(dpi));
   layer.ocr = meta;
 
   const double pw = page.page_bounds.width();

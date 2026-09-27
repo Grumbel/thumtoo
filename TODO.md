@@ -2,20 +2,21 @@
 
 ## Status (2026-09-27)
 
-**Tip:** `thumtoo-345.1-page-y-up` (base `aeb5159`).
+**Tip:** `thumtoo-345.2-ocr-source-dpi` (base `aeb5159`).
 
-### 345.1 — Page space Y axis is explicit
-- `PageTextLayer::page_y_up` (TTL7 wire format)
-- OCR maps Tesseract boxes into Y-up page space for PDF/DjVu/EPUB (same as native)
-- Plain-image OCR stays Y-down
-- Crop-before-OCR respects Y-up when slicing the raster
-- See [docs/PAGE_SPACE.md](docs/PAGE_SPACE.md)
+### 345.2 — Tesseract source DPI
+- `OcrOptions::dpi` (0 = auto)
+- `SetSourceResolution` before Recognize (no more silent ~70 DPI)
+- Auto: document page box → `72×pix/bounds`; pixel page box → 300
+- See docs/PAGE_SPACE.md (OCR source DPI)
+
+### 345.1 — page_y_up (TTL7)
+Document Y-up for PDF/DjVu/EPUB native+OCR; plain images Y-down.
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-345.1-page-y-up-aeb5159.bundle HEAD
+git pull --ff-only …/thumtoo-345.2-ocr-source-dpi-aeb5159.bundle HEAD
 ```
-Existing OCR cache entries: re-OCR to get Y-up document layers; native extract is unchanged.
 
 ## Prior
-344.4 region page size; 344.3 tile-reconstruct (superseded); 344.2 SizeReply EMB
+344.4 region page size

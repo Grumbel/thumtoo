@@ -41,3 +41,18 @@ Re-OCR refreshes stored OCR layers to TTL7 + Y-up for documents.
 3. Host-prepared RGB OCR (`ocr_rgb_page_text_layer`) returns boxes in the
    buffer’s top-left space (`page_y_up = false`); the host remaps to page space
    when installing overlays.
+
+## OCR source DPI
+
+Tesseract is told a source resolution via `SetSourceResolution` before
+`Recognize`:
+
+| Input | DPI |
+|-------|-----|
+| `OcrOptions::dpi > 0` | host value (clamped 70–600) |
+| Document page box (PDF points / Y-up) | `72 × raster_w / page_bounds_w` |
+| Pixel page box (plain image / RGB host buffer) | **300** (not 72) |
+
+Appearance OCR should pass the true page density (same as full-page OCR of that
+document) so a crop does not change implied character size in inches. Mixed font
+sizes on one page segment poorly when DPI is left at Tesseract’s ~70 default.
