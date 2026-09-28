@@ -35,7 +35,7 @@ native layer. Plain-image OCR stays Y-down with page_bounds = image size.
 - Native → treat as Y-up
 - Ocr → treat as Y-down (historical raster mapping before the OCR Y fix)
 
-Re-OCR refreshes stored OCR layers to TTL7 + Y-up for documents.
+Re-OCR refreshes stored OCR layers to TTL7; PDF/EPUB OCR stays Y-down (MuPDF-aligned), DjVu stays Y-up.
 
 ## Host contract
 

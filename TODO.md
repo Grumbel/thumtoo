@@ -2,16 +2,13 @@
 
 ## Status (2026-09-28)
 
-**Tip:** `thumtoo-351.1-feature-summary` (base `53e62cd`).
+**Tip:** `thumtoo-352.1-pdf-ocr-y-down` (base `fb6a408`).
 
-### 351.1 — configure feature summary
-- List OCR (Tesseract), libunarr, MuPDF as PDF/EPUB; align labels
-
-### Prior
-- 350.2: docs on origin
-- 349.1 / 348.1: systemd + leptonica pkg-config
+### 352.1
+- PDF OCR: page_y_up = false (MuPDF-aligned; was true and inverted boxes vs biltoo)
+- Docs: PAGE_SPACE + text.hpp match native PDF extract
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-351.1-feature-summary-53e62cd.bundle HEAD
+git pull --ff-only …/thumtoo-352.1-pdf-ocr-y-down-fb6a408.bundle HEAD
 ```

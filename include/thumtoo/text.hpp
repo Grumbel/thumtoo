@@ -15,14 +15,14 @@ namespace thumtoo {
 /**
  * Axis-aligned rectangle in **page space**.
  *
- * Page-space conventions (normative):
- * - **PDF / DjVu / EPUB (document pages):** origin at the page box lower-left,
- *   Y increases upward (`page_y_up == true`). Units are PDF points (72 dpi) for
- *   PDF/EPUB media boxes, or page pixels for DjVu.
- * - **Plain images / archive image members (OCR only):** origin top-left,
- *   Y increases downward (`page_y_up == false`), units = source pixels.
+ * Page-space conventions (normative — see docs/PAGE_SPACE.md):
+ * - **PDF / EPUB (MuPDF):** origin top-left, Y down (`page_y_up == false`);
+ *   units are MuPDF page points / layout box.
+ * - **DjVu:** origin lower-left, Y up (`page_y_up == true`); page pixels.
+ * - **Plain images / archive members (OCR):** origin top-left, Y down;
+ *   units = source pixels.
  *
- * Raster (source) space is always top-left, Y-down. Hosts map with
+ * Raster (source) space is always top-left, Y-down. Hosts map with the layer's
  * `page_y_up` — never guess from path alone when a layer is present.
  */
 struct TextRect {

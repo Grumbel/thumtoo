@@ -232,7 +232,7 @@ void clear_ocr_error() { g_ocr_last_error.clear(); }
     out.height = raster->height;
     out.rgb = std::move(raster->rgb);
     out.page_bounds = bounds;
-    out.page_y_up = true;  // same as native PDF text layer
+    out.page_y_up = false;  // MuPDF page+stext space is top-left Y-down (native PDF layer)
     out.page_1based = pdf->page;
     return out;
   }
