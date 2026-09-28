@@ -2,20 +2,16 @@
 
 ## Status (2026-09-28)
 
-**Tip:** `thumtoo-350.1-docs-readme` (base `53e62cd`).
+**Tip:** `thumtoo-351.1-feature-summary` (base `53e62cd`).
 
-**No VERSION commit** — version/tag is owned on the maintainer side.
+### 351.1 — configure feature summary
+- List OCR (Tesseract), libunarr, MuPDF as PDF/EPUB; align labels
 
-### Done this tip
-- README: text layers, OCR, TileSynth, purge, mkBuildInputs pkg-config note
-- INTEGRATION.md: purge_uri/path + page text mapping
-
-### Prior (code)
-- 349.1: systemd on PKG_CONFIG_PATH for dbus-1
-- 348.1: leptonica for tesseract Requires: lept
-- 347.1: purge_uri/path drops page_text_layer
+### Prior
+- 350.2: docs on origin
+- 349.1 / 348.1: systemd + leptonica pkg-config
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-350.1-docs-readme-53e62cd.bundle HEAD
+git pull --ff-only …/thumtoo-351.1-feature-summary-53e62cd.bundle HEAD
 ```
