@@ -2,16 +2,16 @@
 
 ## Status (2026-09-28)
 
-**Tip:** `thumtoo-348.1-leptonica-pkg-config` (base `53e62cd`).
+**Tip:** `thumtoo-349.1-systemd-pkg-config` (base `53e62cd`).
 
-### 348.1 — silence tesseract→lept pkg-config spam
-- `flake.nix` mkBuildInputs: add `pkgs.leptonica` (tesseract.pc Requires: lept)
-- CMake warning mentions leptonica when OCR is disabled
+### 349.1 — silence dbus→libsystemd pkg-config spam
+- `flake.nix` mkBuildInputs: add `pkgs.systemd` (dbus-1 Requires.private: libsystemd)
 
 ### Prior
-- 347.1: purge_uri/path drops page_text_layer
+- 348.1: leptonica for tesseract Requires: lept
+- 347.1: purge text layers
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-348.1-leptonica-pkg-config-53e62cd.bundle HEAD
+git pull --ff-only …/thumtoo-349.1-systemd-pkg-config-53e62cd.bundle HEAD
 ```

@@ -48,6 +48,8 @@
         curl
         openssl        # libcrypto.pc
         dbus           # dbus-1.pc (XDG Thumbnailer1)
+        # dbus-1.pc Requires.private: libsystemd — silence pkg-config spam
+        systemd
 
         # vips Requires.private (and common transitive .pc names)
         fftw
