@@ -39,6 +39,10 @@
         libarchive
         mupdf
         tesseract
+        # tesseract.pc Requires: lept — without leptonica on PKG_CONFIG_PATH,
+        # pkg_check_modules(tesseract) spams "Package 'lept' was not found"
+        # (even when tesseract itself is found). We do not link lept directly.
+        leptonica
         djvulibre
         djvulibre.dev
         curl

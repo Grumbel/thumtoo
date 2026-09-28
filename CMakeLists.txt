@@ -228,8 +228,9 @@ if(THUMTOO_WITH_TESSERACT AND TESSERACT_FOUND)
 else()
   message(WARNING
     "thumtoo: Tesseract (tesseract.pc) not found — OCR text layers DISABLED. "
-    "Install tesseract and ensure PKG_CONFIG_PATH sees tesseract.pc. "
-    "Nix: pkgs.tesseract must be in buildInputs (thumtoo.lib.mkBuildInputs). "
+    "Install tesseract and ensure PKG_CONFIG_PATH sees tesseract.pc "
+    "(and lept.pc from leptonica — tesseract Requires: lept). "
+    "Nix: pkgs.tesseract + pkgs.leptonica via thumtoo.lib.mkBuildInputs. "
     "THUMTOO_HAVE_TESSERACT=0")
 endif()
 thumtoo_export_to_parent(THUMTOO_HAVE_TESSERACT)

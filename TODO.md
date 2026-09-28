@@ -2,15 +2,16 @@
 
 ## Status (2026-09-28)
 
-**Tip:** `thumtoo-347.1-purge-text-layers` (base `5758b37`).
+**Tip:** `thumtoo-348.1-leptonica-pkg-config` (base `53e62cd`).
 
-### 347.1 — purge_uri/path drops page_text_layer
-- `Store::delete_page_text_layers` / `_for_blob`
-- `Client::purge_uri` deletes native+OCR text for the page even when the
-  document blob is shared; `purge_path` clears all text for the file blob.
-- Enables biltoo Shift+F5 to re-extract text after coord fixes.
+### 348.1 — silence tesseract→lept pkg-config spam
+- `flake.nix` mkBuildInputs: add `pkgs.leptonica` (tesseract.pc Requires: lept)
+- CMake warning mentions leptonica when OCR is disabled
+
+### Prior
+- 347.1: purge_uri/path drops page_text_layer
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-347.1-purge-text-layers-5758b37.bundle HEAD
+git pull --ff-only …/thumtoo-348.1-leptonica-pkg-config-53e62cd.bundle HEAD
 ```
