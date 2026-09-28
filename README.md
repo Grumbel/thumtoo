@@ -23,9 +23,14 @@ cache.
 |------------|--------|
 | Image size and basic media metadata | Width, height, format; page counts for documents where supported |
 | Preview tiles | Zoomable 256² tiles and soft overviews for fast browsing |
+| PreferCache / TileSynth | Whole-frame samples from durable tiles when a pyramid exists |
+| Page text layers | Native extract (MuPDF / DjVu) and optional **Tesseract OCR**; DPI-aware OCR |
 | Archives | Cached member lists for zip, tar, and similar containers (read-only) |
 | Tags and sets | Optional user data keyed by content hash (survives cache rebuilds) |
 | Directory snapshots | Optional cached folder listings for faster reopen (e.g. slow disks) |
+| Purge helpers | `purge_uri` / `purge_path` drop size, pixels, tiles, and cached text layers |
+
+Optional backends (pkg-config): MuPDF, DjVu, libunarr, curl, **tesseract** (+ **leptonica** for `lept.pc`), **dbus** (+ **systemd** for `libsystemd.pc` on Nix). `lib.mkBuildInputs` lists the full set so configure does not spam missing `.pc` files.
 
 ## Related applications
 
@@ -45,7 +50,8 @@ nix build            # package
 nix run .#status -- --help
 ```
 
-**CMake** (needs libvips, libjxl, SQLite, libarchive; optional MuPDF, DjVu, curl):
+**CMake** (needs libvips, libjxl, SQLite, libarchive; optional MuPDF, DjVu, curl,
+tesseract/leptonica, dbus):
 
 ```bash
 cmake -B build && cmake --build build
@@ -53,9 +59,10 @@ ctest --test-dir build
 ./build/thumtoo-status --version
 ```
 
-Version comes from the top-level `VERSION` file (e.g. `0.1.0-dev`). Packaging
-may append a revision suffix. Hosts can call `thumtoo::version_string()` after
-including `<thumtoo/version.hpp>`.
+Prefer `nix develop` so `PKG_CONFIG_PATH` includes private deps of optional
+modules (e.g. `lept` for tesseract, `libsystemd` for dbus). Version comes from
+the top-level `VERSION` file. Packaging may append a revision suffix. Hosts can
+call `thumtoo::version_string()` after including `<thumtoo/version.hpp>`.
 
 ## Using the cache
 

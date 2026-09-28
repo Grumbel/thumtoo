@@ -24,6 +24,10 @@ must not key durable pixels or tags.
 | Archive open without re-walk | `refresh_archive_toc` / `get_archive_entries` |
 | Image inside zip/cbz/… | URI `file:///…//archive:member` + normal get/request size/pixels |
 
+| Drop cached pixels / text for a URI | `Client::purge_uri` (also clears `page_text_layer` even when the document blob is shared) |
+| Drop all cache rows for a file path | `Client::purge_path` |
+| OCR / native page text | `request_page_text` / Store text layers (requires MuPDF and/or Tesseract at build time) |
+
 Suggested `max_edge` starting points (tunable in biltoo):
 
 | Mode | max_edge | Notes |

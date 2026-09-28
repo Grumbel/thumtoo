@@ -2,16 +2,20 @@
 
 ## Status (2026-09-28)
 
-**Tip:** `thumtoo-349.1-systemd-pkg-config` (base `53e62cd`).
+**Tip:** `thumtoo-350.1-docs-readme` (base `53e62cd`).
 
-### 349.1 — silence dbus→libsystemd pkg-config spam
-- `flake.nix` mkBuildInputs: add `pkgs.systemd` (dbus-1 Requires.private: libsystemd)
+**No VERSION commit** — version/tag is owned on the maintainer side.
 
-### Prior
+### Done this tip
+- README: text layers, OCR, TileSynth, purge, mkBuildInputs pkg-config note
+- INTEGRATION.md: purge_uri/path + page text mapping
+
+### Prior (code)
+- 349.1: systemd on PKG_CONFIG_PATH for dbus-1
 - 348.1: leptonica for tesseract Requires: lept
-- 347.1: purge text layers
+- 347.1: purge_uri/path drops page_text_layer
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-349.1-systemd-pkg-config-53e62cd.bundle HEAD
+git pull --ff-only …/thumtoo-350.1-docs-readme-53e62cd.bundle HEAD
 ```
