@@ -2,13 +2,15 @@
 
 ## Status (2026-09-29)
 
-**Tip:** thumtoo-006-request-tiles-batch-job (on 005 stack).
+**Tip:** thumtoo-007-materialize-tile-cell (on 006 stack).
+
+### 007
+- `materialize_tile_cell` is the sole interactive cell path (store hit or encode)
+- `request_tiles` → one batch job; walks coords via materialize (probe once)
+- `decode_tile_blob_to_rgb888` on the worker before host callback (no host JPEG decode)
 
 ### 006
-- `request_tiles` enqueues **one** EnsureTiles job with `tile_batch` (was N jobs)
-- Batch handler: Store hits + sequential miss encode (file/archive/PDF) on one worker
-- Avoids N-worker fan-out / re-decode under Gallery multi-cell issue
+- request_tiles one batch job (superseded structure in 007)
 
 ### 005
-- Do not archive-coalesce interactive EnsureTiles (serialised 150-cell settle)
-- ProbeSize / soft / LQIP / FocusFull still batch for one extract
+- Do not archive-coalesce interactive EnsureTiles

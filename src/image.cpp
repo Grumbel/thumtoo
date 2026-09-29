@@ -1596,6 +1596,80 @@ std::vector<TileBlob> build_tile_pyramid_rgb(const std::uint8_t* rgb, int width,
 }
 
 
+
+std::optional<TileBlob> decode_tile_blob_to_rgb888(TileBlob blob) {
+  if (blob.bytes.empty()) {
+    return std::nullopt;
+  }
+  if (blob.codec == kTileCodecRgb888 || blob.codec == "rgba8") {
+    return blob;
+  }
+  // Durable tiles: codec "jpeg" (default) or empty legacy rows.
+  if (!blob.codec.empty() && blob.codec != "jpeg" && blob.codec != "jpg" &&
+      blob.codec != kDefaultTileCodec) {
+    return blob;  // unknown encoded form — leave for host
+  }
+  ensure_vips();
+  VipsImage* full = nullptr;
+  {
+    ScopedNsAccumulator timer(global_build_stats().image_load_ns);
+    full = vips_image_new_from_buffer(blob.bytes.data(), blob.bytes.size(),
+                                      nullptr, nullptr);
+  }
+  if (!full) {
+    return std::nullopt;
+  }
+  VipsImage* rgb = nullptr;
+  if (vips_colourspace(full, &rgb, VIPS_INTERPRETATION_sRGB, nullptr) != 0 ||
+      !rgb) {
+    g_object_unref(full);
+    return std::nullopt;
+  }
+  g_object_unref(full);
+  if (vips_image_get_format(rgb) != VIPS_FORMAT_UCHAR) {
+    VipsImage* casted = nullptr;
+    if (vips_cast_uchar(rgb, &casted, nullptr) != 0 || !casted) {
+      g_object_unref(rgb);
+      return std::nullopt;
+    }
+    g_object_unref(rgb);
+    rgb = casted;
+  }
+  if (vips_image_get_bands(rgb) > 3) {
+    VipsImage* extr = nullptr;
+    if (vips_extract_band(rgb, &extr, 0, "n", 3, nullptr) != 0 || !extr) {
+      g_object_unref(rgb);
+      return std::nullopt;
+    }
+    g_object_unref(rgb);
+    rgb = extr;
+  } else if (vips_image_get_bands(rgb) < 3) {
+    g_object_unref(rgb);
+    return std::nullopt;
+  }
+  const int w = vips_image_get_width(rgb);
+  const int h = vips_image_get_height(rgb);
+  size_t len = 0;
+  void* buf = vips_image_write_to_memory(rgb, &len);
+  g_object_unref(rgb);
+  if (!buf || len == 0) {
+    if (buf) g_free(buf);
+    return std::nullopt;
+  }
+  TileBlob out;
+  out.scale = blob.scale;
+  out.x = blob.x;
+  out.y = blob.y;
+  out.width = w;
+  out.height = h;
+  out.codec = kTileCodecRgb888;
+  out.source = blob.source;
+  out.bytes.assign(static_cast<std::uint8_t*>(buf),
+                   static_cast<std::uint8_t*>(buf) + len);
+  g_free(buf);
+  return out;
+}
+
 std::optional<TileBlob> encode_tile_cell_rgb(const std::uint8_t* rgb, int width,
                                              int height, int scale, int x, int y,
                                              int jpeg_quality) {

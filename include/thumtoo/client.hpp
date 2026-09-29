@@ -542,6 +542,10 @@ class Client {
       Job& job,
       const std::optional<std::vector<std::uint8_t>>& preextracted = std::nullopt);
   void handle_ensure_pixels_store(Job& job);
+  /// Store hit or encode one grid cell (interactive). Writes durable JPEG when
+  /// appropriate. Does not post callbacks.
+  [[nodiscard]] std::optional<TileBlob> materialize_tile_cell(
+      const std::string& uri, int scale, int x, int y, bool skip_probe);
   void handle_ensure_tiles_store(Job& job);
   void handle_ensure_tiles(
       Job& job,

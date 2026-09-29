@@ -127,6 +127,11 @@ void image_library_init();
     int jpeg_quality = kDefaultTileQuality);
 
 /// Encode an already-cropped RGB888 buffer as a TileBlob (any scale, including negative).
+/// If @p blob is durable JPEG (or other encoded), decode to rgb888 for host
+/// paint. Already-rgb888 / empty pass through. Runs on the caller thread
+/// (worker); does not touch Store.
+[[nodiscard]] std::optional<TileBlob> decode_tile_blob_to_rgb888(TileBlob blob);
+
 [[nodiscard]] std::optional<TileBlob> encode_tile_cell_rgb(
     const std::uint8_t* rgb, int width, int height, int scale, int x, int y,
     int jpeg_quality = kDefaultTileQuality);
