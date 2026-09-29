@@ -28,3 +28,11 @@ Force plain-text interpretation regardless of extension:
 ## Related
 
 - biltoo `docs/TXT_MD_SUPPORT.md`
+
+## Threading
+
+MuPDF’s Markdown path uses **cmark** (`cmark_render_html_*`). That code is not
+safe for concurrent use from multiple thumtoo worker threads. `tls_document` /
+`tls_page` take a process-wide mutex when `is_markdown_path` so Gallery size
+probes and tile jobs cannot open the same (or different) `.md` files in parallel
+through cmark. PDF/DjVu paths are unchanged (per-thread `fz_context` only).

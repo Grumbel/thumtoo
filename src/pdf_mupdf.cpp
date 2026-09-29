@@ -3,6 +3,7 @@
 
 #include "thumtoo/pdf_mupdf.hpp"
 #include "thumtoo/constants.hpp"
+#include "thumtoo/format.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -11,6 +12,7 @@
 #include <string>
 #include <vector>
 #include <tuple>
+#include <mutex>
 
 #if defined(THUMTOO_HAVE_MUPDF)
 #include <mupdf/fitz.h>
@@ -60,6 +62,20 @@ struct TlsMupdf {
 thread_local TlsMupdf g_tls;
 thread_local std::string g_force_text_key;
 thread_local std::string g_last_mupdf_error;
+
+// MuPDF routes .md through cmark (fz_htdoc_*). libcmark is not safe for
+// concurrent open/render from multiple worker threads even with per-thread
+// fz_context — SIGSEGV in cmark_render_html_with_mem under Gallery size probes.
+std::mutex g_mupdf_markdown_mu;
+
+struct MarkdownMuPdfLock {
+  std::unique_lock<std::mutex> lock;
+  explicit MarkdownMuPdfLock(const std::filesystem::path& path) {
+    if (is_markdown_path(path)) {
+      lock = std::unique_lock<std::mutex>(g_mupdf_markdown_mu);
+    }
+  }
+};
 
 void mupdf_store_message(const char* msg)
 {
@@ -136,6 +152,9 @@ fz_document* tls_document(const std::filesystem::path& path) {
     return g_tls.doc;
   }
 
+  // Serialize .md opens: cmark runs inside fz_open_document / htdoc buffer path.
+  MarkdownMuPdfLock serial(path);
+
   tls_drop_doc();
   g_last_mupdf_error.clear();
   fz_document* doc = nullptr;
@@ -177,6 +196,8 @@ fz_page* tls_page(const std::filesystem::path& path, int page_1based) {
 
   const int idx = page_1based - 1;
   if (g_tls.page && g_tls.page_index == idx) return g_tls.page;
+
+  MarkdownMuPdfLock serial(path);
 
   tls_drop_page();
   const int n = fz_count_pages(ctx, doc);
