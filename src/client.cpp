@@ -2701,12 +2701,17 @@ void Client::worker_main() {
       queue_.erase(queue_.begin());
       if (stop_ && single.uri.empty()) return;
 
-      // Coalesce same-archive jobs of the same kind into one libarchive pass.
+      // Coalesce same-archive jobs into one libarchive pass — but NOT for
+      // interactive EnsureTiles. Coalescing every Gallery cell for one zip
+      // onto a single worker serialised warm get_tile / cold encode (150
+      // members ≈ 15s settle). Interactive tiles run as single jobs so the
+      // fixed worker pool processes them in parallel. ProbeSize / soft /
+      // LQIP / FocusFull still batch (one extract pays for many members).
       if (!single.uri.empty() &&
           (single.kind == JobKind::ProbeSize ||
-           single.kind == JobKind::EnsureTiles ||
            single.kind == JobKind::EnsurePixels ||
-           single.kind == JobKind::EnsureLqip)) {
+           single.kind == JobKind::EnsureLqip ||
+           (single.kind == JobKind::EnsureTiles && single.tile_pyramid))) {
         if (auto arch = parse_archive_uri(single.uri);
             arch && !arch->member_path.empty()) {
           const JobKind batch_kind = single.kind;
@@ -2722,12 +2727,10 @@ void Client::worker_main() {
               ++it;
               continue;
             }
-            // Do not mix interest epochs in one extract pass.
             if (it->epoch != batch.front().epoch) {
               ++it;
               continue;
             }
-            // Do not coalesce more FocusFull jobs into this batch.
             if (it->kind == JobKind::EnsureTiles && it->tile_pyramid) {
               if (batch.front().tile_pyramid) {
                 ++it;
