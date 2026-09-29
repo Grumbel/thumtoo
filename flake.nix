@@ -24,6 +24,12 @@
         };
         # nixpkgs 1.27.x patches may not apply on 1.28; start without them.
         patches = [ ];
+        # Markdown needs cmark-gfm. Upstream source tarball vendors
+        # thirdparty/cmark-gfm; nixpkgs USE_SYSTEM_LIBS only removes listed
+        # thirdparty dirs (curl, freetype, …) and does not list cmark-gfm, so
+        # the vendored copy is kept. No separate nixpkgs cmark-gfm input required
+        # for a first pin. If Markdown probes fail later, switch to system
+        # cmark-gfm + USE_SYSTEM_CMARK_GFM.
         # nixpkgs mupdf uses `rec { version = …; postInstall = "… ${version} …" }`,
         # so overrideAttrs on version alone leaves Version: 1.27.2 in mupdf.pc
         # while the store path is already mupdf-1.28.5.
