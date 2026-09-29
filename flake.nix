@@ -13,13 +13,30 @@
         pkgs = import nixpkgs { inherit system; };
       });
 
+      # Pin MuPDF ≥ 1.28 for native Markdown (and future .txt) document support.
+      # nixpkgs is still on 1.27.2; biltoo docs/TXT_MD_SUPPORT.md waits on this.
+      # Consumers (biltoo) get the same pin via lib.mkBuildInputs.
+      pinMupdf = pkgs: pkgs.mupdf.overrideAttrs (old: rec {
+        version = "1.28.5";
+        src = pkgs.fetchurl {
+          url = "https://mupdf.com/downloads/archive/mupdf-${version}-source.tar.gz";
+          hash = "sha256-mKXBDNogw5ks33b/ayoRScMr15zHltP3AyMLEYW36TQ=";
+        };
+        # nixpkgs 1.27.x patches may not apply on 1.28; start without them.
+        patches = [ ];
+      });
+
       # libvips + JPEG-XL, and the Requires.private packages whose .pc files
       # pkg-config looks for when probing vips (same set biltoo uses to silence
       # "Package '…' was not found" spam). We do not necessarily link all of
       # these into thumtoo; they only need to be on PKG_CONFIG_PATH.
       # Also exported as lib.mkBuildInputs for consumers (biltoo) that
       # add_subdirectory thumtoo and must have the same pkg-config deps.
-      vipsInputs = pkgs: with pkgs; [
+      vipsInputs = pkgs:
+        let
+          pkgs' = pkgs // { mupdf = pinMupdf pkgs; };
+        in
+        with pkgs'; [
         sqlite
         vips
         libjxl
@@ -37,7 +54,7 @@
         # libarchive
         libunarr 
         libarchive
-        mupdf
+        mupdf          # pinned ≥ 1.28.5 (see pinMupdf)
         tesseract
         # tesseract.pc Requires: lept — without leptonica on PKG_CONFIG_PATH,
         # pkg_check_modules(tesseract) spams "Package 'lept' was not found"
@@ -198,6 +215,8 @@
       # silently disable at configure time.
       lib = {
         mkBuildInputs = vipsInputs;
+        # Overridden MuPDF (1.28.5); for overlays / explicit dependency pins.
+        pinMupdf = pinMupdf;
       };
 
       packages = forAllSystems ({ pkgs, ... }: {

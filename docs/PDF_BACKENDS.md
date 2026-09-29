@@ -59,3 +59,9 @@ Default expand for PDFs uses rendered `//page:N`.
 | EnsureTiles | full extract → `build_tile_cell_rgb` / pyramid |
 
 Store keys: content_id `sha256:…:pdfimage:N`, Document media, `RegionKind::Fragment` key `N`.
+
+## MuPDF version (flake)
+
+nixpkgs ships MuPDF 1.27.x. thumtoo pins **1.28.5** via `pinMupdf` in
+`flake.nix` (exported through `lib.mkBuildInputs`) for Markdown document
+support. Rebuild if PDF/EPUB regressions appear after the pin.
