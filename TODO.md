@@ -2,13 +2,14 @@
 
 ## Status (2026-09-29)
 
-**Tip:** `thumtoo-354.6-mupdf-error-ui` (base `fb6a408`).
+**Tip:** thumtoo-001-prefercache-no-focusfull (linear on origin 551a360).
 
-### 354.6
-- Capture MuPDF errors in-thread (no stderr UNHANDLED EXCEPTION spam)
-- mupdf_last_error() for hosts
+### Stack (single bundle)
+1. PreferCache miss must not request_tile_pyramid (e4db5b8 regression)
+2. FocusFull cap: wait instead of busy-rotate; no archive pyramid coalesce
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-354.6-mupdf-error-ui-fb6a408.bundle HEAD
+git pull --ff-only …/thumtoo-001-prefercache-no-focusfull-551a360.bundle HEAD
 ```
+

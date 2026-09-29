@@ -24,6 +24,7 @@
 #include <vips/vips.h>
 
 #include <algorithm>
+#include <iterator>
 #include <cmath>
 #include <atomic>
 #include <deque>
@@ -1329,10 +1330,13 @@ void Client::request_raster(RasterRequest req, PixelsCallback cb) {
     }
     return;
   }
-  // No complete TileSynth: schedule durable pyramid so tile hosts do not
-  // depend on ephemeral soft forever (Kill Soft Phase D).
-  // request_tile_pyramid coalesces duplicate pyramid jobs for the same URI.
-  request_tile_pyramid(req.uri, /*min_scale=*/0, /*max_scale=*/-1, {});
+  // No complete TileSynth: do NOT schedule FocusFull (full pyramid at scale 0).
+  // PreferCache/Overview miss used to call request_tile_pyramid here (Kill Soft
+  // Phase D, e4db5b8 2026-09-26). Every filmstrip/Gallery overview PreferCache
+  // for a cold archive member fully decoded the JPEG from the zip and left
+  // FocusFull=1 + tile queues at s=0 after the UI looked settled.
+  // Viewport coverage is interactive request_tiles; durable pyramids stay on
+  // prepare / explicit scheduleTilePyramid.
   // One-shot ephemeral reply for hosts that need a QImage while tiles build.
   if (edge > kMaxSoftLadderEdge || req.policy == RasterPolicy::Overview) {
     request_overview_pixels(std::move(req.uri), edge, std::move(cb));
@@ -2637,10 +2641,50 @@ void Client::worker_main() {
       if (queue_.front().kind == JobKind::EnsureTiles &&
           queue_.front().tile_pyramid &&
           focus_full_inflight_ >= kFocusFullMaxConcurrent) {
-        // Rotate to the back so other work can proceed.
-        Job blocked = std::move(queue_.front());
-        queue_.erase(queue_.begin());
-        queue_.push_back(std::move(blocked));
+        // Prefer any non-FocusFull work (interactive tiles, size, soft, …).
+        auto alt = queue_.end();
+        for (auto it = std::next(queue_.begin()); it != queue_.end(); ++it) {
+          const bool is_ff = it->kind == JobKind::EnsureTiles && it->tile_pyramid;
+          if (!is_ff) {
+            alt = it;
+            break;
+          }
+        }
+        if (alt != queue_.end()) {
+          Job blocked = std::move(queue_.front());
+          queue_.erase(queue_.begin());
+          queue_.push_back(std::move(blocked));
+          alt = queue_.end();
+          for (auto it = queue_.begin(); it != queue_.end(); ++it) {
+            const bool is_ff = it->kind == JobKind::EnsureTiles && it->tile_pyramid;
+            if (!is_ff) {
+              alt = it;
+              break;
+            }
+          }
+          if (alt != queue_.end() && alt != queue_.begin()) {
+            Job job = std::move(*alt);
+            queue_.erase(alt);
+            queue_.push_front(std::move(job));
+          }
+          continue;
+        }
+        // Queue is only FocusFull work and the slot is taken — block instead of
+        // busy-rotating (was pegging all cores at 100% after Gallery "settled").
+        cv_.wait(lock, [this] {
+          if (stop_) {
+            return true;
+          }
+          if (focus_full_inflight_ < kFocusFullMaxConcurrent) {
+            return true;
+          }
+          for (const auto& j : queue_) {
+            if (!(j.kind == JobKind::EnsureTiles && j.tile_pyramid)) {
+              return true;
+            }
+          }
+          return queue_.empty();
+        });
         continue;
       }
       if (!queue_.front().uri.empty()) ++inflight_;
@@ -2677,6 +2721,17 @@ void Client::worker_main() {
             if (it->epoch != batch.front().epoch) {
               ++it;
               continue;
+            }
+            // Do not coalesce more FocusFull jobs into this batch.
+            if (it->kind == JobKind::EnsureTiles && it->tile_pyramid) {
+              if (batch.front().tile_pyramid) {
+                ++it;
+                continue;
+              }
+              if (focus_full_inflight_ >= kFocusFullMaxConcurrent) {
+                ++it;
+                continue;
+              }
             }
             ++inflight_;
             if (it->kind == JobKind::EnsureTiles && it->tile_pyramid) {
@@ -3077,6 +3132,7 @@ void Client::worker_main() {
           if (batch[it.index].kind == JobKind::EnsureTiles &&
               batch[it.index].tile_pyramid && focus_full_inflight_ > 0) {
             --focus_full_inflight_;
+          cv_.notify_all();
           }
           release_inflight_locked();
         }
@@ -3113,6 +3169,7 @@ void Client::worker_main() {
         if (single.kind == JobKind::EnsureTiles && single.tile_pyramid &&
             focus_full_inflight_ > 0) {
           --focus_full_inflight_;
+          cv_.notify_all();
         }
         release_inflight_locked();
         continue;
@@ -3165,6 +3222,7 @@ void Client::worker_main() {
       if (single.kind == JobKind::EnsureTiles && single.tile_pyramid) {
         if (focus_full_inflight_ > 0) {
           --focus_full_inflight_;
+          cv_.notify_all();
         }
       }
       release_inflight_locked();
