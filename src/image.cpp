@@ -39,10 +39,11 @@ void ensure_vips() {
     if (VIPS_INIT("thumtoo") != 0) {
       // Subsequent calls surface errors via NULL returns / vips_error.
     }
-    // Do not force concurrency=1. That made warm-path JPEG tile decode and
-    // shrink use a single core while Client workers sat idle. Default libvips
-    // concurrency (hardware) lets each worker use parallel decode where useful.
-    // Cap is still bounded by worker_threads (one job per worker).
+    // Within one op: single-threaded. Parallelism is across Client workers
+    // (one job per worker). Default vips concurrency is hardware_concurrency
+    // and multiplies to workers×hw threads (gdb: hundreds for a 150-image
+    // Gallery open). Cap at 1; raise worker_threads for throughput instead.
+    vips_concurrency_set(1);
   });
 }
 

@@ -162,6 +162,11 @@ Client::Client(std::unique_ptr<Store> store, Executor executor,
     n = std::thread::hardware_concurrency();
   }
   if (n == 0) n = 1;
+  // Hard cap: 150 Gallery cells × default hw workers × vips threads was a
+  // thread storm. Eight workers cover interactive tiles + probes without
+  // saturating the machine; hosts can pass a higher explicit count.
+  constexpr unsigned kDefaultWorkerCap = 8;
+  if (worker_threads == 0 && n > kDefaultWorkerCap) n = kDefaultWorkerCap;
   if (n > 32) n = 32;
   workers_.reserve(n);
   for (unsigned i = 0; i < n; ++i) {
