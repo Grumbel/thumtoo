@@ -39,9 +39,10 @@ void ensure_vips() {
     if (VIPS_INIT("thumtoo") != 0) {
       // Subsequent calls surface errors via NULL returns / vips_error.
     }
-    // Client workers already parallelize jobs. Extra Vips threads multiply
-    // memory/CPU under multipage ladder encode (prepare --ladder N × pages).
-    vips_concurrency_set(1);
+    // Do not force concurrency=1. That made warm-path JPEG tile decode and
+    // shrink use a single core while Client workers sat idle. Default libvips
+    // concurrency (hardware) lets each worker use parallel decode where useful.
+    // Cap is still bounded by worker_threads (one job per worker).
   });
 }
 

@@ -2,14 +2,11 @@
 
 ## Status (2026-09-29)
 
-**Tip:** thumtoo-001-prefercache-no-focusfull (linear on origin 551a360).
+**Tip:** thumtoo-002 on origin 551a360 via 001 (ae7f722).
 
-### Stack (single bundle)
-1. PreferCache miss must not request_tile_pyramid (e4db5b8 regression)
-2. FocusFull cap: wait instead of busy-rotate; no archive pyramid coalesce
+### 002
+- Remove vips_concurrency_set(1) — restore multithreaded decode
 
-### Apply
-```bash
-git pull --ff-only …/thumtoo-001-prefercache-no-focusfull-551a360.bundle HEAD
-```
+### Stack
+551a360 → ae7f722 (001 PreferCache) → this tip
 
