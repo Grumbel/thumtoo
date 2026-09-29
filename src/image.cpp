@@ -1297,6 +1297,38 @@ std::optional<TileBlob> extract_rgb_cell_from_level(VipsImage* level, int scale,
   return tb;
 }
 
+
+/// Apply @p remain factor-2 shrinks then crop cell as rgb888 (interactive path).
+/// Used after JPEG DCT shrink so we do not JPEG-encode then immediately
+/// decode_tile_blob_to_rgb888 (that round-trip failed for some coarse cells).
+std::optional<TileBlob> extract_rgb_after_shrink_steps(VipsImage* base,
+                                                       int remain_steps,
+                                                       int logical_scale, int x,
+                                                       int y) {
+  if (!base || remain_steps < 0 || x < 0 || y < 0) return std::nullopt;
+  VipsImage* current = base;
+  g_object_ref(current);
+  for (int s = 0; s < remain_steps; ++s) {
+    VipsImage* halved = nullptr;
+    {
+      ScopedNsAccumulator timer(global_build_stats().shrink_ns);
+      if (vips_shrink(current, &halved, 2.0, 2.0, nullptr) != 0 || !halved) {
+        g_object_unref(current);
+        return std::nullopt;
+      }
+    }
+    g_object_unref(current);
+    current = halved;
+    if (vips_image_get_width(current) < 1 || vips_image_get_height(current) < 1) {
+      g_object_unref(current);
+      return std::nullopt;
+    }
+  }
+  auto tile = extract_rgb_cell_from_level(current, logical_scale, x, y);
+  g_object_unref(current);
+  return tile;
+}
+
 std::optional<TileBlob> cut_cell_from_vips(VipsImage* full, int scale, int x,
                                            int y, int jpeg_quality) {
   if (!full || scale < 0 || x < 0 || y < 0) return std::nullopt;
@@ -1437,13 +1469,15 @@ std::optional<TileBlob> build_tile_cell(const std::filesystem::path& path,
     const int remain = scale_steps_after_jpeg_shrink(scale, js);
     VipsImage* shrunk = jpeg_shrink_acquire(path, js);
     if (shrunk) {
-      auto tile = cut_cell_from_vips(shrunk, remain, x, y, jpeg_quality);
+      // rgb888 cell — avoid JPEG encode→decode round-trip on the interactive path.
+      auto tile = extract_rgb_after_shrink_steps(shrunk, remain, scale, x, y);
       g_object_unref(shrunk);
       if (tile) {
-        tile->scale = scale;
         tile->source = TileSource::JpegShrink;
+        return tile;
       }
-      return tile;
+      // Fall through to full ladder when DCT+remain shrink failed (odd dims /
+      // max-scale single cell). Do not return nullopt and skip the ladder.
     }
   }
 
@@ -1503,13 +1537,13 @@ std::optional<TileBlob> build_tile_cell_buffer(const std::uint8_t* data,
     VipsImage* shrunk =
         jpeg_shrink_acquire_buffer(decode_cache_key, data, size, js);
     if (shrunk) {
-      auto tile = cut_cell_from_vips(shrunk, remain, x, y, jpeg_quality);
+      auto tile = extract_rgb_after_shrink_steps(shrunk, remain, scale, x, y);
       g_object_unref(shrunk);
       if (tile) {
-        tile->scale = scale;
         tile->source = TileSource::JpegShrink;
+        return tile;
       }
-      return tile;
+      // Fall through to ladder — do not return nullopt and skip full decode.
     }
   }
 
