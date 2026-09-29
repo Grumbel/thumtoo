@@ -24,6 +24,16 @@
         };
         # nixpkgs 1.27.x patches may not apply on 1.28; start without them.
         patches = [ ];
+        # nixpkgs mupdf uses `rec { version = …; postInstall = "… ${version} …" }`,
+        # so overrideAttrs on version alone leaves Version: 1.27.2 in mupdf.pc
+        # while the store path is already mupdf-1.28.5.
+        postFixup = (old.postFixup or "") + ''
+          for pc in "$dev/lib/pkgconfig"/mupdf*.pc "$out/lib/pkgconfig"/mupdf*.pc; do
+            if [ -f "$pc" ]; then
+              sed -i "s/^Version:.*/Version: ${version}/" "$pc"
+            fi
+          done
+        '';
       });
 
       # libvips + JPEG-XL, and the Requires.private packages whose .pc files

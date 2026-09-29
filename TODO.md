@@ -2,25 +2,23 @@
 
 ## Status (2026-09-29)
 
-**Tip:** `thumtoo-353.1-mupdf-1.28.5` (base `fb6a408`).
+**Tip:** `thumtoo-353.2-mupdf-pc-version` (base `fb6a408`).
+
+### 353.2
+- Fix mupdf.pc Version (was stuck at 1.27.2 after src pin; store path was already 1.28.5)
+- postFixup sed on `$dev`/`$out` pkgconfig
 
 ### 353.1
-- Pin MuPDF **1.28.5** via `pinMupdf` / `mkBuildInputs` (nixpkgs still 1.27.2)
-- Clears nixpkgs 1.27 patches (may need refresh if build fails)
-- Goal: Markdown document support for biltoo `.md` path (see biltoo `docs/TXT_MD_SUPPORT.md`)
+- Pin MuPDF 1.28.5 via pinMupdf / mkBuildInputs
 
 ### Verify
 ```bash
-nix build .#default -L   # or thumtoo-configure && thumtoo-build
-# pkg-config --modversion mupdf  → 1.28.5 in the build env
-# PDF/EPUB still rasterize
+# re-enter shell / rebuild mupdf
+pkg-config --modversion mupdf   # expect 1.28.5
+pkg-config --libs mupdf         # store path mupdf-1.28.5
 ```
-
-### Next (if build OK)
-- thumtoo PathKind / open for `.md` (and decide `.txt`)
-- biltoo file filters once thumtoo accepts the format
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-353.1-mupdf-1.28.5-fb6a408.bundle HEAD
+git pull --ff-only …/thumtoo-353.2-mupdf-pc-version-fb6a408.bundle HEAD
 ```
