@@ -217,7 +217,11 @@ std::optional<PdfRaster> pixmap_to_rgb(fz_context* ctx, fz_pixmap* pix) {
 
 void mupdf_force_next_open_as_text(const std::filesystem::path& path)
 {
+#if defined(THUMTOO_HAVE_MUPDF)
   g_force_text_key = path.lexically_normal().string();
+#else
+  (void)path;
+#endif
 }
 
 std::optional<int> mupdf_page_count(const std::filesystem::path& path) {
