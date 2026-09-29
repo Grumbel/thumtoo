@@ -110,22 +110,22 @@ fz_document* tls_document(const std::filesystem::path& path) {
   tls_drop_doc();
   fz_document* doc = nullptr;
   fz_var(doc);
-  // Snapshot before fz_try — bool locals are clobbered by longjmp.
-  const int force_text =
-      (!g_force_text_key.empty() && g_force_text_key == key) ? 1 : 0;
-  if (force_text) {
+  // Do not carry a local across fz_try (longjmp clobber). Branch on the key
+  // once, clear it, then open on separate paths with no shared flag local.
+  const bool want_text =
+      (!g_force_text_key.empty() && g_force_text_key == key);
+  if (want_text) {
     g_force_text_key.clear();
-  }
-  fz_try(ctx) {
-    if (force_text) {
+    fz_try(ctx) {
       fz_stream* stm = fz_open_file(ctx, path.string().c_str());
       doc = fz_open_document_with_stream(ctx, "txt", stm);
       fz_drop_stream(ctx, stm);
-    } else {
-      doc = fz_open_document(ctx, path.string().c_str());
     }
+    fz_catch(ctx) { doc = nullptr; }
+  } else {
+    fz_try(ctx) { doc = fz_open_document(ctx, path.string().c_str()); }
+    fz_catch(ctx) { doc = nullptr; }
   }
-  fz_catch(ctx) { doc = nullptr; }
   if (!doc) return nullptr;
 
   g_tls.path_key = key;
