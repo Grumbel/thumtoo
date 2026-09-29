@@ -3143,26 +3143,11 @@ void Client::worker_main() {
         }
       };
 
-      if (items.size() <= 1) {
-        for (auto& it : items) run_one(it);
-      } else {
-        std::atomic<std::size_t> next{0};
-        const unsigned helpers = std::min(
-            static_cast<unsigned>(items.size()),
-            std::max(1u, static_cast<unsigned>(workers_.size())));
-        std::vector<std::thread> pool;
-        pool.reserve(helpers);
-        for (unsigned t = 0; t < helpers; ++t) {
-          pool.emplace_back([&] {
-            for (;;) {
-              const std::size_t k = next.fetch_add(1, std::memory_order_relaxed);
-              if (k >= items.size()) return;
-              run_one(items[k]);
-            }
-          });
-        }
-        for (auto& th : pool) th.join();
-      }
+      // Always run on this worker — do not spawn nested std::threads.
+      // Nested pools (up to workers_.size() per batch) caused gdb storms of
+      // New Thread / exited while Gallery settled slowly (each archive batch
+      // create+join). Parallelism is the outer Client worker pool only.
+      for (auto& it : items) run_one(it);
       continue;
     }
 

@@ -968,18 +968,10 @@ std::vector<TileBlob> cut_pyramid_from_vips(VipsImage* full, int min_scale,
       }
     };
 
-    const unsigned n_workers =
-        std::min(hw, std::max<unsigned>(1, static_cast<unsigned>(cells.size())));
-    if (n_workers <= 1) {
-      encode_worker();
-    } else {
-      std::vector<std::thread> pool;
-      pool.reserve(n_workers);
-      for (unsigned w = 0; w < n_workers; ++w) {
-        pool.emplace_back(encode_worker);
-      }
-      for (auto& th : pool) th.join();
-    }
+    // Sequential cell encode on the calling worker. Spawning hw threads per
+    // pyramid scale level multiplied with Client workers into a thread storm.
+    (void)hw;
+    encode_worker();
 
     for (auto& tb : scale_tiles) {
       if (!tb.bytes.empty()) tiles.push_back(std::move(tb));
