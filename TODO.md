@@ -2,16 +2,18 @@
 
 ## Status (2026-09-29)
 
-**Tip:** thumtoo-009.1-jpeg-dct-rgb-fallback (on 008.1 stack).
+**Tip:** thumtoo-009.2-tile-size-stretch (on 008.1 stack).
+
+### 009.2
+- `get_tile` / `has_tile`: do **not** reject rows whose w/h ≠ `dim_at_tile_scale`
+  grid (JPEG DCT vs floor-half drift). Hosts stretch the bitmap into the cell.
+- Removes miss storms that left interactive cells Failed while LQIP stayed.
 
 ### 009.1
-- Interactive JPEG DCT path: extract rgb888 after remain shrinks (no
-  JPEG encode→decode round-trip before worker rgb888 delivery)
-- On DCT+remain failure, fall through to full ladder instead of returning
-  nullopt (fixed Gallery max-scale / s=5 ERROR while finer scales worked)
+- Interactive JPEG DCT path: rgb888 after remain shrinks; ladder fallthrough
 
 ### 008.1
-- Serialize MuPDF open/load for Markdown paths (cmark not reentrant)
+- Serialize MuPDF Markdown opens (cmark not reentrant)
 
 ### 007
 - materialize_tile_cell / batch request_tiles / worker rgb888
