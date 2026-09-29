@@ -35,6 +35,8 @@ struct ParsedPdfUri {
   /// 1-based page index.
   int page = 0;
   PdfBackend backend = PdfBackend::Default;
+  /// URI had //text — open with MuPDF filetype magic "txt".
+  bool force_text = false;
 };
 
 /// Embedded Image XObject extract (//pdfimage:N) — native pixel size, not a page render.

@@ -3,35 +3,28 @@ SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
-# Markdown and plain text (MuPDF)
+# Markdown, plain text, and //text force (MuPDF)
 
-Status: **thumtoo PathKind + expand wired** (2026-09-29). Requires MuPDF ≥ 1.28
-(see `pinMupdf` in `flake.nix`).
+Requires MuPDF ≥ 1.28 (`pinMupdf`).
 
-## Markdown
+## Auto extensions
 
-- Extensions: `.md`, `.markdown`, `.mdown`, `.mkd`
-- `PathKind::Markdown`
+- **Markdown:** `.md`, `.markdown`, `.mdown`, `.mkd`
+- **Plain text:** `.txt`, `.text`, plus common sources/data (`.c`, `.h`, `.cpp`,
+  `.py`, `.rs`, `.json`, `.yaml`, … — see `is_plain_text_extension`)
 
-## Plain text
+Non-native text extensions open via MuPDF filetype magic `"txt"`.
 
-- Extensions: `.txt`, `.text`
-- `PathKind::PlainText`
-- MuPDF opens these as reflowable text documents (same //page:N pipeline)
+## Force pipe: `//text`
 
-## Shared behaviour
+Force plain-text interpretation regardless of extension:
 
-- Expand / prepare: `file://…//page:N` via MuPDF page count + raster
-- `parse_pdf_uri` accepts these paths (`is_mupdf_page_document_path`)
-- MIME: `text/markdown`, `text/x-markdown`, `text/plain`
-
-## Not yet
-
-- biltoo filters for `.txt` (see biltoo follow-up)
-- ePub-style layout CSS knobs for text/md
-- Arbitrary source files as text (`.py`, …) without renaming
+| URI | Meaning |
+|-----|---------|
+| `path/to/foo//text` | Expand whole file as text document |
+| `path/to/foo//text//page:3` | Page 3 as text |
+| `file:///abs/foo.xyz//text//page:1` | Same with file URI |
 
 ## Related
 
 - biltoo `docs/TXT_MD_SUPPORT.md`
-- `docs/PDF_BACKENDS.md`

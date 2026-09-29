@@ -2,18 +2,16 @@
 
 ## Status (2026-09-29)
 
-**Tip:** `thumtoo-354.2-plaintext-pathkind` (base `fb6a408`).
+**Tip:** `thumtoo-354.3-text-ext-and-force` (base `fb6a408`).
 
-### 354.2
-- PathKind::PlainText (.txt / .text) via same MuPDF //page:N path as Markdown
-
-### 354.1
-- PathKind::Markdown
+### 354.3
+- Broad plain-text extension list (sources, data, markup)
+- `//text` force pipe; MuPDF open with magic "txt" when needed
 
 ### Next
-- biltoo: open/expand .txt (mirror markdown)
+- biltoo: recognize //text + broader text suffixes in filters
 
 ### Apply
 ```bash
-git pull --ff-only …/thumtoo-354.2-plaintext-pathkind-fb6a408.bundle HEAD
+git pull --ff-only …/thumtoo-354.3-text-ext-and-force-fb6a408.bundle HEAD
 ```

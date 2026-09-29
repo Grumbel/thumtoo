@@ -163,8 +163,21 @@ std::optional<ParsedPdfUri> parse_pdf_uri(std::string_view uri) {
     }
   }
   if (!path) return std::nullopt;
-  // PDF or Markdown (MuPDF page documents).
-  if (!is_mupdf_page_document_path(*path)) return std::nullopt;
+
+  // Optional //text force pipe before or after page tag.
+  bool force_text = uri_has_text_force_pipe(uri);
+  if (force_text) {
+    // Outer may still include //text if page pipe was found after it.
+    std::string path_str = path->string();
+    auto tpos = path_str.find("//text");
+    if (tpos != std::string::npos) {
+      path_str.resize(tpos);
+      *path = std::filesystem::path(path_str);
+    }
+  }
+
+  // PDF / Markdown / plain text, or any path with //text force.
+  if (!force_text && !is_mupdf_page_document_path(*path)) return std::nullopt;
 
   std::string_view rest = uri.substr(pos + tag.size());
   if (rest.empty()) return std::nullopt;
@@ -180,6 +193,10 @@ std::optional<ParsedPdfUri> parse_pdf_uri(std::string_view uri) {
   out.pdf_path = *path;
   out.page = page;
   out.backend = backend;
+  out.force_text = force_text;
+  if (force_text) {
+    mupdf_force_next_open_as_text(out.pdf_path);
+  }
   return out;
 }
 

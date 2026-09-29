@@ -14,6 +14,10 @@ namespace thumtoo {
 /// MuPDF backend (compiled only usefully when THUMTOO_HAVE_MUPDF).
 /// Public pdf_* APIs dispatch here when PdfBackend resolves to MuPDF.
 
+/// Next tls_document open for this path uses MuPDF filetype magic "txt"
+/// (for //text force or non-native text extensions). Thread-local.
+void mupdf_force_next_open_as_text(const std::filesystem::path& path);
+
 [[nodiscard]] std::optional<int> mupdf_page_count(const std::filesystem::path& path);
 
 [[nodiscard]] std::optional<Size> mupdf_page_size_72dpi(const std::filesystem::path& path,

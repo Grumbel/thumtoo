@@ -47,6 +47,17 @@ enum class PathKind {
 /// PDF, Markdown, or plain text — multipage docs via MuPDF (//page:N).
 [[nodiscard]] bool is_mupdf_page_document_path(const std::filesystem::path& path);
 
+/// Native MuPDF text/md extensions (.txt/.text/.md/…) — open by filename.
+[[nodiscard]] bool is_mupdf_native_text_extension(std::string_view ext_with_dot);
+
+/// URI contains //text (optional //page:N) — force plain-text open via MuPDF.
+[[nodiscard]] bool uri_has_text_force_pipe(std::string_view uri);
+
+/// Strip //text (and optional following //page:… stays). Returns filesystem path
+/// portion before any pipes; empty if not a text-force URI.
+[[nodiscard]] std::optional<std::filesystem::path> path_from_text_force_uri(
+    std::string_view uri);
+
 [[nodiscard]] PathKind classify_path(const std::filesystem::path& path);
 
 /// Extensions thumtoo will treat as raster images (including the dot).
