@@ -60,11 +60,6 @@ struct TlsMupdf {
 thread_local TlsMupdf g_tls;
 thread_local std::string g_force_text_key;
 
-void mupdf_force_next_open_as_text(const std::filesystem::path& path) {
-  g_force_text_key = path.lexically_normal().string();
-}
-
-
 void tls_drop_page() {
   if (!g_tls.ctx) return;
   if (g_tls.list) {
@@ -115,13 +110,14 @@ fz_document* tls_document(const std::filesystem::path& path) {
   tls_drop_doc();
   fz_document* doc = nullptr;
   fz_var(doc);
-  const bool force_text =
-      (!g_force_text_key.empty() && g_force_text_key == key);
-  // Non-native text-like extensions (sources, data, …) need magic "txt".
-  // .txt/.text/.md open by filename. force_text covers //text on any path.
-  const bool as_text_magic = force_text;
+  // Snapshot before fz_try — bool locals are clobbered by longjmp.
+  const int force_text =
+      (!g_force_text_key.empty() && g_force_text_key == key) ? 1 : 0;
+  if (force_text) {
+    g_force_text_key.clear();
+  }
   fz_try(ctx) {
-    if (as_text_magic) {
+    if (force_text) {
       fz_stream* stm = fz_open_file(ctx, path.string().c_str());
       doc = fz_open_document_with_stream(ctx, "txt", stm);
       fz_drop_stream(ctx, stm);
@@ -130,9 +126,6 @@ fz_document* tls_document(const std::filesystem::path& path) {
     }
   }
   fz_catch(ctx) { doc = nullptr; }
-  if (force_text) {
-    g_force_text_key.clear();
-  }
   if (!doc) return nullptr;
 
   g_tls.path_key = key;
@@ -220,6 +213,12 @@ std::optional<PdfRaster> pixmap_to_rgb(fz_context* ctx, fz_pixmap* pix) {
 #endif  // THUMTOO_HAVE_MUPDF
 
 }  // namespace
+
+
+void mupdf_force_next_open_as_text(const std::filesystem::path& path)
+{
+  g_force_text_key = path.lexically_normal().string();
+}
 
 std::optional<int> mupdf_page_count(const std::filesystem::path& path) {
 #if !defined(THUMTOO_HAVE_MUPDF)
