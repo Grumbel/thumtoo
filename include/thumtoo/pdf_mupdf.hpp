@@ -18,6 +18,10 @@ namespace thumtoo {
 /// (for //text force or non-native text extensions). Thread-local.
 void mupdf_force_next_open_as_text(const std::filesystem::path& path);
 
+/// Last MuPDF error/warning line captured on this thread (empty if none).
+[[nodiscard]] std::string mupdf_last_error();
+void mupdf_clear_last_error();
+
 [[nodiscard]] std::optional<int> mupdf_page_count(const std::filesystem::path& path);
 
 [[nodiscard]] std::optional<Size> mupdf_page_size_72dpi(const std::filesystem::path& path,

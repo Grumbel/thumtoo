@@ -59,6 +59,31 @@ struct TlsMupdf {
 
 thread_local TlsMupdf g_tls;
 thread_local std::string g_force_text_key;
+thread_local std::string g_last_mupdf_error;
+
+void mupdf_store_message(const char* msg)
+{
+  if (!msg || !msg[0]) {
+    return;
+  }
+  g_last_mupdf_error = msg;
+  // Trim trailing newlines for UI display.
+  while (!g_last_mupdf_error.empty() &&
+         (g_last_mupdf_error.back() == '\n' || g_last_mupdf_error.back() == '\r')) {
+    g_last_mupdf_error.pop_back();
+  }
+}
+
+void mupdf_error_cb(void* /*user*/, const char* msg)
+{
+  mupdf_store_message(msg);
+}
+
+void mupdf_warning_cb(void* /*user*/, const char* msg)
+{
+  // Still capture — "cannot open" often arrives as a warning/exception text.
+  mupdf_store_message(msg);
+}
 
 void tls_drop_page() {
   if (!g_tls.ctx) return;
@@ -86,6 +111,10 @@ fz_context* tls_ctx() {
   if (!g_tls.ctx) {
     g_tls.ctx = fz_new_context(nullptr, nullptr, FZ_STORE_DEFAULT);
     if (g_tls.ctx) {
+      // Suppress default stderr "UNHANDLED EXCEPTION!" / system error spam;
+      // messages are kept in g_last_mupdf_error for hosts to surface in UI.
+      fz_set_error_callback(g_tls.ctx, mupdf_error_cb, nullptr);
+      fz_set_warning_callback(g_tls.ctx, mupdf_warning_cb, nullptr);
       fz_try(g_tls.ctx) { fz_register_document_handlers(g_tls.ctx); }
       fz_catch(g_tls.ctx) {
         fz_drop_context(g_tls.ctx);
@@ -108,6 +137,7 @@ fz_document* tls_document(const std::filesystem::path& path) {
   }
 
   tls_drop_doc();
+  g_last_mupdf_error.clear();
   fz_document* doc = nullptr;
   fz_var(doc);
   // Do not carry a local across fz_try (longjmp clobber). Branch on the key
@@ -126,7 +156,12 @@ fz_document* tls_document(const std::filesystem::path& path) {
     fz_try(ctx) { doc = fz_open_document(ctx, path.string().c_str()); }
     fz_catch(ctx) { doc = nullptr; }
   }
-  if (!doc) return nullptr;
+  if (!doc) {
+    if (g_last_mupdf_error.empty()) {
+      g_last_mupdf_error = "cannot open document";
+    }
+    return nullptr;
+  }
 
   g_tls.path_key = key;
   g_tls.mtime = ec ? std::filesystem::file_time_type{} : mtime;
@@ -221,6 +256,22 @@ void mupdf_force_next_open_as_text(const std::filesystem::path& path)
   g_force_text_key = path.lexically_normal().string();
 #else
   (void)path;
+#endif
+}
+
+std::string mupdf_last_error()
+{
+#if defined(THUMTOO_HAVE_MUPDF)
+  return g_last_mupdf_error;
+#else
+  return {};
+#endif
+}
+
+void mupdf_clear_last_error()
+{
+#if defined(THUMTOO_HAVE_MUPDF)
+  g_last_mupdf_error.clear();
 #endif
 }
 
