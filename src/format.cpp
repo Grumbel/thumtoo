@@ -46,6 +46,7 @@ constexpr std::string_view kMediaMimes[] = {
     "application/epub+zip",
     "text/markdown",
     "text/x-markdown",
+    "text/plain",
     // Archives (expanded to image members)
     "application/zip",
     "application/vnd.rar",
@@ -105,6 +106,10 @@ bool is_markdown_extension(std::string_view ext_with_dot) {
          ext_with_dot == ".mdown" || ext_with_dot == ".mkd";
 }
 
+bool is_plain_text_extension(std::string_view ext_with_dot) {
+  return ext_with_dot == ".txt" || ext_with_dot == ".text";
+}
+
 bool is_djvu_extension(std::string_view ext_with_dot) {
   return ext_with_dot == ".djvu" || ext_with_dot == ".djv";
 }
@@ -135,8 +140,12 @@ bool is_markdown_path(const std::filesystem::path& path) {
   return is_markdown_extension(path_extension_lower(path));
 }
 
+bool is_plain_text_path(const std::filesystem::path& path) {
+  return is_plain_text_extension(path_extension_lower(path));
+}
+
 bool is_mupdf_page_document_path(const std::filesystem::path& path) {
-  return is_pdf_path(path) || is_markdown_path(path);
+  return is_pdf_path(path) || is_markdown_path(path) || is_plain_text_path(path);
 }
 
 PathKind classify_path(const std::filesystem::path& path) {
@@ -147,6 +156,7 @@ PathKind classify_path(const std::filesystem::path& path) {
   if (is_archive_path(path)) return PathKind::Archive;
   if (is_pdf_path(path)) return PathKind::Pdf;
   if (is_markdown_path(path)) return PathKind::Markdown;
+  if (is_plain_text_path(path)) return PathKind::PlainText;
   if (is_djvu_path(path)) return PathKind::Djvu;
   if (is_image_path(path)) return PathKind::Image;
   return PathKind::Unsupported;

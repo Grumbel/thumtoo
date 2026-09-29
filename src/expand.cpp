@@ -20,6 +20,7 @@ bool is_openable_media_path(const std::filesystem::path& path) {
     case PathKind::Image:
     case PathKind::Pdf:
     case PathKind::Markdown:
+    case PathKind::PlainText:
     case PathKind::Djvu:
     case PathKind::Epub:
     case PathKind::Archive:
@@ -43,8 +44,9 @@ std::vector<std::string> expand_media_uris(const std::filesystem::path& path,
 
   switch (classify_path(abs)) {
     case PathKind::Pdf:
-    case PathKind::Markdown: {
-      // Markdown (MuPDF ≥ 1.28) uses the same //page:N + MuPDF raster path as PDF.
+    case PathKind::Markdown:
+    case PathKind::PlainText: {
+      // Markdown / plain text (MuPDF) use the same //page:N + MuPDF raster path as PDF.
       auto count = pdf_page_count(abs);
       if (!count || *count < 1) {
         // Still surface the file as a single locator so the UI can report
