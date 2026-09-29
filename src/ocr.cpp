@@ -306,7 +306,7 @@ void clear_ocr_error() { g_ocr_last_error.clear(); }
 
   // Plain image files (non multipage containers).
   if (auto path = path_from_file_uri(uri)) {
-    if (is_pdf_path(*path) || is_djvu_path(*path) || is_epub_path(*path)) {
+    if (is_mupdf_page_document_path(*path) || is_djvu_path(*path) || is_epub_path(*path)) {
       set_ocr_error(std::string("multipage document without usable page pipe: ") +
                     std::string(uri));
       return std::nullopt;

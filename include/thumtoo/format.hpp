@@ -18,6 +18,7 @@ enum class PathKind {
   Pdf,
   Djvu,
   Epub,
+  Markdown,  ///< MuPDF ≥ 1.28 native Markdown document
 };
 
 /// Lowercased extension including the dot (".jpg"), or empty.
@@ -31,12 +32,17 @@ enum class PathKind {
 [[nodiscard]] bool is_pdf_extension(std::string_view ext_with_dot);
 [[nodiscard]] bool is_djvu_extension(std::string_view ext_with_dot);
 [[nodiscard]] bool is_epub_extension(std::string_view ext_with_dot);
+[[nodiscard]] bool is_markdown_extension(std::string_view ext_with_dot);
 
 [[nodiscard]] bool is_image_path(const std::filesystem::path& path);
 [[nodiscard]] bool is_archive_path(const std::filesystem::path& path);
 [[nodiscard]] bool is_pdf_path(const std::filesystem::path& path);
 [[nodiscard]] bool is_djvu_path(const std::filesystem::path& path);
 [[nodiscard]] bool is_epub_path(const std::filesystem::path& path);
+[[nodiscard]] bool is_markdown_path(const std::filesystem::path& path);
+
+/// PDF or Markdown — opened as multipage docs via MuPDF (//page:N).
+[[nodiscard]] bool is_mupdf_page_document_path(const std::filesystem::path& path);
 
 [[nodiscard]] PathKind classify_path(const std::filesystem::path& path);
 

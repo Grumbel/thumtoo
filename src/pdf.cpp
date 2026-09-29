@@ -163,7 +163,8 @@ std::optional<ParsedPdfUri> parse_pdf_uri(std::string_view uri) {
     }
   }
   if (!path) return std::nullopt;
-  if (!is_pdf_path(*path)) return std::nullopt;
+  // PDF or Markdown (MuPDF page documents).
+  if (!is_mupdf_page_document_path(*path)) return std::nullopt;
 
   std::string_view rest = uri.substr(pos + tag.size());
   if (rest.empty()) return std::nullopt;

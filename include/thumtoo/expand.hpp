@@ -12,7 +12,7 @@ namespace thumtoo {
 /// Expand a filesystem path into one or more media location URIs for display.
 ///
 /// - Raster image → single `file://…` URI
-/// - Multipage PDF / DjVu → `file://…//page:N` (1-based, capped at max_pages)
+/// - Multipage PDF / Markdown / DjVu → `file://…//page:N` (1-based, capped at max_pages)
 /// - EPUB → `file://…//epub:w,h,em//page:N` under default layout (MuPDF)
 /// - Archive (zip/cbz/rar/…) → `file://…//archive:member` for image members
 /// - Missing / unreadable / non-media → empty vector (caller may keep original)
@@ -23,7 +23,7 @@ namespace thumtoo {
     const std::filesystem::path& path, int max_pages = 512);
 
 /// True if the path is something expand_media_uris / prepare_paths would treat
-/// as openable media (image, PDF, DjVu, EPUB, or archive container).
+/// as openable media (image, PDF, Markdown, DjVu, EPUB, or archive container).
 [[nodiscard]] bool is_openable_media_path(const std::filesystem::path& path);
 
 /// Expand a PDF to `//pdfimage:1..N` (embedded Image XObjects at native res).

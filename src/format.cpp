@@ -44,6 +44,8 @@ constexpr std::string_view kMediaMimes[] = {
     "image/vnd.djvu",
     "image/vnd.djvu+multipage",
     "application/epub+zip",
+    "text/markdown",
+    "text/x-markdown",
     // Archives (expanded to image members)
     "application/zip",
     "application/vnd.rar",
@@ -98,6 +100,11 @@ bool is_epub_extension(std::string_view ext_with_dot) {
   return ext_with_dot == ".epub";
 }
 
+bool is_markdown_extension(std::string_view ext_with_dot) {
+  return ext_with_dot == ".md" || ext_with_dot == ".markdown" ||
+         ext_with_dot == ".mdown" || ext_with_dot == ".mkd";
+}
+
 bool is_djvu_extension(std::string_view ext_with_dot) {
   return ext_with_dot == ".djvu" || ext_with_dot == ".djv";
 }
@@ -124,6 +131,14 @@ bool is_epub_path(const std::filesystem::path& path) {
   return is_epub_extension(path_extension_lower(path));
 }
 
+bool is_markdown_path(const std::filesystem::path& path) {
+  return is_markdown_extension(path_extension_lower(path));
+}
+
+bool is_mupdf_page_document_path(const std::filesystem::path& path) {
+  return is_pdf_path(path) || is_markdown_path(path);
+}
+
 PathKind classify_path(const std::filesystem::path& path) {
   // Order: archive/document before generic image.
   // Note: .epub is a zip; classify as Epub before Archive so we layout pages
@@ -131,6 +146,7 @@ PathKind classify_path(const std::filesystem::path& path) {
   if (is_epub_path(path)) return PathKind::Epub;
   if (is_archive_path(path)) return PathKind::Archive;
   if (is_pdf_path(path)) return PathKind::Pdf;
+  if (is_markdown_path(path)) return PathKind::Markdown;
   if (is_djvu_path(path)) return PathKind::Djvu;
   if (is_image_path(path)) return PathKind::Image;
   return PathKind::Unsupported;

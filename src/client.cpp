@@ -2019,7 +2019,8 @@ size_t Client::prepare_paths(const std::vector<std::filesystem::path>& paths,
       continue;
     }
 
-    if (is_likely_pdf_path(abs)) {
+    // PDF + Markdown (MuPDF page documents share //page:N + DocumentKind::Pdf).
+    if (is_mupdf_page_document_path(abs)) {
       auto count = document_page_count(abs, DocumentKind::Pdf);
       if (count && *count > 0) {
         // Cap prepare volume so huge books do not flood the queue.

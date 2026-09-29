@@ -65,3 +65,8 @@ Store keys: content_id `sha256:…:pdfimage:N`, Document media, `RegionKind::Fra
 nixpkgs ships MuPDF 1.27.x. thumtoo pins **1.28.5** via `pinMupdf` in
 `flake.nix` (exported through `lib.mkBuildInputs`) for Markdown document
 support. Rebuild if PDF/EPUB regressions appear after the pin.
+
+## Markdown
+
+`.md` files use the same MuPDF `//page:N` path as PDF when MuPDF ≥ 1.28 is
+linked. See [MARKDOWN.md](MARKDOWN.md).
