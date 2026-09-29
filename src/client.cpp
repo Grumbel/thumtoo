@@ -1398,33 +1398,31 @@ void Client::request_tiles(std::string uri, std::vector<TileCoord> coords,
                  });
     return;
   }
-  // Always enqueue per-cell jobs (worker does get_tile). Do not SQLite-read
-  // on the caller thread — biltoo TileLoadCoordinator issues from the GUI.
-  for (std::size_t i = 0; i < coords.size(); ++i) {
-    const auto& c = coords[i];
-    const std::size_t idx = i;
-    const int sc = c.scale, tx = c.x, ty = c.y;
-    Job job;
-    job.kind = JobKind::EnsureTiles;
-    job.uri = uri;
-    job.tile_scale = sc;
-    job.tile_x = tx;
-    job.tile_y = ty;
-    job.tile_min_scale = sc;
-    job.tile_max_scale = sc;
-    job.tile_pyramid = false;
-    job.tile_cb = [on_cell, idx](std::string, int, int, int,
-                                 std::optional<TileBlob> tb) {
-      on_cell(idx, std::move(tb));
-    };
-    job.activity_id =
-        global_activity_ledger().note_tile_queued(job.uri, sc, tx, ty);
-    enqueue(std::move(job), /*front=*/false);
+  // One job for the whole viewport batch: one worker runs get_tile + encode
+  // for every cell. Fan-out to N EnsureTiles jobs used to wake N workers and
+  // re-decode the same source (archives / non-JPEG) under Gallery load.
+  Job job;
+  job.kind = JobKind::EnsureTiles;
+  job.uri = std::move(uri);
+  job.tile_pyramid = false;
+  job.tile_batch = std::move(coords);
+  job.tile_batch_cb = std::move(on_cell);
+  // Activity: one note for the batch (first cell as representative).
+  if (!job.tile_batch.empty()) {
+    const auto& c0 = job.tile_batch.front();
+    job.tile_scale = c0.scale;
+    job.tile_x = c0.x;
+    job.tile_y = c0.y;
+    job.tile_min_scale = c0.scale;
+    job.tile_max_scale = c0.scale;
+    job.activity_id = global_activity_ledger().note_tile_queued(
+        job.uri, c0.scale, c0.x, c0.y);
   }
   if (debug_enabled()) {
-    dbg("request_tiles uri=%s cells=%zu (all queued)", uri.c_str(),
-        coords.size());
+    dbg("request_tiles uri=%s cells=%zu (one batch job)", job.uri.c_str(),
+        job.tile_batch.size());
   }
+  enqueue(std::move(job), /*front=*/false);
 }
 
 void Client::request_tile_pyramid(std::string uri, int min_scale, int max_scale,
@@ -4070,32 +4068,101 @@ void Client::handle_ensure_tiles_store(Job& job) {
     }
   };
 
-  // Legacy/internal: multi-cell batch (prefer request_tiles fast-path above).
+  // Multi-cell batch from request_tiles: one worker, sequential cells.
+  // Hits stay Store-only; misses reuse the single-cell encode path below via a
+  // nested Job with a synchronous capture (no second queue hop).
   if (!job.tile_batch.empty() && job.tile_batch_cb) {
     auto cb = std::move(job.tile_batch_cb);
     auto uri = job.uri;
     auto coords = std::move(job.tile_batch);
+    const bool skip_probe = job.skip_probe;
+    std::vector<std::optional<TileBlob>> results(coords.size());
     for (std::size_t i = 0; i < coords.size(); ++i) {
       const auto& c = coords[i];
-      std::optional<TileBlob> t = get_tile(uri, c.scale, c.x, c.y);
-      if (!t) {
-        // Encode one cell by temporarily reusing single-cell path fields.
-        Job one;
-        one.kind = JobKind::EnsureTiles;
-        one.uri = uri;
-        one.tile_scale = c.scale;
-        one.tile_x = c.x;
-        one.tile_y = c.y;
-        one.tile_min_scale = c.scale;
-        one.tile_max_scale = c.scale;
-        one.tile_pyramid = false;
-        one.skip_probe = job.skip_probe;
-        // Synchronous encode into optional via nested handle is messy; queue
-        // was already the design. Reply miss for missing durable cell so the
-        // host retries via request_tile.
+      if (auto t = get_tile(uri, c.scale, c.x, c.y)) {
+        results[i] = std::move(t);
+        continue;
       }
-      executor_.post([cb, i, t = std::move(t)]() mutable { cb(i, std::move(t)); });
+      // Encode miss on this worker (file / archive / PDF). Other kinds stay
+      // miss so the host can retry via single-cell request_tile.
+      if (!skip_probe) {
+        Job probe;
+        probe.kind = JobKind::ProbeSize;
+        probe.uri = uri;
+        handle_probe_size_store(probe);
+      }
+      if (auto t2 = get_tile(uri, c.scale, c.x, c.y)) {
+        results[i] = std::move(t2);
+        continue;
+      }
+      auto sm = meta_from_store(uri);
+      if (!sm || sm->content_id.empty()) {
+        results[i] = std::nullopt;
+        continue;
+      }
+      const std::string& content_id = sm->content_id;
+      std::optional<TileBlob> cell;
+      if (auto path = path_from_file_uri(uri)) {
+        if (std::filesystem::is_regular_file(*path)) {
+          cell = build_tile_cell(*path, c.scale, c.x, c.y, kDefaultTileQuality);
+        }
+      } else if (auto arch = parse_archive_uri(uri)) {
+        if (!arch->member_path.empty()) {
+          auto bytes = member_bytes(arch->archive_path, arch->member_path);
+          if (bytes && !bytes->empty()) {
+            const std::string dkey = "a:" + uri;
+            cell = build_tile_cell_buffer(bytes->data(), bytes->size(), c.scale,
+                                          c.x, c.y, kDefaultTileQuality, dkey);
+          }
+        }
+      } else if (auto pdf = parse_pdf_uri(uri)) {
+        auto raster = pdf_render_tile_cell(pdf->pdf_path, pdf->page, c.scale,
+                                           c.x, c.y, pdf->backend);
+        if (raster && !raster->rgb.empty()) {
+          TileBlob live;
+          live.scale = c.scale;
+          live.x = c.x;
+          live.y = c.y;
+          live.width = raster->width;
+          live.height = raster->height;
+          live.codec = kTileCodecRgb888;
+          live.source = TileSource::PdfRegion;
+          live.bytes = std::move(raster->rgb);
+          if (c.scale >= kPdfMinDurableTileScale) {
+            if (auto jpeg = encode_tile_cell_rgb(
+                    live.bytes.data(), live.width, live.height, c.scale, c.x,
+                    c.y, kPdfTileQuality)) {
+              jpeg->source = TileSource::PdfRegion;
+              store_tiles(content_id, std::vector<TileBlob>{*jpeg});
+            }
+          }
+          cell = std::move(live);
+        }
+      }
+      // Other kinds (DjVu/EPUB/http): leave miss — host may retry single-cell.
+      if (cell && !cell->bytes.empty()) {
+        TileBlob live = std::move(*cell);
+        const bool rgb = (live.codec == kTileCodecRgb888);
+        if (!rgb) {
+          store_tiles(content_id, std::vector<TileBlob>{live});
+        } else {
+          // Store JPEG form; reply live rgb.
+          if (auto jpeg = encode_tile_cell_rgb(
+                  live.bytes.data(), live.width, live.height, live.scale,
+                  live.x, live.y, kDefaultTileQuality)) {
+            store_tiles(content_id, std::vector<TileBlob>{*jpeg});
+          }
+        }
+        results[i] = std::move(live);
+      } else {
+        results[i] = std::nullopt;
+      }
     }
+    executor_.post([cb = std::move(cb), results = std::move(results)]() mutable {
+      for (std::size_t i = 0; i < results.size(); ++i) {
+        cb(i, std::move(results[i]));
+      }
+    });
     return;
   }
 
