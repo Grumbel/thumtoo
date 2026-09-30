@@ -378,6 +378,13 @@ class Client {
   [[nodiscard]] QueueStats queue_stats() const;
   /** Live activity snapshot (size probes in phase 1). */
   [[nodiscard]] ActivitySnapshot activity_snapshot() const;
+
+  /**
+   * If the job queue is empty and nothing is in-flight, drop orphaned
+   * activity-ledger entries (queued notes whose jobs finished without
+   * note_*_finished). Keeps host "Working" badges honest.
+   */
+  void reconcile_activity_if_idle();
   /// Increment epoch and purge stale queued jobs. Returns the new epoch.
   std::uint64_t bump_interest_epoch();
   /// Drop all queued jobs (any epoch); does not touch in-flight work.

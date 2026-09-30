@@ -61,6 +61,18 @@ int main() {
     expect(snap.tile_completed == 2, "both completed");
   }
 
+  {
+    thumtoo::ActivityLedger led;
+    (void)led.note_tile_queued("file:///tmp/orphan.jpg", 0, 0, 0);
+    (void)led.note_tile_queued("file:///tmp/orphan2.jpg", 1, 2, 3);
+    auto snap = led.snapshot();
+    expect(snap.tile_queued == 2, "two orphans before drop");
+    led.drop_orphans();
+    snap = led.snapshot();
+    expect(snap.tile_queued == 0, "tile_queued 0 after drop_orphans");
+    expect(snap.tile_running == 0, "tile_running 0 after drop_orphans");
+  }
+
   if (fails) {
     std::fprintf(stderr, "%d failures\n", fails);
     return 1;

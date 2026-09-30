@@ -212,6 +212,27 @@ ActivitySnapshot ActivityLedger::snapshot() const {
   return s;
 }
 
+void ActivityLedger::drop_orphans() {
+  std::lock_guard lock(mu_);
+  for (const auto& r : active_) {
+    switch (r.kind) {
+      case ActivityKind::SizeProbe:
+        ++size_probe_completed_;
+        break;
+      case ActivityKind::ArchiveMemberRead:
+        ++archive_read_completed_;
+        break;
+      case ActivityKind::SoftLadder:
+        ++soft_completed_;
+        break;
+      case ActivityKind::TileCell:
+        ++tile_completed_;
+        break;
+    }
+  }
+  active_.clear();
+}
+
 void ActivityLedger::clear() {
   std::lock_guard lock(mu_);
   active_.clear();

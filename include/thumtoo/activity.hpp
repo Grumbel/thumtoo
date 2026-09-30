@@ -80,6 +80,13 @@ class ActivityLedger {
 
   void clear();
 
+  /**
+   * Drop every active record and count them finished (false).
+   * Used when the client queue is empty and inflight==0 so orphaned
+   * note_*_queued entries cannot keep the host Performance badge on Working.
+   */
+  void drop_orphans();
+
  private:
   std::uint64_t alloc_id_locked();
   void set_phase_locked(std::uint64_t id, ActivityPhase phase);

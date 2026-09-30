@@ -231,11 +231,19 @@ Client::Client(std::unique_ptr<Store> store, Executor executor,
 }
 
 Client::~Client() {
+  std::vector<Job> dropped;
   {
     std::lock_guard lock(mu_);
     stop_ = true;
     // Drop queued work so shutdown does not re-encode a backlog of previews.
+    dropped.reserve(queue_.size());
+    for (auto& j : queue_) {
+      dropped.push_back(std::move(j));
+    }
     queue_.clear();
+  }
+  for (auto& j : dropped) {
+    reply_cancelled_job(j);
   }
   cv_.notify_all();
   for (auto& w : workers_) {
@@ -2366,6 +2374,16 @@ ActivitySnapshot Client::activity_snapshot() const {
   return global_activity_ledger().snapshot();
 }
 
+void Client::reconcile_activity_if_idle() {
+  {
+    std::lock_guard lock(mu_);
+    if (!queue_.empty() || inflight_ > 0 || focus_full_inflight_ > 0) {
+      return;
+    }
+  }
+  global_activity_ledger().drop_orphans();
+}
+
 void Client::reply_cancelled_job(Job& job) {
   if (job.activity_id != 0) {
     if (job.kind == JobKind::ProbeSize) {
@@ -3222,17 +3240,32 @@ void Client::worker_main() {
       continue;
     }
 
-    if (single.uri.empty()) continue;
-    {
-      std::lock_guard lock(mu_);
-      if (stop_) {
-        // Shutdown: do not start new encode work.
-        if (single.kind == JobKind::EnsureTiles && single.tile_pyramid &&
-            focus_full_inflight_ > 0) {
-          --focus_full_inflight_;
-          cv_.notify_all();
-        }
+    if (single.uri.empty()) {
+      // Claimed a shell job — still finish activity so tile_queued cannot stick.
+      reply_cancelled_job(single);
+      {
+        std::lock_guard lock(mu_);
         release_inflight_locked();
+      }
+      continue;
+    }
+    {
+      bool stopping = false;
+      {
+        std::lock_guard lock(mu_);
+        stopping = stop_;
+        if (stopping) {
+          // Shutdown: do not start new encode work; finish activity notes.
+          if (single.kind == JobKind::EnsureTiles && single.tile_pyramid &&
+              focus_full_inflight_ > 0) {
+            --focus_full_inflight_;
+            cv_.notify_all();
+          }
+          release_inflight_locked();
+        }
+      }
+      if (stopping) {
+        reply_cancelled_job(single);
         continue;
       }
     }
