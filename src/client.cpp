@@ -2240,7 +2240,7 @@ std::optional<int> Client::refresh_document_index(
   // Durable page_count (archive TOC parity). Expand can re-open without the file.
   if (store_) {
     try {
-      if (auto blob_id = ensure_document_file_blob(store_, use)) {
+      if (auto blob_id = ensure_document_file_blob(store_.get(), use)) {
         (void)store_->ensure_document_media(*blob_id, count);
       }
     } catch (const std::exception& ex) {
@@ -2262,7 +2262,7 @@ std::optional<int> Client::document_page_count(
 
   // Store-first: same idea as get_archive_entries / container_member TOC.
   // Missing PDF/DjVu/EPUB still expands when page_count was written previously.
-  if (auto cached = stored_document_page_count(store_, use)) {
+  if (auto cached = stored_document_page_count(store_.get(), use)) {
     return cached;
   }
 
