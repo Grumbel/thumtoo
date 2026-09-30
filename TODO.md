@@ -2,17 +2,16 @@
 
 ## Status (2026-09-30)
 
-**Tip:** thumtoo-014.1-region-size-load (on `b825e8d` + agent stack).
+**Tip:** thumtoo-015.1-ensure-pdf-page-sizes (on `b825e8d` + agent stack).
 
-### 014.1
-- **Root cause:** `Store::find_region` SELECTed width/height but never assigned
-  them → region sizes always looked missing → hosts re-probed / opened PDFs.
-- `find_region` + `find_region_by_key` now load width/height (by-key is one query).
-- 013.1 light `get_size` remains (no list_tile_scales / no source open).
+### 015.1
+- `Client::ensure_pdf_page_sizes(path)`: one open, write region dims for every
+  page missing size (no thumbs/tiles). Concurrent same-path callers coalesce.
+- Fixes size-gate tail: first miss no longer serial-probes each remaining page.
 
 ### Prior
+- 014.1 region width/height load
 - 013.1 get_size light
-- 012.1 activity orphan drop
 
 ### Bundle policy
 Work-line base: `b825e8d`. Full stack in each tip bundle.

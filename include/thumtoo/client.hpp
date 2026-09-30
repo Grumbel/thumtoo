@@ -333,6 +333,13 @@ class Client {
       const std::filesystem::path& path, DocumentKind kind,
       const EpubLayout* layout = nullptr);
 
+  /// Open the PDF once and write Store region width/height for every page that
+  /// still lacks dims. No tiles, no thumbs, no soft — size index only.
+  /// Returns the number of pages that received a size (0 if open failed).
+  /// Concurrent callers for the same path coalesce (one open).
+  int ensure_pdf_page_sizes(const std::filesystem::path& path,
+                            PdfBackend backend = PdfBackend::Default);
+
   /// PDF page count (1-based pages). nullopt if no backend can open the file.
   /// Source-only (no durable index). Prefer document_page_count for hosts.
   [[nodiscard]] static std::optional<int> pdf_page_count(

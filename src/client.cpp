@@ -21,6 +21,9 @@
 
 #include "thumtoo/debug_overlay.hpp"
 
+#include <map>
+#include <mutex>
+#include <memory>
 #include <vips/vips.h>
 
 #include <algorithm>
@@ -2376,6 +2379,72 @@ std::optional<int> Client::document_page_count(
   return refresh_document_index(use, kind, layout ? layout : &epub_layout);
 }
 
+
+int Client::ensure_pdf_page_sizes(const std::filesystem::path& path,
+                                  PdfBackend backend) {
+  if (!store_ || path.empty()) return 0;
+  std::error_code ec;
+  if (!std::filesystem::is_regular_file(path, ec) || ec) return 0;
+
+  // Coalesce concurrent ensures for the same file (many page probes at once).
+  static std::mutex gate_mu;
+  static std::map<std::string, std::shared_ptr<std::mutex>> path_mu;
+  const std::string key = path.lexically_normal().string();
+  std::shared_ptr<std::mutex> file_mu;
+  {
+    std::lock_guard lock(gate_mu);
+    auto& slot = path_mu[key];
+    if (!slot) slot = std::make_shared<std::mutex>();
+    file_mu = slot;
+  }
+  std::lock_guard file_lock(*file_mu);
+
+  auto count = thumtoo::pdf_page_count(path, backend);
+  if (!count || *count <= 0) return 0;
+
+  const auto hex = sha256_file_hex(path);
+  if (hex.empty()) return 0;
+  auto digest = Store::parse_sha256_digest(hex);
+  if (!digest) return 0;
+  const auto byte_size = file_size_bytes(path);
+  const auto mtime = file_mtime_ns(path);
+  std::int64_t blob_id = 0;
+  if (auto existing = store_->find_blob_by_hash(HashAlgoId::Sha256, *digest)) {
+    blob_id = *existing;
+    if (byte_size) store_->set_blob_size(blob_id, *byte_size);
+    store_->set_blob_status(blob_id, BlobStatus::Ok);
+  } else {
+    blob_id = store_->insert_blob(byte_size, BlobStatus::Ok);
+    store_->put_hash(blob_id, HashAlgoId::Sha256, *digest);
+  }
+  const auto media_id = store_->ensure_document_media(blob_id, count);
+  // Durable page_count so expand works offline.
+  try {
+    store_->set_media_page_count(media_id, *count);
+  } catch (...) {
+  }
+
+  int written = 0;
+  for (int page = 1; page <= *count; ++page) {
+    const auto region_id = store_->ensure_page_region(media_id, page);
+    auto region = store_->find_region(region_id);
+    if (region && region->width && region->height && *region->width > 0
+        && *region->height > 0) {
+      continue;
+    }
+    auto layout = pdf_page_layout_size(path, page, backend);
+    if (!layout) continue;
+    const auto uri = thumtoo::pdf_page_uri(path, page, backend);
+    store_->upsert_locator(uri, blob_id, byte_size, mtime, path.string(),
+                           std::to_string(page));
+    try {
+      store_->set_region_size(region_id, layout->width, layout->height);
+      ++written;
+    } catch (...) {
+    }
+  }
+  return written;
+}
 
 std::optional<int> Client::pdf_page_count(const std::filesystem::path& path,
                                          PdfBackend backend) {
