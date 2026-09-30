@@ -151,8 +151,6 @@ fz_document* tls_document(const std::filesystem::path& path,
   const float mb_pt = static_cast<float>(L.mb_px) * 72.f / dpi;
   const float ml_pt = static_cast<float>(L.ml_px) * 72.f / dpi;
 
-  fz_set_use_document_css(ctx, L.use_document_css ? 1 : 0);
-
   // Reader policy CSS (last in cascade). Font size always forced; optional
   // margins, line-height, family, theme colours.
   {
@@ -235,7 +233,9 @@ fz_document* tls_document(const std::filesystem::path& path,
     } else if (L.theme == EpubTheme::Sepia) {
       css += "a { color: #396 !important; }";
     }
-    fz_set_user_css(ctx, css.c_str());
+    // Per-document styles (MuPDF ≥ 1.28). Context globals fz_set_user_css /
+    // fz_set_use_document_css are deprecated and spam warnings on every open.
+    fz_style_document(ctx, doc, L.use_document_css ? 1 : 0, css.c_str());
   }
 
   int ok = 0;
