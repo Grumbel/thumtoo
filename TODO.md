@@ -16,3 +16,6 @@
 
 ### Bundle policy
 Work-line base: `b825e8d`. Full stack in each tip bundle.
+
+### Perf reference
+Paired biltoo Gallery open baseline (~2400 PDF pages, settled Store, ~0.5 s TTFP): biltoo **docs/TTFP.md § Baseline 2026-09-30** — this tip `d6a341f` + biltoo `3907788`.
