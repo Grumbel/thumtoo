@@ -2035,6 +2035,14 @@ std::optional<Store::RegionRow> Store::find_region(
     if (sqlite3_column_type(stmt, 4) != SQLITE_NULL) {
       r.ordinal = sqlite3_column_int(stmt, 4);
     }
+    // width/height are selected above — must load them or get_size always misses
+    // and hosts re-probe every page (open PDF) despite a settled Store.
+    if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
+      r.width = sqlite3_column_int(stmt, 5);
+    }
+    if (sqlite3_column_type(stmt, 6) != SQLITE_NULL) {
+      r.height = sqlite3_column_int(stmt, 6);
+    }
     out = std::move(r);
   }
   sqlite3_finalize(stmt);
@@ -2045,8 +2053,9 @@ std::optional<Store::RegionRow> Store::find_region_by_key(
     std::int64_t media_id, RegionKind kind, std::string_view key) const {
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(index_,
-                         "SELECT id FROM region WHERE media_id = ?1 AND "
-                         "kind = ?2 AND key = ?3;",
+                         "SELECT id, media_id, kind, key, ordinal, width, height "
+                         "FROM region WHERE media_id = ?1 AND kind = ?2 AND "
+                         "key = ?3;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     throw_sqlite(index_, "prepare find_region_by_key");
   }
@@ -2054,13 +2063,26 @@ std::optional<Store::RegionRow> Store::find_region_by_key(
   sqlite3_bind_int(stmt, 2, static_cast<int>(kind));
   sqlite3_bind_text(stmt, 3, key.data(), static_cast<int>(key.size()),
                     SQLITE_STATIC);
-  std::optional<std::int64_t> id;
+  std::optional<RegionRow> out;
   if (sqlite3_step(stmt) == SQLITE_ROW) {
-    id = sqlite3_column_int64(stmt, 0);
+    RegionRow r;
+    r.id = sqlite3_column_int64(stmt, 0);
+    r.media_id = sqlite3_column_int64(stmt, 1);
+    r.kind = static_cast<RegionKind>(sqlite3_column_int(stmt, 2));
+    r.key = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+    if (sqlite3_column_type(stmt, 4) != SQLITE_NULL) {
+      r.ordinal = sqlite3_column_int(stmt, 4);
+    }
+    if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
+      r.width = sqlite3_column_int(stmt, 5);
+    }
+    if (sqlite3_column_type(stmt, 6) != SQLITE_NULL) {
+      r.height = sqlite3_column_int(stmt, 6);
+    }
+    out = std::move(r);
   }
   sqlite3_finalize(stmt);
-  if (!id) return std::nullopt;
-  return find_region(*id);
+  return out;
 }
 
 std::optional<Store::RegionRow> Store::find_full_region(
