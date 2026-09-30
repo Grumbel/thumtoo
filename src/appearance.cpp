@@ -66,30 +66,35 @@ std::string normalize_content_id(std::string_view content_id_or_hex)
     in.remove_prefix(kContentIdSha256Prefix.size());
   }
   // File content: 64 hex digits.
-  // Page variant: 64 hex + ":page:" + 1-based page number
-  //   (same document bytes, different page — used for PDF/EPUB/DjVu session refs).
+  // Page variant: 64 hex + ":page:" + N
+  // EPUB page: 64 hex + ":page:" + N + ":epub:" + layout_key
+  //   (layout is part of tile identity; see docs/EPUB.md).
   std::string_view hex_part = in;
   std::string_view page_suffix;
   if (auto pos = in.find(":page:"); pos != std::string_view::npos) {
     hex_part = in.substr(0, pos);
-    page_suffix = in.substr(pos); // ":page:N"
+    page_suffix = in.substr(pos); // ":page:N" or ":page:N:epub:…"
     if (page_suffix.size() < 7) {
       return {};
     }
-    // ":page:" is 6 chars; rest must be digits, page >= 1
-    for (size_t i = 6; i < page_suffix.size(); ++i) {
-      if (page_suffix[i] < '0' || page_suffix[i] > '9') {
-        return {};
-      }
+    // ":page:" is 6 chars; digits for page number, then optional ":epub:…"
+    std::size_t i = 6;
+    while (i < page_suffix.size() && page_suffix[i] >= '0' && page_suffix[i] <= '9') {
+      ++i;
     }
-    if (page_suffix.size() == 6 || page_suffix[6] == '0') {
-      // empty or leading zero / page 0
-      if (page_suffix.size() == 6) {
-        return {};
-      }
-      // allow page 10+ but reject page 0 and 01
-      if (page_suffix[6] == '0' && page_suffix.size() == 7) {
-        return {};
+    if (i == 6) {
+      return {};  // no digits
+    }
+    // reject page 0 and leading-zero forms like 01
+    if (page_suffix[6] == '0' && i == 7) {
+      return {};
+    }
+    if (i < page_suffix.size()) {
+      constexpr std::string_view kEpub = ":epub:";
+      if (page_suffix.size() < i + kEpub.size() ||
+          page_suffix.substr(i, kEpub.size()) != kEpub ||
+          page_suffix.size() == i + kEpub.size()) {
+        return {};  // unknown suffix or empty layout key
       }
     }
   }

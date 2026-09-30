@@ -2457,11 +2457,19 @@ std::int64_t Store::ensure_document_media(std::int64_t blob_id,
 }
 
 std::int64_t Store::ensure_page_region(std::int64_t media_id, int page_1based) {
+  return ensure_page_region(media_id, page_1based, std::to_string(page_1based));
+}
+
+std::int64_t Store::ensure_page_region(std::int64_t media_id, int page_1based,
+                                       std::string_view region_key) {
   if (page_1based < 1) {
     throw std::invalid_argument("ensure_page_region: page must be >= 1");
   }
-  const std::string key = std::to_string(page_1based);
-  return ensure_region(media_id, RegionKind::Page, key, page_1based);
+  if (region_key.empty()) {
+    return ensure_region(media_id, RegionKind::Page, std::to_string(page_1based),
+                         page_1based);
+  }
+  return ensure_region(media_id, RegionKind::Page, region_key, page_1based);
 }
 
 void Store::replace_directory_snapshot(

@@ -173,4 +173,16 @@ struct EpubLayout {
 /// True if uri contains an //epub: layout pipe.
 [[nodiscard]] bool is_epub_layout_uri(std::string_view uri);
 
+/// Region key for EPUB page tiles: "{page}|{format_epub_layout_params}".
+/// Layout is part of identity (docs/EPUB.md); page-only keys collide across layouts.
+[[nodiscard]] std::string epub_page_region_key(int page_1based, const EpubLayout& layout);
+[[nodiscard]] std::string epub_page_region_key(int page_1based,
+                                               std::string_view layout_key);
+
+/// content_id suffix for an EPUB page: ":page:N:epub:{layout_key}".
+[[nodiscard]] std::string epub_content_id_page_suffix(int page_1based,
+                                                      const EpubLayout& layout);
+[[nodiscard]] std::string epub_content_id_page_suffix(int page_1based,
+                                                      std::string_view layout_key);
+
 }  // namespace thumtoo

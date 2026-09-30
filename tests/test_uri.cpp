@@ -137,6 +137,25 @@ int main() {
                pr.align == EpubAlign::Justify && pr.font == EpubFontFamily::Serif &&
                pr.theme == EpubTheme::Night && !pr.use_document_css,
            "epub reader keys roundtrip");
+    // Layout-keyed region / content_id so tiles do not collide across layouts.
+    {
+      EpubLayout a = default_epub_layout();
+      EpubLayout b = a;
+      b.width_px = 1200;
+      b.height_px = 900;
+      b.fs_pt = 12;
+      b.cols = 2;
+      b.font = EpubFontFamily::Sans;
+      b.use_document_css = false;
+      const auto ka = epub_page_region_key(9, a);
+      const auto kb = epub_page_region_key(9, b);
+      expect(ka != kb, "epub region keys differ by layout");
+      expect(ka.find("9|") == 0, "epub region key page prefix");
+      const auto sa = epub_content_id_page_suffix(9, a);
+      const auto sb = epub_content_id_page_suffix(9, b);
+      expect(sa.find(":page:9:epub:") == 0, "epub content_id suffix shape");
+      expect(sa != sb, "epub content_id suffix differs by layout");
+    }
     // Default layout includes lh=140
     auto def = format_epub_layout_params(default_epub_layout());
     expect(def.find("lh=140") != std::string::npos, "default emits lh");

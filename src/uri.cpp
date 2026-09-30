@@ -594,4 +594,31 @@ bool is_epub_layout_uri(std::string_view uri) {
   return uri.find(kEpubPipe) != std::string_view::npos;
 }
 
+std::string epub_page_region_key(int page_1based, std::string_view layout_key) {
+  std::string key = std::to_string(page_1based);
+  if (!layout_key.empty()) {
+    key.push_back('|');
+    key.append(layout_key);
+  }
+  return key;
+}
+
+std::string epub_page_region_key(int page_1based, const EpubLayout& layout) {
+  return epub_page_region_key(page_1based, format_epub_layout_params(layout));
+}
+
+std::string epub_content_id_page_suffix(int page_1based, std::string_view layout_key) {
+  std::string out = ":page:";
+  out += std::to_string(page_1based);
+  if (!layout_key.empty()) {
+    out += ":epub:";
+    out.append(layout_key);
+  }
+  return out;
+}
+
+std::string epub_content_id_page_suffix(int page_1based, const EpubLayout& layout) {
+  return epub_content_id_page_suffix(page_1based, format_epub_layout_params(layout));
+}
+
 }  // namespace thumtoo

@@ -404,9 +404,14 @@ class Store {
   [[nodiscard]] std::int64_t ensure_document_media(
       std::int64_t blob_id, std::optional<int> page_count = {});
 
-  /// Ensure region for 1-based page number (key = decimal string).
+  /// Ensure region for 1-based page number.
+  /// key = decimal page, or epub_page_region_key(page, layout) when region_key set.
   [[nodiscard]] std::int64_t ensure_page_region(std::int64_t media_id,
                                                int page_1based);
+  /// Full region key (PDF/DjVu: "N"; EPUB: "N|layout_key").
+  [[nodiscard]] std::int64_t ensure_page_region(std::int64_t media_id,
+                                               int page_1based,
+                                               std::string_view region_key);
 
   // --- directory_snapshot (cache-first folder open; index DB) ---
   struct DirectorySnapshotRow {

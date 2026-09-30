@@ -40,8 +40,11 @@ line-height / font-family / theme colours. The old `em` URI key was dropped.
 
 Optional later: custom CSS blob (`css=sha256:…`).
 
-**Content id** stays `sha256` of the `.epub` file bytes.  
-**Tile / size rows** key off the full locator URI including the layout pipe.
+**Content id** for the file stays `sha256` of the `.epub` bytes.  
+**Page content id** (tiles / size target) is  
+`sha256:…:page:N:epub:{format_epub_layout_params}` so layouts do not share tiles.  
+**Region key** is `{N}|{layout_key}` (same layout string).  
+**Locator URI** still includes the full `//epub:…//page:N` pipe.
 
 ## URI
 

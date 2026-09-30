@@ -103,6 +103,62 @@ void dbg(const char* fmt, ...) {
   }
 }
 
+/** Parse composite content_id suffix after "sha256:" + 64 hex. */
+struct ContentIdParts {
+  std::optional<int> page_1based;
+  std::optional<std::string> epub_layout_key;  // format_epub_layout_params
+  std::optional<int> pdfimage_1based;
+  /// Region key for Page kind (PDF/DjVu: "N"; EPUB: "N|layout").
+  std::string page_region_key;
+};
+
+[[nodiscard]] bool parse_content_id_suffix(std::string_view rest_after_hex,
+                                           ContentIdParts* out) {
+  if (!out) return false;
+  *out = ContentIdParts{};
+  if (rest_after_hex.empty()) return true;
+  constexpr std::string_view kPage = ":page:";
+  constexpr std::string_view kPdfImage = ":pdfimage:";
+  constexpr std::string_view kEpub = ":epub:";
+  if (rest_after_hex.size() > kPage.size() &&
+      rest_after_hex.substr(0, kPage.size()) == kPage) {
+    const std::string_view after = rest_after_hex.substr(kPage.size());
+    std::size_t end = 0;
+    while (end < after.size() && after[end] >= '0' && after[end] <= '9') ++end;
+    if (end == 0) return false;
+    try {
+      out->page_1based = std::stoi(std::string(after.substr(0, end)));
+    } catch (...) {
+      return false;
+    }
+    if (*out->page_1based < 1) return false;
+    std::string_view tail = after.substr(end);
+    if (tail.size() >= kEpub.size() && tail.substr(0, kEpub.size()) == kEpub) {
+      out->epub_layout_key = std::string(tail.substr(kEpub.size()));
+      if (out->epub_layout_key->empty()) return false;
+      out->page_region_key =
+          epub_page_region_key(*out->page_1based, *out->epub_layout_key);
+    } else if (!tail.empty()) {
+      return false;  // unknown suffix after page number
+    } else {
+      out->page_region_key = std::to_string(*out->page_1based);
+    }
+    return true;
+  }
+  if (rest_after_hex.size() > kPdfImage.size() &&
+      rest_after_hex.substr(0, kPdfImage.size()) == kPdfImage) {
+    try {
+      out->pdfimage_1based =
+          std::stoi(std::string(rest_after_hex.substr(kPdfImage.size())));
+    } catch (...) {
+      return false;
+    }
+    if (*out->pdfimage_1based < 1) return false;
+    return true;
+  }
+  return false;
+}
+
 std::string format_from_member(std::string_view member) {
   const auto slash = member.find_last_of("/\\");
   const auto name =
@@ -305,11 +361,12 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
     auto media =
         store_->find_media_for_blob(*loc->blob_id, MediaKind::Document);
     if (!media) return std::nullopt;
+    const std::string rkey = epub_page_region_key(ep->page, ep->layout);
     auto region = store_->find_region_by_key(
-        media->id, RegionKind::Page, std::to_string(ep->page));
+        media->id, RegionKind::Page, rkey);
     if (!region) return std::nullopt;
-    // Tile target key is sha256:…:page:N (same as PDF/DjVu).
-    cm.content_id += ":page:" + std::to_string(ep->page);
+    // Layout is part of tile identity (docs/EPUB.md): sha256:…:page:N:epub:…
+    cm.content_id += epub_content_id_page_suffix(ep->page, ep->layout);
     cm.format = "epub";
     cm.status = ContentStatus::Incomplete;
     if (!store_->list_tile_scales(media->id, region->id).empty()) {
@@ -1090,29 +1147,9 @@ std::optional<Client::StoreTileTarget> Client::store_tile_target_for_content_id(
     }
   }
 
-  std::optional<int> page_1based;
-  std::optional<int> pdfimage_1based;
+  ContentIdParts parts;
   if (rest.size() > 64) {
-    constexpr std::string_view kPage = ":page:";
-    constexpr std::string_view kPdfImage = ":pdfimage:";
-    if (rest.size() > 64 + kPage.size() &&
-        rest.substr(64, kPage.size()) == kPage) {
-      try {
-        page_1based = std::stoi(std::string(rest.substr(64 + kPage.size())));
-      } catch (...) {
-        return std::nullopt;
-      }
-      if (*page_1based < 1) return std::nullopt;
-    } else if (rest.size() > 64 + kPdfImage.size() &&
-               rest.substr(64, kPdfImage.size()) == kPdfImage) {
-      try {
-        pdfimage_1based =
-            std::stoi(std::string(rest.substr(64 + kPdfImage.size())));
-      } catch (...) {
-        return std::nullopt;
-      }
-      if (*pdfimage_1based < 1) return std::nullopt;
-    } else {
+    if (!parse_content_id_suffix(rest.substr(64), &parts)) {
       return std::nullopt;
     }
   }
@@ -1123,20 +1160,20 @@ std::optional<Client::StoreTileTarget> Client::store_tile_target_for_content_id(
   auto blob_id = store_->find_blob_by_hash(HashAlgoId::Sha256, *digest);
   if (!blob_id) return std::nullopt;
 
-  if (page_1based) {
+  if (parts.page_1based) {
     auto media = store_->find_media_for_blob(*blob_id, MediaKind::Document);
     if (!media) return std::nullopt;
     auto region = store_->find_region_by_key(
-        media->id, RegionKind::Page, std::to_string(*page_1based));
+        media->id, RegionKind::Page, parts.page_region_key);
     if (!region) return std::nullopt;
     return StoreTileTarget{media->id, region->id};
   }
 
-  if (pdfimage_1based) {
+  if (parts.pdfimage_1based) {
     auto media = store_->find_media_for_blob(*blob_id, MediaKind::Document);
     if (!media) return std::nullopt;
     auto region = store_->find_region_by_key(
-        media->id, RegionKind::Fragment, std::to_string(*pdfimage_1based));
+        media->id, RegionKind::Fragment, std::to_string(*parts.pdfimage_1based));
     if (!region) return std::nullopt;
     return StoreTileTarget{media->id, region->id};
   }
@@ -2472,12 +2509,32 @@ Client::PurgeStats Client::purge_uri(std::string_view uri, bool dry_run) {
       } else {
         (void)store_->delete_page_text_layers_for_blob(*blob_id);
       }
+      // Page-qualified URIs share one blob across many locators (other pages /
+      // layouts). forget_uri only purges tiles when the blob is orphaned — so
+      // hard reload must drop this page's region tiles explicitly.
+      if (page > 0) {
+        if (auto media =
+                store_->find_media_for_blob(*blob_id, MediaKind::Document)) {
+          std::string rkey = std::to_string(page);
+          if (auto ep = parse_epub_uri(uri)) {
+            rkey = epub_page_region_key(ep->page, ep->layout);
+          }
+          if (auto region = store_->find_region_by_key(
+                  media->id, RegionKind::Page, rkey)) {
+            const auto before =
+                store_->list_tiles_for_region(media->id, region->id);
+            store_->delete_tiles_for_region(media->id, region->id);
+            out.tiles_deleted +=
+                static_cast<std::int64_t>(before.size());
+          }
+        }
+      }
     }
   }
   auto st = store_->forget_uri(uri, dry_run);
   if (st.locator_removed) out.removed_uris.emplace_back(uri);
   if (st.blob_purged) out.purged_content_ids.emplace_back(std::string(uri));
-  out.tiles_deleted = st.tiles_deleted;
+  out.tiles_deleted += st.tiles_deleted;
   return out;
 }
 
@@ -3537,7 +3594,9 @@ void Client::handle_probe_size_store(
       store_->upsert_locator(job.uri, blob_id, byte_size, mtime,
                              ep->epub_path.string(), std::to_string(ep->page));
       const auto media_id = store_->ensure_document_media(blob_id, {});
-      const auto region_id = store_->ensure_page_region(media_id, ep->page);
+      const std::string rkey = epub_page_region_key(ep->page, ep->layout);
+      const auto region_id =
+          store_->ensure_page_region(media_id, ep->page, rkey);
       store_->set_media_size(media_id, layout->width, layout->height);
       try {
         store_->set_region_size(region_id, layout->width, layout->height);
@@ -3941,29 +4000,9 @@ void Client::put_tiles_to_store(const std::string& content_id,
     }
   }
 
-  std::optional<int> page_1based;
-  std::optional<int> pdfimage_1based;
+  ContentIdParts parts;
   if (rest.size() > 64) {
-    constexpr std::string_view kPage = ":page:";
-    constexpr std::string_view kPdfImage = ":pdfimage:";
-    if (rest.size() > 64 + kPage.size() &&
-        rest.substr(64, kPage.size()) == kPage) {
-      try {
-        page_1based = std::stoi(std::string(rest.substr(64 + kPage.size())));
-      } catch (...) {
-        return;
-      }
-      if (*page_1based < 1) return;
-    } else if (rest.size() > 64 + kPdfImage.size() &&
-               rest.substr(64, kPdfImage.size()) == kPdfImage) {
-      try {
-        pdfimage_1based =
-            std::stoi(std::string(rest.substr(64 + kPdfImage.size())));
-      } catch (...) {
-        return;
-      }
-      if (*pdfimage_1based < 1) return;
-    } else {
+    if (!parse_content_id_suffix(rest.substr(64), &parts)) {
       return;  // composite ids without page/pdfimage mapping
     }
   }
@@ -3987,14 +4026,15 @@ void Client::put_tiles_to_store(const std::string& content_id,
   try {
     std::int64_t media_id = 0;
     std::int64_t region_id = 0;
-    if (page_1based) {
+    if (parts.page_1based) {
       media_id = store_->ensure_document_media(*blob_id, {});
-      region_id = store_->ensure_page_region(media_id, *page_1based);
-    } else if (pdfimage_1based) {
+      region_id = store_->ensure_page_region(media_id, *parts.page_1based,
+                                            parts.page_region_key);
+    } else if (parts.pdfimage_1based) {
       media_id = store_->ensure_document_media(*blob_id, {});
       region_id = store_->ensure_region(media_id, RegionKind::Fragment,
-                                         std::to_string(*pdfimage_1based),
-                                         *pdfimage_1based);
+                                         std::to_string(*parts.pdfimage_1based),
+                                         *parts.pdfimage_1based);
     } else {
       media_id = store_->ensure_image_media(*blob_id, {}, {});
       if (auto full = store_->find_full_region(media_id)) {
