@@ -2555,25 +2555,12 @@ void Client::reply_cancelled_job(Job& job) {
       cb(std::move(uri), edge, std::nullopt);
     });
   } else if (job.kind == JobKind::EnsureTiles) {
-    if (!job.tile_batch.empty() && job.tile_batch_cb) {
-      auto cb = std::move(job.tile_batch_cb);
-      const std::size_t n = job.tile_batch.size();
-      executor_.post([cb = std::move(cb), n]() mutable {
-        for (std::size_t i = 0; i < n; ++i) {
-          cb(i, std::nullopt);
-        }
-      });
-    } else if (job.tile_cb) {
-      auto cb = std::move(job.tile_cb);
-      auto uri = job.uri;
-      const int sc = job.tile_scale;
-      const int x = job.tile_x;
-      const int y = job.tile_y;
-      executor_.post(
-          [cb = std::move(cb), uri = std::move(uri), sc, x, y]() mutable {
-            cb(std::move(uri), sc, x, y, std::nullopt);
-          });
-    }
+    // Do not deliver miss callbacks for cancelled tile jobs. Hosts treat nullopt
+    // as terminal Failed for the generation (stuck on LQIP). Scroll cancel /
+    // same-cell supersede only need the activity ledger closed; cancel_obsolete
+    // erases InFlight so keys can be re-requested.
+    job.tile_cb = nullptr;
+    job.tile_batch_cb = nullptr;
   }
   // EnsureLqip has no host callback.
 }
