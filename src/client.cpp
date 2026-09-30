@@ -2159,6 +2159,57 @@ std::vector<Client::ArchiveEntryRow> Client::refresh_archive_toc(
   return rows;
 }
 
+namespace {
+
+/// Store-first page_count for a document path (file:// locator → Document media).
+/// Works when the source file is missing, unlike a live MuPDF/DjVu/EPUB open.
+std::optional<int> stored_document_page_count(Store* store,
+                                              const std::filesystem::path& path)
+{
+  if (!store || path.empty()) return std::nullopt;
+  try {
+    const auto fu = file_uri_from_path(path.lexically_normal());
+    auto loc = store->find_locator(fu);
+    if (!loc || !loc->blob_id) return std::nullopt;
+    auto media =
+        store->find_media_for_blob(*loc->blob_id, MediaKind::Document);
+    if (!media || !media->page_count || *media->page_count <= 0) {
+      return std::nullopt;
+    }
+    return *media->page_count;
+  } catch (...) {
+    return std::nullopt;
+  }
+}
+
+/// Ensure file:// (+ path) locator has a blob id so page_count can be stored.
+std::optional<std::int64_t> ensure_document_file_blob(
+    Store* store, const std::filesystem::path& path)
+{
+  if (!store || path.empty()) return std::nullopt;
+  try {
+    const auto norm = path.lexically_normal();
+    const auto fu = file_uri_from_path(norm);
+    if (auto loc = store->find_locator(fu)) {
+      if (loc->blob_id) return *loc->blob_id;
+    }
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(norm, ec) || ec) {
+      return std::nullopt;
+    }
+    const auto size = file_size_bytes(norm);
+    const auto mtime = file_mtime_ns(norm);
+    const auto blob_id = store->insert_blob(size, BlobStatus::Ok);
+    const std::string outer = norm.string();
+    store->upsert_locator(fu, blob_id, size, mtime, outer, std::nullopt);
+    return blob_id;
+  } catch (...) {
+    return std::nullopt;
+  }
+}
+
+} // namespace
+
 std::optional<int> Client::refresh_document_index(
     const std::filesystem::path& path, DocumentKind kind,
     const EpubLayout* layout) {
@@ -2185,6 +2236,19 @@ std::optional<int> Client::refresh_document_index(
   }
   if (!count || *count <= 0) return std::nullopt;
   (void)layout_key;
+
+  // Durable page_count (archive TOC parity). Expand can re-open without the file.
+  if (store_) {
+    try {
+      if (auto blob_id = ensure_document_file_blob(store_, use)) {
+        (void)store_->ensure_document_media(*blob_id, count);
+      }
+    } catch (const std::exception& ex) {
+      if (debug_enabled()) {
+        dbg("refresh_document_index Store mirror failed: %s", ex.what());
+      }
+    }
+  }
   return count;
 }
 
@@ -2195,13 +2259,16 @@ std::optional<int> Client::document_page_count(
   std::error_code ec;
   const auto abs = std::filesystem::weakly_canonical(path, ec);
   const auto& use = ec ? path : abs;
+
+  // Store-first: same idea as get_archive_entries / container_member TOC.
+  // Missing PDF/DjVu/EPUB still expands when page_count was written previously.
+  if (auto cached = stored_document_page_count(store_, use)) {
+    return cached;
+  }
+
   if (!std::filesystem::is_regular_file(use, ec)) return std::nullopt;
 
   EpubLayout epub_layout = layout ? *layout : default_epub_layout();
-  std::string layout_key;
-  if (kind == DocumentKind::Epub) {
-    layout_key = format_epub_layout_params(epub_layout);
-  }
   return refresh_document_index(use, kind, layout ? layout : &epub_layout);
 }
 
