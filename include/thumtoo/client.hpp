@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -400,6 +401,12 @@ class Client {
   std::size_t cancel_pending();
   /// Drop queued jobs whose uri matches (exact). Returns removed count.
   std::size_t cancel_uri(std::string_view uri);
+
+  /// Drop queued interactive EnsureTiles for specific cells of one uri (scroll
+  /// cancel). Does not cancel FocusFull pyramids or other URIs. Batch jobs
+  /// lose matching cells; empty batches are dropped.
+  std::size_t cancel_tile_cells(std::string_view uri,
+                                std::span<const TileCoord> cells);
 
   /**
    * Forget a location: cancel queued work, drop the locator row, and if that

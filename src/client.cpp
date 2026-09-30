@@ -1440,9 +1440,11 @@ void Client::request_tile(std::string uri, int scale, int x, int y,
   job.tile_cb = std::move(cb);
   job.activity_id = global_activity_ledger().note_tile_queued(
       job.uri, job.tile_scale, job.tile_x, job.tile_y);
-  // FIFO: every issued cell eventually runs. LIFO starved older archive/grid
-  // cells forever under continuous pan/zoom (Galapix saw permanent REQUESTED).
-  enqueue(std::move(job), /*front=*/false);
+  // LIFO (front): interactive viewport cells must outrun tiles already scrolled
+  // past. FIFO left a backlog of off-screen EnsureTiles ahead of the live
+  // viewport (rapid Gallery scroll felt stalled). Same-cell supersede in
+  // enqueue() still drops duplicates; bump_interest_epoch drops whole epochs.
+  enqueue(std::move(job), /*front=*/true);
 }
 
 void Client::request_tiles(std::string uri, std::vector<TileCoord> coords,
@@ -1482,7 +1484,8 @@ void Client::request_tiles(std::string uri, std::vector<TileCoord> coords,
     dbg("request_tiles uri=%s cells=%zu (one batch job)", job.uri.c_str(),
         job.tile_batch.size());
   }
-  enqueue(std::move(job), /*front=*/false);
+  // Same LIFO policy as request_tile — newest viewport batch first.
+  enqueue(std::move(job), /*front=*/true);
 }
 
 void Client::request_tile_pyramid(std::string uri, int min_scale, int max_scale,
@@ -2634,6 +2637,64 @@ std::size_t Client::cancel_uri(std::string_view uri) {
   }
   return dropped.size();
 }
+
+std::size_t Client::cancel_tile_cells(std::string_view uri,
+                                      std::span<const TileCoord> cells) {
+  if (uri.empty() || cells.empty()) {
+    return 0;
+  }
+  auto cell_match = [&](int scale, int x, int y) {
+    for (const auto& c : cells) {
+      if (c.scale == scale && c.x == x && c.y == y) {
+        return true;
+      }
+    }
+    return false;
+  };
+  std::vector<Job> dropped;
+  {
+    std::lock_guard lock(mu_);
+    for (auto it = queue_.begin(); it != queue_.end();) {
+      if (it->kind != JobKind::EnsureTiles || it->uri != uri || it->tile_pyramid) {
+        ++it;
+        continue;
+      }
+      if (!it->tile_batch.empty()) {
+        // Strip cancelled cells; drop the job if nothing remains.
+        std::vector<TileCoord> kept;
+        kept.reserve(it->tile_batch.size());
+        for (const auto& c : it->tile_batch) {
+          if (!cell_match(c.scale, c.x, c.y)) {
+            kept.push_back(c);
+          }
+        }
+        if (kept.size() == it->tile_batch.size()) {
+          ++it;
+          continue;
+        }
+        if (kept.empty()) {
+          dropped.push_back(std::move(*it));
+          it = queue_.erase(it);
+          continue;
+        }
+        it->tile_batch = std::move(kept);
+        ++it;
+        continue;
+      }
+      if (cell_match(it->tile_scale, it->tile_x, it->tile_y)) {
+        dropped.push_back(std::move(*it));
+        it = queue_.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+  for (auto& j : dropped) {
+    reply_cancelled_job(j);
+  }
+  return dropped.size();
+}
+
 
 Client::PurgeStats Client::purge_uri(std::string_view uri, bool dry_run) {
   PurgeStats out;
