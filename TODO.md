@@ -2,15 +2,15 @@
 
 ## Status (2026-09-30)
 
-**Tip:** thumtoo-019.1-fz-style-document (on `b825e8d` + agent stack).
+**Tip:** thumtoo-020.1-ocr-unused-ifdef (on `b825e8d` + agent stack).
 
-### 019.1
-- EPUB: use per-document `fz_style_document` instead of deprecated context
-  globals `fz_set_use_document_css` / `fz_set_user_css` (MuPDF ≥ 1.28 warnings).
+### 020.1
+- Gate `clear_ocr_error` and `apply_ocr_page_crop` behind
+  `THUMTOO_HAVE_TESSERACT` (unused-function warnings when OCR is OFF).
 
 ### Prior
+- 019.1 fz_style_document
 - 018.1 silent tile cancel
-- 017.1 interactive tile LIFO
 
 ### Bundle policy
 Work-line base: `b825e8d`. Full stack in each tip bundle.

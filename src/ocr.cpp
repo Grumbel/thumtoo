@@ -47,9 +47,9 @@ void set_ocr_error(std::string_view msg) {
   g_ocr_last_error.assign(msg);
 }
 
+#if defined(THUMTOO_HAVE_TESSERACT)
 void clear_ocr_error() { g_ocr_last_error.clear(); }
 
-#if defined(THUMTOO_HAVE_TESSERACT)
 /// Convert any VipsImage to contiguous RGB uchar for Tesseract.
 [[nodiscard]] std::optional<RgbPage> vips_image_to_rgb_page(VipsImage* in) {
   if (!in) return std::nullopt;
@@ -511,6 +511,7 @@ std::string_view ocr_last_error() {
   return g_ocr_last_error;
 }
 
+#if defined(THUMTOO_HAVE_TESSERACT)
 /// Crop OCR raster to opts crop (page space). @p full_bounds keeps the
 /// original page box for the returned layer; @p page.page_bounds becomes the
 /// crop so Tesseract pixel→page mapping stays in absolute page coordinates.
@@ -600,6 +601,7 @@ std::string_view ocr_last_error() {
   page.page_bounds = TextRect{ix0, iy0, ix1, iy1};
   return true;
 }
+#endif  // THUMTOO_HAVE_TESSERACT
 
 std::optional<PageTextLayer> ocr_page_text_layer(std::string_view uri,
                                                  const OcrOptions& opts) {
