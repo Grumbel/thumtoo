@@ -123,7 +123,8 @@ class Client {
   [[nodiscard]] Store& store() { return *store_; }
   [[nodiscard]] const Store& store() const { return *store_; }
 
-  /// Cache-only; does not touch source volumes.
+  /// Cache-only size from Store region/media dims.
+  /// Does not open source files, list tiles, or load LQIP/EMB.
   [[nodiscard]] std::optional<Size> get_size(std::string_view uri) const;
   [[nodiscard]] std::optional<ContentMeta> get_meta(std::string_view uri) const;
 

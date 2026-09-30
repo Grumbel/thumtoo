@@ -308,13 +308,10 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
       cm.status = ContentStatus::Ready;
     }
     // One size only: page document layout (region.width/height at probe).
-    // Never shared media dims; never invent size from tiles.
+    // Never shared media dims; never invent size from tiles; never open source.
     if (region->width && region->height && *region->width > 0
         && *region->height > 0) {
       cm.size = Size{*region->width, *region->height};
-    } else if (auto layout =
-                   pdf_page_layout_size(pdf->pdf_path, pdf->page, pdf->backend)) {
-      cm.size = *layout;
     }
     return cm;
   }
@@ -333,10 +330,10 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
     if (!store_->list_tile_scales(media->id, region->id).empty()) {
       cm.status = ContentStatus::Ready;
     }
-    // Dict /Width /Height is cheap; prefer live size over shared media dims
-    // (one Document media holds many embeds of different sizes).
-    if (auto sz = pdf_embedded_image_size(pimg->pdf_path, pimg->image)) {
-      cm.size = *sz;
+    // Region size first; media dims only as last Store fallback — no source open.
+    if (region->width && region->height && *region->width > 0
+        && *region->height > 0) {
+      cm.size = Size{*region->width, *region->height};
     } else if (media->width && media->height) {
       cm.size = Size{*media->width, *media->height};
     }
@@ -359,8 +356,6 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
     if (region->width && region->height && *region->width > 0
         && *region->height > 0) {
       cm.size = Size{*region->width, *region->height};
-    } else if (auto layout = djvu_page_layout_size(dj->djvu_path, dj->page)) {
-      cm.size = *layout;
     }
     return cm;
   }
@@ -383,9 +378,6 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
     if (region->width && region->height && *region->width > 0
         && *region->height > 0) {
       cm.size = Size{*region->width, *region->height};
-    } else if (auto layout =
-                   epub_page_layout_size(ep->epub_path, ep->page, ep->layout)) {
-      cm.size = *layout;
     }
     return cm;
   }
@@ -408,8 +400,75 @@ std::optional<ContentMeta> Client::meta_from_store(std::string_view uri) const {
 }
 
 std::optional<Size> Client::get_size(std::string_view uri) const {
-  if (auto sm = meta_from_store(uri)) {
-    return sm->size;
+  // Size-only Store read. Must stay cache-only and cheap:
+  // no list_tile_scales, no source open, no LQIP/EMB.
+  // Hosts use this to hydrate process memos before Gallery size gates.
+  if (!store_ || uri.empty()) return std::nullopt;
+  try {
+    auto loc = store_->find_locator(uri);
+    if (!loc || !loc->blob_id) return std::nullopt;
+
+    if (auto pdf = parse_pdf_uri(uri)) {
+      auto media =
+          store_->find_media_for_blob(*loc->blob_id, MediaKind::Document);
+      if (!media) return std::nullopt;
+      auto region = store_->find_region_by_key(
+          media->id, RegionKind::Page, std::to_string(pdf->page));
+      if (!region || !region->width || !region->height) return std::nullopt;
+      if (*region->width <= 0 || *region->height <= 0) return std::nullopt;
+      return Size{*region->width, *region->height};
+    }
+
+    if (auto pimg = parse_pdf_image_uri(uri)) {
+      auto media =
+          store_->find_media_for_blob(*loc->blob_id, MediaKind::Document);
+      if (!media) return std::nullopt;
+      const std::string key = std::to_string(pimg->image);
+      auto region =
+          store_->find_region_by_key(media->id, RegionKind::Fragment, key);
+      if (region && region->width && region->height && *region->width > 0
+          && *region->height > 0) {
+        return Size{*region->width, *region->height};
+      }
+      if (media->width && media->height && *media->width > 0
+          && *media->height > 0) {
+        return Size{*media->width, *media->height};
+      }
+      return std::nullopt;
+    }
+
+    if (auto dj = parse_djvu_uri(uri)) {
+      auto media =
+          store_->find_media_for_blob(*loc->blob_id, MediaKind::Document);
+      if (!media) return std::nullopt;
+      auto region = store_->find_region_by_key(
+          media->id, RegionKind::Page, std::to_string(dj->page));
+      if (!region || !region->width || !region->height) return std::nullopt;
+      if (*region->width <= 0 || *region->height <= 0) return std::nullopt;
+      return Size{*region->width, *region->height};
+    }
+
+    if (auto ep = parse_epub_uri(uri)) {
+      auto media =
+          store_->find_media_for_blob(*loc->blob_id, MediaKind::Document);
+      if (!media) return std::nullopt;
+      const std::string rkey = epub_page_region_key(ep->page, ep->layout);
+      auto region =
+          store_->find_region_by_key(media->id, RegionKind::Page, rkey);
+      if (!region || !region->width || !region->height) return std::nullopt;
+      if (*region->width <= 0 || *region->height <= 0) return std::nullopt;
+      return Size{*region->width, *region->height};
+    }
+
+    if (auto media =
+            store_->find_media_for_blob(*loc->blob_id, MediaKind::Image)) {
+      if (media->width && media->height && *media->width > 0
+          && *media->height > 0) {
+        return Size{*media->width, *media->height};
+      }
+    }
+  } catch (...) {
+    return std::nullopt;
   }
   return std::nullopt;
 }
