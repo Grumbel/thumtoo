@@ -21,7 +21,6 @@
 
 #include "thumtoo/debug_overlay.hpp"
 
-#include <map>
 #include <mutex>
 #include <memory>
 #include <vips/vips.h>
@@ -1989,20 +1988,35 @@ std::optional<std::vector<std::uint8_t>> Client::fetch_http_cached(
 }
 
 void Client::request_size(std::string uri, SizeCallback cb) {
-  if (auto m = get_meta(uri)) {
-    if (m->size && (m->status == ContentStatus::Ready ||
-                    m->status == ContentStatus::Incomplete)) {
+  auto reply_from_store = [&](std::string_view u) -> bool {
+    // Prefer light get_size (no list_tile_scales). Full meta only when we need
+    // status for the Ready/Incomplete gate on the legacy path.
+    if (auto sz = get_size(u)) {
       if (cb) {
-        // Same payload as handle_probe_size reply_size: size + ThumbHash LQIP
-        // + EMB (EXIF/PDF /Thumb). get_lqip deliberately excludes EmbeddedJpeg.
         SizeReply reply;
-        reply.size = m->size;
-        reply.lqip = get_lqip(uri);
-        reply.embedded = get_embedded_preview(uri);
-        executor_.post([cb = std::move(cb), uri, reply = std::move(reply)]() mutable {
+        reply.size = *sz;
+        // Underlay still best-effort on request_size (hosts may ignore).
+        reply.lqip = get_lqip(u);
+        reply.embedded = get_embedded_preview(u);
+        executor_.post([cb = cb, uri = std::string(u),
+                        reply = std::move(reply)]() mutable {
           cb(std::move(uri), std::move(reply));
         });
       }
+      return true;
+    }
+    return false;
+  };
+
+  if (reply_from_store(uri)) {
+    return;
+  }
+
+  // Multipage PDF/MD/text: fill all missing page dims in one open so hosts do
+  // not serial-ProbeSize the tail of a large document.
+  if (auto pdf = parse_pdf_uri(uri)) {
+    (void)ensure_pdf_page_sizes(pdf->pdf_path, pdf->backend);
+    if (reply_from_store(uri)) {
       return;
     }
   }
@@ -2387,13 +2401,11 @@ int Client::ensure_pdf_page_sizes(const std::filesystem::path& path,
   if (!std::filesystem::is_regular_file(path, ec) || ec) return 0;
 
   // Coalesce concurrent ensures for the same file (many page probes at once).
-  static std::mutex gate_mu;
-  static std::map<std::string, std::shared_ptr<std::mutex>> path_mu;
   const std::string key = path.lexically_normal().string();
   std::shared_ptr<std::mutex> file_mu;
   {
-    std::lock_guard lock(gate_mu);
-    auto& slot = path_mu[key];
+    std::lock_guard lock(ensure_pdf_mu_);
+    auto& slot = ensure_pdf_path_mu_[key];
     if (!slot) slot = std::make_shared<std::mutex>();
     file_mu = slot;
   }
@@ -2426,17 +2438,20 @@ int Client::ensure_pdf_page_sizes(const std::filesystem::path& path,
 
   int written = 0;
   for (int page = 1; page <= *count; ++page) {
-    const auto region_id = store_->ensure_page_region(media_id, page);
-    auto region = store_->find_region(region_id);
-    if (region && region->width && region->height && *region->width > 0
-        && *region->height > 0) {
-      continue;
+    const std::string page_key = std::to_string(page);
+    if (auto region = store_->find_region_by_key(media_id, RegionKind::Page,
+                                                 page_key)) {
+      if (region->width && region->height && *region->width > 0
+          && *region->height > 0) {
+        continue;
+      }
     }
     auto layout = pdf_page_layout_size(path, page, backend);
     if (!layout) continue;
+    const auto region_id = store_->ensure_page_region(media_id, page);
     const auto uri = thumtoo::pdf_page_uri(path, page, backend);
     store_->upsert_locator(uri, blob_id, byte_size, mtime, path.string(),
-                           std::to_string(page));
+                           page_key);
     try {
       store_->set_region_size(region_id, layout->width, layout->height);
       ++written;

@@ -644,6 +644,12 @@ class Client {
   mutable std::mutex http_cache_mu_;
   std::unordered_map<std::string, std::vector<std::uint8_t>> http_cache_;
   std::size_t http_cache_bytes_ = 0;
+
+  /// Coalesce ensure_pdf_page_sizes for the same path (Client-owned, not process
+  /// static). Key = lexically_normal path string.
+  mutable std::mutex ensure_pdf_mu_;
+  mutable std::unordered_map<std::string, std::shared_ptr<std::mutex>>
+      ensure_pdf_path_mu_;
 };
 
 }  // namespace thumtoo

@@ -2,16 +2,17 @@
 
 ## Status (2026-09-30)
 
-**Tip:** thumtoo-015.1-ensure-pdf-page-sizes (on `b825e8d` + agent stack).
+**Tip:** thumtoo-016.1-size-ensure-cleanup (on `b825e8d` + agent stack).
 
-### 015.1
-- `Client::ensure_pdf_page_sizes(path)`: one open, write region dims for every
-  page missing size (no thumbs/tiles). Concurrent same-path callers coalesce.
-- Fixes size-gate tail: first miss no longer serial-probes each remaining page.
+### 016.1
+- `ensure_pdf_page_sizes` coalesce map is **Client-owned** (not process static).
+- `request_size` on miss: ensure PDF page dims, then light reply via `get_size`
+  before enqueueing ProbeSize — hosts need not special-case multipage.
+- Region dim load (014) + light `get_size` (013) unchanged.
 
 ### Prior
+- 015.1 ensure_pdf_page_sizes
 - 014.1 region width/height load
-- 013.1 get_size light
 
 ### Bundle policy
 Work-line base: `b825e8d`. Full stack in each tip bundle.
