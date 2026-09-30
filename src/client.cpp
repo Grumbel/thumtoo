@@ -2647,24 +2647,11 @@ std::size_t Client::cancel_tile_cells(std::string_view uri,
         continue;
       }
       if (!it->tile_batch.empty()) {
-        // Strip cancelled cells; drop the job if nothing remains.
-        std::vector<TileCoord> kept;
-        kept.reserve(it->tile_batch.size());
-        for (const auto& c : it->tile_batch) {
-          if (!cell_match(c.scale, c.x, c.y)) {
-            kept.push_back(c);
-          }
-        }
-        if (kept.size() == it->tile_batch.size()) {
-          ++it;
-          continue;
-        }
-        if (kept.empty()) {
-          dropped.push_back(std::move(*it));
-          it = queue_.erase(it);
-          continue;
-        }
-        it->tile_batch = std::move(kept);
+        // Do not compact tile_batch in place. Host maps completion index → the
+        // original key list from request time; stripping cells renumbers the
+        // worker's 0..n-1 callbacks onto the wrong keys (same image, wrong
+        // spot). Leave multi-cell jobs alone; only single-cell jobs below are
+        // cancelled on scroll.
         ++it;
         continue;
       }
