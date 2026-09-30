@@ -222,3 +222,23 @@ remains limited. RAR4 solid stays on unarr. ZIP/CBZ stay on libarchive.
 Solid **payloads** are not randomly seekable — extract walks members in order and
 must uncompress intermediate solid members to keep the dictionary (see
 `extract_archive_members_unarr`). Prefer sequential batch windows for CBR.
+
+## Activity ledger (tile jobs)
+
+`Client::activity_snapshot()` exposes `tile_queued` / `tile_running` for host
+status (e.g. biltoo Performance panel).
+
+| Event | Ledger |
+|-------|--------|
+| `request_tile` / batch / pyramid enqueue | `note_tile_queued` |
+| Worker starts cell | `note_tile_running` |
+| Worker done / miss | `note_tile_finished` |
+| **Supersede** same `uri/scale/x/y` still queued | `reply_cancelled_job` → `note_tile_finished` |
+| Pyramid supersede / cancel / interest drop | same `reply_cancelled_job` |
+
+**Invariant:** dropping a queued `EnsureTiles` job without `note_tile_finished`
+leaks `tile_queued`. Hosts then show **Working** with `tile=N/0` while
+`queue_stats().pending` is 0.
+
+Regression tests: `tests/test_activity.cpp` (finish without Running),
+`tests/test_tile_supersede_activity.cpp` (Client single-cell flood).

@@ -41,6 +41,26 @@ int main() {
   expect(s.size_probe_completed == 1, "size done");
   expect(s.archive_read_completed == 1, "archive done");
 
+  // Supersede / cancel without Running must clear Queued (Client enqueue path).
+  // Regression: finishing only via worker left tile_queued stuck → host "Working".
+  {
+    thumtoo::ActivityLedger led;
+    const auto a = led.note_tile_queued("file:///tmp/d.jpg", 0, 1, 2);
+    const auto b = led.note_tile_queued("file:///tmp/d.jpg", 0, 1, 2);
+    auto snap = led.snapshot();
+    expect(snap.tile_queued == 2, "two tile queued before finish");
+    led.note_tile_finished(a, false);
+    snap = led.snapshot();
+    expect(snap.tile_queued == 1, "one remains after finish A");
+    expect(snap.tile_running == 0, "none running after finish A");
+    expect(snap.tile_completed == 1, "A counted completed");
+    led.note_tile_finished(b, false);
+    snap = led.snapshot();
+    expect(snap.tile_queued == 0, "ledger clear after both finished");
+    expect(snap.tile_running == 0, "still none running");
+    expect(snap.tile_completed == 2, "both completed");
+  }
+
   if (fails) {
     std::fprintf(stderr, "%d failures\n", fails);
     return 1;

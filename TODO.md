@@ -2,18 +2,19 @@
 
 ## Status (2026-09-30)
 
-**Tip:** thumtoo-010.1-tile-supersede-activity-finish (on 009.2 stack).
+**Tip:** thumtoo-010.2-tile-supersede-activity-tests (on 010.1 stack).
+
+### 010.2
+- Document ActivityLedger + supersede invariant in TILES.md
+- Tests:
+  - `test_activity`: finish Queued without Running clears tile_queued
+  - `test_tile_supersede_activity`: Client flood same cell does not leave
+    tile_queued == N (regression for host status=Working tile=N/0)
 
 ### 010.1
-- Single-cell EnsureTiles supersede in `enqueue` now calls `reply_cancelled_job`
-  (finishes ActivityLedger + miss callback). Previously only posted nullopt and
-  left `tile_queued` stuck → biltoo Performance badge stayed **Working** with
-  `tile=N/0` while thumtoo pending/inflight were 0.
-
-### Prior: 009.2
-- `get_tile` / `has_tile`: accept size-drift cells (host stretches at paint)
+- Single-cell EnsureTiles supersede calls `reply_cancelled_job`
 
 ### Apply
 ```bash
-git pull /path/to/thumtoo-010.1-tile-supersede-activity-finish-<base>.bundle HEAD
+git pull /path/to/thumtoo-010.2-tile-supersede-activity-tests-<base>.bundle HEAD
 ```
