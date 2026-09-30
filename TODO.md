@@ -1,19 +1,19 @@
 # TODO / agent handoff
 
-## Status (2026-09-29)
+## Status (2026-09-30)
 
-**Tip:** thumtoo-009.2-tile-size-stretch (on 008.1 stack).
+**Tip:** thumtoo-010.1-tile-supersede-activity-finish (on 009.2 stack).
 
-### 009.2
-- `get_tile` / `has_tile`: do **not** reject rows whose w/h ≠ `dim_at_tile_scale`
-  grid (JPEG DCT vs floor-half drift). Hosts stretch the bitmap into the cell.
-- Removes miss storms that left interactive cells Failed while LQIP stayed.
+### 010.1
+- Single-cell EnsureTiles supersede in `enqueue` now calls `reply_cancelled_job`
+  (finishes ActivityLedger + miss callback). Previously only posted nullopt and
+  left `tile_queued` stuck → biltoo Performance badge stayed **Working** with
+  `tile=N/0` while thumtoo pending/inflight were 0.
 
-### 009.1
-- Interactive JPEG DCT path: rgb888 after remain shrinks; ladder fallthrough
+### Prior: 009.2
+- `get_tile` / `has_tile`: accept size-drift cells (host stretches at paint)
 
-### 008.1
-- Serialize MuPDF Markdown opens (cmark not reentrant)
-
-### 007
-- materialize_tile_cell / batch request_tiles / worker rgb888
+### Apply
+```bash
+git pull /path/to/thumtoo-010.1-tile-supersede-activity-finish-<base>.bundle HEAD
+```

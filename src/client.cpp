@@ -1411,18 +1411,10 @@ void Client::enqueue(Job job, bool front) {
             it->tile_batch.empty() && it->uri == job.uri &&
             it->tile_scale == job.tile_scale && it->tile_x == job.tile_x &&
             it->tile_y == job.tile_y) {
-          TileCallback cb = std::move(it->tile_cb);
-          std::string uri = it->uri;
-          int const sc = it->tile_scale;
-          int const x = it->tile_x;
-          int const y = it->tile_y;
+          // Finish activity + miss callback (same as pyramid supersede).
+          // Skipping note_tile_finished left tile_queued stuck → host "Working".
+          reply_cancelled_job(*it);
           it = queue_.erase(it);
-          if (cb) {
-            executor_.post(
-                [cb = std::move(cb), uri = std::move(uri), sc, x, y]() mutable {
-                  cb(std::move(uri), sc, x, y, std::nullopt);
-                });
-          }
         } else {
           ++it;
         }
