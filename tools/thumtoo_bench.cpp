@@ -189,7 +189,7 @@ gp::cli::Spec make_spec() {
       "underlying libraries alone; this shows what thumtoo makes of them.";
   s.options = {
       {"cache", 0, "DIR",
-       "Cache root; wiped at the start unless --keep-cache (default: "
+       "Cache root, user data included; wiped at the start unless --keep-cache (default: "
        "$XDG_CACHE_HOME/thumtoo-bench or ~/.cache/thumtoo-bench).", "Run"},
       {"keep-cache", 0, "", "Do not wipe the cache first: measures the warm path.", "Run"},
       {"jobs", 'j', "N", "Worker threads, 0-256; 0 = one per CPU (default).", "Run"},
@@ -323,7 +323,9 @@ int main(int argc, char** argv) {
     thumtoo::image_library_init();
     const auto t_all = std::chrono::steady_clock::now();
 
-    auto client = thumtoo::Client::open(cache, {}, jobs);
+    // user.sqlite lives inside the bench cache too: a benchmark must not touch
+    // the real data root (tags), and needs no writable $HOME.
+    auto client = thumtoo::Client::open(cache, {}, jobs, cache / "data");
     std::vector<PhaseResult> phases;
     std::vector<std::string> uris;
 
