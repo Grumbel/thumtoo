@@ -18,6 +18,16 @@ docs/bench/baselines/<machine-class>/
 
 ## Capture
 
+Preferred:
+
+```bash
+# after building tools and generating corpus (or nix build github:Grumbel/benchtoo#corpus-smoke)
+CORPUS=$(nix build --print-out-paths github:Grumbel/benchtoo#corpus-smoke)
+MACHINE=nixx86-ref CORPUS="$CORPUS" ./tools/capture_baselines.sh
+```
+
+Manual:
+
 ```bash
 thumtoo-microbench-decode --json --repeat 5 FILE > microbench-decode.json
 thumtoo-gp-tile --json --codec jpeg --quality 80 FILE > gp-tile-jpeg.json

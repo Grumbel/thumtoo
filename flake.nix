@@ -311,6 +311,17 @@
             echo "ok: bench-smoke-lite"
             touch "$out"
           '';
+
+          # Self-check compare_bench_json against example baseline (identity = pass).
+          baseline-compare-tool = pkgs.runCommand "thumtoo-baseline-compare-tool" {
+            nativeBuildInputs = [ pkgs.python3 ];
+          } ''
+            set -euo pipefail
+            base=${./docs/bench/baselines/example/gp-archive-libarchive.json}
+            python3 ${./tools/compare_bench_json.py} --baseline "$base" --current "$base"
+            echo "ok: compare_bench_json identity"
+            touch "$out"
+          '';
         });
 
       apps = forAllSystems ({ pkgs, system, ... }:
