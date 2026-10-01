@@ -2,21 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Golden-path tile encode/decode matrix (vips only — no thumtoo Client/Store).
-// Splits an image into 256² cells at scale 0 and measures encode/decode
-// (jpeg|webp|avif|jxl) at several quality settings, plus PSNR of the
-// decoded cells against the source.
-//
-// Usage:
-//   thumtoo-gp-tile [--tile N] [--repeat R] [--codec C] [--quality 60,80,90]
-//                   [--max-cells K] [--reference CODEC:Q] [--tie-pct P]
-//                   [--json] FILE
-//
-//   C = jpeg | webp | avif | jxl   single codec, quality sweep table
-//     | all | a,b,…                compare codecs and judge which wins
-//
-//   A codec may carry an encoder effort: webp@e0..6, avif@e0..9, jxl@e1..9
-//   (e.g. --codec jpeg,jxl@e1,jxl@e3,jxl). Without @e the libvips default is
-//   used (webp 4, avif 4, jxl 7). JPEG has no effort knob.
+// Splits images into 256² cells at scale 0 and measures encode/decode
+// (jpeg|webp|avif|jxl) at several quality settings, plus PSNR of the decoded
+// cells against the source. With several codecs it judges which wins at equal
+// image quality. See --help.
 //
 // Comparison mode never compares codecs at the same Q number (JPEG Q80 and
 // AVIF Q80 are unrelated). It sweeps qualities, takes the PSNR of the
@@ -25,13 +14,15 @@
 // output that reaches the target, and judges bytes / encode / decode there.
 //
 // Codec availability is probed at runtime (libvips may lack an encoder,
-// e.g. heifsave without an AV1 encoder plugin). An unavailable codec is an
-// error, never a zero-byte / zero-ms result.
+// e.g. heifsave without an AV1 encoder plugin). An unavailable codec is
+// reported as unsupported, never as a zero-byte / zero-ms result.
 
 #include <vips/vips.h>
 
+#include "gp_cli.hpp"
 #include "gp_common.hpp"
 #include "gp_json.hpp"
+#include "gp_output.hpp"
 #include "gp_verdict.hpp"
 
 #include <algorithm>
@@ -507,78 +498,6 @@ CodecResult measure_codec(const Variant& variant, const std::vector<int>& qualit
   return r;
 }
 
-// --- output ---------------------------------------------------------------------
-
-/// Identity fields for a variant: base codec, plus variant/effort when set
-/// (rows for default-effort codecs keep the original schema-1 keys).
-void write_variant_json(gp::JsonWriter& w, const Variant& v) {
-  w.field("codec", codec_name(v.codec));
-  if (v.effort >= 0) {
-    w.field("variant", v.name());
-    w.field("effort", v.effort);
-  }
-}
-
-void write_row_json(gp::JsonWriter& w, const Variant& v, const Row& row) {
-  w.begin_object(gp::JsonWriter::Compact);
-  write_variant_json(w, v);
-  w.field("quality", row.quality);
-  w.field("encode_ms", row.enc.median);
-  w.field("decode_ms", row.dec.median);
-  w.field("bytes_total", row.bytes_total);
-  w.field("bytes_per_cell_mean", row.bytes_per_cell_mean);
-  w.field("psnr_db", row.psnr_db);
-  w.end_object();
-}
-
-void write_header_json(gp::JsonWriter& w, const fs::path& file, const Source& src,
-                       int tile, int time_n, int repeats) {
-  w.field("tool", "thumtoo-gp-tile");
-  w.field("file", file.string());
-  w.field("width", src.width);
-  w.field("height", src.height);
-  w.field("tile", tile);
-  w.field("cells", src.cells.size());
-  w.field("timed_cells", time_n);
-  w.field("repeats", repeats);
-}
-
-void write_single_doc(gp::JsonWriter& w, const CodecResult& r, const fs::path& file,
-                      const Source& src, int tile, int time_n, int repeats) {
-  w.begin_object();
-  w.field("schema", 1);
-  write_header_json(w, file, src, tile, time_n, repeats);
-  w.key("rows").begin_array();
-  for (const Row& row : r.rows) write_row_json(w, r.variant, row);
-  w.end_array();
-  w.end_object();
-}
-
-int report_single(const CodecResult& r, const fs::path& file, const Source& src,
-                  int tile, int time_n, int repeats, bool json) {
-  if (r.status != Status::Ok) {
-    std::cerr << r.variant.name() << ": " << status_name(r.status) << ": "
-              << r.reason << "\n";
-    return 1;
-  }
-  if (json) {
-    gp::JsonWriter w(std::cout);
-    write_single_doc(w, r, file, src, tile, time_n, repeats);
-    return 0;
-  }
-  std::cout << "file=" << file.filename().string() << " " << src.width << "x"
-            << src.height << " tiles=" << src.cells.size() << " tile=" << tile
-            << " timed_cells=" << time_n << " codec=" << r.variant.name() << "\n";
-  std::cout << "quality,encode_ms_median,decode_ms_median,bytes_total,"
-               "bytes_per_cell_mean,psnr_db\n";
-  for (const Row& row : r.rows) {
-    std::printf("%d,%.3f,%.3f,%llu,%.1f,%.2f\n", row.quality, row.enc.median,
-                row.dec.median, static_cast<unsigned long long>(row.bytes_total),
-                row.bytes_per_cell_mean, row.psnr_db);
-  }
-  return 0;
-}
-
 // --- comparison -----------------------------------------------------------------
 
 struct Reference {
@@ -668,9 +587,9 @@ void refine_match(CodecResult& r, double target_db, const Source& src, int time_
 
 const std::vector<gp::MetricSpec>& matched_metrics() {
   static const std::vector<gp::MetricSpec> specs = {
-      {"bytes_total", gp::Better::Lower},
-      {"encode_ms", gp::Better::Lower},
-      {"decode_ms", gp::Better::Lower},
+      {"bytes_total", gp::Better::Lower, "size", "size"},
+      {"encode_ms", gp::Better::Lower, "encode time", "encode"},
+      {"decode_ms", gp::Better::Lower, "decode time", "decode"},
   };
   return specs;
 }
@@ -715,25 +634,187 @@ CompareOutcome evaluate_compare(const std::vector<CodecResult>& results,
   return o;
 }
 
-void write_compare_doc(gp::JsonWriter& w, const std::vector<CodecResult>& results,
-                       const CompareOutcome& o, const Reference& ref,
-                       const fs::path& file, const Source& src, int tile, int time_n,
-                       int repeats) {
+// --- one image ------------------------------------------------------------------
+
+struct Config {
+  int tile = 256;
+  int repeats = 3;
+  int max_time_cells = 16;  // cells timed per image; bytes/PSNR always cover the grid
+  std::vector<int> qualities;
+  std::vector<Variant> variants;
+  bool compare = false;
+  Reference reference;
+  double tie_pct = 5.0;
+};
+
+struct FileRun {
+  fs::path path;
+  std::string name;        // display name
+  std::string load_error;  // non-empty: the image could not be prepared
+  int width = 0, height = 0;
+  std::size_t cells = 0;
+  int time_n = 0;
+  std::string loader;
+  bool lossy = false;
+  std::vector<CodecResult> results;
+  CompareOutcome outcome;  // comparison only; points into `results`
+  // Not copyable/movable: outcome.matches point into results.
+  FileRun() = default;
+  FileRun(const FileRun&) = delete;
+  FileRun& operator=(const FileRun&) = delete;
+
+  bool loaded() const { return load_error.empty(); }
+  bool ok(bool compare) const {
+    if (!loaded()) return false;
+    return compare ? outcome.ok() : (!results.empty() && results.front().status == Status::Ok);
+  }
+};
+
+void measure_file(FileRun& run, const Config& cfg) {
+  gp::StderrSilencer quiet;  // libvips warnings repeat on every call
+  ensure_vips();
+  Source src;
+  if (!load_source(run.path, cfg.tile, src, run.load_error)) return;
+  run.width = src.width;
+  run.height = src.height;
+  run.cells = src.cells.size();
+  run.loader = src.loader;
+  run.lossy = src.lossy;
+  run.time_n = std::min(cfg.max_time_cells, static_cast<int>(src.cells.size()));
+
+  if (!cfg.compare) {
+    run.results.push_back(
+        measure_codec(cfg.variants.front(), cfg.qualities, src, run.time_n, cfg.repeats));
+    return;
+  }
+  for (const Variant& v : cfg.variants) {
+    std::vector<int> qs = cfg.qualities;
+    if (v == cfg.reference.variant &&
+        std::find(qs.begin(), qs.end(), cfg.reference.quality) == qs.end()) {
+      qs.push_back(cfg.reference.quality);  // the target must be measured
+      std::sort(qs.begin(), qs.end());
+    }
+    run.results.push_back(measure_codec(v, qs, src, run.time_n, cfg.repeats));
+  }
+  // Refine every codec's match against the reference PSNR (see refine_match).
+  double target = -1;
+  for (const auto& r : run.results) {
+    if (!(r.variant == cfg.reference.variant) || r.status != Status::Ok) continue;
+    for (const Row& row : r.rows) {
+      if (row.quality == cfg.reference.quality) target = row.psnr_db;
+    }
+  }
+  if (target >= 0) {
+    for (auto& r : run.results) {
+      if (!(r.variant == cfg.reference.variant)) {
+        refine_match(r, target, src, run.time_n, cfg.repeats);
+      }
+    }
+  }
+  run.outcome = evaluate_compare(run.results, cfg.reference, cfg.tie_pct);
+}
+
+/// Is `p` a raster image libvips can read? Decided by content, and limited to
+/// the formats the tile codecs make sense for (not PDF, SVG, ...).
+bool is_raster_image(const fs::path& p) {
+  ensure_vips();
+  const char* loader = vips_foreign_find_load(p.string().c_str());
+  if (!loader) {
+    vips_error_clear();
+    return false;
+  }
+  const std::string name = loader;
+  for (const char* prefix : {"VipsForeignLoadJpeg", "VipsForeignLoadPng", "VipsForeignLoadWebp",
+                             "VipsForeignLoadHeif", "VipsForeignLoadJxl", "VipsForeignLoadTiff",
+                             "VipsForeignLoadGif"}) {
+    if (name.rfind(prefix, 0) == 0) return true;
+  }
+  return false;
+}
+
+// --- JSON documents -------------------------------------------------------------
+
+/// Identity fields for a variant: base codec, plus variant/effort when set
+/// (rows for default-effort codecs keep the original schema-1 keys).
+void write_variant_json(gp::JsonWriter& w, const Variant& v) {
+  w.field("codec", codec_name(v.codec));
+  if (v.effort >= 0) {
+    w.field("variant", v.name());
+    w.field("effort", v.effort);
+  }
+}
+
+void write_row_json(gp::JsonWriter& w, const Variant& v, const Row& row) {
+  w.begin_object(gp::JsonWriter::Compact);
+  write_variant_json(w, v);
+  w.field("quality", row.quality);
+  w.field("encode_ms", row.enc.median);
+  w.field("decode_ms", row.dec.median);
+  w.field("bytes_total", row.bytes_total);
+  w.field("bytes_per_cell_mean", row.bytes_per_cell_mean);
+  w.field("psnr_db", row.psnr_db);
+  w.end_object();
+}
+
+void write_header_json(gp::JsonWriter& w, const FileRun& run, const Config& cfg) {
+  w.field("tool", "thumtoo-gp-tile");
+  w.field("file", run.path.string());
+  w.field("width", run.width);
+  w.field("height", run.height);
+  w.field("tile", cfg.tile);
+  w.field("cells", run.cells);
+  w.field("timed_cells", run.time_n);
+  w.field("repeats", cfg.repeats);
+}
+
+/// An image that could not be prepared: the same shape in every mode.
+void write_load_failure_doc(gp::JsonWriter& w, const FileRun& run) {
+  w.begin_object();
+  w.field("schema", 1);
+  w.field("tool", "thumtoo-gp-tile");
+  w.field("file", run.path.string());
+  w.field("status", "failed");
+  w.field("reason", run.load_error);
+  w.end_object();
+}
+
+/// One codec on one image. Keys are stable for checked-in baselines;
+/// "status" (and "reason" instead of rows on failure) is additive.
+void write_single_doc(gp::JsonWriter& w, const FileRun& run, const Config& cfg) {
+  if (!run.loaded()) return write_load_failure_doc(w, run);
+  const CodecResult& r = run.results.front();
+  w.begin_object();
+  w.field("schema", 1);
+  write_header_json(w, run, cfg);
+  w.field("status", status_name(r.status));
+  if (r.status == Status::Ok) {
+    w.key("rows").begin_array();
+    for (const Row& row : r.rows) write_row_json(w, r.variant, row);
+    w.end_array();
+  } else {
+    w.field("reason", r.reason);
+  }
+  w.end_object();
+}
+
+void write_compare_doc(gp::JsonWriter& w, const FileRun& run, const Config& cfg) {
+  if (!run.loaded()) return write_load_failure_doc(w, run);
+  const CompareOutcome& o = run.outcome;
   w.begin_object();
   w.field("schema", 1);
   w.field("kind", "compare");
-  write_header_json(w, file, src, tile, time_n, repeats);
-  w.field("source_loader", src.loader);
-  w.field("source_lossy", src.lossy);
+  write_header_json(w, run, cfg);
+  w.field("source_loader", run.loader);
+  w.field("source_lossy", run.lossy);
   w.key("reference").begin_object(gp::JsonWriter::Compact);
-  write_variant_json(w, ref.variant);
-  w.field("quality", ref.quality);
+  write_variant_json(w, cfg.reference.variant);
+  w.field("quality", cfg.reference.quality);
   if (o.ref_row) w.field("psnr_db", o.target);
   else w.key("psnr_db").value(nullptr);
   w.end_object();
 
   w.key("codecs").begin_array();
-  for (const CodecResult& r : results) {
+  for (const CodecResult& r : run.results) {
     w.begin_object();
     write_variant_json(w, r.variant);
     w.field("status", status_name(r.status));
@@ -767,228 +848,415 @@ void write_compare_doc(gp::JsonWriter& w, const std::vector<CodecResult>& result
   w.end_object();
 }
 
-void print_compare_text(const std::vector<CodecResult>& results, const CompareOutcome& o,
-                        const Reference& ref, const fs::path& file, const Source& src,
-                        int tile, int time_n, int repeats) {
-  std::cout << "file=" << file.filename().string() << " " << src.width << "x"
-            << src.height << " tiles=" << src.cells.size() << " tile=" << tile
-            << " timed_cells=" << time_n << " repeats=" << repeats << "\n";
-  std::printf("%-8s %7s %10s %10s %12s %8s\n", "variant", "quality", "encode_ms",
-              "decode_ms", "bytes_total", "psnr_db");
-  for (const auto& r : results) {
+// --- CSV rows -------------------------------------------------------------------
+
+const std::vector<std::string>& csv_columns() {
+  static const std::vector<std::string> cols = {
+      "file",        "width",           "height",   "variant",       "codec",
+      "effort",      "status",          "reason",   "quality",       "encode_ms",
+      "decode_ms",   "bytes_total",     "bytes_per_cell_mean",       "psnr_db",
+      "matched",     "overall_ratio"};
+  return cols;
+}
+
+/// One row per measured (variant, quality); a variant that could not run, and
+/// an image that could not be prepared, get one row with status and reason.
+/// In a comparison, matched=1 marks the setting that represents the variant in
+/// the verdict, and overall_ratio (1 = best) is filled on that row.
+std::vector<std::vector<std::string>> csv_rows(const FileRun& run, const Config& cfg) {
+  std::vector<std::vector<std::string>> out;
+  const std::string file = run.path.string();
+  if (!run.loaded()) {
+    out.push_back({file, "", "", "", "", "", "failed", run.load_error, "", "", "", "", "", "", "", ""});
+    return out;
+  }
+  const std::string w = std::to_string(run.width);
+  const std::string h = std::to_string(run.height);
+  for (const CodecResult& r : run.results) {
+    const std::string effort = r.variant.effort >= 0 ? std::to_string(r.variant.effort) : "";
     if (r.status != Status::Ok) {
-      std::printf("%-8s %s: %s\n", r.variant.name().c_str(), status_name(r.status),
-                  r.reason.c_str());
+      out.push_back({file, w, h, r.variant.name(), codec_name(r.variant.codec), effort,
+                     status_name(r.status), r.reason, "", "", "", "", "", "", "", ""});
       continue;
     }
+    const Row* matched = nullptr;
+    if (cfg.compare) {
+      for (const Match& m : run.outcome.matches) {
+        if (m.variant == r.variant) matched = m.row;
+      }
+    }
     for (const Row& row : r.rows) {
-      std::printf("%-8s %7d %10.3f %10.3f %12llu %8.2f\n", r.variant.name().c_str(),
-                  row.quality, row.enc.median, row.dec.median,
-                  static_cast<unsigned long long>(row.bytes_total), row.psnr_db);
+      std::string is_matched, ratio;
+      if (cfg.compare) {
+        is_matched = matched == &row ? "1" : "0";
+        if (matched == &row && run.outcome.verdict.overall.size() > 1) {
+          if (const auto v = run.outcome.verdict.overall_ratio(r.variant.name())) {
+            ratio = gp::csv_num(*v);
+          }
+        }
+      }
+      out.push_back({file, w, h, r.variant.name(), codec_name(r.variant.codec), effort, "ok", "",
+                     std::to_string(row.quality), gp::csv_num(row.enc.median),
+                     gp::csv_num(row.dec.median), std::to_string(row.bytes_total),
+                     gp::csv_num(row.bytes_per_cell_mean), gp::csv_num(row.psnr_db), is_matched,
+                     ratio});
     }
-  }
-  if (!o.ref_row) {
-    std::cout << "verdict: refused — reference " << ref.name()
-              << " was not measured successfully\n";
-    return;
-  }
-  std::printf("\nreference %s -> %.2f dB; each variant at its smallest setting "
-              "reaching that:\n",
-              ref.name().c_str(), o.target);
-  std::printf("%-8s %7s %10s %10s %12s %8s\n", "variant", "quality", "encode_ms",
-              "decode_ms", "bytes_total", "psnr_db");
-  for (const Match& m : o.matches) {
-    if (m.row) {
-      std::printf("%-8s %7d %10.3f %10.3f %12llu %8.2f\n", m.variant.name().c_str(),
-                  m.row->quality, m.row->enc.median, m.row->dec.median,
-                  static_cast<unsigned long long>(m.row->bytes_total), m.row->psnr_db);
-    } else {
-      std::printf("%-8s below target in this sweep (best %.2f dB at q%d)\n",
-                  m.variant.name().c_str(), m.best ? m.best->psnr_db : 0.0,
-                  m.best ? m.best->quality : 0);
-    }
-  }
-  gp::print_verdict(std::cout, o.verdict);
-}
-
-int report_compare(const std::vector<CodecResult>& results, const Reference& ref,
-                   const fs::path& file, const Source& src, int tile, int time_n,
-                   int repeats, double tie_pct, bool json) {
-  const CompareOutcome o = evaluate_compare(results, ref, tie_pct);
-  if (json) {
-    gp::JsonWriter w(std::cout);
-    write_compare_doc(w, results, o, ref, file, src, tile, time_n, repeats);
-  } else {
-    print_compare_text(results, o, ref, file, src, tile, time_n, repeats);
-  }
-  return o.ok() ? 0 : 1;
-}
-
-std::vector<int> parse_qualities(const std::string& s) {
-  std::vector<int> out;
-  std::stringstream ss(s);
-  std::string part;
-  while (std::getline(ss, part, ',')) {
-    if (part.empty()) continue;
-    const int q = std::clamp(std::atoi(part.c_str()), 1, 100);
-    if (std::find(out.begin(), out.end(), q) == out.end()) out.push_back(q);
   }
   return out;
 }
 
-void usage(const char* argv0) {
-  std::cerr << "Usage: " << argv0
-            << " [--tile N] [--repeat R] [--codec jpeg|webp|avif|jxl|all|a,b] "
-               "[--quality 60,80,90] [--max-cells K] [--reference VARIANT:Q] "
-               "[--tie-pct P] [--json] FILE\n"
-            << "Golden-path tile encode/decode matrix (vips only) with PSNR.\n"
-            << "--codec all (or a list) sweeps qualities (default "
-               "30,40,50,60,70,80,90),\n"
-            << "matches every codec to the PSNR of --reference (default jpeg:80) "
-               "and reports which wins.\n"
-            << "Encoder effort: webp@e0..6, avif@e0..9, jxl@e1..9 "
-               "(e.g. --codec all,jxl@e1,webp@e0).\n";
+// --- text report ----------------------------------------------------------------
+
+gp::TextTable row_table() {
+  using gp::Align;
+  return gp::TextTable({{"variant", Align::Left},
+                        {"quality", Align::Right},
+                        {"encode ms", Align::Right},
+                        {"decode ms", Align::Right},
+                        {"size", Align::Right},
+                        {"PSNR dB", Align::Right}});
+}
+
+std::vector<std::string> text_row(const Variant& v, const Row& row) {
+  return {v.name(),
+          std::to_string(row.quality),
+          gp::fmt_ms(row.enc.median),
+          gp::fmt_ms(row.dec.median),
+          gp::fmt_bytes(row.bytes_total),
+          gp::fmt_fixed(row.psnr_db, 2)};
+}
+
+void print_heading(const FileRun& run, const Config& cfg) {
+  std::cout << run.name;
+  if (run.loaded()) {
+    std::cout << "  (" << run.width << "x" << run.height << ", " << run.cells << " tiles of "
+              << cfg.tile << " px";
+    // Time and size cover different tile sets only when --max-cells cut the timing.
+    if (run.time_n < static_cast<int>(run.cells)) {
+      std::cout << "; times are for " << run.time_n << " tiles, sizes for all";
+    }
+    std::cout << ")";
+  }
+  std::cout << "\n";
+}
+
+void print_block(const FileRun& run, const Config& cfg, bool sweep) {
+  print_heading(run, cfg);
+  if (!run.loaded()) {
+    std::cout << "  failed — " << run.load_error << "\n\n";
+    return;
+  }
+
+  if (!cfg.compare) {
+    const CodecResult& r = run.results.front();
+    if (r.status == Status::Ok) {
+      gp::TextTable table = row_table();
+      for (const Row& row : r.rows) table.add_row(text_row(r.variant, row));
+      table.print(std::cout, "  ");
+    } else {
+      std::cout << "  " << r.variant.name() << ": " << status_name(r.status) << " — " << r.reason
+                << "\n";
+    }
+    std::cout << "\n";
+    return;
+  }
+
+  const CompareOutcome& o = run.outcome;
+  if (sweep) {
+    gp::TextTable all = row_table();
+    for (const CodecResult& r : run.results) {
+      if (r.status != Status::Ok) continue;
+      for (const Row& row : r.rows) all.add_row(text_row(r.variant, row));
+    }
+    std::cout << "  every measured setting:\n";
+    all.print(std::cout, "  ");
+    std::cout << "\n";
+  }
+  for (const CodecResult& r : run.results) {
+    if (r.status != Status::Ok) {
+      std::cout << "  " << r.variant.name() << ": " << status_name(r.status) << " — " << r.reason
+                << "\n";
+    }
+  }
+  if (!o.ref_row) {
+    std::cout << "  verdict refused: reference " << cfg.reference.name()
+              << " was not measured successfully\n\n";
+    return;
+  }
+  std::cout << "  target quality: " << cfg.reference.name() << " = "
+            << gp::fmt_fixed(o.target, 2)
+            << " dB PSNR; each variant at its smallest setting that reaches it:\n";
+  gp::TextTable matched = row_table();
+  for (const Match& m : o.matches) {
+    if (m.row) matched.add_row(text_row(m.variant, *m.row));
+  }
+  if (!matched.empty()) matched.print(std::cout, "  ");
+  for (const Match& m : o.matches) {
+    if (!m.row) {
+      std::cout << "  " << m.variant.name() << ": below target — best "
+                << gp::fmt_fixed(m.best ? m.best->psnr_db : 0.0, 2) << " dB at q"
+                << (m.best ? m.best->quality : 0) << " in this sweep\n";
+    }
+  }
+  std::ostringstream verdict;
+  gp::print_verdict(verdict, o.verdict);
+  std::cout << "\n" << gp::indent_lines(verdict.str(), "  ") << "\n";
+}
+
+// --- reporter -------------------------------------------------------------------
+
+/// Receives each image as it finishes and renders it in the chosen format.
+class Reporter {
+ public:
+  Reporter(gp::OutputMode mode, const Config& cfg, bool csv_header, bool sweep,
+           std::size_t total)
+      : mode_(mode),
+        cfg_(cfg),
+        sweep_(sweep),
+        total_(total),
+        agg_(matched_metrics(), cfg.tie_pct) {
+    if (mode_ == gp::OutputMode::Csv) {
+      csv_.emplace(std::cout, csv_columns(), csv_header);
+    } else if (mode_ == gp::OutputMode::Json && total_ > 1) {
+      json_.emplace(std::cout);
+      json_->begin_object();
+      json_->field("schema", 1);
+      json_->field("kind", "batch");
+      json_->field("tool", "thumtoo-gp-tile");
+      json_->field("repeats", cfg_.repeats);
+      json_->key("results").begin_array();
+    }
+  }
+
+  void add(const FileRun& run) {
+    if (!run.ok(cfg_.compare)) ++failures_;
+    if (cfg_.compare && run.loaded()) agg_.add(run.outcome.verdict);
+    switch (mode_) {
+      case gp::OutputMode::Text:
+        print_block(run, cfg_, sweep_);
+        break;
+      case gp::OutputMode::Csv:
+        for (const auto& row : csv_rows(run, cfg_)) csv_->row(row);
+        break;
+      case gp::OutputMode::Json:
+        if (json_) {
+          emit_json(*json_, run);
+        } else {
+          gp::JsonWriter w(std::cout);  // a single image: the bare document
+          emit_json(w, run);
+        }
+        break;
+    }
+  }
+
+  /// Trailing output; returns the process exit status (1 if anything failed).
+  int finish() {
+    if (mode_ == gp::OutputMode::Text && cfg_.compare && total_ > 1) {
+      gp::print_aggregate(std::cout, agg_.result(), "images");
+    } else if (mode_ == gp::OutputMode::Json && json_) {
+      json_->end_array();
+      if (cfg_.compare) {
+        json_->key("aggregate");
+        gp::write_aggregate_json(*json_, agg_.result());
+      }
+      json_->end_object();
+    }
+    if (failures_ > 0) {
+      std::cerr << "thumtoo-gp-tile: " << failures_ << " of " << total_
+                << (total_ == 1 ? " image" : " images")
+                << (cfg_.compare ? " could not be compared" : " could not be measured") << "\n";
+      return 1;
+    }
+    return 0;
+  }
+
+ private:
+  void emit_json(gp::JsonWriter& w, const FileRun& run) const {
+    if (cfg_.compare) write_compare_doc(w, run, cfg_);
+    else write_single_doc(w, run, cfg_);
+  }
+
+  gp::OutputMode mode_;
+  const Config& cfg_;
+  bool sweep_;
+  std::size_t total_;
+  gp::Aggregator agg_;
+  std::optional<gp::CsvWriter> csv_;
+  std::optional<gp::JsonWriter> json_;
+  std::size_t failures_ = 0;
+};
+
+// --- command line ---------------------------------------------------------------
+
+/// "jpeg", "all", "jxl@e1", or a comma-separated mix. "all" expands in place,
+/// so "all,jxl@e1" adds a fast JXL to the defaults.
+std::optional<std::vector<Variant>> parse_codec_list(const std::string& flag, std::string& err) {
+  std::vector<Variant> variants;
+  for (const std::string& part : gp::cli::split(flag, ',')) {
+    std::vector<Variant> add;
+    if (part == "all") {
+      for (Codec c : kAllCodecs) add.push_back(Variant{c, -1});
+    } else {
+      const auto v = parse_variant(part, err);
+      if (!v) return std::nullopt;
+      add.push_back(*v);
+    }
+    for (const Variant& v : add) {
+      if (std::find(variants.begin(), variants.end(), v) == variants.end()) variants.push_back(v);
+    }
+  }
+  if (variants.empty()) {
+    err = "expected a codec, 'all', or a comma-separated list";
+    return std::nullopt;
+  }
+  return variants;
+}
+
+gp::cli::Spec make_spec() {
+  gp::cli::Spec s;
+  s.program = "thumtoo-gp-tile";
+  s.synopsis = "[OPTION]... FILE|DIR...";
+  s.summary =
+      "Cut an image into square tiles, encode and decode every tile with one or more "
+      "codecs (JPEG, WebP, AVIF, JPEG XL through libvips) and report encode time, "
+      "decode time, size and PSNR at several quality settings. With more than one "
+      "codec the tool compares them at equal image quality and says which wins.\n\n"
+      "Codecs are never compared at the same quality number: JPEG 80 and AVIF 80 mean "
+      "different things. Instead the PSNR of a reference setting (default jpeg:80, "
+      "thumtoo's tile default) is the target, and each codec is shown at the smallest "
+      "setting that reaches it. Use a lossless source such as PNG: re-encoding a JPEG "
+      "favors JPEG. Which codecs libvips can actually encode is checked at runtime; "
+      "one it cannot is reported as unsupported, never as a zero-byte result.";
+  s.options = {
+      {"codec", 'c', "LIST",
+       "Codecs to run: jpeg (the default), webp, avif, jxl, all, or a comma-separated "
+       "list. Add an encoder effort with @eN: webp@e0..6, avif@e0..9, jxl@e1..9, e.g. "
+       "jxl@e1; without it libvips' default is used (webp 4, avif 4, jxl 7). jpeg has no "
+       "effort setting. 'all' may be combined: all,jxl@e1. More than one entry is a "
+       "comparison."},
+      {"quality", 'q', "LIST",
+       "Quality settings to sweep, 1-100, comma separated. Default: 60,80,90 for one "
+       "codec; 30,40,...,90 for a comparison."},
+      {"reference", 0, "VARIANT:Q",
+       "Comparison only: the setting whose PSNR is the quality target, e.g. jpeg:80 "
+       "(the default) or jxl@e3:75. It must be one of the --codec entries."},
+      {"tie-pct", 0, "PCT",
+       "Comparison only: results within PCT percent of the best, or within run-to-run "
+       "noise, count as a tie, 0-100 (default 5)."},
+      {"tile", 't', "N", "Tile edge in pixels, 16-4096 (default 256)."},
+      {"repeat", 'n', "N", "Timed runs per measurement, 1-1000 (default 3)."},
+      {"max-cells", 0, "K",
+       "Time at most K tiles per image (default 16). Size and PSNR always cover every "
+       "tile."},
+      {"recursive", 'r', "",
+       "Search subdirectories of any DIR as well. Directories are searched for raster "
+       "images (JPEG, PNG, WebP, AVIF/HEIF, JPEG XL, TIFF, GIF) by content, sorted by "
+       "name."},
+      {"sweep", 0, "",
+       "Comparison, text output: also list every measured setting, not only each "
+       "codec's matched one."},
+  };
+  for (const auto& o : gp::output_options()) s.options.push_back(o);
+  s.sections = {
+      {"Output formats",
+       "Default: aligned tables and a verdict in words, for reading. With several\n"
+       "images and a comparison, a summary over all images follows.\n"
+       "--csv:   one row per image, codec variant and quality; raw milliseconds and\n"
+       "         bytes; empty cell = not measured. In a comparison matched=1 marks the\n"
+       "         setting that represents the variant, with overall_ratio (1 = best).\n"
+       "--json:  one document for one image; with several images a batch document\n"
+       "         {kind: \"batch\", results: [...], aggregate: {...}}.\n"
+       "Warnings and errors go to stderr, so stdout is clean for pipes."},
+      {"Exit status",
+       "0  every image was measured (comparison: and a verdict could be reached)\n"
+       "1  an image could not be read, or no verdict could be reached\n"
+       "2  usage error"},
+      {"Examples",
+       "thumtoo-gp-tile photo.png\n"
+       "thumtoo-gp-tile --codec all photo.png\n"
+       "thumtoo-gp-tile -c all,jxl@e1,jxl@e3 --reference jpeg:85 corpus/synthetic/png/\n"
+       "thumtoo-gp-tile --csv -c jpeg,webp,jxl@e3 *.png > codecs.csv\n"
+       "thumtoo-gp-tile --json -c all photo.png"},
+  };
+  return s;
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
-  int tile = 256;
-  int repeats = 3;
-  bool json_out = false;
-  std::string quality_list;  // empty: mode-dependent default
-  std::string codec_flag = "jpeg";
-  std::string reference_flag = "jpeg:80";
-  double tie_pct = 5.0;
-  fs::path file;
-  // Cap cells timed for large images (full grid still encoded for bytes/PSNR).
-  int max_time_cells = 16;
-
-  for (int i = 1; i < argc; ++i) {
-    const std::string a = argv[i];
-    if (a == "--tile" && i + 1 < argc) {
-      tile = std::max(16, std::atoi(argv[++i]));
-    } else if (a == "--repeat" && i + 1 < argc) {
-      repeats = std::max(1, std::atoi(argv[++i]));
-    } else if (a == "--codec" && i + 1 < argc) {
-      codec_flag = argv[++i];
-    } else if (a == "--quality" && i + 1 < argc) {
-      quality_list = argv[++i];
-    } else if (a == "--max-cells" && i + 1 < argc) {
-      max_time_cells = std::max(1, std::atoi(argv[++i]));
-    } else if (a == "--reference" && i + 1 < argc) {
-      reference_flag = argv[++i];
-    } else if (a == "--tie-pct" && i + 1 < argc) {
-      tie_pct = std::max(0.0, std::atof(argv[++i]));
-    } else if (a == "--json") {
-      json_out = true;
-    } else if (a == "-h" || a == "--help") {
-      usage(argv[0]);
+  namespace cli = gp::cli;
+  const cli::Spec spec = make_spec();
+  cli::Args args;
+  switch (cli::parse(spec, argc, argv, args)) {
+    case cli::Parsed::Help:
+      cli::print_help(std::cout, spec);
       return 0;
-    } else if (!a.empty() && a[0] == '-') {
-      std::cerr << "unknown option: " << a << "\n";
-      return 2;
-    } else {
-      file = a;
-    }
+    case cli::Parsed::Version:
+      cli::print_version(std::cout, spec.program);
+      return 0;
+    case cli::Parsed::Error:
+      return cli::fail_usage(spec, args.errors());
+    case cli::Parsed::Run:
+      break;
   }
-  if (file.empty()) {
-    std::cerr << "need FILE\n";
-    return 2;
-  }
-  // "all" expands in place, so "all,jxl@e1" adds a fast JXL to the defaults.
-  std::vector<Variant> variants;
-  {
-    std::stringstream ss(codec_flag);
-    std::string part;
-    while (std::getline(ss, part, ',')) {
-      if (part.empty()) continue;
-      std::vector<Variant> add;
-      if (part == "all") {
-        for (Codec c : kAllCodecs) add.push_back(Variant{c, -1});
-      } else {
-        std::string err;
-        const auto v = parse_variant(part, err);
-        if (!v) {
-          std::cerr << "--codec: " << err << "\n";
-          return 2;
-        }
-        add.push_back(*v);
-      }
-      for (const Variant& v : add) {
-        if (std::find(variants.begin(), variants.end(), v) == variants.end()) {
-          variants.push_back(v);
-        }
-      }
-    }
-  }
-  if (variants.empty()) {
-    std::cerr << "need --codec\n";
-    return 2;
-  }
-  const bool compare = variants.size() > 1;
 
+  Config cfg;
+  cfg.tile = args.get_int("tile", 256, 16, 4096);
+  cfg.repeats = args.get_int("repeat", 3, 1, 1000);
+  cfg.max_time_cells = args.get_int("max-cells", 16, 1, 1000000);
+  cfg.tie_pct = args.get_double("tie-pct", 5.0, 0.0, 100.0);
+  const gp::OutputMode mode = gp::resolve_output_mode(args);
+
+  std::string codec_err;
+  const auto variants = parse_codec_list(args.get_string("codec", "jpeg"), codec_err);
+  if (!variants) {
+    args.add_error("--codec: " + codec_err);
+  } else {
+    cfg.variants = *variants;
+    cfg.compare = cfg.variants.size() > 1;
+  }
   std::string ref_err;
-  const auto reference = parse_reference(reference_flag, ref_err);
+  const auto reference = parse_reference(args.get_string("reference", "jpeg:80"), ref_err);
   if (!reference) {
-    std::cerr << "bad --reference " << reference_flag << ": " << ref_err
-              << " (want VARIANT:Q, e.g. jpeg:80)\n";
-    return 2;
-  }
-  if (compare &&
-      std::find(variants.begin(), variants.end(), reference->variant) == variants.end()) {
-    std::cerr << "reference " << reference->variant.name() << " is not in --codec "
-              << codec_flag << "\n";
-    return 2;
-  }
-
-  auto qualities = parse_qualities(quality_list);
-  if (qualities.empty()) {
-    qualities = compare ? std::vector<int>{30, 40, 50, 60, 70, 80, 90}
-                        : std::vector<int>{60, 80, 90};
-  }
-
-  ensure_vips();
-  Source src;
-  std::string err;
-  if (!load_source(file, tile, src, err)) {
-    std::cerr << file.string() << ": " << err << "\n";
-    return 1;
-  }
-  const int time_n = std::min(max_time_cells, static_cast<int>(src.cells.size()));
-
-  if (!compare) {
-    const CodecResult result = measure_codec(variants.front(), qualities, src, time_n, repeats);
-    return report_single(result, file, src, tile, time_n, repeats, json_out);
-  }
-
-  std::vector<CodecResult> results;
-  for (const Variant& v : variants) {
-    std::vector<int> qs = qualities;
-    if (v == reference->variant &&
-        std::find(qs.begin(), qs.end(), reference->quality) == qs.end()) {
-      qs.push_back(reference->quality);  // the target must be measured
-      std::sort(qs.begin(), qs.end());
-    }
-    results.push_back(measure_codec(v, qs, src, time_n, repeats));
-  }
-  if (src.lossy) {
-    std::cerr << "warning: lossy source (" << src.loader
-              << ") biases the comparison toward that codec; prefer a PNG source\n";
-  }
-  // Refine every codec's match against the reference PSNR (see refine_match).
-  double target = -1;
-  for (const auto& r : results) {
-    if (!(r.variant == reference->variant) || r.status != Status::Ok) continue;
-    for (const Row& row : r.rows) {
-      if (row.quality == reference->quality) target = row.psnr_db;
+    args.add_error("--reference: " + ref_err + " (expected VARIANT:Q, e.g. jpeg:80)");
+  } else {
+    cfg.reference = *reference;
+    if (cfg.compare && std::find(cfg.variants.begin(), cfg.variants.end(),
+                                 cfg.reference.variant) == cfg.variants.end()) {
+      args.add_error("--reference " + cfg.reference.name() + " is not one of the --codec "
+                     "entries; add " + cfg.reference.variant.name() +
+                     " to --codec or choose another reference");
     }
   }
-  if (target >= 0) {
-    for (auto& r : results) {
-      if (!(r.variant == reference->variant)) refine_match(r, target, src, time_n, repeats);
-    }
+  cfg.qualities = args.get_int_list("quality", {}, 1, 100);
+  if (cfg.qualities.empty()) {
+    cfg.qualities = cfg.compare ? std::vector<int>{30, 40, 50, 60, 70, 80, 90}
+                                : std::vector<int>{60, 80, 90};
   }
-  return report_compare(results, *reference, file, src, tile, time_n, repeats, tie_pct,
-                        json_out);
+
+  if (args.positionals().empty()) args.add_error("missing FILE argument");
+  std::vector<std::string> input_errors;
+  const std::vector<fs::path> inputs =
+      cli::expand_inputs(args.positionals(), args.has("recursive"), is_raster_image, input_errors);
+  for (const std::string& e : input_errors) args.add_error(e);
+  if (args.errors().empty() && inputs.empty()) args.add_error("no images to measure");
+  if (!args.errors().empty()) return cli::fail_usage(spec, args.errors());
+
+  const std::vector<std::string> names = gp::display_names(inputs);
+  Reporter reporter(mode, cfg, !args.has("no-header"), args.has("sweep"), inputs.size());
+  cli::Progress progress;
+  for (std::size_t i = 0; i < inputs.size(); ++i) {
+    progress.update(i + 1, inputs.size(), names[i]);
+    FileRun run;
+    run.path = inputs[i];
+    run.name = names[i];
+    measure_file(run, cfg);
+    progress.clear();
+    if (cfg.compare && run.lossy) {
+      std::cerr << "warning: " << run.name << " is a lossy source (" << run.loader
+                << "); that biases the comparison toward its own codec — prefer a PNG source\n";
+    }
+    reporter.add(run);
+  }
+  return reporter.finish();
 }
