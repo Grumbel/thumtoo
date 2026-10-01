@@ -14,7 +14,14 @@ docs/bench/baselines/<machine-class>/
   microbench-decode.json
   gp-tile-jpeg.json
   gp-archive-libarchive.json
+  gp-tile-compare.json        # verdict snapshot: which codec wins (PNG source)
+  gp-archive-compare.json     # verdict snapshot: which backend wins
 ```
+
+The `*-compare.json` files record which variant won on that machine. They
+are not regression baselines: the refined codec match rows can differ
+between runs, which shifts the list indices `compare_bench_json` walks.
+Use the single-variant files as regression gates.
 
 ## Capture
 

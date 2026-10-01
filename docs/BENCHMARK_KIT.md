@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # Benchmark kit — plan
 
-**Status:** usable kit (2026-10-01). Golden tools, bench_smoke, checks.bench-smoke-lite (corpus-smoke), capture_baselines.sh, compare_bench_json. Capture real machine baselines next; example/ is schema only.
+**Status:** usable kit (2026-10-01). Golden tools, bench_smoke, checks.bench-smoke-lite (corpus-smoke), capture_baselines.sh, compare_bench_json. Automatic comparisons: `gp-archive --backend all`, `gp-tile --codec all` (§6.5). Capture real machine baselines next; example/ is schema only.
 **Audience:** agents and humans choosing pixel / archive / codec routes for
 thumtoo + biltoo, and detecting regressions against those choices.
 
@@ -312,6 +312,51 @@ Each golden path is intentionally dumb and linear.
 - Open with libarchive **or** libunarr (explicit flag)
 - Ops: toc, extract index i, extract all sequential, extract scattered set
 - No SQLite, no thumtoo URI
+- Format sniffed by magic bytes. unarr reads ZIP, TAR, RAR4 (incl. solid)
+  and 7z only when libunarr was built with the 7z SDK; RAR5 is
+  libarchive-only. `--backend auto` mirrors thumtoo's dispatcher (unarr for
+  RAR4 only).
+
+### 6.5 Automatic comparisons ("who wins")
+
+One command runs every variant on the same input and prints a verdict:
+
+```bash
+thumtoo-gp-archive --backend all ARCHIVE          # or --backend libarchive,unarr
+thumtoo-gp-tile --codec all CORPUS/synthetic/png/photo_1920x1080.png
+```
+
+Judging (`tools/golden/gp_verdict.hpp`, unit test `gp_verdict`):
+
+- Per metric, each variant gets a cost ratio vs the best (1.0 = best).
+  Variants within `--tie-pct` (default 5%) of the best are a tie.
+- Overall winner = lowest geometric mean of the per-metric ratios (equal
+  weights, scale-free). Read the per-metric lines first; the overall line is
+  a summary, e.g. JPEG "wins" tiles overall on encode speed while losing
+  on bytes.
+- Only **verified** variants are ranked. A failed or unsupported variant is
+  listed with its reason; it can never win with zero bytes / zero ms.
+
+Archive specifics: before timing, each backend's extract-all bytes must
+equal its TOC sizes and the first/last member sizes must match; in
+comparison mode all backends must agree on member count and byte total,
+otherwise the verdict is refused (exit 1). Damaged archive → `failed`;
+format a backend cannot read → `unsupported`.
+
+Codec specifics: codecs are **not** compared at equal `Q` (the scales are
+unrelated). The PSNR of `--reference` (default `jpeg:80` =
+`kDefaultTileCodec`/`kDefaultTileQuality`) is the target; each codec is
+represented by its smallest output reaching it, refined by bisecting `Q`
+between sweep points, and judged on bytes_total / encode_ms / decode_ms.
+Use a **lossless** source: on a q90 JPEG, re-encoding JPEG at q90 is nearly
+lossless (~79 dB) and biases everything; the tool warns and records
+`source_lossy` in JSON. Encoder effort/speed are libvips defaults (JXL
+effort 7, WebP effort 4); PSNR is a crude proxy (see follow-ups in TODO.md).
+
+JSON: comparison documents carry `"kind": "compare"`, per-variant results
+(`variants[]` / `codecs[]` + `matched[]`) and `verdict{metrics, overall}`.
+Single-variant output keeps its schema-1 keys, so existing baselines
+compare unchanged.
 
 ### 6.4 `gp-pipeline`
 
