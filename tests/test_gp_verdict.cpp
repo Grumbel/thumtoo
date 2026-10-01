@@ -116,7 +116,8 @@ int main() {
     auto v = gp::judge(lower2, {});
     expect(v.empty(), "no candidates -> empty");
     std::ostringstream os;
-    gp::write_verdict_json(os, v, "");
+    gp::JsonWriter w(os);
+    gp::write_verdict_json(w, v);
     expect(os.str().find("\"winner\": \"\"") != std::string::npos, "empty winner json");
   }
 
@@ -124,7 +125,8 @@ int main() {
   {
     auto v = gp::judge(lower2, {{"a", {1.0, 10.0}}, {"b", {2.0, 30.0}}});
     std::ostringstream os;
-    gp::write_verdict_json(os, v, "  ");
+    gp::JsonWriter w(os);
+    gp::write_verdict_json(w, v);
     const std::string s = os.str();
     expect(s.find("\"toc_ms\": {\"better\": \"lower\", \"winner\": \"a\"") != std::string::npos,
            "metric json");

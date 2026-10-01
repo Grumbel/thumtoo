@@ -27,6 +27,7 @@
 #include <archive_entry.h>
 
 #include "gp_common.hpp"
+#include "gp_json.hpp"
 #include "gp_verdict.hpp"
 
 #include <algorithm>
@@ -559,7 +560,91 @@ std::string cross_check(const std::vector<Result>& results) {
 
 // --- output ---------------------------------------------------------------------
 
-void print_metrics_text(const Result& r) {
+/// Verdict for one archive's comparison, or the reason none can be given.
+struct Judged {
+  std::string mismatch;  // backends disagree about the archive (cross_check)
+  gp::Verdict verdict;
+  /// Comparable: consistent and at least one verified backend.
+  bool ok() const { return mismatch.empty() && !verdict.empty(); }
+};
+
+Judged judge_results(const std::vector<Result>& results, double tie_pct) {
+  Judged j;
+  j.mismatch = cross_check(results);
+  std::vector<gp::Candidate> candidates;
+  if (j.mismatch.empty()) {
+    for (const auto& r : results) {
+      if (r.status == Status::Ok) candidates.push_back(candidate(r));
+    }
+  }
+  j.verdict = gp::judge(metric_specs(), candidates, tie_pct);
+  return j;
+}
+
+void write_metrics_json(gp::JsonWriter& w, const Result& r) {
+  w.begin_object();
+  w.field("toc_ms", r.toc.median);
+  w.field("extract_all_ms", r.all.median);
+  w.field("extract_first_ms", r.first.median);
+  w.field("extract_last_ms", r.last.median);
+  w.field("extract_scattered10_ms", r.scattered.median);
+  w.end_object();
+}
+
+void write_header_json(gp::JsonWriter& w, const fs::path& path, Format format) {
+  w.field("tool", "thumtoo-gp-archive");
+  w.field("archive", path.string());
+  w.field("format", format_name(format));
+  w.field("unarr_built", GP_ARCHIVE_HAVE_UNARR != 0);
+}
+
+/// Single-backend document. Keys are kept stable for checked-in baselines.
+void write_single_doc(gp::JsonWriter& w, const Result& r, const fs::path& path,
+                      Format format) {
+  w.begin_object();
+  w.field("schema", 1);
+  write_header_json(w, path, format);
+  w.field("backend", r.backend);
+  w.field("members", r.members);
+  w.key("metrics");
+  write_metrics_json(w, r);
+  w.end_object();
+}
+
+void write_compare_doc(gp::JsonWriter& w, const std::vector<Result>& results,
+                       const Judged& judged, const fs::path& path, Format format,
+                       int repeats) {
+  w.begin_object();
+  w.field("schema", 1);
+  w.field("kind", "compare");
+  write_header_json(w, path, format);
+  w.field("repeats", repeats);
+  w.key("variants").begin_array();
+  for (const Result& r : results) {
+    w.begin_object(gp::JsonWriter::Compact);
+    w.field("backend", r.backend);
+    w.field("status", status_name(r.status));
+    if (r.status == Status::Ok) {
+      w.field("members", r.members);
+      w.field("bytes", r.bytes);
+      w.key("metrics");
+      write_metrics_json(w, r);
+    } else {
+      w.field("reason", r.reason);
+    }
+    w.end_object();
+  }
+  w.end_array();
+  w.field("consistency_error", judged.mismatch);
+  w.key("verdict");
+  gp::write_verdict_json(w, judged.verdict);
+  w.end_object();
+}
+
+void print_single_text(const Result& r, const fs::path& path, Format format) {
+  std::cout << "archive=" << path.filename().string() << " format="
+            << format_name(format) << " backend=" << r.backend
+            << " members=" << r.members << "\n";
   std::printf("toc_ms=%.3f\n", r.toc.median);
   std::printf("extract_all_ms=%.3f\n", r.all.median);
   std::printf("extract_first_ms=%.3f\n", r.first.median);
@@ -567,105 +652,58 @@ void print_metrics_text(const Result& r) {
   std::printf("extract_scattered10_ms=%.3f\n", r.scattered.median);
 }
 
-void write_metrics_json(std::ostream& os, const Result& r, const std::string& indent) {
-  os << "{\n"
-     << indent << "  \"toc_ms\": " << r.toc.median << ",\n"
-     << indent << "  \"extract_all_ms\": " << r.all.median << ",\n"
-     << indent << "  \"extract_first_ms\": " << r.first.median << ",\n"
-     << indent << "  \"extract_last_ms\": " << r.last.median << ",\n"
-     << indent << "  \"extract_scattered10_ms\": " << r.scattered.median << "\n"
-     << indent << "}";
+void print_compare_text(const std::vector<Result>& results, const Judged& judged,
+                        const fs::path& path, Format format, int repeats) {
+  std::cout << "archive=" << path.filename().string()
+            << " format=" << format_name(format) << " repeats=" << repeats << "\n";
+  std::printf("%-12s %8s %10s %14s %16s %15s %22s\n", "backend", "members",
+              "toc_ms", "extract_all_ms", "extract_first_ms", "extract_last_ms",
+              "extract_scattered10_ms");
+  for (const auto& r : results) {
+    if (r.status == Status::Ok) {
+      std::printf("%-12s %8zu %10.3f %14.3f %16.3f %15.3f %22.3f\n",
+                  r.backend.c_str(), r.members, r.toc.median, r.all.median,
+                  r.first.median, r.last.median, r.scattered.median);
+    } else {
+      std::printf("%-12s %s: %s\n", r.backend.c_str(), status_name(r.status),
+                  r.reason.c_str());
+    }
+  }
+  if (!judged.mismatch.empty()) {
+    std::cout << "verdict: refused — backends disagree: " << judged.mismatch << "\n";
+  } else {
+    gp::print_verdict(std::cout, judged.verdict);
+  }
 }
 
-void write_header_json(std::ostream& os, const fs::path& path, Format format) {
-  os << "  \"tool\": \"thumtoo-gp-archive\",\n  \"archive\": ";
-  gp::json_string(os, path.string());
-  os << ",\n  \"format\": \"" << format_name(format) << "\",\n"
-     << "  \"unarr_built\": " << (GP_ARCHIVE_HAVE_UNARR ? "true" : "false") << ",\n";
-}
-
-/// Single-backend output. Keys are kept stable for checked-in baselines.
+/// Single-backend run; failure goes to stderr.
 int report_single(const Result& r, const fs::path& path, Format format, bool json) {
   if (r.status != Status::Ok) {
     std::cerr << r.backend << ": " << status_name(r.status) << ": " << r.reason
               << " (" << path.string() << ")\n";
     return 1;
   }
-  if (!json) {
-    std::cout << "archive=" << path.filename().string() << " format="
-              << format_name(format) << " backend=" << r.backend
-              << " members=" << r.members << "\n";
-    print_metrics_text(r);
-    return 0;
+  if (json) {
+    gp::JsonWriter w(std::cout);
+    write_single_doc(w, r, path, format);
+  } else {
+    print_single_text(r, path, format);
   }
-  std::cout << "{\n  \"schema\": 1,\n";
-  write_header_json(std::cout, path, format);
-  std::cout << "  \"backend\": \"" << r.backend << "\",\n"
-            << "  \"members\": " << r.members << ",\n  \"metrics\": ";
-  write_metrics_json(std::cout, r, "  ");
-  std::cout << "\n}\n";
   return 0;
 }
 
 int report_compare(const std::vector<Result>& results, const fs::path& path,
                    Format format, int repeats, double tie_pct, bool json) {
-  const std::string mismatch = cross_check(results);
-  std::vector<gp::Candidate> candidates;
-  if (mismatch.empty()) {
-    for (const auto& r : results) {
-      if (r.status == Status::Ok) candidates.push_back(candidate(r));
-    }
-  }
-  const gp::Verdict verdict = gp::judge(metric_specs(), candidates, tie_pct);
-
-  if (!json) {
-    std::cout << "archive=" << path.filename().string()
-              << " format=" << format_name(format) << " repeats=" << repeats << "\n";
-    std::printf("%-12s %8s %10s %14s %16s %15s %22s\n", "backend", "members",
-                "toc_ms", "extract_all_ms", "extract_first_ms", "extract_last_ms",
-                "extract_scattered10_ms");
-    for (const auto& r : results) {
-      if (r.status == Status::Ok) {
-        std::printf("%-12s %8zu %10.3f %14.3f %16.3f %15.3f %22.3f\n",
-                    r.backend.c_str(), r.members, r.toc.median, r.all.median,
-                    r.first.median, r.last.median, r.scattered.median);
-      } else {
-        std::printf("%-12s %s: %s\n", r.backend.c_str(), status_name(r.status),
-                    r.reason.c_str());
-      }
-    }
-    if (!mismatch.empty()) {
-      std::cout << "verdict: refused — backends disagree: " << mismatch << "\n";
-    } else {
-      gp::print_verdict(std::cout, verdict);
-    }
+  const Judged judged = judge_results(results, tie_pct);
+  if (json) {
+    gp::JsonWriter w(std::cout);
+    write_compare_doc(w, results, judged, path, format, repeats);
   } else {
-    std::cout << "{\n  \"schema\": 1,\n  \"kind\": \"compare\",\n";
-    write_header_json(std::cout, path, format);
-    std::cout << "  \"repeats\": " << repeats << ",\n  \"variants\": [";
-    for (std::size_t i = 0; i < results.size(); ++i) {
-      const Result& r = results[i];
-      std::cout << (i ? ",\n" : "\n") << "    {\"backend\": \"" << r.backend
-                << "\", \"status\": \"" << status_name(r.status) << "\"";
-      if (r.status == Status::Ok) {
-        std::cout << ", \"members\": " << r.members << ", \"bytes\": " << r.bytes
-                  << ", \"metrics\": ";
-        write_metrics_json(std::cout, r, "    ");
-      } else {
-        std::cout << ", \"reason\": ";
-        gp::json_string(std::cout, r.reason);
-      }
-      std::cout << "}";
-    }
-    std::cout << "\n  ],\n  \"consistency_error\": ";
-    gp::json_string(std::cout, mismatch);
-    std::cout << ",\n  \"verdict\": ";
-    gp::write_verdict_json(std::cout, verdict, "  ");
-    std::cout << "\n}\n";
+    print_compare_text(results, judged, path, format, repeats);
   }
   // Unsupported backends are expected (e.g. unarr on RAR5); a disagreement or
   // nothing measurable is an error.
-  return (mismatch.empty() && !candidates.empty()) ? 0 : 1;
+  return judged.ok() ? 0 : 1;
 }
 
 std::vector<std::string> split_list(const std::string& s) {

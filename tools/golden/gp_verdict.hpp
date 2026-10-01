@@ -26,6 +26,7 @@
 #pragma once
 
 #include "gp_common.hpp"
+#include "gp_json.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -232,53 +233,46 @@ inline void print_verdict(std::ostream& os, const Verdict& v) {
   os << line;
 }
 
-inline void json_names(std::ostream& os, const std::vector<std::string>& names) {
-  os << '[';
-  for (std::size_t i = 0; i < names.size(); ++i) {
-    if (i) os << ", ";
-    json_string(os, names[i]);
-  }
-  os << ']';
+inline void json_names(JsonWriter& w, const std::vector<std::string>& names) {
+  w.begin_array(JsonWriter::Compact);
+  for (const auto& n : names) w.value(n);
+  w.end_array();
 }
 
-inline void json_ranking(std::ostream& os, const std::vector<Ranked>& ranking) {
-  os << '[';
-  for (std::size_t i = 0; i < ranking.size(); ++i) {
-    if (i) os << ", ";
-    os << "{\"name\": ";
-    json_string(os, ranking[i].name);
-    os << ", \"ratio\": " << ranking[i].ratio << '}';
+inline void json_ranking(JsonWriter& w, const std::vector<Ranked>& ranking) {
+  w.begin_array(JsonWriter::Compact);
+  for (const auto& r : ranking) {
+    w.begin_object().field("name", r.name).field("ratio", r.ratio).end_object();
   }
-  os << ']';
+  w.end_array();
 }
 
-/// JSON object for the verdict. `indent` is prepended to every inner line.
-/// Fields: winner ("" when tied or < 2 candidates), tied, ranking (ratio >= 1).
-inline void write_verdict_json(std::ostream& os, const Verdict& v,
-                               const std::string& indent) {
-  os << "{\n" << indent << "  \"tie_pct\": " << v.tie_pct << ",\n";
-  os << indent << "  \"metrics\": {";
-  for (std::size_t i = 0; i < v.metrics.size(); ++i) {
-    const auto& m = v.metrics[i];
-    os << (i ? ",\n" : "\n") << indent << "    ";
-    json_string(os, m.metric);
-    os << ": {\"better\": \"" << (m.better == Better::Lower ? "lower" : "higher")
-       << "\", \"winner\": ";
-    json_string(os, m.decided() ? m.winner() : std::string());
-    os << ", \"tied\": ";
-    json_names(os, m.tied);
-    os << ", \"ranking\": ";
-    json_ranking(os, m.ranking);
-    os << '}';
+/// Verdict as a JSON object. Fields: tie_pct; metrics{name: {better, winner,
+/// tied, ranking}}; overall{winner, tied, ranking}. "winner" is "" when tied
+/// or with fewer than two candidates; ranking ratios are >= 1 (1 = best).
+inline void write_verdict_json(JsonWriter& w, const Verdict& v) {
+  w.begin_object();
+  w.field("tie_pct", v.tie_pct);
+  w.key("metrics").begin_object();
+  for (const auto& m : v.metrics) {
+    w.key(m.metric).begin_object(JsonWriter::Compact);
+    w.field("better", m.better == Better::Lower ? "lower" : "higher");
+    w.field("winner", m.decided() ? m.winner() : std::string());
+    w.key("tied");
+    json_names(w, m.tied);
+    w.key("ranking");
+    json_ranking(w, m.ranking);
+    w.end_object();
   }
-  os << (v.metrics.empty() ? "},\n" : "\n" + indent + "  },\n");
-  os << indent << "  \"overall\": {\"winner\": ";
-  json_string(os, v.overall_decided() ? v.overall.front().name : std::string());
-  os << ", \"tied\": ";
-  json_names(os, v.overall_tied);
-  os << ", \"ranking\": ";
-  json_ranking(os, v.overall);
-  os << "}\n" << indent << '}';
+  w.end_object();
+  w.key("overall").begin_object(JsonWriter::Compact);
+  w.field("winner", v.overall_decided() ? v.overall.front().name : std::string());
+  w.key("tied");
+  json_names(w, v.overall_tied);
+  w.key("ranking");
+  json_ranking(w, v.overall);
+  w.end_object();
+  w.end_object();
 }
 
 }  // namespace gp

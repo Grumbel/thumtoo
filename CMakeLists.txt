@@ -401,6 +401,10 @@ if(THUMTOO_BUILD_TESTS)
   target_include_directories(thumtoo-test-gp-verdict PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/golden)
   add_test(NAME gp_verdict COMMAND thumtoo-test-gp-verdict)
+  add_executable(thumtoo-test-gp-json tests/test_gp_json.cpp)
+  target_include_directories(thumtoo-test-gp-json PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/golden)
+  add_test(NAME gp_json COMMAND thumtoo-test-gp-json)
 endif()
 
 install(TARGETS thumtoo

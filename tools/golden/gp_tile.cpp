@@ -31,6 +31,7 @@
 #include <vips/vips.h>
 
 #include "gp_common.hpp"
+#include "gp_json.hpp"
 #include "gp_verdict.hpp"
 
 #include <algorithm>
@@ -510,30 +511,47 @@ CodecResult measure_codec(const Variant& variant, const std::vector<int>& qualit
 
 /// Identity fields for a variant: base codec, plus variant/effort when set
 /// (rows for default-effort codecs keep the original schema-1 keys).
-void write_variant_json(std::ostream& os, const Variant& v) {
-  os << "\"codec\": \"" << codec_name(v.codec) << "\"";
+void write_variant_json(gp::JsonWriter& w, const Variant& v) {
+  w.field("codec", codec_name(v.codec));
   if (v.effort >= 0) {
-    os << ", \"variant\": \"" << v.name() << "\", \"effort\": " << v.effort;
+    w.field("variant", v.name());
+    w.field("effort", v.effort);
   }
 }
 
-void write_row_json(std::ostream& os, const Variant& v, const Row& row) {
-  os << "{";
-  write_variant_json(os, v);
-  os << ", \"quality\": " << row.quality
-     << ", \"encode_ms\": " << row.enc.median << ", \"decode_ms\": " << row.dec.median
-     << ", \"bytes_total\": " << row.bytes_total
-     << ", \"bytes_per_cell_mean\": " << row.bytes_per_cell_mean
-     << ", \"psnr_db\": " << row.psnr_db << "}";
+void write_row_json(gp::JsonWriter& w, const Variant& v, const Row& row) {
+  w.begin_object(gp::JsonWriter::Compact);
+  write_variant_json(w, v);
+  w.field("quality", row.quality);
+  w.field("encode_ms", row.enc.median);
+  w.field("decode_ms", row.dec.median);
+  w.field("bytes_total", row.bytes_total);
+  w.field("bytes_per_cell_mean", row.bytes_per_cell_mean);
+  w.field("psnr_db", row.psnr_db);
+  w.end_object();
 }
 
-void write_header_json(std::ostream& os, const fs::path& file, const Source& src,
+void write_header_json(gp::JsonWriter& w, const fs::path& file, const Source& src,
                        int tile, int time_n, int repeats) {
-  os << "  \"tool\": \"thumtoo-gp-tile\",\n  \"file\": ";
-  gp::json_string(os, file.string());
-  os << ",\n  \"width\": " << src.width << ",\n  \"height\": " << src.height
-     << ",\n  \"tile\": " << tile << ",\n  \"cells\": " << src.cells.size()
-     << ",\n  \"timed_cells\": " << time_n << ",\n  \"repeats\": " << repeats << ",\n";
+  w.field("tool", "thumtoo-gp-tile");
+  w.field("file", file.string());
+  w.field("width", src.width);
+  w.field("height", src.height);
+  w.field("tile", tile);
+  w.field("cells", src.cells.size());
+  w.field("timed_cells", time_n);
+  w.field("repeats", repeats);
+}
+
+void write_single_doc(gp::JsonWriter& w, const CodecResult& r, const fs::path& file,
+                      const Source& src, int tile, int time_n, int repeats) {
+  w.begin_object();
+  w.field("schema", 1);
+  write_header_json(w, file, src, tile, time_n, repeats);
+  w.key("rows").begin_array();
+  for (const Row& row : r.rows) write_row_json(w, r.variant, row);
+  w.end_array();
+  w.end_object();
 }
 
 int report_single(const CodecResult& r, const fs::path& file, const Source& src,
@@ -543,27 +561,21 @@ int report_single(const CodecResult& r, const fs::path& file, const Source& src,
               << r.reason << "\n";
     return 1;
   }
-  if (!json) {
-    std::cout << "file=" << file.filename().string() << " " << src.width << "x"
-              << src.height << " tiles=" << src.cells.size() << " tile=" << tile
-              << " timed_cells=" << time_n << " codec=" << r.variant.name() << "\n";
-    std::cout << "quality,encode_ms_median,decode_ms_median,bytes_total,"
-                 "bytes_per_cell_mean,psnr_db\n";
-    for (const Row& row : r.rows) {
-      std::printf("%d,%.3f,%.3f,%llu,%.1f,%.2f\n", row.quality, row.enc.median,
-                  row.dec.median, static_cast<unsigned long long>(row.bytes_total),
-                  row.bytes_per_cell_mean, row.psnr_db);
-    }
+  if (json) {
+    gp::JsonWriter w(std::cout);
+    write_single_doc(w, r, file, src, tile, time_n, repeats);
     return 0;
   }
-  std::cout << "{\n  \"schema\": 1,\n";
-  write_header_json(std::cout, file, src, tile, time_n, repeats);
-  std::cout << "  \"rows\": [";
-  for (std::size_t i = 0; i < r.rows.size(); ++i) {
-    std::cout << (i ? ",\n    " : "\n    ");
-    write_row_json(std::cout, r.variant, r.rows[i]);
+  std::cout << "file=" << file.filename().string() << " " << src.width << "x"
+            << src.height << " tiles=" << src.cells.size() << " tile=" << tile
+            << " timed_cells=" << time_n << " codec=" << r.variant.name() << "\n";
+  std::cout << "quality,encode_ms_median,decode_ms_median,bytes_total,"
+               "bytes_per_cell_mean,psnr_db\n";
+  for (const Row& row : r.rows) {
+    std::printf("%d,%.3f,%.3f,%llu,%.1f,%.2f\n", row.quality, row.enc.median,
+                row.dec.median, static_cast<unsigned long long>(row.bytes_total),
+                row.bytes_per_cell_mean, row.psnr_db);
   }
-  std::cout << "\n  ]\n}\n";
   return 0;
 }
 
@@ -663,136 +675,153 @@ const std::vector<gp::MetricSpec>& matched_metrics() {
   return specs;
 }
 
+/// Everything the renderers need to know about one comparison.
+struct CompareOutcome {
+  const Row* ref_row = nullptr;  // the reference setting's measured row
+  double target = 0;             // its PSNR (dB)
+  std::vector<Match> matches;    // point into the CodecResult rows
+  gp::Verdict verdict;
+  /// A verdict could be reached (reference measured, >= 1 codec matched).
+  bool ok() const { return ref_row && !verdict.empty(); }
+};
+
+CompareOutcome evaluate_compare(const std::vector<CodecResult>& results,
+                                const Reference& ref, double tie_pct) {
+  CompareOutcome o;
+  for (const auto& r : results) {
+    if (!(r.variant == ref.variant) || r.status != Status::Ok) continue;
+    for (const Row& row : r.rows) {
+      if (row.quality == ref.quality) o.ref_row = &row;
+    }
+  }
+  if (!o.ref_row) return o;
+  o.target = o.ref_row->psnr_db;
+
+  std::vector<gp::Candidate> candidates;
+  for (const auto& r : results) {
+    if (r.status != Status::Ok) continue;
+    Match m = match_quality(r, o.target);
+    if (m.row) {
+      const double bytes = static_cast<double>(m.row->bytes_total);
+      candidates.push_back({r.variant.name(),
+                            {bytes, m.row->enc.median, m.row->dec.median},
+                            {{bytes, bytes},  // deterministic
+                             {m.row->enc.min, m.row->enc.max},
+                             {m.row->dec.min, m.row->dec.max}}});
+    }
+    o.matches.push_back(m);
+  }
+  o.verdict = gp::judge(matched_metrics(), candidates, tie_pct);
+  return o;
+}
+
+void write_compare_doc(gp::JsonWriter& w, const std::vector<CodecResult>& results,
+                       const CompareOutcome& o, const Reference& ref,
+                       const fs::path& file, const Source& src, int tile, int time_n,
+                       int repeats) {
+  w.begin_object();
+  w.field("schema", 1);
+  w.field("kind", "compare");
+  write_header_json(w, file, src, tile, time_n, repeats);
+  w.field("source_loader", src.loader);
+  w.field("source_lossy", src.lossy);
+  w.key("reference").begin_object(gp::JsonWriter::Compact);
+  write_variant_json(w, ref.variant);
+  w.field("quality", ref.quality);
+  if (o.ref_row) w.field("psnr_db", o.target);
+  else w.key("psnr_db").value(nullptr);
+  w.end_object();
+
+  w.key("codecs").begin_array();
+  for (const CodecResult& r : results) {
+    w.begin_object();
+    write_variant_json(w, r.variant);
+    w.field("status", status_name(r.status));
+    if (r.status == Status::Ok) {
+      w.key("rows").begin_array();
+      for (const Row& row : r.rows) write_row_json(w, r.variant, row);
+      w.end_array();
+    } else {
+      w.field("reason", r.reason);
+    }
+    w.end_object();
+  }
+  w.end_array();
+
+  w.key("matched").begin_array();
+  for (const Match& m : o.matches) {
+    if (m.row) {
+      write_row_json(w, m.variant, *m.row);
+    } else {
+      w.begin_object(gp::JsonWriter::Compact);
+      write_variant_json(w, m.variant);
+      w.field("below_target", true);
+      w.field("best_psnr_db", m.best ? m.best->psnr_db : 0.0);
+      w.end_object();
+    }
+  }
+  w.end_array();
+
+  w.key("verdict");
+  gp::write_verdict_json(w, o.verdict);
+  w.end_object();
+}
+
+void print_compare_text(const std::vector<CodecResult>& results, const CompareOutcome& o,
+                        const Reference& ref, const fs::path& file, const Source& src,
+                        int tile, int time_n, int repeats) {
+  std::cout << "file=" << file.filename().string() << " " << src.width << "x"
+            << src.height << " tiles=" << src.cells.size() << " tile=" << tile
+            << " timed_cells=" << time_n << " repeats=" << repeats << "\n";
+  std::printf("%-8s %7s %10s %10s %12s %8s\n", "variant", "quality", "encode_ms",
+              "decode_ms", "bytes_total", "psnr_db");
+  for (const auto& r : results) {
+    if (r.status != Status::Ok) {
+      std::printf("%-8s %s: %s\n", r.variant.name().c_str(), status_name(r.status),
+                  r.reason.c_str());
+      continue;
+    }
+    for (const Row& row : r.rows) {
+      std::printf("%-8s %7d %10.3f %10.3f %12llu %8.2f\n", r.variant.name().c_str(),
+                  row.quality, row.enc.median, row.dec.median,
+                  static_cast<unsigned long long>(row.bytes_total), row.psnr_db);
+    }
+  }
+  if (!o.ref_row) {
+    std::cout << "verdict: refused — reference " << ref.name()
+              << " was not measured successfully\n";
+    return;
+  }
+  std::printf("\nreference %s -> %.2f dB; each variant at its smallest setting "
+              "reaching that:\n",
+              ref.name().c_str(), o.target);
+  std::printf("%-8s %7s %10s %10s %12s %8s\n", "variant", "quality", "encode_ms",
+              "decode_ms", "bytes_total", "psnr_db");
+  for (const Match& m : o.matches) {
+    if (m.row) {
+      std::printf("%-8s %7d %10.3f %10.3f %12llu %8.2f\n", m.variant.name().c_str(),
+                  m.row->quality, m.row->enc.median, m.row->dec.median,
+                  static_cast<unsigned long long>(m.row->bytes_total), m.row->psnr_db);
+    } else {
+      std::printf("%-8s below target in this sweep (best %.2f dB at q%d)\n",
+                  m.variant.name().c_str(), m.best ? m.best->psnr_db : 0.0,
+                  m.best ? m.best->quality : 0);
+    }
+  }
+  gp::print_verdict(std::cout, o.verdict);
+}
+
 int report_compare(const std::vector<CodecResult>& results, const Reference& ref,
                    const fs::path& file, const Source& src, int tile, int time_n,
                    int repeats, double tie_pct, bool json) {
-  const CodecResult* ref_result = nullptr;
-  for (const auto& r : results) {
-    if (r.variant == ref.variant) ref_result = &r;
-  }
-  const Row* ref_row = nullptr;
-  if (ref_result && ref_result->status == Status::Ok) {
-    for (const Row& row : ref_result->rows) {
-      if (row.quality == ref.quality) ref_row = &row;
-    }
-  }
-  const double target = ref_row ? ref_row->psnr_db : 0.0;
-
-  std::vector<Match> matches;
-  std::vector<gp::Candidate> candidates;
-  if (ref_row) {
-    for (const auto& r : results) {
-      if (r.status != Status::Ok) continue;
-      Match m = match_quality(r, target);
-      if (m.row) {
-        const double bytes = static_cast<double>(m.row->bytes_total);
-        candidates.push_back({r.variant.name(),
-                              {bytes, m.row->enc.median, m.row->dec.median},
-                              {{bytes, bytes},  // deterministic
-                               {m.row->enc.min, m.row->enc.max},
-                               {m.row->dec.min, m.row->dec.max}}});
-      }
-      matches.push_back(m);
-    }
-  }
-  const gp::Verdict verdict = gp::judge(matched_metrics(), candidates, tie_pct);
-
-  if (!json) {
-    std::cout << "file=" << file.filename().string() << " " << src.width << "x"
-              << src.height << " tiles=" << src.cells.size() << " tile=" << tile
-              << " timed_cells=" << time_n << " repeats=" << repeats << "\n";
-    if (src.lossy) {
-      std::cout << "warning: source was decoded by " << src.loader
-                << "; its own codec is favored (re-encoding near the source quality "
-                   "is nearly lossless). Prefer a lossless source (PNG) for codec "
-                   "comparisons.\n";
-    }
-    std::printf("%-8s %7s %10s %10s %12s %8s\n", "variant", "quality", "encode_ms",
-                "decode_ms", "bytes_total", "psnr_db");
-    for (const auto& r : results) {
-      if (r.status != Status::Ok) {
-        std::printf("%-8s %s: %s\n", r.variant.name().c_str(), status_name(r.status),
-                    r.reason.c_str());
-        continue;
-      }
-      for (const Row& row : r.rows) {
-        std::printf("%-8s %7d %10.3f %10.3f %12llu %8.2f\n", r.variant.name().c_str(),
-                    row.quality, row.enc.median, row.dec.median,
-                    static_cast<unsigned long long>(row.bytes_total), row.psnr_db);
-      }
-    }
-    if (!ref_row) {
-      std::cout << "verdict: refused — reference " << ref.name()
-                << " was not measured successfully\n";
-      return 1;
-    }
-    std::printf("\nreference %s -> %.2f dB; each variant at its smallest setting "
-                "reaching that:\n",
-                ref.name().c_str(), target);
-    std::printf("%-8s %7s %10s %10s %12s %8s\n", "variant", "quality", "encode_ms",
-                "decode_ms", "bytes_total", "psnr_db");
-    for (const Match& m : matches) {
-      if (m.row) {
-        std::printf("%-8s %7d %10.3f %10.3f %12llu %8.2f\n", m.variant.name().c_str(),
-                    m.row->quality, m.row->enc.median, m.row->dec.median,
-                    static_cast<unsigned long long>(m.row->bytes_total),
-                    m.row->psnr_db);
-      } else {
-        std::printf("%-8s below target in this sweep (best %.2f dB at q%d)\n",
-                    m.variant.name().c_str(), m.best ? m.best->psnr_db : 0.0,
-                    m.best ? m.best->quality : 0);
-      }
-    }
-    gp::print_verdict(std::cout, verdict);
+  const CompareOutcome o = evaluate_compare(results, ref, tie_pct);
+  if (json) {
+    gp::JsonWriter w(std::cout);
+    write_compare_doc(w, results, o, ref, file, src, tile, time_n, repeats);
   } else {
-    std::cout << "{\n  \"schema\": 1,\n  \"kind\": \"compare\",\n";
-    write_header_json(std::cout, file, src, tile, time_n, repeats);
-    std::cout << "  \"source_loader\": ";
-    gp::json_string(std::cout, src.loader);
-    std::cout << ",\n  \"source_lossy\": " << (src.lossy ? "true" : "false") << ",\n";
-    std::cout << "  \"reference\": {";
-    write_variant_json(std::cout, ref.variant);
-    std::cout << ", \"quality\": " << ref.quality << ", \"psnr_db\": ";
-    if (ref_row) std::cout << target;
-    else std::cout << "null";
-    std::cout << "},\n  \"codecs\": [";
-    for (std::size_t i = 0; i < results.size(); ++i) {
-      const CodecResult& r = results[i];
-      std::cout << (i ? ",\n" : "\n") << "    {";
-      write_variant_json(std::cout, r.variant);
-      std::cout << ", \"status\": \"" << status_name(r.status) << "\"";
-      if (r.status == Status::Ok) {
-        std::cout << ", \"rows\": [";
-        for (std::size_t j = 0; j < r.rows.size(); ++j) {
-          std::cout << (j ? ",\n      " : "\n      ");
-          write_row_json(std::cout, r.variant, r.rows[j]);
-        }
-        std::cout << "\n    ]}";
-      } else {
-        std::cout << ", \"reason\": ";
-        gp::json_string(std::cout, r.reason);
-        std::cout << "}";
-      }
-    }
-    std::cout << "\n  ],\n  \"matched\": [";
-    bool first = true;
-    for (const Match& m : matches) {
-      std::cout << (first ? "\n    " : ",\n    ");
-      first = false;
-      if (m.row) {
-        write_row_json(std::cout, m.variant, *m.row);
-      } else {
-        std::cout << "{";
-        write_variant_json(std::cout, m.variant);
-        std::cout << ", \"below_target\": true, \"best_psnr_db\": "
-                  << (m.best ? m.best->psnr_db : 0.0) << "}";
-      }
-    }
-    std::cout << (matches.empty() ? "],\n" : "\n  ],\n") << "  \"verdict\": ";
-    gp::write_verdict_json(std::cout, verdict, "  ");
-    std::cout << "\n}\n";
+    print_compare_text(results, o, ref, file, src, tile, time_n, repeats);
   }
-  return (ref_row && !candidates.empty()) ? 0 : 1;
+  return o.ok() ? 0 : 1;
 }
 
 std::vector<int> parse_qualities(const std::string& s) {
@@ -943,7 +972,7 @@ int main(int argc, char** argv) {
     }
     results.push_back(measure_codec(v, qs, src, time_n, repeats));
   }
-  if (src.lossy && json_out) {
+  if (src.lossy) {
     std::cerr << "warning: lossy source (" << src.loader
               << ") biases the comparison toward that codec; prefer a PNG source\n";
   }
