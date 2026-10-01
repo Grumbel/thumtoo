@@ -1,18 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Standalone-ish microbench for JPEG decode paths used by thumtoo.
-// Build with THUMTOO_BUILD_TOOLS (links vips via image.cpp / Client not required).
-//
-// Measures:
-//   - header / sequential size
-//   - full load
-//   - vips_jpegload shrink=2/4/8
-//   - vips_thumbnail edge
-//   - build_tile_cell* style shrink mapping
+// Golden-path JPEG decode microbench (vips only — no thumtoo Client/Store).
+// Measures size header, full load, jpegload shrink=2/4/8, and thumbnail edges.
 //
 // Usage:
-//   microbench_decode [--repeat N] FILE.jpg...
+//   thumtoo-microbench-decode [--repeat N] [--json] FILE.jpg...
 
 #include <vips/vips.h>
 
@@ -70,18 +63,43 @@ void ensure_vips_lib() {
   }
 }
 
+void json_escape(std::ostream& os, const std::string& s) {
+  os << '"';
+  for (char c : s) {
+    switch (c) {
+      case '"':
+        os << "\\\"";
+        break;
+      case '\\':
+        os << "\\\\";
+        break;
+      case '\n':
+        os << "\\n";
+        break;
+      default:
+        os << c;
+    }
+  }
+  os << '"';
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
   int repeats = 5;
+  bool json_out = false;
   std::vector<std::filesystem::path> files;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--repeat" && i + 1 < argc) {
       repeats = std::atoi(argv[++i]);
       if (repeats < 1) repeats = 1;
+    } else if (a == "--json") {
+      json_out = true;
     } else if (a == "-h" || a == "--help") {
-      std::cerr << "Usage: " << argv[0] << " [--repeat N] FILE.jpg...\n";
+      std::cerr
+          << "Usage: " << argv[0] << " [--repeat N] [--json] FILE.jpg...\n"
+          << "Golden-path vips JPEG decode timings (no thumtoo Client).\n";
       return 0;
     } else {
       files.emplace_back(a);
@@ -94,11 +112,18 @@ int main(int argc, char** argv) {
 
   ensure_vips_lib();
 
-  std::cout << "file,mpix,size_ms,full_ms,shrink2_ms,shrink4_ms,shrink8_ms,"
-               "thumb32_ms,thumb256_ms\n";
+  if (!json_out) {
+    std::cout << "file,mpix,size_ms,full_ms,shrink2_ms,shrink4_ms,shrink8_ms,"
+                 "thumb32_ms,thumb256_ms\n";
+  } else {
+    std::cout << "{\n  \"schema\": 1,\n  \"tool\": \"thumtoo-microbench-decode\",\n"
+                 "  \"repeats\": "
+              << repeats
+              << ",\n  \"warmups\": 1,\n  \"cases\": [\n";
+  }
 
+  bool first_case = true;
   for (const auto& path : files) {
-    ensure_vips_lib();
     VipsImage* hdr = vips_image_new_from_file(
         path.string().c_str(), "access", VIPS_ACCESS_SEQUENTIAL, nullptr);
     if (!hdr) {
@@ -123,7 +148,6 @@ int main(int argc, char** argv) {
     auto full_s = run_median(std::max(1, repeats / 2), [&] {
       VipsImage* img = vips_image_new_from_file(path.string().c_str(), nullptr);
       if (img) {
-        // Force decode by writing to memory.
         size_t len = 0;
         void* buf = vips_image_write_to_memory(img, &len);
         if (buf) g_free(buf);
@@ -166,10 +190,33 @@ int main(int argc, char** argv) {
     auto t32 = thumb_s(32);
     auto t256 = thumb_s(256);
 
-    std::printf(
-        "%s,%.2f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n", path.filename().c_str(),
-        mpix, size_s.median, full_s.median, s2.median, s4.median, s8.median,
-        t32.median, t256.median);
+    if (!json_out) {
+      std::printf(
+          "%s,%.2f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
+          path.filename().c_str(), mpix, size_s.median, full_s.median,
+          s2.median, s4.median, s8.median, t32.median, t256.median);
+    } else {
+      if (!first_case) std::cout << ",\n";
+      first_case = false;
+      std::cout << "    {\n      \"path\": ";
+      json_escape(std::cout, path.string());
+      std::cout << ",\n      \"file\": ";
+      json_escape(std::cout, path.filename().string());
+      std::cout << ",\n      \"width\": " << w << ",\n      \"height\": " << h
+                << ",\n      \"mpix\": " << mpix << ",\n      \"metrics\": {\n"
+                << "        \"size_ms\": " << size_s.median << ",\n"
+                << "        \"full_ms\": " << full_s.median << ",\n"
+                << "        \"shrink2_ms\": " << s2.median << ",\n"
+                << "        \"shrink4_ms\": " << s4.median << ",\n"
+                << "        \"shrink8_ms\": " << s8.median << ",\n"
+                << "        \"thumb32_ms\": " << t32.median << ",\n"
+                << "        \"thumb256_ms\": " << t256.median << "\n"
+                << "      }\n    }";
+    }
+  }
+
+  if (json_out) {
+    std::cout << "\n  ]\n}\n";
   }
 
   return 0;

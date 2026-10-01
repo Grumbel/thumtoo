@@ -49,6 +49,8 @@ void usage(const char* argv0) {
       << "      --tile-cell    request one tile per URI after probes\n"
       << "      --cell SCALE,X,Y  with --tile-cell, which cell (default: 0,0,0)\n"
       << "      --no-probe     skip size-probe phase (still needed for later phases)\n"
+      << "      --keep-cache   do not wipe --cache before the run (warm path)\n"
+      << "      --json        machine-readable phase timings on stdout\n"
       << "\n"
       << "Phases (in order):\n"
       << "  1. size probe\n"
@@ -85,6 +87,8 @@ int main(int argc, char** argv) {
   bool do_tiles = false;
   bool do_tile_cell = false;
   bool do_probe = true;
+  bool keep_cache = false;
+  bool json_out = false;
   int tile_min_scale = 0;
   int tile_max_scale = -1;
   int cell_scale = 0, cell_x = 0, cell_y = 0;
@@ -147,6 +151,14 @@ int main(int argc, char** argv) {
       do_probe = false;
       continue;
     }
+    if (a == "--keep-cache") {
+      keep_cache = true;
+      continue;
+    }
+    if (a == "--json") {
+      json_out = true;
+      continue;
+    }
     paths.emplace_back(a);
   }
 
@@ -157,7 +169,9 @@ int main(int argc, char** argv) {
 
   try {
     std::error_code ec;
-    std::filesystem::remove_all(cache, ec);
+    if (!keep_cache) {
+      std::filesystem::remove_all(cache, ec);
+    }
     std::filesystem::create_directories(cache);
 
     thumtoo::image_library_init();
@@ -237,20 +251,56 @@ int main(int argc, char** argv) {
 
     const double all_s = wall_s_now(t_all);
 
-    std::cout << "thumtoo-bench  cache=" << cache << "  uris=" << uris.size()
-              << "  paths=" << paths.size() << "\n";
     unsigned hw = jobs;
     if (hw == 0) {
       hw = std::thread::hardware_concurrency();
       if (hw == 0) hw = 1;
     }
-    std::cout << "workers=" << hw << "  total_wall=" << std::fixed
-              << std::setprecision(3) << all_s << " s\n\n";
 
-    for (const auto& ph : phases) {
-      std::cout << "▸ phase " << ph.name << "  wall=" << std::fixed
-                << std::setprecision(3) << ph.wall_s << " s\n";
-      std::cout << ph.pretty << "\n";
+    if (json_out) {
+      auto jesc = [](const std::string& s) {
+        std::string o;
+        o.reserve(s.size() + 8);
+        for (char c : s) {
+          if (c == '"' || c == '\\') o.push_back('\\');
+          if (c == '\n') {
+            o += "\\n";
+            continue;
+          }
+          o.push_back(c);
+        }
+        return o;
+      };
+      std::cout << "{\n  \"schema\": 1,\n  \"tool\": \"thumtoo-bench\",\n"
+                << "  \"cache\": \"" << jesc(cache.string()) << "\",\n"
+                << "  \"keep_cache\": " << (keep_cache ? "true" : "false")
+                << ",\n"
+                << "  \"paths\": " << paths.size() << ",\n"
+                << "  \"uris\": " << uris.size() << ",\n"
+                << "  \"workers\": " << hw << ",\n"
+                << "  \"total_wall_s\": " << std::fixed << std::setprecision(6)
+                << all_s << ",\n  \"phases\": [\n";
+      for (size_t i = 0; i < phases.size(); ++i) {
+        const auto& ph = phases[i];
+        std::cout << "    {\n      \"name\": \"" << jesc(ph.name)
+                  << "\",\n      \"wall_s\": " << std::fixed
+                  << std::setprecision(6) << ph.wall_s
+                  << ",\n      \"stats\": \"" << jesc(ph.pretty) << "\"\n    }";
+        if (i + 1 < phases.size()) std::cout << ",";
+        std::cout << "\n";
+      }
+      std::cout << "  ]\n}\n";
+    } else {
+      std::cout << "thumtoo-bench  cache=" << cache << "  uris=" << uris.size()
+                << "  paths=" << paths.size() << "\n";
+      std::cout << "workers=" << hw << "  total_wall=" << std::fixed
+                << std::setprecision(3) << all_s << " s\n\n";
+
+      for (const auto& ph : phases) {
+        std::cout << "▸ phase " << ph.name << "  wall=" << std::fixed
+                  << std::setprecision(3) << ph.wall_s << " s\n";
+        std::cout << ph.pretty << "\n";
+      }
     }
   } catch (const std::exception& e) {
     std::cerr << "error: " << e.what() << "\n";

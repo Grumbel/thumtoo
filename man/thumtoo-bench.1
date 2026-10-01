@@ -12,7 +12,7 @@ Benchmark thumtoo cold-cache phases on files or archives. Each phase uses a
 fresh stats window; overall wall time is also reported. Default cache root is
 under
 .B thumtoo-bench
-and is wiped each run.
+and is wiped each run unless .B \-\-keep\-cache is set. .B \-\-json emits machine-readable phase timings.
 .PP
 Typical phases: size probe, optional soft ladder, optional tile pyramid or
 single-cell request. See

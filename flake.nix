@@ -286,6 +286,7 @@
           bench = app "thumtoo-bench" "Benchmark ladder / tile paths";
           gc = app "thumtoo-gc" "Garbage-collect unreferenced cache blobs";
           archive = app "thumtoo-archive" "List/extract archive members (same backends as //archive:)";
+          micro-decode = app "thumtoo-microbench-decode" "Golden-path vips JPEG decode timings (no Client)";
         });
 
       devShells = forAllSystems ({ pkgs, ... }: {

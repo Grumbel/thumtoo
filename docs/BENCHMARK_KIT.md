@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # Benchmark kit — plan
 
-**Status:** plan only (2026-10-01). No implementation in this document.
+**Status:** plan + first slice (2026-10-01). Implemented: `thumtoo-bench --json/--keep-cache`, `thumtoo-microbench-decode --json`, companion **pixel-bench-corpus** flake (synthetic JPEG/PNG). Still open: codec matrix, archive A/B, gp-pipeline, CI smoke.
 **Audience:** agents and humans choosing pixel / archive / codec routes for
 thumtoo + biltoo, and detecting regressions against those choices.
 
