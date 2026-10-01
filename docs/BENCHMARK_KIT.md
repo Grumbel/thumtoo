@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # Benchmark kit — plan
 
-**Status:** plan + verified slices (2026-10-01). Done: plan, `thumtoo-bench --json/--keep-cache`, `thumtoo-microbench-decode --json`, `thumtoo-gp-tile` (JPEG quality matrix), `tools/bench_smoke.sh`, MuPDF offline stub, RGB synthetic corpus (pixel-bench-corpus). Still open: WebP/AVIF/JXL tile codecs, archive A/B, gp-pipeline, flake `checks.bench-smoke`, published corpus input.
+**Status:** plan + verified slices (2026-10-01). Golden tools: `thumtoo-bench --json/--keep-cache`, `thumtoo-microbench-decode`, `thumtoo-gp-tile`, `tools/bench_smoke.sh` (photo/landscape/bookpage/comic/spread). Corpus: **pixel-bench-corpus** content-class matrix (portrait ebook + landscape). Still open: WebP/AVIF/JXL tile codecs, gp-archive, flake `checks.bench-smoke`.
 **Audience:** agents and humans choosing pixel / archive / codec routes for
 thumtoo + biltoo, and detecting regressions against those choices.
 
@@ -253,21 +253,23 @@ false-fail when class matches.
 
 ## 5. Corpus design (`pixel-bench-corpus`)
 
-### 5.1 Synthetic (generate in flake, deterministic seeds)
+### 5.1 Synthetic (pixel-bench-corpus flake)
 
-| Asset | Purpose |
-|-------|---------|
-| JPEG 0.5 / 2 / 8 / 33 MP (baseline q=90) | Decode / shrink / tile encode scaling |
-| Same resolutions as PNG and lossless JXL | Codec comparison without camera noise |
-| JPEG with EXIF thumbnail | Embedded preview path |
-| ZIP stored + ZIP deflate, 50 / 200 / 1000 small JPEGs | Random access |
-| tar of same members | Sequential access |
-| Solid RAR4 (if we can generate or vendor a tiny fixture) | unarr vs libarchive |
-| Synthetic 256² tile grids pre-encoded in JPEG/WebP/AVIF/JXL | Pure decode matrix without encode cost |
+Content-class matrix (not solid fills). Classes pick **landscape 16:9** or
+**portrait ~2:3** size sets so benches match biltoo ebook/comic/album traffic:
 
-Generation: small C++ or Python under the corpus flake, run at build time into
-`$out/corpus/…`. Prefer **reproducible** bytes (fixed RNG, fixed encoder
-settings).
+| Class | Aspect | Purpose |
+|-------|--------|---------|
+| photo / landscape | landscape | Camera-like / scenic album images |
+| bookpage / scan | portrait | Ebook pages (cream paper, dense text; scan + grain) |
+| comic | portrait | Panel grid + speech boxes |
+| spread | landscape | Two-page open book + gutter |
+| text / geometry / fractal / noise / mixed | landscape | Stress edges, detail, entropy bounds |
+
+Sizes: landscape 800×450, 1920×1080, 3840×2160; portrait 600×900, 1200×1800, 1600×2400.
+Generator: `generators/gen_synthetic.py` (numpy + Pillow), seeded by (class, w, h).
+
+Still planned: ZIP/tar/RAR archive fixtures; EXIF-thumb JPEGs; pre-encoded tile grids.
 
 ### 5.2 Public-domain / freely licensed samples (pinned)
 
