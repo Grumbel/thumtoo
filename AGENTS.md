@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Intent
 
-Latest agent handoff: **TODO.md → thumtoo-337.3-xdg-thumbnails**. Next bundle: **338**.
+Latest agent handoff: **TODO.md** (live tip). Benchmark plan: [docs/BENCHMARK_KIT.md](docs/BENCHMARK_KIT.md).
 thumtoo is a **cache and index library**, not a viewer. Do not add GUI code
 here. Product rules for biltoo modes stay in biltoo’s DOMAIN/IDENTITY docs.
 Post-release: prefer SQLite schema migration over cache wipe (see docs/DIRTOO_BACKBONE.md).
@@ -36,6 +36,7 @@ Post-release: prefer SQLite schema migration over cache wipe (see docs/DIRTOO_BA
 | [docs/API_MIGRATION.md](docs/API_MIGRATION.md) | Dual-path Client → Store cutover notes |
 | [docs/BLOB_AND_OVERLAY.md](docs/BLOB_AND_OVERLAY.md) | Pointer only → DATABASE.md |
 | [docs/DIRTOO_BACKBONE.md](docs/DIRTOO_BACKBONE.md) | dirtoo virtual FS backbone; schema migrate policy; tags/sets JSON |
+| [docs/BENCHMARK_KIT.md](docs/BENCHMARK_KIT.md) | Benchmark kit plan (codec/archive/golden paths/corpus flake) |
 
 ## Handoff
 
