@@ -30,6 +30,16 @@ if [[ -n "$GEN" && -f "$GEN" ]]; then
     python3 "$GEN" --out "$CORPUS_OUT" --no-large \
       --classes photo,landscape,bookpage,comic,spread
   fi
+  DOC_GEN="$(dirname "$GEN")/gen_documents.py"
+  if [[ -f "$DOC_GEN" ]]; then
+    echo "== documents (PDF/MD/TXT/CBZ) =="
+    python3 "$DOC_GEN" --out "$CORPUS_OUT" --pages 12 --skip-djvu || true
+    ls -la "$CORPUS_OUT"/documents 2>/dev/null || true
+  fi
+  ARCH_GEN="$(dirname "$GEN")/gen_archives.py"
+  if [[ -f "$ARCH_GEN" ]]; then
+    python3 "$ARCH_GEN" --corpus "$CORPUS_OUT" || true
+  fi
 else
   echo "CORPUS_GEN not set and sibling pixel-bench-corpus not found; using CORPUS_OUT=$CORPUS_OUT"
 fi
