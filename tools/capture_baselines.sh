@@ -62,8 +62,8 @@ if [[ -n "$CBZ" ]]; then
     >"$OUT/gp-archive-libarchive.json"
 fi
 
-# Verdict snapshots (who wins on this machine). Not regression gates:
-# refined match rows vary between runs, so compare_bench_json indices shift.
+# Verdict snapshots (who wins on this machine). compare_bench_json matches
+# rows by identity and reports winner changes (--fail-on-winner-change).
 if [[ -n "$PNG" ]]; then
   "$TILE" --json --codec all --repeat "$REPEAT" --max-cells 8 "$PNG" \
     >"$OUT/gp-tile-compare.json" ||
@@ -100,7 +100,8 @@ python3 tools/compare_bench_json.py \\
 \`\`\`
 
 \`gp-tile-compare.json\` / \`gp-archive-compare.json\` are verdict snapshots
-(which codec / backend wins here), not regression baselines.
+(which codec / backend wins here). compare_bench_json reports winner changes;
+add --fail-on-winner-change to gate on them.
 META
 
 echo "wrote $OUT"

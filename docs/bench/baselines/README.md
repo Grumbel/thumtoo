@@ -18,10 +18,12 @@ docs/bench/baselines/<machine-class>/
   gp-archive-compare.json     # verdict snapshot: which backend wins
 ```
 
-The `*-compare.json` files record which variant won on that machine. They
-are not regression baselines: the refined codec match rows can differ
-between runs, which shifts the list indices `compare_bench_json` walks.
-Use the single-variant files as regression gates.
+The `*-compare.json` files record which variant won on that machine.
+`compare_bench_json` matches list elements by identity (codec/variant,
+backend, quality, …), so they compare like any other file; it also lists
+verdict winner changes, which fail the run with `--fail-on-winner-change`.
+Refined codec match rows can differ in quality between runs; those show up
+as missing keys (reported, not fatal).
 
 ## Capture
 
@@ -50,7 +52,12 @@ python3 tools/compare_bench_json.py \
   --tolerance-pct 25
 ```
 
-Exit code 0 = within tolerance; 1 = regression; 2 = usage/schema error.
+Exit code 0 = within tolerance; 1 = regression (or winner change with
+`--fail-on-winner-change`); 2 = usage / unreadable input.
+
+Keys look like `codecs[codec=jpeg].rows[codec=jpeg,quality=80].encode_ms`;
+elements without identity fields (or with duplicates) fall back to `[index]`.
+Self-test: `python3 tools/test_compare_bench_json.py`.
 
 Tolerances are relative on timing fields (`*_ms`, `encode_ms`, `decode_ms`).
 Byte counts are compared with a smaller default tolerance (5%).

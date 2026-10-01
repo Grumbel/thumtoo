@@ -327,6 +327,12 @@
             base=${./docs/bench/baselines/example/gp-archive-libarchive.json}
             python3 ${./tools/compare_bench_json.py} --baseline "$base" --current "$base"
             echo "ok: compare_bench_json identity"
+            # Identity keying, tolerances, winner changes, exit codes. The
+            # test finds the tool next to itself, so copy both together.
+            mkdir tools
+            cp ${./tools/compare_bench_json.py} tools/compare_bench_json.py
+            cp ${./tools/test_compare_bench_json.py} tools/test_compare_bench_json.py
+            python3 tools/test_compare_bench_json.py
             touch "$out"
           '';
         });
