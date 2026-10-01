@@ -11,6 +11,10 @@
 //
 //   B = auto        thumtoo dispatcher choice (unarr for RAR4, else libarchive)
 //     | libarchive | unarr
+//     | unarr-seek  unarr, but single-member extracts jump to the entry offset
+//                   recorded by the last TOC read (ar_parse_entry_at) instead
+//                   of walking — the "TOC cached, random access" route. Its
+//                   extract_first/last/scattered times exclude the TOC.
 //     | all         every compiled-in backend, then judge which wins
 //     | a,b,…       explicit comparison list
 //
@@ -37,6 +41,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #if defined(THUMTOO_HAVE_UNARR) && THUMTOO_HAVE_UNARR
@@ -206,9 +211,13 @@ class LibarchiveBackend final : public Backend {
 
 class UnarrBackend final : public Backend {
  public:
-  UnarrBackend(fs::path path, Format format)
-      : path_(std::move(path)), format_(format) {}
-  const char* name() const override { return "unarr"; }
+  enum class Access { Walk, Seek };
+
+  UnarrBackend(fs::path path, Format format, Access access)
+      : path_(std::move(path)), format_(format), access_(access) {}
+  const char* name() const override {
+    return access_ == Access::Seek ? "unarr-seek" : "unarr";
+  }
 
   std::string unsupported_reason(Format format) const override {
     switch (format) {
@@ -231,10 +240,12 @@ class UnarrBackend final : public Backend {
     Handle h(path_, format_);
     if (!h.ok()) return std::nullopt;
     std::vector<Member> out;
+    offsets_.clear();
     while (ar_parse_entry(h.ar)) {
       const char* name = ar_entry_get_name(h.ar);
       if (!name || is_dir_name(name)) continue;
       out.push_back(Member{name, static_cast<std::uint64_t>(ar_entry_get_size(h.ar))});
+      offsets_.emplace(name, ar_entry_get_offset(h.ar));
     }
     if (!ar_at_eof(h.ar)) return std::nullopt;
     return out;
@@ -243,6 +254,16 @@ class UnarrBackend final : public Backend {
   std::optional<std::uint64_t> extract_one(const std::string& member) override {
     Handle h(path_, format_);
     if (!h.ok()) return std::nullopt;
+    if (access_ == Access::Seek) {
+      // Offsets come from the last list(); measure() always lists first.
+      const auto it = offsets_.find(member);
+      if (it == offsets_.end() || !ar_parse_entry_at(h.ar, it->second)) {
+        return std::nullopt;
+      }
+      const char* name = ar_entry_get_name(h.ar);
+      if (!name || member != name) return std::nullopt;  // landed elsewhere
+      return uncompress_current(h.ar);
+    }
     while (ar_parse_entry(h.ar)) {
       const char* name = ar_entry_get_name(h.ar);
       if (name && member == name) return uncompress_current(h.ar);
@@ -305,6 +326,8 @@ class UnarrBackend final : public Backend {
 
   fs::path path_;
   Format format_;
+  Access access_;
+  std::unordered_map<std::string, off64_t> offsets_;  // member -> entry offset
 };
 
 #endif  // GP_ARCHIVE_HAVE_UNARR
@@ -313,6 +336,7 @@ std::vector<std::string> compiled_backends() {
   std::vector<std::string> out{"libarchive"};
 #if GP_ARCHIVE_HAVE_UNARR
   out.push_back("unarr");
+  out.push_back("unarr-seek");
 #endif
   return out;
 }
@@ -321,7 +345,12 @@ std::unique_ptr<Backend> make_backend(const std::string& name, const fs::path& p
                                       Format format) {
   if (name == "libarchive") return std::make_unique<LibarchiveBackend>(path);
 #if GP_ARCHIVE_HAVE_UNARR
-  if (name == "unarr") return std::make_unique<UnarrBackend>(path, format);
+  if (name == "unarr") {
+    return std::make_unique<UnarrBackend>(path, format, UnarrBackend::Access::Walk);
+  }
+  if (name == "unarr-seek") {
+    return std::make_unique<UnarrBackend>(path, format, UnarrBackend::Access::Seek);
+  }
 #else
   (void)format;
 #endif
@@ -435,17 +464,24 @@ Result measure(Backend& b, Format format, int repeats) {
     r.reason = os.str();
     return r;
   }
-  for (const Member* m : {&members.front(), &members.back()}) {
-    const auto got = b.extract_one(m->path);
-    if (!got || (m->size && *got != *m->size)) {
+  // Every member a timed op extracts: first, last and the scattered set.
+  const auto scatter = scattered_indices(members.size());
+  std::vector<std::size_t> probe = scatter;
+  probe.push_back(0);
+  probe.push_back(members.size() - 1);
+  std::sort(probe.begin(), probe.end());
+  probe.erase(std::unique(probe.begin(), probe.end()), probe.end());
+  for (std::size_t i : probe) {
+    const Member& m = members[i];
+    const auto got = b.extract_one(m.path);
+    if (!got || (m.size && *got != *m.size)) {
       r.status = Status::Failed;
-      r.reason = "extract of member '" + m->path + "' failed or was short";
+      r.reason = "extract of member '" + m.path + "' failed or was short";
       return r;
     }
   }
   r.bytes = *all_bytes;
 
-  const auto scatter = scattered_indices(members.size());
   const int heavy = std::max(1, repeats / 2);
   r.toc = gp::time_median(repeats, [&] { (void)b.list(); });
   r.all = gp::time_median(heavy, [&] { (void)b.extract_all(); });
@@ -604,7 +640,7 @@ std::vector<std::string> split_list(const std::string& s) {
 
 void usage(const char* argv0) {
   std::cerr << "Usage: " << argv0
-            << " [--repeat N] [--backend auto|libarchive|unarr|all|a,b] "
+            << " [--repeat N] [--backend auto|libarchive|unarr|unarr-seek|all|a,b] "
                "[--tie-pct P] [--json] ARCHIVE\n"
             << "Golden-path archive TOC / sequential / random member extract.\n"
             << "--backend all (or a list) times every backend and reports which "
