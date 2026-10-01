@@ -36,6 +36,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -388,6 +389,7 @@ struct Result {
   std::string reason;
   std::size_t members = 0;
   std::uint64_t bytes = 0;  // verified extract-all total
+  std::vector<Member> member_list;  // from verification; drives the timed ops
   gp::Timing toc, all, first, last, scattered;
 };
 
@@ -402,9 +404,19 @@ const std::vector<gp::MetricSpec>& metric_specs() {
   return specs;
 }
 
-std::vector<double> metric_values(const Result& r) {
-  return {r.toc.median, r.all.median, r.first.median, r.last.median,
-          r.scattered.median};
+const gp::Timing* metric_timings(const Result& r, std::size_t i) {
+  const gp::Timing* t[] = {&r.toc, &r.all, &r.first, &r.last, &r.scattered};
+  return t[i];
+}
+
+gp::Candidate candidate(const Result& r) {
+  gp::Candidate c{r.backend, {}, {}};
+  for (std::size_t i = 0; i < metric_specs().size(); ++i) {
+    const gp::Timing* t = metric_timings(r, i);
+    c.values.push_back(t->median);
+    c.spread.push_back({t->min, t->max});
+  }
+  return c;
 }
 
 std::vector<std::size_t> scattered_indices(std::size_t n) {
@@ -414,8 +426,8 @@ std::vector<std::size_t> scattered_indices(std::size_t n) {
   return out;
 }
 
-/// Verify `b` reads the archive correctly, then time it.
-Result measure(Backend& b, Format format, int repeats) {
+/// Check that `b` reads the archive correctly. No timing here: see time_all().
+Result verify(Backend& b, Format format) {
   Result r;
   r.backend = b.name();
   if (auto why = b.unsupported_reason(format); !why.empty()) {
@@ -481,17 +493,47 @@ Result measure(Backend& b, Format format, int repeats) {
     }
   }
   r.bytes = *all_bytes;
-
-  const int heavy = std::max(1, repeats / 2);
-  r.toc = gp::time_median(repeats, [&] { (void)b.list(); });
-  r.all = gp::time_median(heavy, [&] { (void)b.extract_all(); });
-  r.first = gp::time_median(repeats, [&] { (void)b.extract_one(members.front().path); });
-  r.last = gp::time_median(repeats, [&] { (void)b.extract_one(members.back().path); });
-  r.scattered = gp::time_median(heavy, [&] {
-    for (std::size_t i : scatter) (void)b.extract_one(members[i].path);
-  });
+  r.member_list = members;
   r.status = Status::Ok;
   return r;
+}
+
+/// Time every verified backend, one op at a time, interleaving backends
+/// round-robin (gp::time_interleaved) so run order does not pick the winner.
+/// Without this, whichever backend ran second measured ~10-15% faster on
+/// identical code paths.
+void time_all(std::vector<std::unique_ptr<Backend>>& backends,
+              std::vector<Result>& results, int repeats) {
+  std::vector<std::size_t> ok;
+  for (std::size_t i = 0; i < results.size(); ++i) {
+    if (results[i].status == Status::Ok) ok.push_back(i);
+  }
+  if (ok.empty()) return;
+  const int heavy = std::max(1, repeats / 2);
+
+  using Op = std::function<void(Backend&, const std::vector<Member>&)>;
+  auto run = [&](int reps, const Op& op, gp::Timing Result::*field) {
+    std::vector<std::function<void()>> fns;
+    for (std::size_t i : ok) {
+      Backend& b = *backends[i];
+      const auto& members = results[i].member_list;
+      fns.push_back([&b, &members, &op] { op(b, members); });
+    }
+    const auto timings = gp::time_interleaved(reps, fns);
+    for (std::size_t k = 0; k < ok.size(); ++k) results[ok[k]].*field = timings[k];
+  };
+
+  run(repeats, [](Backend& b, const auto&) { (void)b.list(); }, &Result::toc);
+  run(heavy, [](Backend& b, const auto&) { (void)b.extract_all(); }, &Result::all);
+  run(repeats, [](Backend& b, const auto& m) { (void)b.extract_one(m.front().path); },
+      &Result::first);
+  run(repeats, [](Backend& b, const auto& m) { (void)b.extract_one(m.back().path); },
+      &Result::last);
+  run(heavy,
+      [](Backend& b, const auto& m) {
+        for (std::size_t i : scattered_indices(m.size())) (void)b.extract_one(m[i].path);
+      },
+      &Result::scattered);
 }
 
 /// In comparison mode every verified backend must see the same archive.
@@ -571,7 +613,7 @@ int report_compare(const std::vector<Result>& results, const fs::path& path,
   std::vector<gp::Candidate> candidates;
   if (mismatch.empty()) {
     for (const auto& r : results) {
-      if (r.status == Status::Ok) candidates.push_back({r.backend, metric_values(r)});
+      if (r.status == Status::Ok) candidates.push_back(candidate(r));
     }
   }
   const gp::Verdict verdict = gp::judge(metric_specs(), candidates, tie_pct);
@@ -710,11 +752,13 @@ int main(int argc, char** argv) {
     return 2;
   }
 
+  std::vector<std::unique_ptr<Backend>> backends;
   std::vector<Result> results;
   for (const auto& n : names) {
-    auto backend = make_backend(n, path, format);
-    results.push_back(measure(*backend, format, repeats));
+    backends.push_back(make_backend(n, path, format));
+    results.push_back(verify(*backends.back(), format));
   }
+  time_all(backends, results, repeats);
 
   if (!compare) return report_single(results.front(), path, format, json_out);
   return report_compare(results, path, format, repeats, tie_pct, json_out);

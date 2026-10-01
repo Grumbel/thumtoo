@@ -49,6 +49,33 @@ inline Timing time_median(int repeats, const std::function<void()>& fn) {
                 static_cast<int>(times.size())};
 }
 
+/// Time several competing functions fairly: one untimed warmup each, then
+/// `repeats` rounds in which every function runs once. The starting function
+/// rotates each round, so warm-up drift (page cache, allocator, CPU clocks)
+/// is spread over all of them instead of favoring whichever runs last.
+/// Result i belongs to fns[i].
+inline std::vector<Timing> time_interleaved(int repeats,
+                                            const std::vector<std::function<void()>>& fns) {
+  repeats = std::max(1, repeats);
+  const std::size_t n = fns.size();
+  std::vector<std::vector<double>> times(n);
+  for (const auto& fn : fns) fn();
+  for (int round = 0; round < repeats; ++round) {
+    for (std::size_t k = 0; k < n; ++k) {
+      const std::size_t i = (k + static_cast<std::size_t>(round)) % n;
+      const auto t0 = clock_type::now();
+      fns[i]();
+      times[i].push_back(ms_since(t0));
+    }
+  }
+  std::vector<Timing> out;
+  for (auto& t : times) {
+    std::sort(t.begin(), t.end());
+    out.push_back(Timing{t[t.size() / 2], t.front(), t.back(), static_cast<int>(t.size())});
+  }
+  return out;
+}
+
 /// Write `s` as a JSON string literal (quotes included).
 inline void json_string(std::ostream& os, std::string_view s) {
   os << '"';

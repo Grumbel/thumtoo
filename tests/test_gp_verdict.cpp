@@ -51,6 +51,32 @@ int main() {
     expect(w.metrics[0].decided(), "outside band is decided");
   }
 
+  // Noise-aware ties: 17% apart, but b's fastest run beats a's median.
+  {
+    gp::Candidate a{"a", {1.00}, {{0.95, 1.40}}};
+    gp::Candidate b{"b", {1.17}, {{0.98, 1.30}}};
+    auto v = gp::judge({{"ms", Better::Lower}}, {a, b}, 5.0);
+    expect(!v.metrics[0].decided(), "overlap within noise is a tie");
+    // b's fastest run (1.05) is slower than a's median (1.00): decided.
+    gp::Candidate b2{"b", {1.17}, {{1.05, 1.30}}};
+    auto w = gp::judge({{"ms", Better::Lower}}, {a, b2}, 5.0);
+    expect(w.metrics[0].decided() && w.metrics[0].winner() == "a", "clear gap decided");
+    // Zero-width spread (deterministic bytes) is decided by the band alone.
+    gp::Candidate c1{"c1", {100.0}, {{100.0, 100.0}}};
+    gp::Candidate c2{"c2", {110.0}, {{110.0, 110.0}}};
+    auto z = gp::judge({{"bytes", Better::Lower}}, {c1, c2}, 5.0);
+    expect(z.metrics[0].decided(), "zero spread decided by band");
+    // Higher-is-better: b's best run reaches a's median -> tie.
+    gp::Candidate h1{"h1", {40.0}, {{39.0, 41.0}}};
+    gp::Candidate h2{"h2", {36.0}, {{35.0, 40.5}}};
+    auto h = gp::judge({{"psnr", Better::Higher}}, {h1, h2}, 5.0);
+    expect(!h.metrics[0].decided(), "higher-better noise tie");
+    // Mismatched spread arity -> candidate dropped.
+    gp::Candidate bad{"bad", {1.0, 2.0}, {{1.0, 1.0}}};
+    auto d = gp::judge(lower2, {bad});
+    expect(d.empty(), "spread arity mismatch dropped");
+  }
+
   // Higher-is-better metric.
   {
     auto v = gp::judge({{"psnr", Better::Higher}}, {{"a", {30.0}}, {"b", {40.0}}}, 5.0);

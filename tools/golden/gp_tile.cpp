@@ -685,9 +685,12 @@ int report_compare(const std::vector<CodecResult>& results, const Reference& ref
       if (r.status != Status::Ok) continue;
       Match m = match_quality(r, target);
       if (m.row) {
+        const double bytes = static_cast<double>(m.row->bytes_total);
         candidates.push_back({r.variant.name(),
-                              {static_cast<double>(m.row->bytes_total),
-                               m.row->enc.median, m.row->dec.median}});
+                              {bytes, m.row->enc.median, m.row->dec.median},
+                              {{bytes, bytes},  // deterministic
+                               {m.row->enc.min, m.row->enc.max},
+                               {m.row->dec.min, m.row->dec.max}}});
       }
       matches.push_back(m);
     }

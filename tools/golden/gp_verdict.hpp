@@ -10,6 +10,11 @@
 //     candidate (1.0 = best). Lower-is-better: v / best. Higher-is-better:
 //     best / v.
 //   * Candidates within `tie_pct` percent of the best are tied with it.
+//   * Noise: when candidates carry per-metric spreads (min/max of the timed
+//     runs), a candidate is also tied with the best if even its best run is
+//     no better than the best candidate's value (median): the measured gap
+//     is within run-to-run noise. Deterministic metrics (bytes) use a
+//     zero-width spread and are decided by the band alone.
 //   * Overall score = geometric mean of a candidate's per-metric ratios
 //     (all metrics weighted equally; scale-free so ms and bytes mix).
 //     The same tie band applies to the overall score.
@@ -39,9 +44,15 @@ struct MetricSpec {
   Better better = Better::Lower;
 };
 
+struct Spread {
+  double min = 0;
+  double max = 0;
+};
+
 struct Candidate {
   std::string name;
-  std::vector<double> values;  // aligned with the MetricSpec list
+  std::vector<double> values;  // aligned with the MetricSpec list (medians)
+  std::vector<Spread> spread = {};  // empty, or aligned with values (min/max of runs)
 };
 
 struct Ranked {
@@ -53,7 +64,8 @@ struct MetricVerdict {
   std::string metric;
   Better better = Better::Lower;
   std::vector<Ranked> ranking;  // best first
-  std::vector<std::string> tied;  // names within tie band of best (incl. best)
+  // Names tied with the best (incl. best): within the band, or within noise.
+  std::vector<std::string> tied;
 
   bool decided() const { return ranking.size() > 1 && tied.size() == 1; }
   const std::string& winner() const { return ranking.front().name; }
@@ -93,6 +105,15 @@ inline std::vector<std::string> tie_band(const std::vector<Ranked>& ranking,
   return out;
 }
 
+/// Is `c`'s best run no better than `best`'s typical (median) value?
+inline bool within_noise(const Candidate& c, const Candidate& best, std::size_t m,
+                         Better better) {
+  if (c.spread.size() != c.values.size()) return false;
+  const double typical = best.values[m];
+  return better == Better::Lower ? c.spread[m].min <= typical
+                                 : c.spread[m].max >= typical;
+}
+
 inline void sort_ranking(std::vector<Ranked>& ranking) {
   std::stable_sort(ranking.begin(), ranking.end(),
                    [](const Ranked& a, const Ranked& b) { return a.ratio < b.ratio; });
@@ -111,6 +132,7 @@ inline Verdict judge(const std::vector<MetricSpec>& metrics,
   std::vector<const Candidate*> valid;
   for (const auto& c : candidates) {
     if (c.values.size() != metrics.size()) continue;
+    if (!c.spread.empty() && c.spread.size() != c.values.size()) continue;
     const bool finite = std::all_of(c.values.begin(), c.values.end(),
                                     [](double x) { return std::isfinite(x); });
     if (finite) valid.push_back(&c);
@@ -135,6 +157,17 @@ inline Verdict judge(const std::vector<MetricSpec>& metrics,
     }
     detail::sort_ranking(mv.ranking);
     mv.tied = detail::tie_band(mv.ranking, tie_pct);
+    const auto by_name = [&](const std::string& n) {
+      return *std::find_if(valid.begin(), valid.end(),
+                           [&](const Candidate* c) { return c->name == n; });
+    };
+    const Candidate* best_c = by_name(mv.ranking.front().name);
+    for (const auto& r : mv.ranking) {
+      if (std::find(mv.tied.begin(), mv.tied.end(), r.name) != mv.tied.end()) continue;
+      if (detail::within_noise(*by_name(r.name), *best_c, m, better)) {
+        mv.tied.push_back(r.name);
+      }
+    }
     v.metrics.push_back(std::move(mv));
   }
 
