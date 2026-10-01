@@ -396,6 +396,11 @@ if(THUMTOO_BUILD_TESTS)
   add_executable(thumtoo-test-text-layer-cache tests/test_text_layer_cache.cpp)
   target_link_libraries(thumtoo-test-text-layer-cache PRIVATE thumtoo)
   add_test(NAME text_layer_cache COMMAND thumtoo-test-text-layer-cache)
+  # Golden-tool verdict logic (header-only; no thumtoo linkage).
+  add_executable(thumtoo-test-gp-verdict tests/test_gp_verdict.cpp)
+  target_include_directories(thumtoo-test-gp-verdict PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/golden)
+  add_test(NAME gp_verdict COMMAND thumtoo-test-gp-verdict)
 endif()
 
 install(TARGETS thumtoo
