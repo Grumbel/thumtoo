@@ -1,5 +1,25 @@
 {
   "nodes": {
+    "benchtoo": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1790844045,
+        "narHash": "sha256-DBdA57umI7I+8Ka+cl1GasUPEz1oE1mzEEwjVzH6BT8=",
+        "owner": "Grumbel",
+        "repo": "benchtoo",
+        "rev": "6379815f6808892fc4e416ee7cd824b2df688dca",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Grumbel",
+        "repo": "benchtoo",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1790689126,
@@ -18,6 +38,7 @@
     },
     "root": {
       "inputs": {
+        "benchtoo": "benchtoo",
         "nixpkgs": "nixpkgs"
       }
     }
