@@ -3,6 +3,41 @@
 Environment: PIL decode uses libjpeg DCT scaling via `Image.draft`.
 Not identical to `vips_jpegload(shrink=N)` but same 1/2/4/8 factors.
 
+
+## Verified under libvips (2026-10-01)
+
+Environment: Ubuntu system libvips 8.15.1, greyscale synthetic corpus from
+**pixel-bench-corpus** (`vips grey` + `jpegsave Q=90`). Tool:
+`thumtoo-microbench-decode` (no Client). Medians, 5 repeats + 1 warmup.
+
+| file | MP | size_ms | full_ms | shrink2 | shrink4 | shrink8 | thumb32 | thumb256 |
+|------|----|---------|---------|---------|---------|---------|---------|----------|
+| synth_800x600_q90.jpg | 0.48 | 0.18 | 0.58 | 0.24 | 0.18 | 0.15 | 2.56 | 5.29 |
+| synth_1920x1080_q90.jpg | 2.07 | 0.21 | 1.68 | 0.44 | 0.27 | 0.21 | 2.70 | 5.07 |
+| synth_3840x2160_q90.jpg | 8.29 | 0.31 | 4.02 | 1.03 | 0.30 | 0.22 | 5.95 | 8.01 |
+| synth_7680x4320_q90.jpg | 33.18 | 0.18 | 10.88 | 1.01 | 0.44 | 0.22 | 15.83 | 16.70 |
+
+### Interpretation (vips, this run)
+
+- **Size-only** remains ~0.2 ms.
+- **Full decode** scales roughly with pixels (0.6 → 11 ms on this greyscale corpus).
+- **`vips_jpegload(shrink=N)`** is much stronger than the earlier Pillow `draft`
+  numbers: at 33 MP, shrink8 ≈ **49×** faster than full (0.22 vs 10.9 ms).
+  Shrink helps more on large files; entropy + IDCT both shrink.
+- **`vips_thumbnail`** is *not* pure shrink-on-load cost here (2–17 ms) — still
+  useful for LQIP edges but slower than a direct shrink=8 load for overview.
+
+### `thumtoo-bench` smoke (same 2.1 MP JPEG)
+
+Cold (`--json --ladder 256 --tile-cell`): probe ~10 ms, preview/JXL ~67 ms,
+tile-cell ~11 ms, total ~107 ms (2 workers, Release).
+
+Warm (`--keep-cache --ladder 0 --tile-cell`): probe ~0.2 ms, tile-cell ~7 ms.
+
+See [BENCHMARK_KIT.md](BENCHMARK_KIT.md) for the full kit plan.
+
+---
+
 ## JPEG decode
 
 | file | MP | size_only ms | full ms | draft/2 ms | × | draft/4 | × | draft/8 | × |

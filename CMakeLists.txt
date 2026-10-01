@@ -212,6 +212,8 @@ if(MUPDF_FOUND)
   target_sources(thumtoo PRIVATE src/pdf_mupdf.cpp)
 else()
   message(STATUS "thumtoo: MuPDF not found — PDF page support disabled")
+  # Stubs for symbols referenced from pdf.cpp / expand.cpp when MuPDF is absent.
+  target_sources(thumtoo PRIVATE src/pdf_mupdf_stub.cpp)
 endif()
 thumtoo_export_to_parent(THUMTOO_HAVE_MUPDF)
 thumtoo_export_to_parent(THUMTOO_HAVE_MUPDF)
