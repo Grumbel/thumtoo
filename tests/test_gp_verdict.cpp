@@ -133,6 +133,83 @@ int main() {
     expect(s.find("\"overall\": {\"winner\": \"a\"") != std::string::npos, "overall json");
   }
 
+  // overall_ratio lookup and labels.
+  {
+    auto v = gp::judge({{"toc_ms", Better::Lower, "table of contents"}},
+                       {{"a", {1.0}}, {"b", {2.0}}});
+    expect(v.overall_ratio("a") && near(*v.overall_ratio("a"), 1.0), "ratio of best");
+    expect(v.overall_ratio("b") && near(*v.overall_ratio("b"), 2.0), "ratio of runner-up");
+    expect(!v.overall_ratio("zzz"), "unknown candidate");
+    expect(v.metrics[0].label == "table of contents", "label carried");
+    auto u = gp::judge({{"toc_ms", Better::Lower}}, {{"a", {1.0}}, {"b", {2.0}}});
+    expect(u.metrics[0].label == "toc_ms", "label defaults to name");
+    std::ostringstream os;
+    gp::print_verdict(os, v);
+    expect(os.str().find("table of contents") != std::string::npos &&
+               os.str().find("2.00x better than b") != std::string::npos,
+           "text uses label and ratio");
+    expect(os.str().find("lower is better") == std::string::npos, "no noise for lower");
+  }
+
+  // Aggregation.
+  {
+    const std::vector<gp::MetricSpec> m = {{"ms", Better::Lower, "time"}};
+    gp::Aggregator agg(m, 5.0);
+    // Input 1: a 2x faster than b. Input 2: b 2x faster than a. -> cancel out.
+    agg.add(gp::judge(m, {{"a", {1.0}}, {"b", {2.0}}}));
+    agg.add(gp::judge(m, {{"a", {2.0}}, {"b", {1.0}}}));
+    auto r = agg.result();
+    expect(r.inputs == 2 && r.skipped == 0, "two inputs");
+    expect(r.entries.size() == 2 && near(r.entries[0].overall, r.entries[1].overall),
+           "geomean cancels 2x and 0.5x");
+    expect(!r.decided() && r.tied.size() == 2, "cancelled -> tie");
+    expect(r.entries[0].wins + r.entries[1].wins == 2 && r.entries[0].wins == 1,
+           "one outright win each");
+
+    // A third input where a wins clearly decides the aggregate.
+    agg.add(gp::judge(m, {{"a", {1.0}}, {"b", {4.0}}}));
+    r = agg.result();
+    expect(r.decided() && r.entries[0].name == "a", "a wins overall");
+    expect(r.entries[0].wins == 2 && r.entries[1].wins == 1, "win counts");
+    expect(near(r.entries[0].per_metric[0], std::exp((0.0 + std::log(2.0) + 0.0) / 3.0)),
+           "per-metric geomean");
+
+    // Ties are counted separately; non-comparable inputs are skipped.
+    gp::Aggregator t(m, 5.0);
+    t.add(gp::judge(m, {{"a", {1.00}}, {"b", {1.01}}}));
+    t.add(gp::judge(m, {{"only", {1.0}}}));
+    t.add(gp::judge(m, {}));
+    auto tr = t.result();
+    expect(tr.inputs == 1 && tr.skipped == 2, "skipped inputs counted");
+    expect(tr.entries[0].ties == 1 && tr.entries[0].wins == 0, "tie counted");
+
+    // A candidate missing from some inputs is averaged over those it appeared in.
+    gp::Aggregator p(m, 5.0);
+    p.add(gp::judge(m, {{"a", {1.0}}, {"b", {2.0}}, {"c", {3.0}}}));
+    p.add(gp::judge(m, {{"a", {1.0}}, {"b", {2.0}}}));
+    auto pr = p.result();
+    int c_inputs = 0;
+    for (const auto& e : pr.entries) {
+      if (e.name == "c") c_inputs = e.inputs;
+    }
+    expect(c_inputs == 1, "partial candidate counted once");
+
+    std::ostringstream os;
+    gp::print_aggregate(os, r, "archives");
+    const std::string text = os.str();
+    expect(text.find("Summary over 3 archives") != std::string::npos, "summary header");
+    expect(text.find("overall: a (") != std::string::npos, "summary overall line");
+    std::ostringstream js;
+    gp::JsonWriter w(js);
+    gp::write_aggregate_json(w, r);
+    expect(js.str().find("\"winner\": \"a\"") != std::string::npos &&
+               js.str().find("\"metric_ratio\": {\"ms\"") != std::string::npos,
+           "aggregate json");
+    std::ostringstream empty;
+    gp::print_aggregate(empty, gp::Aggregator(m, 5.0).result(), "images");
+    expect(empty.str().find("nothing to summarize") != std::string::npos, "empty aggregate");
+  }
+
   if (g_fails) {
     std::cerr << g_fails << " failure(s)\n";
     return 1;

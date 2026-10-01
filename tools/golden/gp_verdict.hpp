@@ -27,11 +27,13 @@
 
 #include "gp_common.hpp"
 #include "gp_json.hpp"
+#include "gp_output.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -41,8 +43,9 @@ namespace gp {
 enum class Better { Lower, Higher };
 
 struct MetricSpec {
-  std::string name;
+  std::string name;  // stable key: JSON / CSV
   Better better = Better::Lower;
+  std::string label = {};  // human-readable text report; empty = name
 };
 
 struct Spread {
@@ -63,6 +66,7 @@ struct Ranked {
 
 struct MetricVerdict {
   std::string metric;
+  std::string label;  // human-readable name (never empty)
   Better better = Better::Lower;
   std::vector<Ranked> ranking;  // best first
   // Names tied with the best (incl. best): within the band, or within noise.
@@ -81,6 +85,13 @@ struct Verdict {
   bool empty() const { return overall.empty(); }
   bool overall_decided() const {
     return overall.size() > 1 && overall_tied.size() == 1;
+  }
+  /// Overall cost ratio (1.0 = best) of a candidate, if it was ranked.
+  std::optional<double> overall_ratio(const std::string& name) const {
+    for (const auto& r : overall) {
+      if (r.name == name) return r.ratio;
+    }
+    return std::nullopt;
   }
 };
 
@@ -150,6 +161,7 @@ inline Verdict judge(const std::vector<MetricSpec>& metrics,
     }
     MetricVerdict mv;
     mv.metric = metrics[m].name;
+    mv.label = metrics[m].label.empty() ? metrics[m].name : metrics[m].label;
     mv.better = better;
     for (std::size_t i = 0; i < valid.size(); ++i) {
       const double r = detail::cost_ratio(valid[i]->values[m], best, better);
@@ -207,24 +219,31 @@ inline void print_verdict(std::ostream& os, const Verdict& v) {
        << ") — nothing to compare\n";
     return;
   }
-  char line[256];
-  os << "winner per metric (tie band " << v.tie_pct << "%):\n";
+  std::size_t label_w = 0;
+  std::size_t name_w = 0;
   for (const auto& m : v.metrics) {
-    const char* dir = m.better == Better::Lower ? "lower" : "higher";
+    label_w = std::max(label_w, m.label.size());
+    if (m.decided()) name_w = std::max(name_w, m.winner().size());
+  }
+  char line[256];
+  os << "winner per metric (ties: within " << v.tie_pct << "% or run-to-run noise):\n";
+  for (const auto& m : v.metrics) {
+    const std::string note = m.better == Better::Higher ? " (higher is better)" : "";
     if (m.decided()) {
       const Ranked& runner = m.ranking[1];
-      std::snprintf(line, sizeof(line), "  %-24s %-14s %.2fx better than %s (%s is better)\n",
-                    m.metric.c_str(), m.winner().c_str(), runner.ratio,
-                    runner.name.c_str(), dir);
+      std::snprintf(line, sizeof(line), "  %-*s  %-*s  %s better than %s%s\n",
+                    static_cast<int>(label_w), m.label.c_str(), static_cast<int>(name_w),
+                    m.winner().c_str(), fmt_ratio(runner.ratio).c_str(),
+                    runner.name.c_str(), note.c_str());
     } else {
-      std::snprintf(line, sizeof(line), "  %-24s tie: %s\n", m.metric.c_str(),
-                    join_names(m.tied).c_str());
+      std::snprintf(line, sizeof(line), "  %-*s  tie: %s\n", static_cast<int>(label_w),
+                    m.label.c_str(), join_names(m.tied).c_str());
     }
     os << line;
   }
   if (v.overall_decided()) {
-    std::snprintf(line, sizeof(line), "overall: %s (geomean %.2fx better than %s)\n",
-                  v.overall[0].name.c_str(), v.overall[1].ratio,
+    std::snprintf(line, sizeof(line), "overall: %s (%s better than %s, geometric mean)\n",
+                  v.overall[0].name.c_str(), fmt_ratio(v.overall[1].ratio).c_str(),
                   v.overall[1].name.c_str());
   } else {
     std::snprintf(line, sizeof(line), "overall: tie: %s\n",
@@ -272,6 +291,173 @@ inline void write_verdict_json(JsonWriter& w, const Verdict& v) {
   w.key("ranking");
   json_ranking(w, v.overall);
   w.end_object();
+  w.end_object();
+}
+
+// --- aggregation over many inputs -----------------------------------------------
+
+/// How one candidate fared across several judged inputs (archives, images).
+struct AggregateEntry {
+  std::string name;
+  int inputs = 0;       // inputs in which it was ranked
+  int wins = 0;         // inputs it won outright overall
+  int ties = 0;         // inputs in which it tied for best overall
+  double overall = 1.0;           // geometric mean of its overall ratios
+  std::vector<double> per_metric; // same, per metric (aligned with `metrics`)
+};
+
+struct AggregateResult {
+  int inputs = 0;   // comparable inputs aggregated
+  int skipped = 0;  // inputs with fewer than two ranked candidates
+  double tie_pct = 5.0;
+  std::vector<MetricSpec> metrics;
+  std::vector<AggregateEntry> entries;  // best (lowest overall) first
+  std::vector<std::string> tied;        // within tie_pct of the best overall
+
+  bool empty() const { return entries.empty(); }
+  bool decided() const { return entries.size() > 1 && tied.size() == 1; }
+};
+
+/// Accumulates verdicts. Ratios are geometric-meaned, so one input where a
+/// candidate is 10x slower and one where it is 10x faster cancel out.
+class Aggregator {
+ public:
+  Aggregator(std::vector<MetricSpec> metrics, double tie_pct)
+      : metrics_(std::move(metrics)), tie_pct_(tie_pct) {}
+
+  void add(const Verdict& v) {
+    if (v.overall.size() < 2) {  // nothing was compared on this input
+      ++skipped_;
+      return;
+    }
+    ++inputs_;
+    for (const auto& r : v.overall) {
+      Acc& a = acc(r.name);
+      ++a.inputs;
+      a.log_overall += std::log(r.ratio);
+    }
+    if (v.overall_decided()) {
+      ++acc(v.overall.front().name).wins;
+    } else {
+      for (const auto& n : v.overall_tied) ++acc(n).ties;
+    }
+    for (std::size_t m = 0; m < v.metrics.size() && m < metrics_.size(); ++m) {
+      for (const auto& r : v.metrics[m].ranking) {
+        acc(r.name).log_metric[m] += std::log(r.ratio);
+      }
+    }
+  }
+
+  AggregateResult result() const {
+    AggregateResult out;
+    out.inputs = inputs_;
+    out.skipped = skipped_;
+    out.tie_pct = tie_pct_;
+    out.metrics = metrics_;
+    for (const Acc& a : accs_) {
+      AggregateEntry e;
+      e.name = a.name;
+      e.inputs = a.inputs;
+      e.wins = a.wins;
+      e.ties = a.ties;
+      e.overall = std::exp(a.log_overall / a.inputs);
+      for (double l : a.log_metric) e.per_metric.push_back(std::exp(l / a.inputs));
+      out.entries.push_back(std::move(e));
+    }
+    std::stable_sort(out.entries.begin(), out.entries.end(),
+                     [](const auto& x, const auto& y) { return x.overall < y.overall; });
+    if (!out.entries.empty()) {
+      const double limit = out.entries.front().overall * (1.0 + tie_pct_ / 100.0);
+      for (const auto& e : out.entries) {
+        if (e.overall <= limit) out.tied.push_back(e.name);
+      }
+    }
+    return out;
+  }
+
+ private:
+  struct Acc {
+    std::string name;
+    int inputs = 0, wins = 0, ties = 0;
+    double log_overall = 0;
+    std::vector<double> log_metric;
+  };
+
+  Acc& acc(const std::string& name) {
+    for (Acc& a : accs_) {
+      if (a.name == name) return a;
+    }
+    accs_.push_back(Acc{name, 0, 0, 0, 0.0, std::vector<double>(metrics_.size(), 0.0)});
+    return accs_.back();
+  }
+
+  std::vector<MetricSpec> metrics_;
+  double tie_pct_;
+  int inputs_ = 0;
+  int skipped_ = 0;
+  std::vector<Acc> accs_;
+};
+
+/// "Summary over N archives" table plus the overall line. `noun` is plural
+/// ("archives", "images"); metric columns use the specs' labels.
+inline void print_aggregate(std::ostream& os, const AggregateResult& a,
+                            const std::string& noun) {
+  os << "Summary over " << a.inputs << ' ' << noun;
+  if (a.skipped) {
+    os << " (" << a.skipped << " not comparable: fewer than two candidates measurable)";
+  }
+  os << "\n";
+  if (a.empty()) {
+    os << "  nothing to summarize\n";
+    return;
+  }
+  os << "Cost vs the best per input, geometric mean; 1.00x = best everywhere.\n";
+  std::vector<Column> cols = {{"variant", Align::Left}, {noun, Align::Right},
+                              {"wins", Align::Right}, {"ties", Align::Right},
+                              {"overall", Align::Right}};
+  for (const auto& m : a.metrics) {
+    cols.push_back({m.label.empty() ? m.name : m.label, Align::Right});
+  }
+  TextTable table(std::move(cols));
+  for (const auto& e : a.entries) {
+    std::vector<std::string> row = {e.name, std::to_string(e.inputs) + "/" + std::to_string(a.inputs),
+                                    std::to_string(e.wins), std::to_string(e.ties),
+                                    fmt_ratio(e.overall)};
+    for (double r : e.per_metric) row.push_back(fmt_ratio(r));
+    table.add_row(std::move(row));
+  }
+  table.print(os, "  ");
+  if (a.decided()) {
+    os << "overall: " << a.entries[0].name << " ("
+       << fmt_ratio(a.entries[1].overall / a.entries[0].overall) << " better than "
+       << a.entries[1].name << ", geometric mean over " << a.inputs << ' ' << noun << ")\n";
+  } else {
+    os << "overall: tie: " << join_names(a.tied) << "\n";
+  }
+}
+
+inline void write_aggregate_json(JsonWriter& w, const AggregateResult& a) {
+  w.begin_object();
+  w.field("inputs", a.inputs);
+  w.field("skipped", a.skipped);
+  w.field("tie_pct", a.tie_pct);
+  w.field("winner", a.decided() ? a.entries.front().name : std::string());
+  w.key("tied");
+  json_names(w, a.tied);
+  w.key("variants").begin_array();
+  for (const auto& e : a.entries) {
+    w.begin_object(JsonWriter::Compact);
+    w.field("name", e.name);
+    w.field("inputs", e.inputs);
+    w.field("wins", e.wins);
+    w.field("ties", e.ties);
+    w.field("overall_ratio", e.overall);
+    w.key("metric_ratio").begin_object(JsonWriter::Compact);
+    for (std::size_t m = 0; m < a.metrics.size(); ++m) w.field(a.metrics[m].name, e.per_metric[m]);
+    w.end_object();
+    w.end_object();
+  }
+  w.end_array();
   w.end_object();
 }
 

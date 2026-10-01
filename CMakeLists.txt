@@ -405,6 +405,14 @@ if(THUMTOO_BUILD_TESTS)
   target_include_directories(thumtoo-test-gp-json PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/golden)
   add_test(NAME gp_json COMMAND thumtoo-test-gp-json)
+  add_executable(thumtoo-test-gp-cli tests/test_gp_cli.cpp)
+  target_include_directories(thumtoo-test-gp-cli PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/golden)
+  add_test(NAME gp_cli COMMAND thumtoo-test-gp-cli)
+  add_executable(thumtoo-test-gp-output tests/test_gp_output.cpp)
+  target_include_directories(thumtoo-test-gp-output PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/golden)
+  add_test(NAME gp_output COMMAND thumtoo-test-gp-output)
 endif()
 
 install(TARGETS thumtoo
