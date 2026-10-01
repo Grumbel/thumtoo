@@ -253,6 +253,7 @@
             "thumtoo-gc"
             "thumtoo-archive"
             "thumtoo-microbench-decode"
+            "thumtoo-gp-tile"
           ];
         in {
           tools-bin = pkgs.runCommand "thumtoo-tools-bin-check" { } ''

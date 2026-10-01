@@ -7,23 +7,23 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Status (2026-10-01)
 
-**Tip:** thumtoo-024.1-mupdf-stub-bench-verify (on `743dbf4` + agent stack).
+**Tip:** thumtoo-025.1-gp-tile-rgb-smoke (on `743dbf4` + agent stack).
+
+### 025.1
+- `thumtoo-gp-tile`: golden 256² JPEG quality encode/decode matrix (vips only)
+- `tools/bench_smoke.sh`: offline smoke (corpus + decode + gp-tile + bench)
+- CMake/flake install + app `gp-tile`
+- Companion corpus: RGB synthetic (3-band) — see pixel-bench-corpus tip
 
 ### 024.1
-- Fix: `pdf_mupdf_stub.cpp` when MuPDF absent (link of tools without mupdf)
-- Verified: corpus generate, `thumtoo-microbench-decode`, `thumtoo-bench --json`
-  on synthetic JPEG; numbers in MICROBENCH_RESULTS.md
+- MuPDF stub; verified microbench + thumtoo-bench JSON
 
-### 023.1
-- `thumtoo-bench` `--json` / `--keep-cache`; microbench-decode `--json`
-
-### 022.1
-- docs/BENCHMARK_KIT.md plan
+### 023.1 / 022.1
+- JSON benches; BENCHMARK_KIT plan
 
 ### Bundle policy
 Work-line base: `743dbf4`. Full stack in each tip bundle.
 
-### Next (not in this tip)
-- Publish pixel-bench-corpus; flake input + `checks.bench-smoke`
-- gp-tile codec matrix; gp-archive libarchive/unarr
-- RGB synthetic corpus (current greyscale is fine for relative decode)
+### Next
+- WebP/AVIF/JXL in gp-tile; gp-archive; flake checks.bench-smoke + corpus input
+- Richer synthetic (ramps/noise) for compression stress

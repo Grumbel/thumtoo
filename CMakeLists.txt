@@ -314,6 +314,8 @@ if(THUMTOO_BUILD_TOOLS)
   target_link_libraries(thumtoo-bench PRIVATE thumtoo)
   add_executable(thumtoo-microbench-decode tools/microbench_decode.cpp)
   target_link_libraries(thumtoo-microbench-decode PRIVATE PkgConfig::VIPS)
+  add_executable(thumtoo-gp-tile tools/golden/gp_tile.cpp)
+  target_link_libraries(thumtoo-gp-tile PRIVATE PkgConfig::VIPS)
 endif()
 
 if(THUMTOO_BUILD_TESTS)
@@ -398,6 +400,7 @@ install(DIRECTORY include/thumtoo DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 if(THUMTOO_BUILD_TOOLS)
   install(TARGETS thumtoo-tile thumtoo-export thumtoo-status thumtoo-prepare thumtoo-bench thumtoo-xdg-thumb
                   thumtoo-gc thumtoo-archive thumtoo-microbench-decode
+                  thumtoo-gp-tile
           RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
   install(FILES
     man/thumtoo-prepare.1

@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # Benchmark kit — plan
 
-**Status:** plan + first slice (2026-10-01). Implemented: `thumtoo-bench --json/--keep-cache`, `thumtoo-microbench-decode --json`, companion **pixel-bench-corpus** flake (synthetic JPEG/PNG). Still open: codec matrix, archive A/B, gp-pipeline, CI smoke.
+**Status:** plan + verified slices (2026-10-01). Done: plan, `thumtoo-bench --json/--keep-cache`, `thumtoo-microbench-decode --json`, `thumtoo-gp-tile` (JPEG quality matrix), `tools/bench_smoke.sh`, MuPDF offline stub, RGB synthetic corpus (pixel-bench-corpus). Still open: WebP/AVIF/JXL tile codecs, archive A/B, gp-pipeline, flake `checks.bench-smoke`, published corpus input.
 **Audience:** agents and humans choosing pixel / archive / codec routes for
 thumtoo + biltoo, and detecting regressions against those choices.
 
