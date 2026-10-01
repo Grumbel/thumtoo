@@ -8,7 +8,17 @@
 //
 // Usage:
 //   thumtoo-gp-tile [--tile N] [--repeat R] [--codec C] [--quality 60,80,90]
-//                   [--max-cells K] [--json] FILE
+//                   [--max-cells K] [--reference CODEC:Q] [--tie-pct P]
+//                   [--json] FILE
+//
+//   C = jpeg | webp | avif | jxl   single codec, quality sweep table
+//     | all | a,b,…                compare codecs and judge which wins
+//
+// Comparison mode never compares codecs at the same Q number (JPEG Q80 and
+// AVIF Q80 are unrelated). It sweeps qualities, takes the PSNR of the
+// reference setting (default jpeg:80 = thumtoo's kDefaultTileCodec /
+// kDefaultTileQuality) as the target, represents each codec by its smallest
+// output that reaches the target, and judges bytes / encode / decode there.
 //
 // Codec availability is probed at runtime (libvips may lack an encoder,
 // e.g. heifsave without an AV1 encoder plugin). An unavailable codec is an
@@ -17,6 +27,7 @@
 #include <vips/vips.h>
 
 #include "gp_common.hpp"
+#include "gp_verdict.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -182,6 +193,8 @@ std::vector<Cell> grid_cells(int img_w, int img_h, int tile) {
 struct Source {
   VipsImage* mem = nullptr;
   int width = 0, height = 0, bands = 0;
+  std::string loader;  // e.g. "jpegload", "pngload"
+  bool lossy = false;  // source itself was lossy-coded
   std::vector<Cell> cells;
   std::vector<VipsImage*> crops;
   std::vector<std::vector<unsigned char>> ref_pixels;
@@ -210,6 +223,14 @@ bool load_source(const fs::path& file, int tile, Source& src, std::string& err) 
   if (!img) {
     err = "open failed: " + take_vips_error();
     return false;
+  }
+  const char* loader = nullptr;
+  if (vips_image_get_typeof(img, "vips-loader") &&
+      vips_image_get_string(img, "vips-loader", &loader) == 0 && loader) {
+    src.loader = loader;
+  }
+  for (const char* lossy : {"jpegload", "webpload", "heifload", "jxlload"}) {
+    if (src.loader.rfind(lossy, 0) == 0) src.lossy = true;  // also *_source etc.
   }
   bool ok = true;
   if (vips_image_hasalpha(img)) {
@@ -340,8 +361,9 @@ std::optional<double> squared_error(const std::vector<unsigned char>& ref, int r
   return sse;
 }
 
+/// Full-grid bytes + PSNR for one setting; timings only when `timed`.
 std::optional<Row> measure_quality(Codec codec, int q, const Source& src, int time_n,
-                                   int repeats, std::string& err) {
+                                   int repeats, bool timed, std::string& err) {
   const std::size_t n = src.cells.size();
   std::vector<std::vector<unsigned char>> blobs(n);
   Row row;
@@ -379,6 +401,7 @@ std::optional<Row> measure_quality(Codec codec, int q, const Source& src, int ti
   const double mse = samples ? sse / static_cast<double>(samples) : 0.0;
   row.psnr_db = mse > 0 ? 10.0 * std::log10(255.0 * 255.0 / mse) : kLosslessPsnr;
   row.bytes_per_cell_mean = n ? static_cast<double>(row.bytes_total) / n : 0.0;
+  if (!timed) return row;
 
   // Timed subset (all outputs were verified above).
   std::vector<unsigned char> scratch;
@@ -404,7 +427,7 @@ CodecResult measure_codec(Codec codec, const std::vector<int>& qualities,
   }
   for (int q : qualities) {
     std::string err;
-    auto row = measure_quality(codec, q, src, time_n, repeats, err);
+    auto row = measure_quality(codec, q, src, time_n, repeats, /*timed=*/true, err);
     if (!row) {
       r.status = Status::Failed;
       r.reason = "q=" + std::to_string(q) + ": " + err;
@@ -467,6 +490,217 @@ int report_single(const CodecResult& r, const fs::path& file, const Source& src,
   return 0;
 }
 
+// --- comparison -----------------------------------------------------------------
+
+struct Reference {
+  Codec codec = Codec::Jpeg;
+  int quality = 80;  // thumtoo kDefaultTileCodec / kDefaultTileQuality
+};
+
+std::optional<Reference> parse_reference(const std::string& s) {
+  const auto colon = s.find(':');
+  if (colon == std::string::npos) return std::nullopt;
+  auto codec = parse_codec(s.substr(0, colon));
+  const int q = std::atoi(s.c_str() + colon + 1);
+  if (!codec || q < 1 || q > 100) return std::nullopt;
+  return Reference{*codec, q};
+}
+
+/// A codec's representative row at the reference quality level.
+struct Match {
+  Codec codec = Codec::Jpeg;
+  const Row* row = nullptr;   // nullptr: no setting reached the target
+  const Row* best = nullptr;  // highest-PSNR row (for the "below target" note)
+};
+
+/// Smallest output whose PSNR reaches `target_db` (ties: faster decode).
+Match match_quality(const CodecResult& r, double target_db) {
+  Match m;
+  m.codec = r.codec;
+  for (const Row& row : r.rows) {
+    if (!m.best || row.psnr_db > m.best->psnr_db) m.best = &row;
+    if (row.psnr_db + 1e-9 < target_db) continue;
+    if (!m.row || row.bytes_total < m.row->bytes_total ||
+        (row.bytes_total == m.row->bytes_total && row.dec.median < m.row->dec.median)) {
+      m.row = &row;
+    }
+  }
+  return m;
+}
+
+/// Narrow a codec's match to the lowest Q that reaches `target_db`.
+///
+/// A coarse sweep overshoots: if q70 is just below the target the match is
+/// q80, charging the codec for quality it was not asked for. Bisect Q between
+/// the bracketing sweep points with untimed bytes+PSNR evaluations (assumes
+/// PSNR is non-decreasing in Q, which holds closely for these encoders), then
+/// time only the final setting and add it to the rows.
+void refine_match(CodecResult& r, double target_db, const Source& src, int time_n,
+                  int repeats) {
+  if (r.status != Status::Ok) return;
+  int hi = 0;  // lowest sweep Q reaching the target
+  for (const Row& row : r.rows) {
+    if (row.psnr_db + 1e-9 >= target_db && (hi == 0 || row.quality < hi)) hi = row.quality;
+  }
+  if (hi == 0) return;  // nothing reaches it; leave as "below target"
+  int lo = 0;  // highest sweep Q below hi that misses (0 = Q1 never measured)
+  for (const Row& row : r.rows) {
+    if (row.quality < hi && row.psnr_db + 1e-9 < target_db) lo = std::max(lo, row.quality);
+  }
+  while (hi - lo > 1) {
+    const int mid = lo + (hi - lo) / 2;
+    std::string err;
+    auto row = measure_quality(r.codec, mid, src, time_n, repeats, /*timed=*/false, err);
+    if (!row) return;  // keep the sweep result rather than guess
+    if (row->psnr_db + 1e-9 >= target_db) hi = mid;
+    else lo = mid;
+  }
+  for (const Row& row : r.rows) {
+    if (row.quality == hi) return;  // already measured with timings
+  }
+  std::string err;
+  auto row = measure_quality(r.codec, hi, src, time_n, repeats, /*timed=*/true, err);
+  if (!row) return;
+  r.rows.push_back(*row);
+  std::sort(r.rows.begin(), r.rows.end(),
+            [](const Row& a, const Row& b) { return a.quality < b.quality; });
+}
+
+const std::vector<gp::MetricSpec>& matched_metrics() {
+  static const std::vector<gp::MetricSpec> specs = {
+      {"bytes_total", gp::Better::Lower},
+      {"encode_ms", gp::Better::Lower},
+      {"decode_ms", gp::Better::Lower},
+  };
+  return specs;
+}
+
+int report_compare(const std::vector<CodecResult>& results, const Reference& ref,
+                   const fs::path& file, const Source& src, int tile, int time_n,
+                   int repeats, double tie_pct, bool json) {
+  const CodecResult* ref_result = nullptr;
+  for (const auto& r : results) {
+    if (r.codec == ref.codec) ref_result = &r;
+  }
+  const Row* ref_row = nullptr;
+  if (ref_result && ref_result->status == Status::Ok) {
+    for (const Row& row : ref_result->rows) {
+      if (row.quality == ref.quality) ref_row = &row;
+    }
+  }
+  const double target = ref_row ? ref_row->psnr_db : 0.0;
+
+  std::vector<Match> matches;
+  std::vector<gp::Candidate> candidates;
+  if (ref_row) {
+    for (const auto& r : results) {
+      if (r.status != Status::Ok) continue;
+      Match m = match_quality(r, target);
+      if (m.row) {
+        candidates.push_back({codec_name(r.codec),
+                              {static_cast<double>(m.row->bytes_total),
+                               m.row->enc.median, m.row->dec.median}});
+      }
+      matches.push_back(m);
+    }
+  }
+  const gp::Verdict verdict = gp::judge(matched_metrics(), candidates, tie_pct);
+
+  if (!json) {
+    std::cout << "file=" << file.filename().string() << " " << src.width << "x"
+              << src.height << " tiles=" << src.cells.size() << " tile=" << tile
+              << " timed_cells=" << time_n << " repeats=" << repeats << "\n";
+    if (src.lossy) {
+      std::cout << "warning: source was decoded by " << src.loader
+                << "; its own codec is favored (re-encoding near the source quality "
+                   "is nearly lossless). Prefer a lossless source (PNG) for codec "
+                   "comparisons.\n";
+    }
+    std::printf("%-6s %7s %10s %10s %12s %8s\n", "codec", "quality", "encode_ms",
+                "decode_ms", "bytes_total", "psnr_db");
+    for (const auto& r : results) {
+      if (r.status != Status::Ok) {
+        std::printf("%-6s %s: %s\n", codec_name(r.codec), status_name(r.status),
+                    r.reason.c_str());
+        continue;
+      }
+      for (const Row& row : r.rows) {
+        std::printf("%-6s %7d %10.3f %10.3f %12llu %8.2f\n", codec_name(r.codec),
+                    row.quality, row.enc.median, row.dec.median,
+                    static_cast<unsigned long long>(row.bytes_total), row.psnr_db);
+      }
+    }
+    if (!ref_row) {
+      std::cout << "verdict: refused — reference " << codec_name(ref.codec) << ":"
+                << ref.quality << " was not measured successfully\n";
+      return 1;
+    }
+    std::printf("\nreference %s:%d -> %.2f dB; each codec at its smallest setting "
+                "reaching that:\n",
+                codec_name(ref.codec), ref.quality, target);
+    std::printf("%-6s %7s %10s %10s %12s %8s\n", "codec", "quality", "encode_ms",
+                "decode_ms", "bytes_total", "psnr_db");
+    for (const Match& m : matches) {
+      if (m.row) {
+        std::printf("%-6s %7d %10.3f %10.3f %12llu %8.2f\n", codec_name(m.codec),
+                    m.row->quality, m.row->enc.median, m.row->dec.median,
+                    static_cast<unsigned long long>(m.row->bytes_total),
+                    m.row->psnr_db);
+      } else {
+        std::printf("%-6s below target in this sweep (best %.2f dB at q%d)\n",
+                    codec_name(m.codec), m.best ? m.best->psnr_db : 0.0,
+                    m.best ? m.best->quality : 0);
+      }
+    }
+    gp::print_verdict(std::cout, verdict);
+  } else {
+    std::cout << "{\n  \"schema\": 1,\n  \"kind\": \"compare\",\n";
+    write_header_json(std::cout, file, src, tile, time_n, repeats);
+    std::cout << "  \"source_loader\": ";
+    gp::json_string(std::cout, src.loader);
+    std::cout << ",\n  \"source_lossy\": " << (src.lossy ? "true" : "false") << ",\n";
+    std::cout << "  \"reference\": {\"codec\": \"" << codec_name(ref.codec)
+              << "\", \"quality\": " << ref.quality << ", \"psnr_db\": ";
+    if (ref_row) std::cout << target;
+    else std::cout << "null";
+    std::cout << "},\n  \"codecs\": [";
+    for (std::size_t i = 0; i < results.size(); ++i) {
+      const CodecResult& r = results[i];
+      std::cout << (i ? ",\n" : "\n") << "    {\"codec\": \"" << codec_name(r.codec)
+                << "\", \"status\": \"" << status_name(r.status) << "\"";
+      if (r.status == Status::Ok) {
+        std::cout << ", \"rows\": [";
+        for (std::size_t j = 0; j < r.rows.size(); ++j) {
+          std::cout << (j ? ",\n      " : "\n      ");
+          write_row_json(std::cout, r.codec, r.rows[j]);
+        }
+        std::cout << "\n    ]}";
+      } else {
+        std::cout << ", \"reason\": ";
+        gp::json_string(std::cout, r.reason);
+        std::cout << "}";
+      }
+    }
+    std::cout << "\n  ],\n  \"matched\": [";
+    bool first = true;
+    for (const Match& m : matches) {
+      std::cout << (first ? "\n    " : ",\n    ");
+      first = false;
+      if (m.row) {
+        write_row_json(std::cout, m.codec, *m.row);
+      } else {
+        std::cout << "{\"codec\": \"" << codec_name(m.codec)
+                  << "\", \"below_target\": true, \"best_psnr_db\": "
+                  << (m.best ? m.best->psnr_db : 0.0) << "}";
+      }
+    }
+    std::cout << (matches.empty() ? "],\n" : "\n  ],\n") << "  \"verdict\": ";
+    gp::write_verdict_json(std::cout, verdict, "  ");
+    std::cout << "\n}\n";
+  }
+  return (ref_row && !candidates.empty()) ? 0 : 1;
+}
+
 std::vector<int> parse_qualities(const std::string& s) {
   std::vector<int> out;
   std::stringstream ss(s);
@@ -481,9 +715,14 @@ std::vector<int> parse_qualities(const std::string& s) {
 
 void usage(const char* argv0) {
   std::cerr << "Usage: " << argv0
-            << " [--tile N] [--repeat R] [--codec jpeg|webp|avif|jxl] "
-               "[--quality 60,80,90] [--max-cells K] [--json] FILE\n"
-            << "Golden-path tile encode/decode matrix (vips only) with PSNR.\n";
+            << " [--tile N] [--repeat R] [--codec jpeg|webp|avif|jxl|all|a,b] "
+               "[--quality 60,80,90] [--max-cells K] [--reference CODEC:Q] "
+               "[--tie-pct P] [--json] FILE\n"
+            << "Golden-path tile encode/decode matrix (vips only) with PSNR.\n"
+            << "--codec all (or a list) sweeps qualities (default "
+               "30,40,50,60,70,80,90),\n"
+            << "matches every codec to the PSNR of --reference (default jpeg:80) "
+               "and reports which wins.\n";
 }
 
 }  // namespace
@@ -492,8 +731,10 @@ int main(int argc, char** argv) {
   int tile = 256;
   int repeats = 3;
   bool json_out = false;
-  std::string quality_list = "60,80,90";
+  std::string quality_list;  // empty: mode-dependent default
   std::string codec_flag = "jpeg";
+  std::string reference_flag = "jpeg:80";
+  double tie_pct = 5.0;
   fs::path file;
   // Cap cells timed for large images (full grid still encoded for bytes/PSNR).
   int max_time_cells = 16;
@@ -510,6 +751,10 @@ int main(int argc, char** argv) {
       quality_list = argv[++i];
     } else if (a == "--max-cells" && i + 1 < argc) {
       max_time_cells = std::max(1, std::atoi(argv[++i]));
+    } else if (a == "--reference" && i + 1 < argc) {
+      reference_flag = argv[++i];
+    } else if (a == "--tie-pct" && i + 1 < argc) {
+      tie_pct = std::max(0.0, std::atof(argv[++i]));
     } else if (a == "--json") {
       json_out = true;
     } else if (a == "-h" || a == "--help") {
@@ -526,13 +771,45 @@ int main(int argc, char** argv) {
     std::cerr << "need FILE\n";
     return 2;
   }
-  const auto codec = parse_codec(codec_flag);
-  if (!codec) {
-    std::cerr << "unknown --codec (want jpeg|webp|avif|jxl): " << codec_flag << "\n";
+  std::vector<Codec> codecs;
+  if (codec_flag == "all") {
+    codecs.assign(std::begin(kAllCodecs), std::end(kAllCodecs));
+  } else {
+    std::stringstream ss(codec_flag);
+    std::string part;
+    while (std::getline(ss, part, ',')) {
+      if (part.empty()) continue;
+      const auto c = parse_codec(part);
+      if (!c) {
+        std::cerr << "unknown codec (want jpeg|webp|avif|jxl|all): " << part << "\n";
+        return 2;
+      }
+      if (std::find(codecs.begin(), codecs.end(), *c) == codecs.end()) codecs.push_back(*c);
+    }
+  }
+  if (codecs.empty()) {
+    std::cerr << "need --codec\n";
     return 2;
   }
+  const bool compare = codecs.size() > 1;
+
+  const auto reference = parse_reference(reference_flag);
+  if (!reference) {
+    std::cerr << "bad --reference (want CODEC:Q, e.g. jpeg:80): " << reference_flag << "\n";
+    return 2;
+  }
+  if (compare &&
+      std::find(codecs.begin(), codecs.end(), reference->codec) == codecs.end()) {
+    std::cerr << "reference codec " << codec_name(reference->codec)
+              << " is not in --codec " << codec_flag << "\n";
+    return 2;
+  }
+
   auto qualities = parse_qualities(quality_list);
-  if (qualities.empty()) qualities = {60, 80, 90};
+  if (qualities.empty()) {
+    qualities = compare ? std::vector<int>{30, 40, 50, 60, 70, 80, 90}
+                        : std::vector<int>{60, 80, 90};
+  }
 
   ensure_vips();
   Source src;
@@ -543,6 +820,38 @@ int main(int argc, char** argv) {
   }
   const int time_n = std::min(max_time_cells, static_cast<int>(src.cells.size()));
 
-  const CodecResult result = measure_codec(*codec, qualities, src, time_n, repeats);
-  return report_single(result, file, src, tile, time_n, repeats, json_out);
+  if (!compare) {
+    const CodecResult result = measure_codec(codecs.front(), qualities, src, time_n, repeats);
+    return report_single(result, file, src, tile, time_n, repeats, json_out);
+  }
+
+  std::vector<CodecResult> results;
+  for (Codec c : codecs) {
+    std::vector<int> qs = qualities;
+    if (c == reference->codec &&
+        std::find(qs.begin(), qs.end(), reference->quality) == qs.end()) {
+      qs.push_back(reference->quality);  // the target must be measured
+      std::sort(qs.begin(), qs.end());
+    }
+    results.push_back(measure_codec(c, qs, src, time_n, repeats));
+  }
+  if (src.lossy && json_out) {
+    std::cerr << "warning: lossy source (" << src.loader
+              << ") biases the comparison toward that codec; prefer a PNG source\n";
+  }
+  // Refine every codec's match against the reference PSNR (see refine_match).
+  double target = -1;
+  for (const auto& r : results) {
+    if (r.codec != reference->codec || r.status != Status::Ok) continue;
+    for (const Row& row : r.rows) {
+      if (row.quality == reference->quality) target = row.psnr_db;
+    }
+  }
+  if (target >= 0) {
+    for (auto& r : results) {
+      if (r.codec != reference->codec) refine_match(r, target, src, time_n, repeats);
+    }
+  }
+  return report_compare(results, *reference, file, src, tile, time_n, repeats, tie_pct,
+                        json_out);
 }
