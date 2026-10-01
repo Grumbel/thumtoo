@@ -316,6 +316,10 @@ Each golden path is intentionally dumb and linear.
   and 7z only when libunarr was built with the 7z SDK; RAR5 is
   libarchive-only. `--backend auto` mirrors thumtoo's dispatcher (unarr for
   RAR4 only).
+- `unarr-seek`: unarr with single-member extracts jumping to the entry
+  offset recorded by the last TOC read (`ar_parse_entry_at`) — the
+  TOC-cached Random route. Its first/last/scattered timings exclude the TOC.
+  (`ar_parse_entry_for` walks by name from the start, so it is not used.)
 
 ### 6.5 Automatic comparisons ("who wins")
 
@@ -329,7 +333,13 @@ thumtoo-gp-tile --codec all CORPUS/synthetic/png/photo_1920x1080.png
 Judging (`tools/golden/gp_verdict.hpp`, unit test `gp_verdict`):
 
 - Per metric, each variant gets a cost ratio vs the best (1.0 = best).
-  Variants within `--tie-pct` (default 5%) of the best are a tie.
+  Variants within `--tie-pct` (default 5%) of the best are a tie, and so is
+  any variant whose fastest run is no better than the best's median
+  (difference within run-to-run noise). Bytes are deterministic and decided
+  by the band alone.
+- gp-archive times backends interleaved (round-robin, rotating start) after
+  verifying all of them; sequential timing made whichever backend ran second
+  look 12–15% faster on identical code.
 - Overall winner = lowest geometric mean of the per-metric ratios (equal
   weights, scale-free). Read the per-metric lines first; the overall line is
   a summary, e.g. JPEG "wins" tiles overall on encode speed while losing
@@ -348,15 +358,19 @@ unrelated). The PSNR of `--reference` (default `jpeg:80` =
 `kDefaultTileCodec`/`kDefaultTileQuality`) is the target; each codec is
 represented by its smallest output reaching it, refined by bisecting `Q`
 between sweep points, and judged on bytes_total / encode_ms / decode_ms.
+Encoder effort is part of the variant: `webp@e0..6`, `avif@e0..9`,
+`jxl@e1..9` (e.g. `--codec all,webp@e0,jxl@e1,jxl@e3`); bare names use the
+libvips defaults (webp 4, avif 4, jxl 7), which are slow for interactive use.
 Use a **lossless** source: on a q90 JPEG, re-encoding JPEG at q90 is nearly
 lossless (~79 dB) and biases everything; the tool warns and records
-`source_lossy` in JSON. Encoder effort/speed are libvips defaults (JXL
-effort 7, WebP effort 4); PSNR is a crude proxy (see follow-ups in TODO.md).
+`source_lossy` in JSON. PSNR is a crude proxy (see follow-ups in TODO.md).
 
 JSON: comparison documents carry `"kind": "compare"`, per-variant results
 (`variants[]` / `codecs[]` + `matched[]`) and `verdict{metrics, overall}`.
 Single-variant output keeps its schema-1 keys, so existing baselines
-compare unchanged.
+compare unchanged; effort variants add `variant`/`effort` to their rows.
+`compare_bench_json` keys list elements by identity and reports verdict
+winner changes (`--fail-on-winner-change` to gate on them).
 
 ### 6.4 `gp-pipeline`
 

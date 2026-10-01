@@ -7,7 +7,40 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Status (2026-10-01)
 
-**Tip:** thumtoo-037.1-auto-compare (base `e442169` + 7 agent commits).
+**Tip:** thumtoo-038.1-compare-effort-seek (base `e442169` + 12 agent commits).
+
+### 038.1 — comparison follow-ups
+- gp-tile effort variants: `--codec all,webp@e0,jxl@e1,jxl@e3` (Variant =
+  codec + effort; JSON adds `variant`/`effort`; `--reference VARIANT:Q`).
+- gp-archive `unarr-seek`: TOC-cached random member access via
+  `ar_parse_entry_at`; verification now covers every timed member.
+- Verdict robustness: noise-aware ties (fastest run vs best median) and
+  interleaved backend timing in gp-archive (run order skewed 12–15%).
+- compare_bench_json: identity-keyed lists, verdict winner-change report
+  (`--fail-on-winner-change`), self-test in checks.baseline-compare-tool.
+- capture_baselines: codec snapshot includes webp@e0, jxl@e1, jxl@e3.
+- Same sandbox caveat as 037.1: Ubuntu libs, **not run under nix**.
+
+Sandbox observations (indicative only):
+- photo 1920x1080 PNG at jpeg:80 PSNR: jxl@e3 q79 56.8 KB (3.3x < jpeg) for
+  ~50 ms / 16 cells encode (jpeg ~6 ms); jxl@e1 67.7 KB / 45 ms; webp@e0
+  96.7 KB / 24 ms. Default jxl (e7) 40.9 KB / 215 ms. Decode: jpeg ~2.5x
+  faster than any JXL variant. Overall still jpeg; bytes winner jxl.
+- 160-member stored CBZ: unarr-seek extract_last 0.06 ms vs 0.51 (unarr
+  walk) vs 1.19 (libarchive); TAR 0.008 vs 0.17 / 0.83. TOC: unarr ~2x
+  faster than libarchive; extract-all a tie.
+
+### Follow-ups (comparison)
+- gp-tile: re-time the matched rows interleaved across variants for the
+  verdict (sweep timings are sequential; gaps are mostly large).
+- Better quality metric than PSNR (SSIMULACRA2 / butteraugli) for matching.
+- RAR4 solid fixtures to exercise unarr/unarr-seek on solid archives.
+- Optional weights for the overall score (e.g. decode-heavy for tiles).
+- Production (needs discussion): the dispatcher sends ZIP/CBZ and TAR to
+  libarchive, which walks from the start for every member. Routing Random
+  archives through unarr with cached TOC offsets would be 8–20x faster on
+  late members per the numbers above; weigh against unarr's format coverage
+  (no RAR5, 7z build-dependent) and its smaller user base.
 
 ### 037.1 — automatic comparisons (who wins)
 - `gp-archive --backend all|a,b`: Backend interface, magic-byte format sniff;
@@ -28,16 +61,6 @@ Sandbox observations (not a reference machine; indicative only):
   webp; decode — jpeg ~2.8x faster than jxl. Overall (geomean): jpeg.
 - ZIP/TAR: unarr ~2–3.5x faster TOC; extract-all a tie. unarr 1.0.1 Ubuntu
   build lacks 7z.
-
-### Follow-ups (comparison)
-- Encoder effort axis (JXL e1–3, WebP effort, AVIF speed) as extra variants;
-  current numbers use libvips defaults, which penalize JXL/AVIF encode.
-- Better quality metric than PSNR (SSIMULACRA2 / butteraugli) for matching.
-- unarr `ar_parse_entry_for` (true random access on ZIP central directory)
-  as a separate "unarr-seek" variant; needs RAR4 solid fixtures to verify.
-- compare_bench_json keys by name (codec/backend) instead of list index so
-  `*-compare.json` could become regression gates.
-- Optional weights for the overall score (e.g. decode-heavy for tiles).
 
 ### 036.1
 - Install `thumtoo-gp-archive` (was built but missing from install TARGETS → tools-bin check fail)

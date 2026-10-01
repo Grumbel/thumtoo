@@ -65,7 +65,8 @@ fi
 # Verdict snapshots (who wins on this machine). compare_bench_json matches
 # rows by identity and reports winner changes (--fail-on-winner-change).
 if [[ -n "$PNG" ]]; then
-  "$TILE" --json --codec all --repeat "$REPEAT" --max-cells 8 "$PNG" \
+  # Default efforts plus the fast ones an interactive tile encoder would use.
+  "$TILE" --json --codec all,webp@e0,jxl@e1,jxl@e3 --repeat "$REPEAT" --max-cells 8 "$PNG" \
     >"$OUT/gp-tile-compare.json" ||
     echo "warning: gp-tile --codec all reached no verdict (see gp-tile-compare.json)" >&2
 fi
