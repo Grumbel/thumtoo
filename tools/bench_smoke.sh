@@ -110,6 +110,13 @@ echo "== microbench-decode =="
 echo "== gp-tile (first sample, q=80) =="
 "$GPTILE" --repeat 2 --quality 80 "${SAMPLES[0]}"
 
+# Codec comparison needs a lossless source: the PNG twin of the first sample.
+PNG_SAMPLE="$CORPUS_OUT/synthetic/png/$(basename "${SAMPLES[0]}" | sed 's/_q[0-9]*\.jpg$/.png/')"
+if [[ -f "$PNG_SAMPLE" ]]; then
+  echo "== gp-tile --codec all ($(basename "$PNG_SAMPLE")) =="
+  "$GPTILE" --repeat 2 --codec all --max-cells 8 "$PNG_SAMPLE" || true
+fi
+
 if [[ -x "$BENCH" ]]; then
   echo "== thumtoo-bench --json (first sample) =="
   "$BENCH" --json --ladder 256 --tile-cell \
@@ -124,8 +131,8 @@ command -v thumtoo-gp-archive >/dev/null 2>&1 && GPARCH=$(command -v thumtoo-gp-
 if [[ -x "$GPARCH" ]]; then
   ARCH_SAMPLE=$(ls "$CORPUS_OUT"/archives/*.cbz "$CORPUS_OUT"/documents/sample_book.cbz 2>/dev/null | head -1 || true)
   if [[ -n "$ARCH_SAMPLE" ]]; then
-    echo "== gp-archive =="
-    "$GPARCH" --repeat 2 "$ARCH_SAMPLE" || true
+    echo "== gp-archive --backend all =="
+    "$GPARCH" --repeat 2 --backend all "$ARCH_SAMPLE" || true
   fi
 fi
 

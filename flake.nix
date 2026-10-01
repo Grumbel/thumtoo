@@ -304,9 +304,16 @@
             echo "jpeg=$jpeg"
             ${pkg}/bin/thumtoo-microbench-decode --repeat 1 "$jpeg"
             ${pkg}/bin/thumtoo-gp-tile --codec jpeg --quality 80 --repeat 1 --max-cells 4 "$jpeg"
+            # Codec comparison on the smallest lossless source (unsupported
+            # codecs, e.g. AVIF without an AV1 encoder, are reported, not fatal).
+            png=$(ls -Sr "$corpus"/synthetic/png/*.png 2>/dev/null | head -1 || true)
+            if [ -n "$png" ]; then
+              ${pkg}/bin/thumtoo-gp-tile --codec all --quality 50,80 --repeat 1 --max-cells 2 "$png"
+            fi
             arch=$(ls "$corpus"/archives/*.cbz "$corpus"/documents/sample_book.cbz 2>/dev/null | head -1 || true)
             if [ -n "$arch" ]; then
               ${pkg}/bin/thumtoo-gp-archive --repeat 1 --backend libarchive "$arch"
+              ${pkg}/bin/thumtoo-gp-archive --repeat 1 --backend all "$arch"
             fi
             echo "ok: bench-smoke-lite"
             touch "$out"
@@ -342,8 +349,8 @@
           gc = app "thumtoo-gc" "Garbage-collect unreferenced cache blobs";
           archive = app "thumtoo-archive" "List/extract archive members (same backends as //archive:)";
           micro-decode = app "thumtoo-microbench-decode" "Golden-path vips JPEG decode timings (no Client)";
-          gp-tile = app "thumtoo-gp-tile" "Golden-path tile encode/decode (jpeg/webp/avif/jxl)";
-          gp-archive = app "thumtoo-gp-archive" "Golden-path libarchive TOC/extract timings";
+          gp-tile = app "thumtoo-gp-tile" "Golden-path tile encode/decode (jpeg/webp/avif/jxl); --codec all picks a winner";
+          gp-archive = app "thumtoo-gp-archive" "Golden-path archive TOC/extract (libarchive/unarr); --backend all picks a winner";
         });
 
       devShells = forAllSystems ({ pkgs, ... }: {

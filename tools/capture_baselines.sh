@@ -42,6 +42,9 @@ if [[ -z "$CBZ" ]]; then
   CBZ=$(ls "$CORPUS"/documents/sample_book.cbz 2>/dev/null | head -1 || true)
 fi
 
+# Lossless source for the codec comparison (a JPEG source favors JPEG).
+PNG=$(ls "$CORPUS"/synthetic/png/photo_*.png 2>/dev/null | head -1 || true)
+
 if [[ -z "$JPEG" ]]; then
   echo "no JPEG under $CORPUS — generate corpus first" >&2
   exit 1
@@ -59,6 +62,19 @@ if [[ -n "$CBZ" ]]; then
     >"$OUT/gp-archive-libarchive.json"
 fi
 
+# Verdict snapshots (who wins on this machine). Not regression gates:
+# refined match rows vary between runs, so compare_bench_json indices shift.
+if [[ -n "$PNG" ]]; then
+  "$TILE" --json --codec all --repeat "$REPEAT" --max-cells 8 "$PNG" \
+    >"$OUT/gp-tile-compare.json" ||
+    echo "warning: gp-tile --codec all reached no verdict (see gp-tile-compare.json)" >&2
+fi
+if [[ -n "$CBZ" ]]; then
+  "$ARCH" --json --backend all --repeat "$REPEAT" "$CBZ" \
+    >"$OUT/gp-archive-compare.json" ||
+    echo "warning: gp-archive --backend all reached no verdict (see gp-archive-compare.json)" >&2
+fi
+
 # meta
 cat >"$OUT/README.md" <<META
 <!--
@@ -71,6 +87,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 Captured $(date -u +%Y-%m-%dT%H:%MZ) via tools/capture_baselines.sh
 
 - JPEG: $(basename "$JPEG")
+- PNG (codec comparison): $(basename "${PNG:-none}")
 - CBZ: $(basename "${CBZ:-none}")
 - repeats: $REPEAT
 
@@ -81,6 +98,9 @@ python3 tools/compare_bench_json.py \\
   --baseline docs/bench/baselines/$MACHINE/gp-tile-jpeg.json \\
   --current /tmp/gp-tile.json
 \`\`\`
+
+\`gp-tile-compare.json\` / \`gp-archive-compare.json\` are verdict snapshots
+(which codec / backend wins here), not regression baselines.
 META
 
 echo "wrote $OUT"
