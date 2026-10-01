@@ -4,8 +4,13 @@
   description = "thumtoo — media index and display-pixel ladder library";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  # Optional corpus for checks.bench-smoke-lite (github:Grumbel/benchtoo).
+  inputs.benchtoo = {
+    url = "github:Grumbel/benchtoo";
+    inputs.nixpkgs.follows = "nixpkgs";
+  };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, benchtoo }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f {
@@ -279,6 +284,31 @@
             grep -q "microbench-decode\|gp-tile\|gp-archive" "$script"
             grep -q "benchtoo" "$script"
             echo "ok: tools/bench_smoke.sh present and references golden tools + benchtoo"
+            touch "$out"
+          '';
+
+          # Lite smoke: run golden tools against a few benchtoo fixtures (no full Client DB).
+          # Requires inputs.benchtoo; builds corpus package then microbench-decode + gp-archive.
+          bench-smoke-lite = pkgs.runCommand "thumtoo-bench-smoke-lite" {
+            nativeBuildInputs = [ pkg ];
+            # corpus derivation from companion flake
+            corpus = benchtoo.packages.${system}.corpus;
+          } ''
+            set -euo pipefail
+            echo "corpus=$corpus"
+            jpeg=$(ls "$corpus"/synthetic/jpeg/*_q90.jpg 2>/dev/null | head -1 || true)
+            if [ -z "$jpeg" ]; then
+              echo "no synthetic jpeg in benchtoo corpus" >&2
+              exit 1
+            fi
+            echo "jpeg=$jpeg"
+            ${pkg}/bin/thumtoo-microbench-decode --repeat 1 "$jpeg"
+            ${pkg}/bin/thumtoo-gp-tile --codec jpeg --quality 80 --repeat 1 --max-cells 4 "$jpeg"
+            arch=$(ls "$corpus"/archives/*.cbz "$corpus"/documents/sample_book.cbz 2>/dev/null | head -1 || true)
+            if [ -n "$arch" ]; then
+              ${pkg}/bin/thumtoo-gp-archive --repeat 1 --backend libarchive "$arch"
+            fi
+            echo "ok: bench-smoke-lite"
             touch "$out"
           '';
         });

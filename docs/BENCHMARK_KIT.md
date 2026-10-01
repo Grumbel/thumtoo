@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # Benchmark kit — plan
 
-**Status:** plan + verified slices (2026-10-01). Golden: `thumtoo-bench --json`, `microbench-decode`, `gp-tile` (jpeg|webp|avif|jxl), `gp-archive` (libarchive + optional unarr). `bench_smoke` + `checks.bench-smoke-script`. Corpus: **benchtoo**. Still open: full flake smoke+corpus input, RAR4 fixtures, baselines.
+**Status:** plan + verified slices (2026-10-01). Golden tools + `checks.bench-smoke-lite` (benchtoo input) + `compare_bench_json.py`. Still open: checked-in machine baselines, RAR4 binary fixtures.
 **Audience:** agents and humans choosing pixel / archive / codec routes for
 thumtoo + biltoo, and detecting regressions against those choices.
 
