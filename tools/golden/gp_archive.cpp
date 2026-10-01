@@ -11,13 +11,13 @@
 #include <archive.h>
 #include <archive_entry.h>
 
+#include "gp_common.hpp"
+
 #include <algorithm>
-#include <chrono>
 #include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
-#include <functional>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -31,30 +31,6 @@
 #endif
 
 namespace {
-
-using clock_type = std::chrono::steady_clock;
-
-double ms_since(clock_type::time_point t0) {
-  return std::chrono::duration<double, std::milli>(clock_type::now() - t0)
-      .count();
-}
-
-struct Stats {
-  double median = 0;
-};
-
-Stats run_median(int repeats, const std::function<void()>& fn) {
-  std::vector<double> times;
-  times.reserve(static_cast<std::size_t>(repeats));
-  fn();
-  for (int i = 0; i < repeats; ++i) {
-    const auto t0 = clock_type::now();
-    fn();
-    times.push_back(ms_since(t0));
-  }
-  std::sort(times.begin(), times.end());
-  return Stats{times[times.size() / 2]};
-}
 
 struct Member {
   std::string path;
@@ -255,19 +231,6 @@ std::size_t extract_scattered_unarr(const std::filesystem::path& path,
 
 #endif  // GP_ARCHIVE_HAVE_UNARR
 
-void json_escape(std::ostream& os, const std::string& s) {
-  os << '"';
-  for (char c : s) {
-    if (c == '"' || c == '\\') os << '\\';
-    if (c == '\n') {
-      os << "\\n";
-      continue;
-    }
-    os << c;
-  }
-  os << '"';
-}
-
 enum class Backend { Libarchive, Unarr };
 
 Backend pick_backend(const std::string& flag, const std::filesystem::path& path) {
@@ -331,7 +294,7 @@ int main(int argc, char** argv) {
   const Backend backend = pick_backend(backend_flag, path);
 
   std::vector<Member> members;
-  Stats toc_s{}, all_s{}, first_s{}, last_s{}, scat_s{};
+  gp::Timing toc_s{}, all_s{}, first_s{}, last_s{}, scat_s{};
 
   if (backend == Backend::Unarr) {
 #if GP_ARCHIVE_HAVE_UNARR
@@ -341,14 +304,14 @@ int main(int argc, char** argv) {
                 << "\n";
       return 1;
     }
-    toc_s = run_median(repeats, [&] { (void)list_members_unarr(path); });
+    toc_s = gp::time_median(repeats, [&] { (void)list_members_unarr(path); });
     all_s =
-        run_median(std::max(1, repeats / 2), [&] { (void)extract_all_unarr(path); });
-    first_s = run_median(
+        gp::time_median(std::max(1, repeats / 2), [&] { (void)extract_all_unarr(path); });
+    first_s = gp::time_median(
         repeats, [&] { (void)extract_one_unarr(path, members.front().path); });
-    last_s = run_median(
+    last_s = gp::time_median(
         repeats, [&] { (void)extract_one_unarr(path, members.back().path); });
-    scat_s = run_median(std::max(1, repeats / 2), [&] {
+    scat_s = gp::time_median(std::max(1, repeats / 2), [&] {
       (void)extract_scattered_unarr(path, members, 10);
     });
 #else
@@ -361,14 +324,14 @@ int main(int argc, char** argv) {
       std::cerr << "libarchive: no members (or open failed): " << path << "\n";
       return 1;
     }
-    toc_s = run_median(repeats, [&] { (void)list_members_la(path); });
+    toc_s = gp::time_median(repeats, [&] { (void)list_members_la(path); });
     all_s =
-        run_median(std::max(1, repeats / 2), [&] { (void)extract_all_la(path); });
-    first_s = run_median(
+        gp::time_median(std::max(1, repeats / 2), [&] { (void)extract_all_la(path); });
+    first_s = gp::time_median(
         repeats, [&] { (void)extract_one_la(path, members.front().path); });
-    last_s = run_median(
+    last_s = gp::time_median(
         repeats, [&] { (void)extract_one_la(path, members.back().path); });
-    scat_s = run_median(std::max(1, repeats / 2), [&] {
+    scat_s = gp::time_median(std::max(1, repeats / 2), [&] {
       (void)extract_scattered_la(path, members, 10);
     });
   }
@@ -385,7 +348,7 @@ int main(int argc, char** argv) {
   } else {
     std::cout << "{\n  \"schema\": 1,\n  \"tool\": \"thumtoo-gp-archive\",\n"
               << "  \"archive\": ";
-    json_escape(std::cout, path.string());
+    gp::json_string(std::cout, path.string());
     std::cout << ",\n  \"backend\": \"" << backend_name(backend) << "\",\n"
               << "  \"unarr_built\": " << (GP_ARCHIVE_HAVE_UNARR ? "true" : "false")
               << ",\n  \"members\": " << members.size()

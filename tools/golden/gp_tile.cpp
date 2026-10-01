@@ -10,43 +10,19 @@
 
 #include <vips/vips.h>
 
+#include "gp_common.hpp"
+
 #include <algorithm>
-#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <functional>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <vector>
 
 namespace {
-
-using clock_type = std::chrono::steady_clock;
-
-double ms_since(clock_type::time_point t0) {
-  return std::chrono::duration<double, std::milli>(clock_type::now() - t0)
-      .count();
-}
-
-struct Stats {
-  double median = 0;
-};
-
-Stats run_median(int repeats, const std::function<void()>& fn) {
-  std::vector<double> times;
-  times.reserve(static_cast<std::size_t>(repeats));
-  fn();
-  for (int i = 0; i < repeats; ++i) {
-    const auto t0 = clock_type::now();
-    fn();
-    times.push_back(ms_since(t0));
-  }
-  std::sort(times.begin(), times.end());
-  return Stats{times[times.size() / 2]};
-}
 
 void ensure_vips() {
   static bool once = false;
@@ -72,19 +48,6 @@ std::vector<int> parse_qualities(const std::string& s) {
   }
   if (out.empty()) out = {60, 80, 90};
   return out;
-}
-
-void json_escape(std::ostream& os, const std::string& s) {
-  os << '"';
-  for (char c : s) {
-    if (c == '"' || c == '\\') os << '\\';
-    if (c == '\n') {
-      os << "\\n";
-      continue;
-    }
-    os << c;
-  }
-  os << '"';
 }
 
 struct Cell {
@@ -200,7 +163,7 @@ int main(int argc, char** argv) {
   } else {
     std::cout << "{\n  \"schema\": 1,\n  \"tool\": \"thumtoo-gp-tile\",\n"
               << "  \"file\": ";
-    json_escape(std::cout, file.string());
+    gp::json_string(std::cout, file.string());
     std::cout << ",\n  \"width\": " << img_w << ",\n  \"height\": " << img_h
               << ",\n  \"tile\": " << tile << ",\n  \"cells\": " << cells.size()
               << ",\n  \"timed_cells\": " << time_n
@@ -248,11 +211,11 @@ int main(int argc, char** argv) {
     std::uint64_t bytes_total = 0;
     for (const auto& b : blobs) bytes_total += b.size();
 
-    auto enc_s = run_median(repeats, [&] {
+    auto enc_s = gp::time_median(repeats, [&] {
       for (int i = 0; i < time_n; ++i) encode_one(i);
     });
 
-    auto dec_s = run_median(repeats, [&] {
+    auto dec_s = gp::time_median(repeats, [&] {
       for (int i = 0; i < time_n; ++i) {
         const auto& b = blobs[static_cast<std::size_t>(i)];
         if (b.empty()) continue;
