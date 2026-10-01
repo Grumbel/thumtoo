@@ -119,4 +119,14 @@ else
   echo "skip thumtoo-bench (not built)"
 fi
 
+GPARCH="${BUILD_DIR}/thumtoo-gp-archive"
+command -v thumtoo-gp-archive >/dev/null 2>&1 && GPARCH=$(command -v thumtoo-gp-archive)
+if [[ -x "$GPARCH" ]]; then
+  ARCH_SAMPLE=$(ls "$CORPUS_OUT"/archives/*.cbz "$CORPUS_OUT"/documents/sample_book.cbz 2>/dev/null | head -1 || true)
+  if [[ -n "$ARCH_SAMPLE" ]]; then
+    echo "== gp-archive =="
+    "$GPARCH" --repeat 2 "$ARCH_SAMPLE" || true
+  fi
+fi
+
 echo "ok: bench_smoke finished (${#SAMPLES[@]} samples)"

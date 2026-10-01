@@ -316,6 +316,8 @@ if(THUMTOO_BUILD_TOOLS)
   target_link_libraries(thumtoo-microbench-decode PRIVATE PkgConfig::VIPS)
   add_executable(thumtoo-gp-tile tools/golden/gp_tile.cpp)
   target_link_libraries(thumtoo-gp-tile PRIVATE PkgConfig::VIPS)
+  add_executable(thumtoo-gp-archive tools/golden/gp_archive.cpp)
+  target_link_libraries(thumtoo-gp-archive PRIVATE PkgConfig::LIBARCHIVE)
 endif()
 
 if(THUMTOO_BUILD_TESTS)

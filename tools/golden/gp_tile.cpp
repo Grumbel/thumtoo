@@ -116,6 +116,7 @@ int main(int argc, char** argv) {
   int repeats = 3;
   bool json_out = false;
   std::string quality_list = "60,80,90";
+  std::string codec = "jpeg";  // jpeg | webp
   std::filesystem::path file;
   // Cap cells timed for large images (full-grid encode still counted for bytes).
   int max_time_cells = 16;
@@ -128,6 +129,8 @@ int main(int argc, char** argv) {
     } else if (a == "--repeat" && i + 1 < argc) {
       repeats = std::atoi(argv[++i]);
       if (repeats < 1) repeats = 1;
+    } else if (a == "--codec" && i + 1 < argc) {
+      codec = argv[++i];
     } else if (a == "--quality" && i + 1 < argc) {
       quality_list = argv[++i];
     } else if (a == "--max-cells" && i + 1 < argc) {
@@ -138,8 +141,8 @@ int main(int argc, char** argv) {
     } else if (a == "-h" || a == "--help") {
       std::cerr
           << "Usage: " << argv[0]
-          << " [--tile N] [--repeat R] [--quality 60,80,90] [--max-cells K] "
-             "[--json] FILE\n"
+          << " [--tile N] [--repeat R] [--codec jpeg|webp] [--quality 60,80,90] "
+             "[--max-cells K] [--json] FILE\n"
           << "Golden-path 256² (default) tile JPEG encode/decode matrix "
              "(vips only).\n";
       return 0;
@@ -212,9 +215,14 @@ int main(int argc, char** argv) {
       }
       void* out_buf = nullptr;
       size_t out_len = 0;
-      if (vips_jpegsave_buffer(crop, &out_buf, &out_len, "Q", q, "strip", TRUE,
-                               nullptr) == 0 &&
-          out_buf) {
+      int save_rc = -1;
+      if (codec == "webp") {
+        save_rc = vips_webpsave_buffer(crop, &out_buf, &out_len, "Q", q, nullptr);
+      } else {
+        save_rc = vips_jpegsave_buffer(crop, &out_buf, &out_len, "Q", q, "strip", TRUE,
+                                      nullptr);
+      }
+      if (save_rc == 0 && out_buf) {
         auto& b = blobs[static_cast<std::size_t>(idx)];
         b.assign(static_cast<unsigned char*>(out_buf),
                  static_cast<unsigned char*>(out_buf) + out_len);
@@ -237,9 +245,15 @@ int main(int argc, char** argv) {
         const auto& b = blobs[static_cast<std::size_t>(i)];
         if (b.empty()) continue;
         VipsImage* img = nullptr;
-        if (vips_jpegload_buffer(const_cast<unsigned char*>(b.data()), b.size(),
-                                 &img, nullptr) == 0 &&
-            img) {
+        int load_rc = -1;
+        if (codec == "webp") {
+          load_rc = vips_webpload_buffer(const_cast<unsigned char*>(b.data()), b.size(),
+                                         &img, nullptr);
+        } else {
+          load_rc = vips_jpegload_buffer(const_cast<unsigned char*>(b.data()), b.size(),
+                                         &img, nullptr);
+        }
+        if (load_rc == 0 && img) {
           size_t len = 0;
           void* buf = vips_image_write_to_memory(img, &len);
           if (buf) g_free(buf);
@@ -259,7 +273,7 @@ int main(int argc, char** argv) {
     } else {
       if (!first_row) std::cout << ",\n";
       first_row = false;
-      std::cout << "    {\"codec\": \"jpeg\", \"quality\": " << q
+      std::cout << "    {\"codec\": \"" << codec << "\", \"quality\": " << q
                 << ", \"encode_ms\": " << enc_s.median
                 << ", \"decode_ms\": " << dec_s.median
                 << ", \"bytes_total\": " << bytes_total

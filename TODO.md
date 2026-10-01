@@ -7,19 +7,20 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Status (2026-10-01)
 
-**Tip:** thumtoo-028.1-smoke-documents (on `743dbf4` + agent stack).
+**Tip:** thumtoo-029.1-gp-archive-webp (on `743dbf4` + agent stack).
 
-### 028.1
-- `bench_smoke.sh` also runs `gen_documents.py` (PDF/MD/TXT/CBZ) and
-  `gen_archives.py` when sibling corpus is present
+### 029.1
+- `thumtoo-gp-archive`: golden libarchive TOC / sequential / first / last /
+  scattered extract (`--json`)
+- `thumtoo-gp-tile --codec jpeg|webp`
+- CMake + flake apps; bench_smoke runs gp-archive when CBZ present
 
-### Companion corpus
-**pixel-bench-corpus** tip 006+: self-labeled rasters; sample_book.pdf;
-Markdown/text; sample_book.cbz from pdftoppm; optional DjVu.
+### Companion
+pixel-bench-corpus 007+: labeled rasters, PDF book, CBZ, MD/TXT, archives
 
 ### Bundle policy
 Work-line base: `743dbf4`. Full stack in each tip bundle.
 
 ### Next
-- WebP/AVIF/JXL in gp-tile; gp-archive; flake checks.bench-smoke
-- pdf2djvu in corpus flake for DjVu when wanted
+- AVIF/JXL tile codecs; unarr path in gp-archive when linked
+- flake `checks.bench-smoke`; pdf2djvu optional in corpus flake
