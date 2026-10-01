@@ -7,20 +7,23 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Status (2026-10-01)
 
-**Tip:** thumtoo-030.1-benchtoo-rename (on `743dbf4` + agent stack).
+**Tip:** thumtoo-031.1-avif-jxl-check (on `743dbf4` + agent stack).
 
-### 030.1
-- Companion corpus **benchtoo** (https://github.com/Grumbel/benchtoo) (was pixel-bench-corpus)
-- `bench_smoke.sh` looks for sibling `../benchtoo/`
+### 031.1
+- `gp-tile --codec jpeg|webp|avif|jxl` (AVIF via HEIF/AV1; needs libheif/libjxl in vips)
+- flake apps: `gp-tile`, `gp-archive`
+- flake check `bench-smoke-script` (script presence + benchtoo/golden refs)
 
 ### Prior
-- 029 gp-archive + WebP; 028 documents smoke; 027 ebook classes; …
+- 030 benchtoo rename/URL; 029 gp-archive + WebP; 028 documents smoke
 
 ### Companion
-**benchtoo** (https://github.com/Grumbel/benchtoo) tip 008.1-rename — content classes, PDF book, CBZ, MD/TXT, archives
+https://github.com/Grumbel/benchtoo
 
 ### Bundle policy
 Work-line base: `743dbf4`. Full stack in each tip bundle.
 
 ### Next
-- AVIF/JXL tile codecs; unarr in gp-archive; flake checks.bench-smoke
+- unarr path in gp-archive when linked
+- full `checks.bench-smoke` with optional benchtoo flake input
+- pdf2djvu optional in benchtoo flake

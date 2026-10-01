@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # Benchmark kit — plan
 
-**Status:** plan + verified slices (2026-10-01). Golden: `thumtoo-bench --json`, `microbench-decode`, `gp-tile` (jpeg|webp), `gp-archive` (libarchive), `bench_smoke` (ebook classes + documents). Corpus: content classes, PDF book, CBZ, MD/TXT. Still open: AVIF/JXL tiles, unarr A/B, flake check, pdf2djvu.
+**Status:** plan + verified slices (2026-10-01). Golden: `thumtoo-bench --json`, `microbench-decode`, `gp-tile` (jpeg|webp|avif|jxl), `gp-archive` (libarchive), `bench_smoke`. Corpus: **benchtoo**. Still open: unarr A/B, full flake smoke with corpus input, pdf2djvu.
 **Audience:** agents and humans choosing pixel / archive / codec routes for
 thumtoo + biltoo, and detecting regressions against those choices.
 

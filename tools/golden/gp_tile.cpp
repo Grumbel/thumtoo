@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Golden-path tile encode/decode matrix (vips only — no thumtoo Client/Store).
-// Splits an image into 256² cells at scale 0 and measures JPEG encode/decode
+// Splits an image into 256² cells at scale 0 and measures encode/decode (jpeg|webp|avif|jxl)
 // at several quality settings (extendable to other codecs later).
 //
 // Usage:
@@ -116,7 +116,7 @@ int main(int argc, char** argv) {
   int repeats = 3;
   bool json_out = false;
   std::string quality_list = "60,80,90";
-  std::string codec = "jpeg";  // jpeg | webp
+  std::string codec = "jpeg";  // jpeg | webp | avif | jxl
   std::filesystem::path file;
   // Cap cells timed for large images (full-grid encode still counted for bytes).
   int max_time_cells = 16;
@@ -141,9 +141,9 @@ int main(int argc, char** argv) {
     } else if (a == "-h" || a == "--help") {
       std::cerr
           << "Usage: " << argv[0]
-          << " [--tile N] [--repeat R] [--codec jpeg|webp] [--quality 60,80,90] "
+          << " [--tile N] [--repeat R] [--codec jpeg|webp|avif|jxl] [--quality 60,80,90] "
              "[--max-cells K] [--json] FILE\n"
-          << "Golden-path 256² (default) tile JPEG encode/decode matrix "
+          << "Golden-path tile encode/decode matrix (jpeg/webp/avif/jxl) "
              "(vips only).\n";
       return 0;
     } else if (a[0] == '-') {
@@ -155,6 +155,10 @@ int main(int argc, char** argv) {
   }
   if (file.empty()) {
     std::cerr << "need FILE\n";
+    return 2;
+  }
+  if (codec != "jpeg" && codec != "webp" && codec != "avif" && codec != "jxl") {
+    std::cerr << "unknown --codec (want jpeg|webp|avif|jxl): " << codec << "\n";
     return 2;
   }
 
@@ -218,6 +222,14 @@ int main(int argc, char** argv) {
       int save_rc = -1;
       if (codec == "webp") {
         save_rc = vips_webpsave_buffer(crop, &out_buf, &out_len, "Q", q, nullptr);
+      } else if (codec == "avif") {
+        // AVIF via HEIF saver (AV1). Needs libvips built with libheif.
+        save_rc = vips_heifsave_buffer(crop, &out_buf, &out_len, "Q", q,
+                                       "compression", VIPS_FOREIGN_HEIF_COMPRESSION_AV1,
+                                       nullptr);
+      } else if (codec == "jxl") {
+        // JPEG XL. Needs libvips built with libjxl.
+        save_rc = vips_jxlsave_buffer(crop, &out_buf, &out_len, "Q", q, nullptr);
       } else {
         save_rc = vips_jpegsave_buffer(crop, &out_buf, &out_len, "Q", q, "strip", TRUE,
                                       nullptr);
@@ -249,6 +261,12 @@ int main(int argc, char** argv) {
         if (codec == "webp") {
           load_rc = vips_webpload_buffer(const_cast<unsigned char*>(b.data()), b.size(),
                                          &img, nullptr);
+        } else if (codec == "avif") {
+          load_rc = vips_heifload_buffer(const_cast<unsigned char*>(b.data()), b.size(),
+                                         &img, nullptr);
+        } else if (codec == "jxl") {
+          load_rc = vips_jxlload_buffer(const_cast<unsigned char*>(b.data()), b.size(),
+                                        &img, nullptr);
         } else {
           load_rc = vips_jpegload_buffer(const_cast<unsigned char*>(b.data()), b.size(),
                                          &img, nullptr);

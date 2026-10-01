@@ -269,6 +269,18 @@
             echo "ok: all tool binaries present"
             touch "$out"
           '';
+          # Script presence only — full smoke needs a built tree + benchtoo corpus.
+          bench-smoke-script = pkgs.runCommand "thumtoo-bench-smoke-script-check" { } ''
+            set -euo pipefail
+            script=${./tools/bench_smoke.sh}
+            test -f "$script"
+            test -x "$script" || chmod +x "$script"
+            # Basic syntax / usage surface
+            grep -q "microbench-decode\|gp-tile\|gp-archive" "$script"
+            grep -q "benchtoo" "$script"
+            echo "ok: tools/bench_smoke.sh present and references golden tools + benchtoo"
+            touch "$out"
+          '';
         });
 
       apps = forAllSystems ({ pkgs, system, ... }:
@@ -289,6 +301,8 @@
           gc = app "thumtoo-gc" "Garbage-collect unreferenced cache blobs";
           archive = app "thumtoo-archive" "List/extract archive members (same backends as //archive:)";
           micro-decode = app "thumtoo-microbench-decode" "Golden-path vips JPEG decode timings (no Client)";
+          gp-tile = app "thumtoo-gp-tile" "Golden-path tile encode/decode (jpeg/webp/avif/jxl)";
+          gp-archive = app "thumtoo-gp-archive" "Golden-path libarchive TOC/extract timings";
         });
 
       devShells = forAllSystems ({ pkgs, ... }: {
