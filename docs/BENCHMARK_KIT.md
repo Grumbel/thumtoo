@@ -370,7 +370,59 @@ JSON: comparison documents carry `"kind": "compare"`, per-variant results
 Single-variant output keeps its schema-1 keys, so existing baselines
 compare unchanged; effort variants add `variant`/`effort` to their rows.
 `compare_bench_json` keys list elements by identity and reports verdict
-winner changes (`--fail-on-winner-change` to gate on them).
+winner changes; `--fail-on-winner-change` gates only on the **overall** (or
+aggregate) winner, because per-metric winners flip between identical runs
+on near-tie metrics.
+
+### 6.6 Command line and output formats (all bench tools)
+
+`thumtoo-gp-archive`, `thumtoo-gp-tile`, `thumtoo-microbench-decode` and
+`thumtoo-bench` share one command-line layer (`tools/golden/gp_cli.hpp`,
+unit test `gp_cli`) and one output layer (`gp_output.hpp`, test `gp_output`).
+`--help` lists every option, the output formats, exit status and examples;
+`--version` prints the thumtoo version.
+
+**Inputs.** The golden tools take any number of files and directories.
+Directories are searched by *content* (archive magic bytes; libvips loader
+detection; JPEG) and sorted by name; `-r/--recursive` descends. A file named
+explicitly is always attempted. Duplicates are dropped.
+
+**Validation.** Everything is checked before anything is measured and all
+problems are reported together (exit 2): unknown options with a "did you
+mean" hint, non-numeric or out-of-range values, unknown or unavailable
+backends/codecs, `--csv` with `--json`, missing paths.
+
+**Output.** One format per run; stdout carries only that format, warnings
+and errors go to stderr.
+
+| Mode | For | Shape |
+|---|---|---|
+| default | reading | aligned tables with units, sizes as KiB/MiB, verdict in words; with several inputs and a comparison a summary (wins/ties and geometric-mean cost per variant over all inputs; inputs with fewer than two measurable variants are listed as skipped) |
+| `--csv` | spreadsheets, `>>` appends | one flat table, raw ms/bytes, RFC 4180 quoting, empty cell = not measured, `--no-header` to append |
+| `--json` | tools, baselines | schema 1; one input = the document as before (+ additive `status`); several inputs = `{"kind":"batch","results":[...],"aggregate":{...}}` |
+
+CSV columns (stable names):
+
+- gp-archive: `archive,format,backend,status,reason,members,bytes,toc_ms,extract_all_ms,extract_first_ms,extract_last_ms,extract_scattered10_ms,overall_ratio` — one row per archive × backend.
+- gp-tile: `file,width,height,variant,codec,effort,status,reason,quality,encode_ms,decode_ms,bytes_total,bytes_per_cell_mean,psnr_db,matched,overall_ratio` — one row per image × variant × quality; `matched=1` marks the setting that represents the variant in the verdict.
+- microbench-decode: `file,width,height,mpix,status,reason,size_ms,full_ms,shrink2_ms,shrink4_ms,shrink8_ms,thumb32_ms,thumb256_ms`.
+- thumtoo-bench: `phase,wall_s,workers,images` + the BuildStats counters, one row per phase plus `total`.
+
+`overall_ratio` is the cost relative to the best variant (1 = best) and is
+empty when only one variant could be measured.
+
+**Failures are in-band.** An archive/image that cannot be read, or a variant
+that cannot run, appears with `status` `failed`/`unsupported` and a `reason`
+in every format; the rest of the batch still runs; the exit status is 1 and a
+one-line summary goes to stderr. Exit codes: 0 ok, 1 measurement failed (or
+no verdict), 2 usage error.
+
+**Silent-failure fixes** that came with this: libunarr/libvips diagnostics
+are silenced while measuring (`gp::StderrSilencer`; they repeat on every timed
+call); `microbench-decode` now verifies each operation and rejects non-JPEG
+and truncated files instead of timing a failed decode as ~0 ms.
+
+End-to-end test: `tests/test_bench_tools_cli.py` (ctest `bench_tools_cli`).
 
 ### 6.4 `gp-pipeline`
 

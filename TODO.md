@@ -7,7 +7,50 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Status (2026-10-01)
 
-**Tip:** thumtoo-038.1-compare-effort-seek (base `e442169` + 12 agent commits).
+**Tip:** thumtoo-039.1-cli-csv-json (base `e442169` + agent commits; cumulative).
+
+### 039.1 — CLI / output overhaul of the bench tools
+Design and usage: docs/BENCHMARK_KIT.md §6.6. Summary:
+- Shared layers in `tools/golden/`: `gp_cli.hpp` (declarative options →
+  parsing, strict validation, --help/--version, directory expansion,
+  progress on a tty), `gp_output.hpp` (text tables, CSV writer, mode
+  selection), `gp_json.hpp` (streaming JSON writer). Unit tests `gp_json`,
+  `gp_cli`, `gp_output`, extended `gp_verdict` (Aggregator).
+- gp-archive, gp-tile, microbench-decode: many files/dirs per run
+  (`-r`), human-readable default, `--csv` / `--json` (+ `--no-header`),
+  cross-input summary for comparisons, in-band failures (exit 1, batch
+  continues). thumtoo-bench: same CLI layer, `--csv`, structured
+  `counters` in JSON, phase table.
+- JSON: single-input documents keep their schema-1 keys (additive
+  `status`); several inputs give `{"kind":"batch",results,aggregate}`.
+  Checked-in baselines still compare clean (verified for gp-tile-jpeg,
+  gp-archive-libarchive, microbench-decode).
+- compare_bench_json: batch documents; `--fail-on-winner-change` gates on
+  the overall/aggregate winner only (per-metric winners flip on near-ties).
+- Bugs found on the way: microbench-decode timed failed/truncated decodes
+  as ~0 ms; libunarr logged on every timed call. Both fixed.
+- `tests/test_bench_tools_cli.py` (ctest `bench_tools_cli`) runs all four
+  binaries end to end. flake: python3 added to nativeBuildInputs so the
+  test is registered in nix builds.
+- BREAKING for scripts: microbench-decode's default output used to be CSV;
+  it is now a table (`--csv` gives CSV, with different columns: path as
+  given, width/height/status/reason added). `--jobs -1`, `--ladder -5` and
+  similar invalid values are now usage errors (exit 2). thumtoo-bench
+  exits 1 when no image was found.
+- **Not verified under nix / with the real library.** Built with g++
+  against Ubuntu libs (vips 8.15, libarchive 3.7, libunarr 1.0.1); no
+  CMake in the sandbox, so CMakeLists.txt/flake.nix edits are reviewed by
+  eye only, and thumtoo_bench.cpp was run against a stub of the Client
+  API (it compiles against the real headers). Run `nix flake check` and
+  `ctest` first.
+- Not touched: the production CLIs (thumtoo-tile/-export/-status/-prepare/
+  -gc/-xdg-thumb/-archive); they have their own man pages and could adopt
+  gp_cli.hpp (it would belong outside tools/golden/ then).
+
+### Follow-ups (CLI)
+- gp-tile: no cross-image timing interleave; `--sweep` is text-only.
+- A `--format` alias or `--output FILE` if shells without `>` matter.
+- Move gp_cli/gp_output out of tools/golden/ if production tools adopt them.
 
 ### 038.1 — comparison follow-ups
 - gp-tile effort variants: `--codec all,webp@e0,jxl@e1,jxl@e3` (Variant =

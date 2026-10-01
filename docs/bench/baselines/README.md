@@ -21,7 +21,11 @@ docs/bench/baselines/<machine-class>/
 The `*-compare.json` files record which variant won on that machine.
 `compare_bench_json` matches list elements by identity (codec/variant,
 backend, quality, …), so they compare like any other file; it also lists
-verdict winner changes, which fail the run with `--fail-on-winner-change`.
+verdict winner changes. `--fail-on-winner-change` fails the run only when the
+**overall** (or, for batch documents, aggregate) winner changes: per-metric
+winners flip between identical runs on near-tie metrics, so they are listed
+but never fatal. Batch documents (several inputs per run) are keyed by
+`archive` / `file`.
 Refined codec match rows can differ in quality between runs; those show up
 as missing keys (reported, not fatal).
 
@@ -52,7 +56,7 @@ python3 tools/compare_bench_json.py \
   --tolerance-pct 25
 ```
 
-Exit code 0 = within tolerance; 1 = regression (or winner change with
+Exit code 0 = within tolerance; 1 = regression (or overall winner change with
 `--fail-on-winner-change`); 2 = usage / unreadable input.
 
 Keys look like `codecs[codec=jpeg].rows[codec=jpeg,quality=80].encode_ms`;

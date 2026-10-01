@@ -23,6 +23,28 @@ for options (
 .BR \-\-tiles ,
 .BR \-\-tile\-cell ,
 \&...).
+.SH OUTPUT
+By default a phase table followed by the statistics of each phase is printed.
+.B \-\-csv
+prints one row per phase plus a total row (add
+.B \-\-no\-header
+to append to an existing file).
+.B \-\-json
+prints one document; every phase carries its numbers as
+.I counters
+next to the formatted
+.IR stats .
+Warnings and errors go to standard error.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+No readable image was found in the given paths, or the run failed.
+.TP
+.B 2
+Usage error.
 .SH SEE ALSO
 .BR thumtoo (7),
 .BR thumtoo-prepare (1),
