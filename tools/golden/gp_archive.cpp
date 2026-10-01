@@ -1,24 +1,34 @@
 // SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Golden-path archive timings (libarchive only — no thumtoo Client/Store).
-// TOC, sequential extract-all, first/last member, scattered members.
+// Golden-path archive timings (no thumtoo Client/Store).
+// Backend: libarchive (always); libunarr when built with THUMTOO_HAVE_UNARR
+// (RAR/CBR including solid RAR4).
 //
 // Usage:
-//   thumtoo-gp-archive [--repeat N] [--json] ARCHIVE.zip|.cbz|...
+//   thumtoo-gp-archive [--repeat N] [--backend auto|libarchive|unarr] [--json] ARCHIVE
 
 #include <archive.h>
 #include <archive_entry.h>
 
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <vector>
+
+#if defined(THUMTOO_HAVE_UNARR) && THUMTOO_HAVE_UNARR
+#include <unarr.h>
+#define GP_ARCHIVE_HAVE_UNARR 1
+#else
+#define GP_ARCHIVE_HAVE_UNARR 0
+#endif
 
 namespace {
 
@@ -51,7 +61,31 @@ struct Member {
   la_int64_t size = 0;
 };
 
-std::vector<Member> list_members(const std::filesystem::path& path) {
+bool path_looks_rar(const std::filesystem::path& path) {
+  std::string ext = path.extension().string();
+  for (char& c : ext)
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  if (ext == ".rar" || ext == ".cbr") return true;
+  std::string lower = path.filename().string();
+  for (char& c : lower)
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return lower.find(".rar") != std::string::npos;
+}
+
+bool file_is_rar5(const std::filesystem::path& path) {
+  std::FILE* f = std::fopen(path.string().c_str(), "rb");
+  if (!f) return false;
+  unsigned char mag[8] = {};
+  const size_t n = std::fread(mag, 1, 8, f);
+  std::fclose(f);
+  if (n < 7) return false;
+  return mag[0] == 'R' && mag[1] == 'a' && mag[2] == 'r' && mag[3] == '!'
+         && mag[4] == 0x1a && mag[5] == 0x07 && mag[6] == 0x01;
+}
+
+// --- libarchive ----------------------------------------------------------------
+
+std::vector<Member> list_members_la(const std::filesystem::path& path) {
   std::vector<Member> out;
   struct archive* a = archive_read_new();
   archive_read_support_filter_all(a);
@@ -77,8 +111,8 @@ std::vector<Member> list_members(const std::filesystem::path& path) {
   return out;
 }
 
-std::size_t extract_one(const std::filesystem::path& path,
-                        const std::string& member_path) {
+std::size_t extract_one_la(const std::filesystem::path& path,
+                           const std::string& member_path) {
   struct archive* a = archive_read_new();
   archive_read_support_filter_all(a);
   archive_read_support_format_all(a);
@@ -105,7 +139,7 @@ std::size_t extract_one(const std::filesystem::path& path,
   return bytes;
 }
 
-std::size_t extract_all(const std::filesystem::path& path) {
+std::size_t extract_all_la(const std::filesystem::path& path) {
   struct archive* a = archive_read_new();
   archive_read_support_filter_all(a);
   archive_read_support_format_all(a);
@@ -128,16 +162,98 @@ std::size_t extract_all(const std::filesystem::path& path) {
   return bytes;
 }
 
-std::size_t extract_scattered(const std::filesystem::path& path,
-                              const std::vector<Member>& members, int count) {
+std::size_t extract_scattered_la(const std::filesystem::path& path,
+                                 const std::vector<Member>& members, int count) {
   if (members.empty()) return 0;
   std::size_t total = 0;
   const int step = std::max(1, static_cast<int>(members.size()) / count);
   for (int i = 0; i < static_cast<int>(members.size()); i += step) {
-    total += extract_one(path, members[static_cast<std::size_t>(i)].path);
+    total += extract_one_la(path, members[static_cast<std::size_t>(i)].path);
   }
   return total;
 }
+
+// --- unarr (optional) ----------------------------------------------------------
+
+#if GP_ARCHIVE_HAVE_UNARR
+
+struct UnarrHolder {
+  ar_stream* stream = nullptr;
+  ar_archive* ar = nullptr;
+  ~UnarrHolder() {
+    if (ar) ar_close_archive(ar);
+    if (stream) ar_close(stream);
+  }
+};
+
+std::unique_ptr<UnarrHolder> open_unarr(const std::filesystem::path& path) {
+  if (file_is_rar5(path)) return nullptr;
+  auto h = std::make_unique<UnarrHolder>();
+  h->stream = ar_open_file(path.string().c_str());
+  if (!h->stream) return nullptr;
+  h->ar = ar_open_rar_archive(h->stream);
+  if (!h->ar) return nullptr;
+  return h;
+}
+
+std::vector<Member> list_members_unarr(const std::filesystem::path& path) {
+  std::vector<Member> out;
+  auto h = open_unarr(path);
+  if (!h) return out;
+  while (ar_parse_entry(h->ar)) {
+    const char* name = ar_entry_get_name(h->ar);
+    if (!name) continue;
+    Member m;
+    m.path = name;
+    m.size = static_cast<la_int64_t>(ar_entry_get_size(h->ar));
+    out.push_back(std::move(m));
+  }
+  return out;
+}
+
+std::size_t extract_one_unarr(const std::filesystem::path& path,
+                              const std::string& member_path) {
+  auto h = open_unarr(path);
+  if (!h) return 0;
+  while (ar_parse_entry(h->ar)) {
+    const char* name = ar_entry_get_name(h->ar);
+    if (!name || member_path != name) continue;
+    size_t declared = ar_entry_get_size(h->ar);
+    if (declared == 0) return 0;
+    std::vector<unsigned char> buf(declared);
+    if (!ar_entry_uncompress(h->ar, buf.data(), declared)) return 0;
+    return declared;
+  }
+  return 0;
+}
+
+std::size_t extract_all_unarr(const std::filesystem::path& path) {
+  auto h = open_unarr(path);
+  if (!h) return 0;
+  std::size_t bytes = 0;
+  while (ar_parse_entry(h->ar)) {
+    size_t declared = ar_entry_get_size(h->ar);
+    if (declared == 0) continue;
+    std::vector<unsigned char> buf(declared);
+    if (!ar_entry_uncompress(h->ar, buf.data(), declared)) continue;
+    bytes += declared;
+  }
+  return bytes;
+}
+
+std::size_t extract_scattered_unarr(const std::filesystem::path& path,
+                                    const std::vector<Member>& members,
+                                    int count) {
+  if (members.empty()) return 0;
+  std::size_t total = 0;
+  const int step = std::max(1, static_cast<int>(members.size()) / count);
+  for (int i = 0; i < static_cast<int>(members.size()); i += step) {
+    total += extract_one_unarr(path, members[static_cast<std::size_t>(i)].path);
+  }
+  return total;
+}
+
+#endif  // GP_ARCHIVE_HAVE_UNARR
 
 void json_escape(std::ostream& os, const std::string& s) {
   os << '"';
@@ -152,22 +268,56 @@ void json_escape(std::ostream& os, const std::string& s) {
   os << '"';
 }
 
+enum class Backend { Libarchive, Unarr };
+
+Backend pick_backend(const std::string& flag, const std::filesystem::path& path) {
+  if (flag == "libarchive") return Backend::Libarchive;
+  if (flag == "unarr") {
+#if GP_ARCHIVE_HAVE_UNARR
+    return Backend::Unarr;
+#else
+    std::cerr << "this build has no libunarr; using libarchive\n";
+    return Backend::Libarchive;
+#endif
+  }
+  // auto
+#if GP_ARCHIVE_HAVE_UNARR
+  if (path_looks_rar(path) && !file_is_rar5(path)) return Backend::Unarr;
+#endif
+  return Backend::Libarchive;
+}
+
+const char* backend_name(Backend b) {
+  return b == Backend::Unarr ? "unarr" : "libarchive";
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
   int repeats = 5;
   bool json_out = false;
+  std::string backend_flag = "auto";
   std::filesystem::path path;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--repeat" && i + 1 < argc) {
       repeats = std::max(1, std::atoi(argv[++i]));
+    } else if (a == "--backend" && i + 1 < argc) {
+      backend_flag = argv[++i];
     } else if (a == "--json") {
       json_out = true;
     } else if (a == "-h" || a == "--help") {
       std::cerr << "Usage: " << argv[0]
-                << " [--repeat N] [--json] ARCHIVE\n"
-                << "Golden-path libarchive TOC / sequential / random member extract.\n";
+                << " [--repeat N] [--backend auto|libarchive|unarr] [--json] "
+                   "ARCHIVE\n"
+                << "Golden-path archive TOC / sequential / random member extract.\n"
+                << "Built with unarr: "
+#if GP_ARCHIVE_HAVE_UNARR
+                << "yes"
+#else
+                << "no"
+#endif
+                << "\n";
       return 0;
     } else if (a[0] != '-') {
       path = a;
@@ -178,25 +328,54 @@ int main(int argc, char** argv) {
     return 2;
   }
 
-  auto members = list_members(path);
-  if (members.empty()) {
-    std::cerr << "no members (or open failed): " << path << "\n";
-    return 1;
-  }
+  const Backend backend = pick_backend(backend_flag, path);
 
-  auto toc_s = run_median(repeats, [&] { (void)list_members(path); });
-  auto all_s =
-      run_median(std::max(1, repeats / 2), [&] { (void)extract_all(path); });
-  auto first_s =
-      run_median(repeats, [&] { (void)extract_one(path, members.front().path); });
-  auto last_s =
-      run_median(repeats, [&] { (void)extract_one(path, members.back().path); });
-  auto scat_s = run_median(std::max(1, repeats / 2), [&] {
-    (void)extract_scattered(path, members, 10);
-  });
+  std::vector<Member> members;
+  Stats toc_s{}, all_s{}, first_s{}, last_s{}, scat_s{};
+
+  if (backend == Backend::Unarr) {
+#if GP_ARCHIVE_HAVE_UNARR
+    members = list_members_unarr(path);
+    if (members.empty()) {
+      std::cerr << "unarr: no members (or open failed; RAR5 unsupported): " << path
+                << "\n";
+      return 1;
+    }
+    toc_s = run_median(repeats, [&] { (void)list_members_unarr(path); });
+    all_s =
+        run_median(std::max(1, repeats / 2), [&] { (void)extract_all_unarr(path); });
+    first_s = run_median(
+        repeats, [&] { (void)extract_one_unarr(path, members.front().path); });
+    last_s = run_median(
+        repeats, [&] { (void)extract_one_unarr(path, members.back().path); });
+    scat_s = run_median(std::max(1, repeats / 2), [&] {
+      (void)extract_scattered_unarr(path, members, 10);
+    });
+#else
+    std::cerr << "unarr not compiled in\n";
+    return 1;
+#endif
+  } else {
+    members = list_members_la(path);
+    if (members.empty()) {
+      std::cerr << "libarchive: no members (or open failed): " << path << "\n";
+      return 1;
+    }
+    toc_s = run_median(repeats, [&] { (void)list_members_la(path); });
+    all_s =
+        run_median(std::max(1, repeats / 2), [&] { (void)extract_all_la(path); });
+    first_s = run_median(
+        repeats, [&] { (void)extract_one_la(path, members.front().path); });
+    last_s = run_median(
+        repeats, [&] { (void)extract_one_la(path, members.back().path); });
+    scat_s = run_median(std::max(1, repeats / 2), [&] {
+      (void)extract_scattered_la(path, members, 10);
+    });
+  }
 
   if (!json_out) {
     std::cout << "archive=" << path.filename().string()
+              << " backend=" << backend_name(backend)
               << " members=" << members.size() << "\n";
     std::printf("toc_ms=%.3f\n", toc_s.median);
     std::printf("extract_all_ms=%.3f\n", all_s.median);
@@ -207,7 +386,9 @@ int main(int argc, char** argv) {
     std::cout << "{\n  \"schema\": 1,\n  \"tool\": \"thumtoo-gp-archive\",\n"
               << "  \"archive\": ";
     json_escape(std::cout, path.string());
-    std::cout << ",\n  \"members\": " << members.size()
+    std::cout << ",\n  \"backend\": \"" << backend_name(backend) << "\",\n"
+              << "  \"unarr_built\": " << (GP_ARCHIVE_HAVE_UNARR ? "true" : "false")
+              << ",\n  \"members\": " << members.size()
               << ",\n  \"metrics\": {\n"
               << "    \"toc_ms\": " << toc_s.median << ",\n"
               << "    \"extract_all_ms\": " << all_s.median << ",\n"

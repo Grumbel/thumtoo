@@ -7,23 +7,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Status (2026-10-01)
 
-**Tip:** thumtoo-031.1-avif-jxl-check (on `743dbf4` + agent stack).
+**Tip:** thumtoo-032.1-gp-archive-unarr (on `743dbf4` + agent stack).
 
-### 031.1
-- `gp-tile --codec jpeg|webp|avif|jxl` (AVIF via HEIF/AV1; needs libheif/libjxl in vips)
-- flake apps: `gp-tile`, `gp-archive`
-- flake check `bench-smoke-script` (script presence + benchtoo/golden refs)
+### 032.1
+- `gp-archive --backend auto|libarchive|unarr` when `THUMTOO_HAVE_UNARR`
+- CMake links libunarr into gp-archive when found
 
 ### Prior
-- 030 benchtoo rename/URL; 029 gp-archive + WebP; 028 documents smoke
+- 031 AVIF/JXL + bench-smoke-script check; 030 benchtoo rename
 
 ### Companion
 https://github.com/Grumbel/benchtoo
 
-### Bundle policy
-Work-line base: `743dbf4`. Full stack in each tip bundle.
-
 ### Next
-- unarr path in gp-archive when linked
-- full `checks.bench-smoke` with optional benchtoo flake input
-- pdf2djvu optional in benchtoo flake
+- Full `checks.bench-smoke` with optional benchtoo flake input
+- RAR4 fixture for unarr timing A/B
+- Baseline JSON store + tolerances
