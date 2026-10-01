@@ -406,7 +406,7 @@ install(DIRECTORY include/thumtoo DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 if(THUMTOO_BUILD_TOOLS)
   install(TARGETS thumtoo-tile thumtoo-export thumtoo-status thumtoo-prepare thumtoo-bench thumtoo-xdg-thumb
                   thumtoo-gc thumtoo-archive thumtoo-microbench-decode
-                  thumtoo-gp-tile
+                  thumtoo-gp-tile thumtoo-gp-archive
           RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
   install(FILES
     man/thumtoo-prepare.1

@@ -7,19 +7,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Status (2026-10-01)
 
-**Tip:** thumtoo-035.1-capture-baselines (on `743dbf4` + agent stack).
+**Tip:** thumtoo-036.1-install-gp-archive (on `743dbf4` + agent stack).
 
-### 035.1
-- `tools/capture_baselines.sh` — write machine-class JSON under docs/bench/baselines/$MACHINE
-- `checks.baseline-compare-tool` — identity check of compare_bench_json on example/
+### 036.1
+- Install `thumtoo-gp-archive` (was built but missing from install TARGETS → tools-bin check fail)
 
 ### Prior
-- 034 corpus-smoke; 033 smoke-lite + compare tool; 032 unarr; 031 avif/jxl
+- 035 capture_baselines; 034 corpus-smoke; …
 
 ### Companion
-https://github.com/Grumbel/benchtoo (pull tip through 009.3-no-pdf2djvu)
+https://github.com/Grumbel/benchtoo (tip through 009.3-no-pdf2djvu)
 
 ### Next
-- Run capture_baselines on a real machine and commit under docs/bench/baselines/<host>/
-- Optional CI job: capture vs committed baseline with compare_bench_json
-- Push benchtoo 009.3 to GitHub
+- Real machine baselines; push benchtoo tip to GitHub
