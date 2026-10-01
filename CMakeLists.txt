@@ -312,12 +312,19 @@ if(THUMTOO_BUILD_TOOLS)
   target_link_libraries(thumtoo-tile PRIVATE thumtoo)
   target_link_libraries(thumtoo-export PRIVATE thumtoo)
   target_link_libraries(thumtoo-bench PRIVATE thumtoo)
+  # The golden-path tools use only libvips / libarchive / libunarr, not the
+  # thumtoo library; they take the generated version.hpp (header-only) for
+  # --version and share the CLI/output layers in tools/golden/.
   add_executable(thumtoo-microbench-decode tools/microbench_decode.cpp)
   target_link_libraries(thumtoo-microbench-decode PRIVATE PkgConfig::VIPS)
   add_executable(thumtoo-gp-tile tools/golden/gp_tile.cpp)
   target_link_libraries(thumtoo-gp-tile PRIVATE PkgConfig::VIPS)
   add_executable(thumtoo-gp-archive tools/golden/gp_archive.cpp)
   target_link_libraries(thumtoo-gp-archive PRIVATE PkgConfig::LIBARCHIVE)
+  foreach(gp_tool thumtoo-microbench-decode thumtoo-gp-tile thumtoo-gp-archive)
+    target_include_directories(${gp_tool} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
+    target_compile_options(${gp_tool} PRIVATE -Wall -Wextra)
+  endforeach()
   if(THUMTOO_HAVE_UNARR)
     target_link_libraries(thumtoo-gp-archive PRIVATE PkgConfig::UNARR)
     target_compile_definitions(thumtoo-gp-archive PRIVATE THUMTOO_HAVE_UNARR=1)
@@ -413,6 +420,20 @@ if(THUMTOO_BUILD_TESTS)
   target_include_directories(thumtoo-test-gp-output PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/golden)
   add_test(NAME gp_output COMMAND thumtoo-test-gp-output)
+
+  # Command-line behavior of the benchmark tools, end to end (exit codes, CSV /
+  # JSON shape, failure handling). Needs the tools and python3.
+  if(THUMTOO_BUILD_TOOLS)
+    find_package(Python3 COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+      add_test(NAME bench_tools_cli
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bench_tools_cli.py
+          --gp-archive $<TARGET_FILE:thumtoo-gp-archive>
+          --gp-tile $<TARGET_FILE:thumtoo-gp-tile>
+          --microbench-decode $<TARGET_FILE:thumtoo-microbench-decode>
+          --thumtoo-bench $<TARGET_FILE:thumtoo-bench>)
+    endif()
+  endif()
 endif()
 
 install(TARGETS thumtoo

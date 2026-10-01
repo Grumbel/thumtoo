@@ -131,7 +131,8 @@
         pname = "thumtoo";
         inherit version;
         src = self;
-        nativeBuildInputs = [ pkgs.cmake pkgs.ninja pkgs.pkg-config ];
+        # python3: lets CMake register the bench_tools_cli ctest (tests/test_bench_tools_cli.py).
+        nativeBuildInputs = [ pkgs.cmake pkgs.ninja pkgs.pkg-config pkgs.python3 ];
         buildInputs = vipsInputs pkgs;
         cmakeFlags = [
           "-GNinja"
