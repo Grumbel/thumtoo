@@ -176,7 +176,7 @@ late is cheaper than storing RGBA everywhere.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  flake input: pixel-bench-corpus (separate repo / flake)    │
+│  flake input: benchtoo (separate repo / flake)    │
 │  - synthetic generators (deterministic)                     │
 │  - pinned public-domain samples (JPEG/PNG/PDF/ZIP/RAR…)     │
 │  - manifest.json (id, path, class, expected WxH, license)   │
@@ -209,7 +209,7 @@ late is cheaper than storing RGBA everywhere.
 
 | Component | Location | Rationale |
 |-----------|----------|-----------|
-| Corpus + generators | **New flake** `pixel-bench-corpus` (or `thumtoo-bench-data`) | Large / binary; not source tree |
+| Corpus + generators | **New flake** `benchtoo` (or `thumtoo-bench-data`) | Large / binary; not source tree |
 | Golden-path tools | Prefer **same new flake** or `thumtoo/tools/golden/` with clear “no Client” rule | Must not drag SQLite / Store |
 | Library-facing benches | Stay in **thumtoo** (`thumtoo-bench`, extended) | Needs real Client API |
 | Host TTFP | Stay in **biltoo** (`BILTOO_TTFP`) | Product path |
@@ -251,9 +251,9 @@ false-fail when class matches.
 
 ---
 
-## 5. Corpus design (`pixel-bench-corpus`)
+## 5. Corpus design (`benchtoo`)
 
-### 5.1 Synthetic (pixel-bench-corpus flake)
+### 5.1 Synthetic (benchtoo flake)
 
 Content-class matrix (not solid fills). Classes pick **landscape 16:9** or
 **portrait ~2:3** size sets so benches match biltoo ebook/comic/album traffic:
@@ -431,7 +431,7 @@ standing agent rules; keep commits task-focused (generators ≠ harness ≠ docs
 
 ## 12. Suggested first implementation slice (after plan approval)
 
-1. Create `pixel-bench-corpus` flake with synthetic JPEG generator (0.5–8 MP)
+1. Create `benchtoo` flake with synthetic JPEG generator (0.5–8 MP)
    and empty manifest schema.
 2. Add `tools/golden/gp_decode.cpp` (or corpus-side) using vips only; flake app.
 3. Extend `thumtoo-bench` with `--json`.

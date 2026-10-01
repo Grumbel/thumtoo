@@ -6,19 +6,19 @@
 #   corpus generate (optional) → golden decode → gp-tile → thumtoo-bench --json
 #
 # Environment:
-#   CORPUS_OUT   output/input root (default /tmp/pixel-bench-smoke-corpus)
-#   CORPUS_GEN   path to gen_synthetic.py (default: sibling ../pixel-bench-corpus/...)
+#   CORPUS_OUT   output/input root (default /tmp/benchtoo-smoke-corpus)
+#   CORPUS_GEN   path to gen_synthetic.py (default: sibling ../benchtoo/...)
 #   THUMTOO_BUILD_DIR  build dir with tool binaries (default /tmp/thumtoo-build)
 #   BENCH_SMOKE_QUICK=1  only photo landscape sample (skip bookpage/comic)
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CORPUS_OUT="${CORPUS_OUT:-/tmp/pixel-bench-smoke-corpus}"
+CORPUS_OUT="${CORPUS_OUT:-/tmp/benchtoo-smoke-corpus}"
 BUILD_DIR="${THUMTOO_BUILD_DIR:-/tmp/thumtoo-build}"
 GEN="${CORPUS_GEN:-}"
-if [[ -z "$GEN" && -f "${ROOT}/../pixel-bench-corpus/generators/gen_synthetic.py" ]]; then
-  GEN="${ROOT}/../pixel-bench-corpus/generators/gen_synthetic.py"
+if [[ -z "$GEN" && -f "${ROOT}/../benchtoo/generators/gen_synthetic.py" ]]; then
+  GEN="${ROOT}/../benchtoo/generators/gen_synthetic.py"
 fi
 
 echo "== bench_smoke: corpus =="
@@ -41,7 +41,7 @@ if [[ -n "$GEN" && -f "$GEN" ]]; then
     python3 "$ARCH_GEN" --corpus "$CORPUS_OUT" || true
   fi
 else
-  echo "CORPUS_GEN not set and sibling pixel-bench-corpus not found; using CORPUS_OUT=$CORPUS_OUT"
+  echo "CORPUS_GEN not set and sibling benchtoo not found; using CORPUS_OUT=$CORPUS_OUT"
 fi
 
 # Prefer representative samples: album photo, portrait book page, comic page
