@@ -37,3 +37,5 @@ Exit code 0 = within tolerance; 1 = regression; 2 = usage/schema error.
 
 Tolerances are relative on timing fields (`*_ms`, `encode_ms`, `decode_ms`).
 Byte counts are compared with a smaller default tolerance (5%).
+
+See `example/` for schema-only placeholders (not for CI gates).

@@ -291,8 +291,8 @@
           # Requires inputs.benchtoo; builds corpus package then microbench-decode + gp-archive.
           bench-smoke-lite = pkgs.runCommand "thumtoo-bench-smoke-lite" {
             nativeBuildInputs = [ pkg ];
-            # corpus derivation from companion flake
-            corpus = benchtoo.packages.${system}.corpus;
+            # Prefer corpus-smoke (fast); fall back to full corpus on older benchtoo tips
+            corpus = benchtoo.packages.${system}.corpus-smoke or benchtoo.packages.${system}.corpus;
           } ''
             set -euo pipefail
             echo "corpus=$corpus"
