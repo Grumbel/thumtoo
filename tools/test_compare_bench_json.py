@@ -83,9 +83,44 @@ def main() -> int:
     v2 = copy.deepcopy(v1)
     v2["verdict"]["metrics"]["bytes_total"]["winner"] = "webp"
     rc, out = run(v1, v2)
-    expect(rc == 0 and "bytes_total: jxl -> webp" in out, "winner change reported", out)
+    expect(rc == 0 and "bytes_total: jxl -> webp" in out, "metric winner change reported", out)
     rc, out = run(v1, v2, "--fail-on-winner-change")
-    expect(rc == 1, "winner change fatal when requested", out)
+    expect(rc == 0, "per-metric flips are informational even with the flag", out)
+    v3 = copy.deepcopy(v1)
+    v3["verdict"]["overall"]["winner"] = "webp"
+    rc, out = run(v1, v3)
+    expect(rc == 0 and "overall: jpeg -> webp" in out, "overall change reported", out)
+    rc, out = run(v1, v3, "--fail-on-winner-change")
+    expect(rc == 1, "overall winner change fatal when requested", out)
+
+    # Batch documents: results keyed by archive, winners per archive + aggregate.
+    def result(archive: str, winner: str, ms: float) -> dict:
+        return {"kind": "compare", "archive": archive,
+                "variants": [{"backend": "unarr", "metrics": {"toc_ms": ms}}],
+                "verdict": {"metrics": {"toc_ms": {"winner": winner}},
+                            "overall": {"winner": winner}}}
+
+    b1 = {"kind": "batch", "results": [result("/d/a.cbz", "unarr", 1.0),
+                                       result("/d/b.cbz", "unarr", 2.0)],
+          "aggregate": {"winner": "unarr"}}
+    # Same data, results listed in the other order: still identical.
+    b_swapped = copy.deepcopy(b1)
+    b_swapped["results"].reverse()
+    rc, out = run(b1, b_swapped, "--fail-on-winner-change")
+    expect(rc == 0, "batch results matched by archive", out)
+    # b.cbz got slower: flagged under its archive identity.
+    b_slow = copy.deepcopy(b1)
+    b_slow["results"][1]["variants"][0]["metrics"]["toc_ms"] = 9.0
+    rc, out = run(b1, b_slow)
+    expect(rc == 1 and "results[archive=/d/b.cbz].variants[backend=unarr].metrics.toc_ms" in out,
+           "batch regression keyed by archive", out)
+    # Winner flips for one archive and for the aggregate.
+    b_flip = copy.deepcopy(b1)
+    b_flip["results"][0]["verdict"]["overall"]["winner"] = "libarchive"
+    b_flip["aggregate"]["winner"] = ""
+    rc, out = run(b1, b_flip, "--fail-on-winner-change")
+    expect(rc == 1 and "[archive=/d/a.cbz] overall: unarr -> libarchive" in out
+           and "aggregate: unarr -> tie" in out, "batch winner changes reported", out)
 
     # Unreadable input is a usage error.
     with tempfile.TemporaryDirectory() as d:

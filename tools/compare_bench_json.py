@@ -8,13 +8,18 @@ Timing keys (name ends with _ms or is encode_ms/decode_ms) use --tolerance-pct
 (default 5) in both directions.
 
 List elements are matched by identity, not position: an object carrying
-identity fields (variant/codec, backend, quality, name, file) is keyed as
-e.g. ``codecs[codec=jpeg].rows[quality=80].encode_ms``. Inserting a row or a
+identity fields (variant/codec, backend, quality, name, file, archive) is keyed
+as e.g. ``codecs[codec=jpeg].rows[quality=80].encode_ms`` or, in a batch
+document, ``results[archive=/data/a.cbz].variants[backend=unarr].metrics...``. Inserting a row or a
 codec therefore does not shift every later key. Elements without identity
 fields, or with duplicate identities, fall back to their index.
 
 For comparison documents ("kind": "compare") a change of verdict winner is
-reported; with --fail-on-winner-change it is an error.
+reported; with --fail-on-winner-change a change of the *overall* (or aggregate)
+winner is an error. Per-metric winners are only listed: on near-tie metrics they
+flip between identical runs, so gating on them would be flaky. Batch documents
+("kind": "batch") report each result's winners under its identity, plus the
+aggregate winner.
 
 Exit: 0 within tolerance, 1 regression (or winner change when asked),
 2 usage / unreadable input.
@@ -29,7 +34,7 @@ from pathlib import Path
 from typing import Any
 
 # Identity fields, in key order. "variant" (e.g. "jxl@e1") supersedes "codec".
-IDENTITY_FIELDS = ("variant", "codec", "backend", "quality", "name", "file")
+IDENTITY_FIELDS = ("variant", "codec", "backend", "quality", "name", "file", "archive")
 
 
 def identity(obj: Any) -> str | None:
@@ -72,20 +77,34 @@ def is_bytes(key: str) -> bool:
     return "byte" in k.lower() or k in ("bytes_total", "jpeg_bytes", "members")
 
 
-def winners(doc: Any) -> dict[str, str]:
-    """Verdict winners of a comparison document: {"overall": name, metric: name}."""
-    verdict = doc.get("verdict") if isinstance(doc, dict) else None
-    if not isinstance(verdict, dict):
+def winners(doc: Any, prefix: str = "") -> dict[str, str]:
+    """Verdict winners of a comparison or batch document.
+
+    {"overall": name, metric: name} for a comparison; for a batch the same per
+    result, prefixed with the result's identity, plus "aggregate".
+    """
+    if not isinstance(doc, dict):
         return {}
     out: dict[str, str] = {}
-    overall = verdict.get("overall", {})
-    if isinstance(overall, dict):
-        out["overall"] = overall.get("winner", "")
-    metrics = verdict.get("metrics", {})
-    if isinstance(metrics, dict):
-        for name, m in metrics.items():
-            if isinstance(m, dict):
-                out[name] = m.get("winner", "")
+    verdict = doc.get("verdict")
+    if isinstance(verdict, dict):
+        overall = verdict.get("overall", {})
+        if isinstance(overall, dict):
+            out[prefix + "overall"] = overall.get("winner", "")
+        metrics = verdict.get("metrics", {})
+        if isinstance(metrics, dict):
+            for name, m in metrics.items():
+                if isinstance(m, dict):
+                    out[prefix + name] = m.get("winner", "")
+    results = doc.get("results")
+    if isinstance(results, list):
+        ids = [identity(r) for r in results]
+        for i, (r, ident) in enumerate(zip(results, ids)):
+            unique = ident is not None and ids.count(ident) == 1
+            out.update(winners(r, f"{prefix}[{ident if unique else i}] "))
+    aggregate = doc.get("aggregate")
+    if isinstance(aggregate, dict) and "winner" in aggregate:
+        out[prefix + "aggregate"] = aggregate["winner"]
     return out
 
 
@@ -105,7 +124,8 @@ def main() -> int:
     ap.add_argument("--tolerance-pct", type=float, default=25.0)
     ap.add_argument("--bytes-tolerance-pct", type=float, default=5.0)
     ap.add_argument("--fail-on-winner-change", action="store_true",
-                    help="treat a changed verdict winner as a regression")
+                    help="treat a changed overall (or aggregate) winner as a "
+                         "regression; per-metric changes are only reported")
     args = ap.parse_args()
 
     base = load(args.baseline)
@@ -156,7 +176,8 @@ def main() -> int:
             print(f"  {key}: baseline={bv:.4g} current={cv:.4g} delta={pct:.1f}%",
                   file=sys.stderr)
         return 1
-    if changed and args.fail_on_winner_change:
+    fatal = [c for c in changed if c[0].endswith(("overall", "aggregate"))]
+    if fatal and args.fail_on_winner_change:
         return 1
     print("ok: within tolerance")
     return 0

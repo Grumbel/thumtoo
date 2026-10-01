@@ -20,6 +20,8 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
+#include <map>
 #include <ostream>
 #include <sstream>
 #include <stdexcept>
@@ -94,6 +96,29 @@ inline std::string csv_num(double v) {
   std::ostringstream os;
   os << v;
   return os.str();
+}
+
+// --- text helpers ---------------------------------------------------------------
+
+/// Prefix every non-empty line of `text` with `indent`.
+inline std::string indent_lines(const std::string& text, const std::string& indent) {
+  std::string out;
+  std::istringstream in(text);
+  std::string line;
+  while (std::getline(in, line)) out += (line.empty() ? "" : indent) + line + "\n";
+  return out;
+}
+
+/// Names for the text report: the file name, or the path as given when two
+/// inputs share a file name (corpus/a/x.zip, corpus/b/x.zip).
+inline std::vector<std::string> display_names(const std::vector<std::filesystem::path>& paths) {
+  std::map<std::string, int> count;
+  for (const auto& p : paths) ++count[p.filename().string()];
+  std::vector<std::string> out;
+  for (const auto& p : paths) {
+    out.push_back(count[p.filename().string()] > 1 ? p.string() : p.filename().string());
+  }
+  return out;
 }
 
 // --- text table -----------------------------------------------------------------

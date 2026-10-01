@@ -16,6 +16,9 @@
 #include <string_view>
 #include <vector>
 
+#include <fcntl.h>
+#include <unistd.h>
+
 namespace gp {
 
 using clock_type = std::chrono::steady_clock;
@@ -75,6 +78,36 @@ inline std::vector<Timing> time_interleaved(int repeats,
   }
   return out;
 }
+
+/// Silences file descriptor 2 while alive.
+///
+/// libunarr and libvips write diagnostics straight to stderr ("Skipping
+/// directory entry", format warnings) on every call, and a timing loop makes
+/// thousands of calls. Wrap measurement code in this; our own messages are
+/// printed outside it. Failures are still reported, through the tools' own
+/// status/reason text. No-op if /dev/null or dup() is unavailable.
+class StderrSilencer {
+ public:
+  StderrSilencer() {
+    std::fflush(stderr);
+    saved_ = ::dup(STDERR_FILENO);
+    const int null_fd = ::open("/dev/null", O_WRONLY);
+    if (saved_ >= 0 && null_fd >= 0) ::dup2(null_fd, STDERR_FILENO);
+    if (null_fd >= 0) ::close(null_fd);
+  }
+  ~StderrSilencer() {
+    if (saved_ >= 0) {
+      std::fflush(stderr);
+      ::dup2(saved_, STDERR_FILENO);
+      ::close(saved_);
+    }
+  }
+  StderrSilencer(const StderrSilencer&) = delete;
+  StderrSilencer& operator=(const StderrSilencer&) = delete;
+
+ private:
+  int saved_ = -1;
+};
 
 /// Write `s` as a JSON string literal (quotes included).
 inline void json_string(std::ostream& os, std::string_view s) {

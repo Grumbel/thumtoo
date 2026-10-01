@@ -197,7 +197,7 @@ int main() {
     std::ostringstream os;
     gp::print_aggregate(os, r, "archives");
     const std::string text = os.str();
-    expect(text.find("Summary over 3 archives") != std::string::npos, "summary header");
+    expect(text.find("Summary over 3 comparable archives") != std::string::npos, "summary header");
     expect(text.find("overall: a (") != std::string::npos, "summary overall line");
     std::ostringstream js;
     gp::JsonWriter w(js);

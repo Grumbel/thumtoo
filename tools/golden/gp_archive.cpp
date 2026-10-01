@@ -1,22 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Golden-path archive timings (no thumtoo Client/Store).
-// Backends: libarchive (always); libunarr when built with THUMTOO_HAVE_UNARR.
-// unarr reads ZIP, TAR, RAR4 (incl. solid) and — if libunarr was built with
-// the 7z SDK — 7z. RAR5 is libarchive-only.
-//
-// Usage:
-//   thumtoo-gp-archive [--repeat N] [--backend B] [--tie-pct P] [--json] ARCHIVE
-//
-//   B = auto        thumtoo dispatcher choice (unarr for RAR4, else libarchive)
-//     | libarchive | unarr
-//     | unarr-seek  unarr, but single-member extracts jump to the entry offset
-//                   recorded by the last TOC read (ar_parse_entry_at) instead
-//                   of walking — the "TOC cached, random access" route. Its
-//                   extract_first/last/scattered times exclude the TOC.
-//     | all         every compiled-in backend, then judge which wins
-//     | a,b,…       explicit comparison list
+// Golden-path archive timings (no thumtoo Client/Store): open the archive with
+// the library directly, list it, extract everything, extract single members.
+// Several backends and several archives can be measured in one run; with more
+// than one backend the tool says which one wins. See --help.
 //
 // Every backend is verified before it is timed: extracted bytes must match
 // the sizes its own TOC declares, and in comparison mode all backends must
@@ -26,8 +14,10 @@
 #include <archive.h>
 #include <archive_entry.h>
 
+#include "gp_cli.hpp"
 #include "gp_common.hpp"
 #include "gp_json.hpp"
+#include "gp_output.hpp"
 #include "gp_verdict.hpp"
 
 #include <algorithm>
@@ -396,11 +386,11 @@ struct Result {
 
 const std::vector<gp::MetricSpec>& metric_specs() {
   static const std::vector<gp::MetricSpec> specs = {
-      {"toc_ms", gp::Better::Lower},
-      {"extract_all_ms", gp::Better::Lower},
-      {"extract_first_ms", gp::Better::Lower},
-      {"extract_last_ms", gp::Better::Lower},
-      {"extract_scattered10_ms", gp::Better::Lower},
+      {"toc_ms", gp::Better::Lower, "table of contents", "TOC"},
+      {"extract_all_ms", gp::Better::Lower, "extract all", "all"},
+      {"extract_first_ms", gp::Better::Lower, "extract first", "first"},
+      {"extract_last_ms", gp::Better::Lower, "extract last", "last"},
+      {"extract_scattered10_ms", gp::Better::Lower, "extract 10 scattered", "scatter"},
   };
   return specs;
 }
@@ -558,7 +548,81 @@ std::string cross_check(const std::vector<Result>& results) {
   return {};
 }
 
-// --- output ---------------------------------------------------------------------
+// --- backend selection ---------------------------------------------------------
+
+struct BackendInfo {
+  const char* name;
+  const char* help;
+  bool built;
+};
+
+const std::vector<BackendInfo>& backend_infos() {
+  static const std::vector<BackendInfo> infos = {
+      {"libarchive",
+       "libarchive. Reads every format (zip, rar, rar5, 7z, tar, compressed tar, ...).",
+       true},
+      {"unarr",
+       "libunarr. Reads zip, tar, rar4 (also solid) and, if libunarr was built with the 7z "
+       "SDK, 7z; not rar5. Finds a single member by walking the entries from the start.",
+       GP_ARCHIVE_HAVE_UNARR != 0},
+      {"unarr-seek",
+       "unarr, but single-member extracts jump to the entry offset recorded during the TOC "
+       "read (the route thumtoo can take because it caches the TOC). Its first/last/"
+       "scattered timings therefore exclude the TOC.",
+       GP_ARCHIVE_HAVE_UNARR != 0},
+  };
+  return infos;
+}
+
+/// Which backends to run on each archive.
+struct BackendSel {
+  bool automatic = false;  // thumtoo's dispatcher choice, decided per archive
+  bool compare = false;    // more than one backend: judge which wins
+  std::vector<std::string> names;
+
+  std::vector<std::string> for_format(Format f) const {
+    return automatic ? std::vector<std::string>{auto_backend(f)} : names;
+  }
+};
+
+/// "auto", "all", or "a,b,..."; the problem is described in `err` on failure.
+std::optional<BackendSel> parse_backend_sel(const std::string& flag, std::string& err) {
+  BackendSel sel;
+  if (flag == "auto") {
+    sel.automatic = true;
+    return sel;
+  }
+  if (flag == "all") {
+    sel.names = compiled_backends();
+    sel.compare = true;
+    return sel;
+  }
+  const auto built = compiled_backends();
+  for (const std::string& n : gp::cli::split(flag, ',')) {
+    if (std::find(sel.names.begin(), sel.names.end(), n) != sel.names.end()) continue;
+    if (std::find(built.begin(), built.end(), n) == built.end()) {
+      const auto known = std::find_if(backend_infos().begin(), backend_infos().end(),
+                                      [&](const BackendInfo& b) { return n == b.name; });
+      if (known != backend_infos().end()) {
+        err = "backend '" + n + "' is not available in this build (built without libunarr)";
+      } else {
+        err = "unknown backend '" + n + "' (use auto, all, or a list of:";
+        for (const std::string& b : built) err += " " + b;
+        err += ")";
+      }
+      return std::nullopt;
+    }
+    sel.names.push_back(n);
+  }
+  if (sel.names.empty()) {
+    err = "expected auto, all, or a comma-separated list of backends";
+    return std::nullopt;
+  }
+  sel.compare = sel.names.size() > 1;
+  return sel;
+}
+
+// --- measuring one archive ------------------------------------------------------
 
 /// Verdict for one archive's comparison, or the reason none can be given.
 struct Judged {
@@ -581,6 +645,47 @@ Judged judge_results(const std::vector<Result>& results, double tie_pct) {
   return j;
 }
 
+struct ArchiveRun {
+  fs::path path;
+  std::string name;  // display name
+  Format format = Format::Other;
+  std::vector<Result> results;
+  bool compare = false;
+  Judged judged;  // compare mode only
+
+  /// Measured (single backend) / a verdict could be reached (comparison).
+  bool ok() const {
+    return compare ? judged.ok()
+                   : (!results.empty() && results.front().status == Status::Ok);
+  }
+  const Result* any_ok() const {
+    for (const Result& r : results) {
+      if (r.status == Status::Ok) return &r;
+    }
+    return nullptr;
+  }
+};
+
+ArchiveRun measure_archive(const fs::path& path, const std::string& name,
+                           const BackendSel& sel, int repeats, double tie_pct) {
+  gp::StderrSilencer quiet;  // libunarr logs on every open
+  ArchiveRun run;
+  run.path = path;
+  run.name = name;
+  run.format = sniff_format(path);
+  run.compare = sel.compare;
+  std::vector<std::unique_ptr<Backend>> backends;
+  for (const std::string& n : sel.for_format(run.format)) {
+    backends.push_back(make_backend(n, path, run.format));
+    run.results.push_back(verify(*backends.back(), run.format));
+  }
+  time_all(backends, run.results, repeats);
+  if (run.compare) run.judged = judge_results(run.results, tie_pct);
+  return run;
+}
+
+// --- JSON documents -------------------------------------------------------------
+
 void write_metrics_json(gp::JsonWriter& w, const Result& r) {
   w.begin_object();
   w.field("toc_ms", r.toc.median);
@@ -591,36 +696,40 @@ void write_metrics_json(gp::JsonWriter& w, const Result& r) {
   w.end_object();
 }
 
-void write_header_json(gp::JsonWriter& w, const fs::path& path, Format format) {
+void write_header_json(gp::JsonWriter& w, const ArchiveRun& run) {
   w.field("tool", "thumtoo-gp-archive");
-  w.field("archive", path.string());
-  w.field("format", format_name(format));
+  w.field("archive", run.path.string());
+  w.field("format", format_name(run.format));
   w.field("unarr_built", GP_ARCHIVE_HAVE_UNARR != 0);
 }
 
-/// Single-backend document. Keys are kept stable for checked-in baselines.
-void write_single_doc(gp::JsonWriter& w, const Result& r, const fs::path& path,
-                      Format format) {
+/// One backend, one archive. Keys are kept stable for checked-in baselines;
+/// "status" (and "reason" instead of members/metrics on failure) is additive.
+void write_single_doc(gp::JsonWriter& w, const ArchiveRun& run) {
+  const Result& r = run.results.front();
   w.begin_object();
   w.field("schema", 1);
-  write_header_json(w, path, format);
+  write_header_json(w, run);
   w.field("backend", r.backend);
-  w.field("members", r.members);
-  w.key("metrics");
-  write_metrics_json(w, r);
+  w.field("status", status_name(r.status));
+  if (r.status == Status::Ok) {
+    w.field("members", r.members);
+    w.key("metrics");
+    write_metrics_json(w, r);
+  } else {
+    w.field("reason", r.reason);
+  }
   w.end_object();
 }
 
-void write_compare_doc(gp::JsonWriter& w, const std::vector<Result>& results,
-                       const Judged& judged, const fs::path& path, Format format,
-                       int repeats) {
+void write_compare_doc(gp::JsonWriter& w, const ArchiveRun& run, int repeats) {
   w.begin_object();
   w.field("schema", 1);
   w.field("kind", "compare");
-  write_header_json(w, path, format);
+  write_header_json(w, run);
   w.field("repeats", repeats);
   w.key("variants").begin_array();
-  for (const Result& r : results) {
+  for (const Result& r : run.results) {
     w.begin_object(gp::JsonWriter::Compact);
     w.field("backend", r.backend);
     w.field("status", status_name(r.status));
@@ -635,169 +744,334 @@ void write_compare_doc(gp::JsonWriter& w, const std::vector<Result>& results,
     w.end_object();
   }
   w.end_array();
-  w.field("consistency_error", judged.mismatch);
+  w.field("consistency_error", run.judged.mismatch);
   w.key("verdict");
-  gp::write_verdict_json(w, judged.verdict);
+  gp::write_verdict_json(w, run.judged.verdict);
   w.end_object();
 }
 
-void print_single_text(const Result& r, const fs::path& path, Format format) {
-  std::cout << "archive=" << path.filename().string() << " format="
-            << format_name(format) << " backend=" << r.backend
-            << " members=" << r.members << "\n";
-  std::printf("toc_ms=%.3f\n", r.toc.median);
-  std::printf("extract_all_ms=%.3f\n", r.all.median);
-  std::printf("extract_first_ms=%.3f\n", r.first.median);
-  std::printf("extract_last_ms=%.3f\n", r.last.median);
-  std::printf("extract_scattered10_ms=%.3f\n", r.scattered.median);
+// --- CSV rows -------------------------------------------------------------------
+
+const std::vector<std::string>& csv_columns() {
+  static const std::vector<std::string> cols = {
+      "archive",         "format",           "backend",          "status",
+      "reason",          "members",          "bytes",            "toc_ms",
+      "extract_all_ms",  "extract_first_ms", "extract_last_ms",  "extract_scattered10_ms",
+      "overall_ratio"};
+  return cols;
 }
 
-void print_compare_text(const std::vector<Result>& results, const Judged& judged,
-                        const fs::path& path, Format format, int repeats) {
-  std::cout << "archive=" << path.filename().string()
-            << " format=" << format_name(format) << " repeats=" << repeats << "\n";
-  std::printf("%-12s %8s %10s %14s %16s %15s %22s\n", "backend", "members",
-              "toc_ms", "extract_all_ms", "extract_first_ms", "extract_last_ms",
-              "extract_scattered10_ms");
-  for (const auto& r : results) {
-    if (r.status == Status::Ok) {
-      std::printf("%-12s %8zu %10.3f %14.3f %16.3f %15.3f %22.3f\n",
-                  r.backend.c_str(), r.members, r.toc.median, r.all.median,
-                  r.first.median, r.last.median, r.scattered.median);
-    } else {
-      std::printf("%-12s %s: %s\n", r.backend.c_str(), status_name(r.status),
-                  r.reason.c_str());
+std::vector<std::string> csv_row(const ArchiveRun& run, const Result& r) {
+  const bool ok = r.status == Status::Ok;
+  std::string reason = r.reason;
+  if (ok && run.compare && !run.judged.mismatch.empty()) {
+    reason = "backends disagree: " + run.judged.mismatch;
+  }
+  std::string ratio;
+  // A ratio means "cost relative to the best of several"; with a single
+  // measurable backend there is nothing to be relative to.
+  if (run.compare && run.judged.verdict.overall.size() > 1) {
+    if (const auto v = run.judged.verdict.overall_ratio(r.backend)) ratio = gp::csv_num(*v);
+  }
+  const auto num = [&](double v) { return ok ? gp::csv_num(v) : std::string(); };
+  return {run.path.string(),
+          format_name(run.format),
+          r.backend,
+          status_name(r.status),
+          reason,
+          ok ? std::to_string(r.members) : "",
+          ok ? std::to_string(r.bytes) : "",
+          num(r.toc.median),
+          num(r.all.median),
+          num(r.first.median),
+          num(r.last.median),
+          num(r.scattered.median),
+          ratio};
+}
+
+// --- text report ----------------------------------------------------------------
+
+/// "name  (zip, 160 members, 49.0 MiB)"
+void print_archive_heading(const ArchiveRun& run) {
+  std::cout << run.name << "  (" << format_name(run.format);
+  if (const Result* r = run.any_ok()) {
+    std::cout << ", " << r->members << " members, " << gp::fmt_bytes(r->bytes);
+  }
+  std::cout << ")\n";
+}
+
+void print_compare_block(const ArchiveRun& run) {
+  using gp::Align;
+  print_archive_heading(run);
+  gp::TextTable table({{"backend", Align::Left},
+                       {"TOC ms", Align::Right},
+                       {"all ms", Align::Right},
+                       {"first ms", Align::Right},
+                       {"last ms", Align::Right},
+                       {"10 scattered ms", Align::Right}});
+  for (const Result& r : run.results) {
+    if (r.status != Status::Ok) continue;
+    table.add_row({r.backend, gp::fmt_ms(r.toc.median), gp::fmt_ms(r.all.median),
+                   gp::fmt_ms(r.first.median), gp::fmt_ms(r.last.median),
+                   gp::fmt_ms(r.scattered.median)});
+  }
+  if (!table.empty()) table.print(std::cout, "  ");
+  for (const Result& r : run.results) {
+    if (r.status != Status::Ok) {
+      std::cout << "  " << r.backend << ": " << status_name(r.status) << " — " << r.reason << "\n";
     }
   }
-  if (!judged.mismatch.empty()) {
-    std::cout << "verdict: refused — backends disagree: " << judged.mismatch << "\n";
-  } else {
-    gp::print_verdict(std::cout, judged.verdict);
+  if (!run.judged.mismatch.empty()) {
+    std::cout << "  verdict refused: backends disagree about the archive: "
+              << run.judged.mismatch << "\n";
+  } else if (run.any_ok()) {
+    std::ostringstream verdict;
+    gp::print_verdict(verdict, run.judged.verdict);
+    std::cout << "\n" << gp::indent_lines(verdict.str(), "  ");
   }
+  std::cout << "\n";
 }
 
-/// Single-backend run; failure goes to stderr.
-int report_single(const Result& r, const fs::path& path, Format format, bool json) {
-  if (r.status != Status::Ok) {
-    std::cerr << r.backend << ": " << status_name(r.status) << ": " << r.reason
-              << " (" << path.string() << ")\n";
-    return 1;
-  }
-  if (json) {
-    gp::JsonWriter w(std::cout);
-    write_single_doc(w, r, path, format);
-  } else {
-    print_single_text(r, path, format);
-  }
-  return 0;
-}
+/// Collects one row per archive for the single-backend report.
+class SingleTable {
+ public:
+  SingleTable()
+      : table_({{"archive", gp::Align::Left},
+                {"format", gp::Align::Left},
+                {"backend", gp::Align::Left},
+                {"members", gp::Align::Right},
+                {"size", gp::Align::Right},
+                {"TOC ms", gp::Align::Right},
+                {"all ms", gp::Align::Right},
+                {"first ms", gp::Align::Right},
+                {"last ms", gp::Align::Right},
+                {"10 scattered ms", gp::Align::Right}}) {}
 
-int report_compare(const std::vector<Result>& results, const fs::path& path,
-                   Format format, int repeats, double tie_pct, bool json) {
-  const Judged judged = judge_results(results, tie_pct);
-  if (json) {
-    gp::JsonWriter w(std::cout);
-    write_compare_doc(w, results, judged, path, format, repeats);
-  } else {
-    print_compare_text(results, judged, path, format, repeats);
+  void add(const ArchiveRun& run) {
+    const Result& r = run.results.front();
+    if (r.status != Status::Ok) {
+      failures_.push_back(run.name + ": " + r.backend + ": " + status_name(r.status) +
+                          " — " + r.reason);
+      return;
+    }
+    table_.add_row({run.name, format_name(run.format), r.backend, std::to_string(r.members),
+                    gp::fmt_bytes(r.bytes), gp::fmt_ms(r.toc.median), gp::fmt_ms(r.all.median),
+                    gp::fmt_ms(r.first.median), gp::fmt_ms(r.last.median),
+                    gp::fmt_ms(r.scattered.median)});
   }
-  // Unsupported backends are expected (e.g. unarr on RAR5); a disagreement or
-  // nothing measurable is an error.
-  return judged.ok() ? 0 : 1;
-}
 
-std::vector<std::string> split_list(const std::string& s) {
-  std::vector<std::string> out;
-  std::stringstream ss(s);
-  std::string part;
-  while (std::getline(ss, part, ',')) {
-    if (!part.empty() && std::find(out.begin(), out.end(), part) == out.end()) {
-      out.push_back(part);
+  void print() const {
+    if (!table_.empty()) table_.print(std::cout, "");
+    for (const std::string& f : failures_) std::cout << f << "\n";
+  }
+
+ private:
+  gp::TextTable table_;
+  std::vector<std::string> failures_;
+};
+
+// --- reporter -------------------------------------------------------------------
+
+/// Receives each archive as it finishes and renders it in the chosen format.
+/// Text (comparison) and CSV/JSON output stream; the single-backend text table
+/// needs all rows to align and is printed by finish().
+class Reporter {
+ public:
+  Reporter(gp::OutputMode mode, bool compare, bool csv_header, int repeats, double tie_pct,
+           std::size_t total)
+      : mode_(mode),
+        compare_(compare),
+        repeats_(repeats),
+        total_(total),
+        agg_(metric_specs(), tie_pct) {
+    if (mode_ == gp::OutputMode::Csv) {
+      csv_.emplace(std::cout, csv_columns(), csv_header);
+    } else if (mode_ == gp::OutputMode::Json && total_ > 1) {
+      json_.emplace(std::cout);
+      json_->begin_object();
+      json_->field("schema", 1);
+      json_->field("kind", "batch");
+      json_->field("tool", "thumtoo-gp-archive");
+      json_->field("repeats", repeats_);
+      json_->key("results").begin_array();
     }
   }
-  return out;
-}
 
-void usage(const char* argv0) {
-  std::cerr << "Usage: " << argv0
-            << " [--repeat N] [--backend auto|libarchive|unarr|unarr-seek|all|a,b] "
-               "[--tie-pct P] [--json] ARCHIVE\n"
-            << "Golden-path archive TOC / sequential / random member extract.\n"
-            << "--backend all (or a list) times every backend and reports which "
-               "wins per metric and overall.\n"
-            << "Backends in this build:";
-  for (const auto& b : compiled_backends()) std::cerr << ' ' << b;
-  std::cerr << "\n";
+  void add(const ArchiveRun& run) {
+    if (!run.ok()) ++failures_;
+    if (compare_) agg_.add(run.judged.verdict);
+    switch (mode_) {
+      case gp::OutputMode::Text:
+        if (compare_) print_compare_block(run);
+        else single_.add(run);
+        break;
+      case gp::OutputMode::Csv:
+        for (const Result& r : run.results) csv_->row(csv_row(run, r));
+        break;
+      case gp::OutputMode::Json:
+        if (json_) {
+          emit_json(*json_, run);
+        } else {
+          gp::JsonWriter w(std::cout);  // a single archive: the bare document
+          emit_json(w, run);
+        }
+        break;
+    }
+  }
+
+  /// Trailing output; returns the process exit status (1 if anything failed).
+  int finish() {
+    if (mode_ == gp::OutputMode::Text) {
+      if (!compare_) {
+        single_.print();
+      } else if (total_ > 1) {
+        gp::print_aggregate(std::cout, agg_.result(), "archives");
+      }
+    } else if (mode_ == gp::OutputMode::Json && json_) {
+      json_->end_array();
+      if (compare_) {
+        json_->key("aggregate");
+        gp::write_aggregate_json(*json_, agg_.result());
+      }
+      json_->end_object();
+    }
+    if (failures_ > 0) {
+      std::cerr << "thumtoo-gp-archive: " << failures_ << " of " << total_
+                << (total_ == 1 ? " archive" : " archives")
+                << (compare_ ? " could not be compared" : " could not be measured") << "\n";
+      return 1;
+    }
+    return 0;
+  }
+
+ private:
+  void emit_json(gp::JsonWriter& w, const ArchiveRun& run) const {
+    if (compare_) write_compare_doc(w, run, repeats_);
+    else write_single_doc(w, run);
+  }
+
+  gp::OutputMode mode_;
+  bool compare_;
+  int repeats_;
+  std::size_t total_;
+  gp::Aggregator agg_;
+  SingleTable single_;
+  std::optional<gp::CsvWriter> csv_;
+  std::optional<gp::JsonWriter> json_;
+  std::size_t failures_ = 0;
+};
+
+// --- command line ---------------------------------------------------------------
+
+gp::cli::Spec make_spec() {
+  gp::cli::Spec s;
+  s.program = "thumtoo-gp-archive";
+  s.synopsis = "[OPTION]... ARCHIVE|DIR...";
+  s.summary =
+      "Time archive readers the way an application uses them: list the table of "
+      "contents, extract everything, and extract single members (the first, the last "
+      "and ten spread across the archive). With more than one backend the tool also "
+      "says which one wins, per metric and overall.\n\n"
+      "Archives are opened with the library directly, without thumtoo's cache or "
+      "database, so the numbers show what the library alone costs. Timings are medians "
+      "of --repeat runs after one warm-up on a warm page cache: they measure CPU and "
+      "library overhead, not the disk. Backends are timed interleaved, so run order "
+      "does not favor one. Before anything is timed, each backend must extract exactly "
+      "the bytes its own table of contents declares; a backend that fails this is "
+      "reported and never ranked.";
+  s.options = {
+      {"backend", 'b', "LIST",
+       "Backends to run: auto (thumtoo's choice per archive, the default), all (every "
+       "backend in this build, then judge which wins), or a comma-separated list "
+       "such as libarchive,unarr. A list with more than one entry is a comparison."},
+      {"repeat", 'n', "N", "Timed runs per measurement, 1-1000 (default 5)."},
+      {"tie-pct", 0, "PCT",
+       "Comparison only: results within PCT percent of the best, or within run-to-run "
+       "noise, count as a tie, 0-100 (default 5)."},
+      {"recursive", 'r', "",
+       "Search subdirectories of any DIR as well. Directories are searched for "
+       "archives by content (zip, rar, 7z, tar), sorted by name."},
+  };
+  for (const auto& o : gp::output_options()) s.options.push_back(o);
+
+  std::string backends;
+  for (const BackendInfo& b : backend_infos()) {
+    const std::string text = std::string(b.help) + (b.built ? "" : " NOT AVAILABLE IN THIS BUILD.");
+    const auto lines = gp::cli::detail::wrap(text, 58);
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+      char head[32];
+      std::snprintf(head, sizeof(head), "%-12s", i == 0 ? b.name : "");
+      backends += std::string(head) + " " + lines[i] + "\n";
+    }
+  }
+  s.sections = {
+      {"Backends", backends},
+      {"Output formats",
+       "Default: aligned tables and a verdict in words, for reading. With several\n"
+       "archives and a comparison, a summary over all archives follows.\n"
+       "--csv:   one row per archive and backend; raw milliseconds and bytes; empty\n"
+       "         cell = not measured. overall_ratio is the cost relative to the best\n"
+       "         backend on that archive (1 = best).\n"
+       "--json:  one document for one archive; with several archives a batch document\n"
+       "         {kind: \"batch\", results: [...], aggregate: {...}}.\n"
+       "Warnings and errors go to stderr, so stdout is clean for pipes."},
+      {"Exit status",
+       "0  every archive was measured (comparison: and a verdict could be reached)\n"
+       "1  an archive could not be read, or the backends disagreed about its contents\n"
+       "2  usage error"},
+      {"Examples",
+       "thumtoo-gp-archive book.cbz\n"
+       "thumtoo-gp-archive --backend all corpus/archives/\n"
+       "thumtoo-gp-archive -b libarchive,unarr -n 10 *.cbz\n"
+       "thumtoo-gp-archive --csv --backend all -r corpus/ > archives.csv\n"
+       "thumtoo-gp-archive --json --backend all comic.cbr"},
+  };
+  return s;
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
-  int repeats = 5;
-  bool json_out = false;
-  double tie_pct = 5.0;
-  std::string backend_flag = "auto";
-  fs::path path;
-  for (int i = 1; i < argc; ++i) {
-    const std::string a = argv[i];
-    if (a == "--repeat" && i + 1 < argc) {
-      repeats = std::max(1, std::atoi(argv[++i]));
-    } else if (a == "--backend" && i + 1 < argc) {
-      backend_flag = argv[++i];
-    } else if (a == "--tie-pct" && i + 1 < argc) {
-      tie_pct = std::max(0.0, std::atof(argv[++i]));
-    } else if (a == "--json") {
-      json_out = true;
-    } else if (a == "-h" || a == "--help") {
-      usage(argv[0]);
+  namespace cli = gp::cli;
+  const cli::Spec spec = make_spec();
+  cli::Args args;
+  switch (cli::parse(spec, argc, argv, args)) {
+    case cli::Parsed::Help:
+      cli::print_help(std::cout, spec);
       return 0;
-    } else if (!a.empty() && a[0] == '-') {
-      std::cerr << "unknown option: " << a << "\n";
-      usage(argv[0]);
-      return 2;
-    } else {
-      path = a;
-    }
-  }
-  if (path.empty() || !fs::is_regular_file(path)) {
-    std::cerr << "need ARCHIVE file\n";
-    return 2;
+    case cli::Parsed::Version:
+      cli::print_version(std::cout, spec.program);
+      return 0;
+    case cli::Parsed::Error:
+      return cli::fail_usage(spec, args.errors());
+    case cli::Parsed::Run:
+      break;
   }
 
-  const Format format = sniff_format(path);
+  const int repeats = args.get_int("repeat", 5, 1, 1000);
+  const double tie_pct = args.get_double("tie-pct", 5.0, 0.0, 100.0);
+  const gp::OutputMode mode = gp::resolve_output_mode(args);
+  std::string backend_err;
+  const auto sel = parse_backend_sel(args.get_string("backend", "auto"), backend_err);
+  if (!sel) args.add_error("--backend: " + backend_err);
 
-  std::vector<std::string> names;
-  bool compare = false;
-  if (backend_flag == "all") {
-    names = compiled_backends();
-    compare = true;
-  } else if (backend_flag == "auto") {
-    names = {auto_backend(format)};
-  } else {
-    names = split_list(backend_flag);
-    compare = names.size() > 1;
-  }
-  for (const auto& n : names) {
-    const auto& known = compiled_backends();
-    if (std::find(known.begin(), known.end(), n) == known.end()) {
-      std::cerr << "backend '" << n << "' is not available in this build\n";
-      usage(argv[0]);
-      return 2;
-    }
-  }
-  if (names.empty()) {
-    usage(argv[0]);
-    return 2;
-  }
+  if (args.positionals().empty()) args.add_error("missing ARCHIVE argument");
+  std::vector<std::string> input_errors;
+  const std::vector<fs::path> inputs = cli::expand_inputs(
+      args.positionals(), args.has("recursive"),
+      [](const fs::path& p) { return sniff_format(p) != Format::Other; }, input_errors);
+  for (const std::string& e : input_errors) args.add_error(e);
+  if (args.errors().empty() && inputs.empty()) args.add_error("no archives to measure");
+  if (!args.errors().empty()) return cli::fail_usage(spec, args.errors());
 
-  std::vector<std::unique_ptr<Backend>> backends;
-  std::vector<Result> results;
-  for (const auto& n : names) {
-    backends.push_back(make_backend(n, path, format));
-    results.push_back(verify(*backends.back(), format));
+  const std::vector<std::string> names = gp::display_names(inputs);
+  Reporter reporter(mode, sel->compare, !args.has("no-header"), repeats, tie_pct, inputs.size());
+  cli::Progress progress;
+  for (std::size_t i = 0; i < inputs.size(); ++i) {
+    progress.update(i + 1, inputs.size(), names[i]);
+    const ArchiveRun run = measure_archive(inputs[i], names[i], *sel, repeats, tie_pct);
+    progress.clear();
+    reporter.add(run);
   }
-  time_all(backends, results, repeats);
-
-  if (!compare) return report_single(results.front(), path, format, json_out);
-  return report_compare(results, path, format, repeats, tie_pct, json_out);
+  return reporter.finish();
 }

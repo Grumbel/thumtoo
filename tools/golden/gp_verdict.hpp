@@ -45,7 +45,8 @@ enum class Better { Lower, Higher };
 struct MetricSpec {
   std::string name;  // stable key: JSON / CSV
   Better better = Better::Lower;
-  std::string label = {};  // human-readable text report; empty = name
+  std::string label = {};        // human-readable text report; empty = name
+  std::string short_label = {};  // narrow table headers; empty = label
 };
 
 struct Spread {
@@ -402,9 +403,9 @@ class Aggregator {
 /// ("archives", "images"); metric columns use the specs' labels.
 inline void print_aggregate(std::ostream& os, const AggregateResult& a,
                             const std::string& noun) {
-  os << "Summary over " << a.inputs << ' ' << noun;
+  os << "Summary over " << a.inputs << " comparable " << noun;
   if (a.skipped) {
-    os << " (" << a.skipped << " not comparable: fewer than two candidates measurable)";
+    os << " (" << a.skipped << " skipped: fewer than two candidates measurable)";
   }
   os << "\n";
   if (a.empty()) {
@@ -416,7 +417,10 @@ inline void print_aggregate(std::ostream& os, const AggregateResult& a,
                               {"wins", Align::Right}, {"ties", Align::Right},
                               {"overall", Align::Right}};
   for (const auto& m : a.metrics) {
-    cols.push_back({m.label.empty() ? m.name : m.label, Align::Right});
+    cols.push_back({!m.short_label.empty() ? m.short_label
+                    : !m.label.empty()      ? m.label
+                                            : m.name,
+                    Align::Right});
   }
   TextTable table(std::move(cols));
   for (const auto& e : a.entries) {

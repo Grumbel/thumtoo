@@ -93,6 +93,15 @@ int main() {
     expect_eq(os.str(), "a     b\n---  --\n—     1\nabc  22\n", "code point widths");
   }
 
+  // --- text helpers
+  expect_eq(indent_lines("a\n\nb\n", "  "), "  a\n\n  b\n", "indent keeps blank lines empty");
+  {
+    const std::vector<std::filesystem::path> p = {"c/a/x.zip", "c/b/x.zip", "c/y.zip"};
+    const auto names = display_names(p);
+    expect_eq(names[0] + "|" + names[1] + "|" + names[2], "c/a/x.zip|c/b/x.zip|y.zip",
+              "shared file names fall back to the path");
+  }
+
   // --- output mode resolution
   {
     cli::Args a;
