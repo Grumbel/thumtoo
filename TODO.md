@@ -10,14 +10,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
 **Tip:** thumtoo-030.1-benchtoo-rename (on `743dbf4` + agent stack).
 
 ### 030.1
-- Companion corpus renamed **benchtoo** (was pixel-bench-corpus)
+- Companion corpus **benchtoo** (https://github.com/Grumbel/benchtoo) (was pixel-bench-corpus)
 - `bench_smoke.sh` looks for sibling `../benchtoo/`
 
 ### Prior
 - 029 gp-archive + WebP; 028 documents smoke; 027 ebook classes; …
 
 ### Companion
-**benchtoo** tip 008.1-rename — content classes, PDF book, CBZ, MD/TXT, archives
+**benchtoo** (https://github.com/Grumbel/benchtoo) tip 008.1-rename — content classes, PDF book, CBZ, MD/TXT, archives
 
 ### Bundle policy
 Work-line base: `743dbf4`. Full stack in each tip bundle.

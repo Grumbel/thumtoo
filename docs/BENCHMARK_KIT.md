@@ -176,7 +176,7 @@ late is cheaper than storing RGBA everywhere.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  flake input: benchtoo (separate repo / flake)    │
+│  flake input: benchtoo (https://github.com/Grumbel/benchtoo)    │
 │  - synthetic generators (deterministic)                     │
 │  - pinned public-domain samples (JPEG/PNG/PDF/ZIP/RAR…)     │
 │  - manifest.json (id, path, class, expected WxH, license)   │

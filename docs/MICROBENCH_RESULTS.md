@@ -7,7 +7,7 @@ Not identical to `vips_jpegload(shrink=N)` but same 1/2/4/8 factors.
 ## Verified under libvips (2026-10-01)
 
 Environment: Ubuntu system libvips 8.15.1, greyscale synthetic corpus from
-**benchtoo** (`vips grey` + `jpegsave Q=90`). Tool:
+**benchtoo** (https://github.com/Grumbel/benchtoo) (`vips grey` + `jpegsave Q=90`). Tool:
 `thumtoo-microbench-decode` (no Client). Medians, 5 repeats + 1 warmup.
 
 | file | MP | size_ms | full_ms | shrink2 | shrink4 | shrink8 | thumb32 | thumb256 |
