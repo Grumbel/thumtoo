@@ -18,9 +18,12 @@ if [[ -n "$GEN" && -f "$GEN" ]]; then
 else
   echo "CORPUS_GEN not set and sibling pixel-bench-corpus not found; using CORPUS_OUT=$CORPUS_OUT"
 fi
-JPEG=$(ls "$CORPUS_OUT"/synthetic/jpeg/synth_1920x1080_q90.jpg 2>/dev/null || true)
+JPEG=$(ls "$CORPUS_OUT"/synthetic/jpeg/photo_1920x1080_q90.jpg 2>/dev/null || true)
 if [[ -z "$JPEG" ]]; then
-  echo "missing $CORPUS_OUT/synthetic/jpeg/synth_1920x1080_q90.jpg" >&2
+  JPEG=$(ls "$CORPUS_OUT"/synthetic/jpeg/*_1920x1080_q90.jpg 2>/dev/null | head -1 || true)
+fi
+if [[ -z "$JPEG" ]]; then
+  echo "missing photo_1920x1080 (or any *_1920x1080) under $CORPUS_OUT/synthetic/jpeg/" >&2
   exit 1
 fi
 
