@@ -283,7 +283,27 @@ PdfPageContentStats pdf_page_content_stats(const std::filesystem::path& path,
 
 bool pdf_page_allows_live_tiles(const std::filesystem::path& path,
                                 int page_1based, PdfBackend backend) {
-  return !pdf_page_content_stats(path, page_1based, backend).image_heavy;
+  // Non-image-heavy: denser always allowed (region or full-page).
+  // Image-heavy: denser only when the densest durable level (−2) still fits
+  // the full-page raster path (≤ kTileMaxSourcePixels).
+  auto st = pdf_page_content_stats(path, page_1based, backend);
+  if (!st.image_heavy) {
+    return true;
+  }
+#if defined(THUMTOO_HAVE_MUPDF)
+  auto layout = mupdf_page_layout_size(path, page_1based);
+  if (!layout || layout->width <= 0 || layout->height <= 0) {
+    return false;
+  }
+  const Size full = pdf_page_size_at_scale(*layout, kPdfMinDurableTileScale);
+  const std::int64_t px = static_cast<std::int64_t>(full.width) *
+                          static_cast<std::int64_t>(full.height);
+  return px > 0 && px <= kTileMaxSourcePixels;
+#else
+  (void)path;
+  (void)page_1based;
+  return false;
+#endif
 }
 
 std::optional<PdfRaster> pdf_rasterize_page_region(

@@ -623,20 +623,31 @@ std::optional<PdfRaster> mupdf_render_tile_cell(const std::filesystem::path& pat
   tile_cell_pixel_rect(full.width, full.height, x, y, &left, &top, &tw, &th);
   if (tw <= 0 || th <= 0) return std::nullopt;
 
-  if (scale < kPdfMinLiveTileScaleImageHeavy) {
-    auto st = mupdf_page_content_stats(path, page_1based);
-    if (st.image_heavy) return std::nullopt;
-  }
-
   const double dpi = pdf_dpi_for_scale(scale);
   const std::int64_t page_pixels =
       static_cast<std::int64_t>(full.width) *
       static_cast<std::int64_t>(full.height);
 
-  // Full-page raster + exclusive crop (same as image tiles). Per-cell region
-  // draws of a page-covering scan image can disagree at grid lines with a
-  // continuous full-page sample; crop from one pixmap does not. Fall back to
-  // region only when the page level exceeds kTileMaxSourcePixels.
+  // Image-heavy pages (scans / large XObject coverage): denser (scale < 0)
+  // is only safe via full-page raster + exclusive crop. Per-cell region
+  // draws of a page-covering image disagree at grid lines. Previously we
+  // refused *all* denser scales for image-heavy pages; viewers then saw
+  // FAILED N/N live denser while layout (scale 0) still worked.
+  bool image_heavy_denser = false;
+  if (scale < kPdfMinLiveTileScaleImageHeavy) {
+    auto st = mupdf_page_content_stats(path, page_1based);
+    if (st.image_heavy) {
+      image_heavy_denser = true;
+      if (page_pixels <= 0 || page_pixels > kTileMaxSourcePixels) {
+        return std::nullopt;
+      }
+    }
+  }
+
+  // Full-page raster + exclusive crop (same as image tiles). Fall back to
+  // region only when the page level exceeds kTileMaxSourcePixels — never for
+  // image-heavy denser (seamless crop only).
+
   if (page_pixels > 0 && page_pixels <= kTileMaxSourcePixels) {
     const std::string key = page_level_key(path, page_1based, scale);
     if (g_page_level.key != key || g_page_level.width != full.width ||
@@ -647,6 +658,9 @@ std::optional<PdfRaster> mupdf_render_tile_cell(const std::filesystem::path& pat
                                               full.width, full.height);
       if (!page || page->width != full.width || page->height != full.height ||
           static_cast<int>(page->rgb.size()) < full.width * full.height * 3) {
+        if (image_heavy_denser) {
+          return std::nullopt;
+        }
         return mupdf_rasterize_page_region(path, page_1based, dpi, left, top, tw,
                                            th);
       }
@@ -659,6 +673,9 @@ std::optional<PdfRaster> mupdf_render_tile_cell(const std::filesystem::path& pat
                          g_page_level.height, left, top, tw, th);
   }
 
+  if (image_heavy_denser) {
+    return std::nullopt;
+  }
   return mupdf_rasterize_page_region(path, page_1based, dpi, left, top, tw, th);
 }
 

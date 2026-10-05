@@ -97,7 +97,8 @@ struct PdfPageContentStats {
     const std::filesystem::path& path, int page_1based,
     PdfBackend backend = PdfBackend::Default);
 
-/// Live tiles finer than layout (scale < 0) only when the page is not image-heavy.
+/// Live denser (scale < 0): always for text pages; for image-heavy pages only when
+/// the densest durable level still fits the full-page raster path.
 [[nodiscard]] bool pdf_page_allows_live_tiles(
     const std::filesystem::path& path, int page_1based,
     PdfBackend backend = PdfBackend::Default);

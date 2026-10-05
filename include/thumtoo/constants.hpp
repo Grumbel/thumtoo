@@ -84,7 +84,9 @@ inline constexpr int kPdfLayoutDpi = 144;
 /// are not stored — avoids filling the cache with 1k–9k dpi cells.
 inline constexpr int kPdfMinDurableTileScale = -2;  // 144 * 4 = 576 dpi
 
-/// Image-heavy pages: no live tiles finer than this (0 = layout dpi only).
+/// Image-heavy denser floor: scales below this need the full-page crop path
+/// (region draws seam on scans). 0 = layout dpi; denser allowed when the
+/// level fits kTileMaxSourcePixels (see mupdf_render_tile_cell).
 inline constexpr int kPdfMinLiveTileScaleImageHeavy = 0;
 
 /// Fraction of page area covered by image XObjects → treat as image-heavy.
