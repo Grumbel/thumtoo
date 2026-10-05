@@ -13,6 +13,7 @@
 #include <vector>
 #include <tuple>
 #include <mutex>
+#include <atomic>
 
 #if defined(THUMTOO_HAVE_MUPDF)
 #include <mupdf/fitz.h>
@@ -62,6 +63,22 @@ struct TlsMupdf {
 thread_local TlsMupdf g_tls;
 thread_local std::string g_force_text_key;
 thread_local std::string g_last_mupdf_error;
+
+std::atomic<bool> g_smooth_image_scaling{true};
+
+int tune_image_scale_cb(void* /*arg*/, int dst_w, int dst_h, int src_w,
+                        int src_h)
+{
+  // MuPDF default: Mitchell only when downscaling. Smooth mode uses
+  // Mitchell for upscales too (scan XObjects into denser tiles).
+  if (g_smooth_image_scaling.load(std::memory_order_relaxed)) {
+    return 1;
+  }
+  if (dst_w < src_w || dst_h < src_h) {
+    return 1;
+  }
+  return 0;
+}
 
 // MuPDF routes .md through cmark (fz_htdoc_*). libcmark is not safe for
 // concurrent open/render from multiple worker threads even with per-thread
@@ -131,7 +148,10 @@ fz_context* tls_ctx() {
       // messages are kept in g_last_mupdf_error for hosts to surface in UI.
       fz_set_error_callback(g_tls.ctx, mupdf_error_cb, nullptr);
       fz_set_warning_callback(g_tls.ctx, mupdf_warning_cb, nullptr);
-      fz_try(g_tls.ctx) { fz_register_document_handlers(g_tls.ctx); }
+      fz_try(g_tls.ctx) {
+        fz_register_document_handlers(g_tls.ctx);
+        fz_tune_image_scale(g_tls.ctx, tune_image_scale_cb, nullptr);
+      }
       fz_catch(g_tls.ctx) {
         fz_drop_context(g_tls.ctx);
         g_tls.ctx = nullptr;
@@ -581,7 +601,8 @@ thread_local TlsPageLevel g_page_level;
 [[nodiscard]] std::string page_level_key(const std::filesystem::path& path,
                                          int page_1based, int scale) {
   return path.lexically_normal().string() + "#" + std::to_string(page_1based) +
-         "#s" + std::to_string(scale);
+         "#s" + std::to_string(scale) +
+         (g_smooth_image_scaling.load(std::memory_order_relaxed) ? "#S" : "#N");
 }
 
 /// Crop exclusive cell from a full-page RGB888 buffer.
@@ -1220,6 +1241,17 @@ std::optional<DocumentOutline> mupdf_document_outline(
   fz_drop_outline(ctx, root);
   return out;
 #endif
+}
+
+
+void set_smooth_image_scaling(bool on)
+{
+  g_smooth_image_scaling.store(on, std::memory_order_relaxed);
+}
+
+bool smooth_image_scaling()
+{
+  return g_smooth_image_scaling.load(std::memory_order_relaxed);
 }
 
 }  // namespace thumtoo

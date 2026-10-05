@@ -30,6 +30,17 @@ enum class PdfBackend {
 
 [[nodiscard]] const char* pdf_backend_name(PdfBackend backend);
 
+/**
+ * Process-wide: when true, MuPDF uses Mitchell filtering for image scales
+ * (including upscales of scan XObjects into denser tiles). When false,
+ * MuPDF default (Mitchell on downscale only → nearest-looking upscales).
+ * Default true. Hosts (biltoo View → Smooth Scaling) should mirror this.
+ * Page-level TLS caches key on the flag so a toggle does not reuse stale
+ * nearest-neighbour full-page buffers.
+ */
+void set_smooth_image_scaling(bool on);
+[[nodiscard]] bool smooth_image_scaling();
+
 struct ParsedPdfUri {
   std::filesystem::path pdf_path;
   /// 1-based page index.

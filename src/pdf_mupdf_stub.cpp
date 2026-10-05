@@ -114,3 +114,10 @@ std::optional<PdfRaster> mupdf_page_thumb_rgb(const std::filesystem::path& path,
 }
 
 }  // namespace thumtoo
+
+namespace thumtoo {
+
+void set_smooth_image_scaling(bool on) { (void)on; }
+bool smooth_image_scaling() { return true; }
+
+}  // namespace thumtoo
