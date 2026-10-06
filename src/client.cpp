@@ -1604,6 +1604,17 @@ TileResult Client::materialize_tile_result(const std::string& uri, int scale,
     return {TileStatus::Unavailable, std::nullopt,
             "negative (denser) scales exist only for document pages"};
   }
+  if (scale < 0) {
+    // Refused denser scale: answer before rendering (each attempt would
+    // otherwise cost a page-stats pass and still produce nothing).
+    if (auto pdf = parse_pdf_uri(uri)) {
+      if (auto why = pdf_live_scale_refusal(pdf->pdf_path, pdf->page, scale,
+                                            pdf->backend)) {
+        return {TileStatus::Unavailable, std::nullopt,
+                "denser scale refused: " + *why};
+      }
+    }
+  }
   std::optional<TileBlob> cell;
   try {
     cell = materialize_tile_cell(uri, scale, x, y, skip_probe);
@@ -1658,15 +1669,6 @@ TileResult Client::materialize_tile_result(const std::string& uri, int scale,
       return {TileStatus::Unavailable, std::nullopt,
               std::string("cell outside the tile grid (") + where + ", grid " +
                   std::to_string(nx) + "x" + std::to_string(ny) + ")"};
-    }
-  }
-  if (scale < 0) {
-    if (auto pdf = parse_pdf_uri(uri)) {
-      if (!pdf_page_allows_live_tiles(pdf->pdf_path, pdf->page, pdf->backend)) {
-        return {TileStatus::Unavailable, std::nullopt,
-                "denser scale refused: image-heavy page exceeds the full-page "
-                "raster budget"};
-      }
     }
   }
   if (auto path = path_from_file_uri(uri)) {

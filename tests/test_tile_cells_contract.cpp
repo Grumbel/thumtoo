@@ -16,6 +16,7 @@
 #include "thumtoo/uri.hpp"
 
 #include <chrono>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -73,6 +74,48 @@ void write_bmp(const fs::path& path, int w, int h) {
   std::ofstream out(path, std::ios::binary);
   out.write(reinterpret_cast<const char*>(buf.data()),
             static_cast<std::streamsize>(buf.size()));
+}
+
+/// Letter page fully covered by one JPEG image (scan-like, image-heavy).
+bool write_scan_pdf(const fs::path& path) {
+  std::vector<std::uint8_t> rgb(256 * 256 * 3, 128);
+  for (std::size_t i = 0; i < rgb.size(); ++i) {
+    rgb[i] = static_cast<std::uint8_t>(i * 7);
+  }
+  auto jpeg = thumtoo::encode_tile_cell_rgb(rgb.data(), 256, 256, 0, 0, 0, 85);
+  if (!jpeg || jpeg->bytes.empty()) {
+    return false;
+  }
+  std::vector<std::string> objs;
+  objs.push_back("<< /Type /Catalog /Pages 2 0 R >>");
+  objs.push_back("<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+  objs.push_back("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                 "/Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>");
+  objs.push_back("<< /Type /XObject /Subtype /Image /Width 256 /Height 256 "
+                 "/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode "
+                 "/Length " + std::to_string(jpeg->bytes.size()) + " >>\nstream\n" +
+                 std::string(jpeg->bytes.begin(), jpeg->bytes.end()) + "\nendstream");
+  const std::string content = "q 612 0 0 792 0 0 cm /Im0 Do Q";
+  objs.push_back("<< /Length " + std::to_string(content.size()) + " >>\nstream\n" +
+                 content + "\nendstream");
+  std::string data = "%PDF-1.4\n";
+  std::vector<std::size_t> offs;
+  for (std::size_t i = 0; i < objs.size(); ++i) {
+    offs.push_back(data.size());
+    data += std::to_string(i + 1) + " 0 obj\n" + objs[i] + "\nendobj\n";
+  }
+  const std::size_t xref = data.size();
+  data += "xref\n0 " + std::to_string(objs.size() + 1) + "\n0000000000 65535 f \n";
+  for (std::size_t o : offs) {
+    char buf[32];
+    std::snprintf(buf, sizeof buf, "%010zu 00000 n \n", o);
+    data += buf;
+  }
+  data += "trailer\n<< /Size " + std::to_string(objs.size() + 1) +
+          " /Root 1 0 R >>\nstartxref\n" + std::to_string(xref) + "\n%%EOF\n";
+  std::ofstream out(path, std::ios::binary);
+  out.write(data.data(), static_cast<std::streamsize>(data.size()));
+  return static_cast<bool>(out);
 }
 
 /// Collects results per (batch, index) and checks exactly-once delivery.
@@ -244,6 +287,33 @@ int main() {
     }
     expect(ok == 2, "legacy request_tiles delivers both cells");
   }
+
+  // 6. Image-heavy PDF: denser scales whose full-page raster exceeds the
+  //    budget are Unavailable with the real reason (not a generic Failed
+  //    that hosts retry); smaller denser scales still render.
+#if defined(THUMTOO_HAVE_MUPDF)
+  {
+    const auto pdf = root / "scan.pdf";
+    expect(write_scan_pdf(pdf), "write scan pdf");
+    auto client = Client::open(cache, {}, 2, cache);
+    Recorder rec;
+    const std::string page = file_uri_from_path(pdf) + "//page:1";
+    // Letter at 144 dpi = 1224x1584: s=-1 fits, s=-3 is ~124 MP.
+    client->request_tile_cells(page, {{-1, 1, 1}, {-3, 5, 5}}, rec.for_batch(0));
+    settle(*client, rec, 2);
+    rec.expect_exactly_once(0, 2, "image-heavy denser");
+    auto ok = rec.result(0, 0);
+    expect(ok.status == TileStatus::Ok,
+           std::string("s=-1 renders, got ") + tile_status_name(ok.status) +
+               " (" + ok.error + ")");
+    auto big = rec.result(0, 1);
+    expect(big.status == TileStatus::Unavailable,
+           std::string("s=-3 is Unavailable, got ") + tile_status_name(big.status) +
+               " (" + big.error + ")");
+    expect(big.error.find("MP") != std::string::npos,
+           "refusal names the raster size: " + big.error);
+  }
+#endif
 
   fs::remove_all(root);
   if (g_failures) {

@@ -114,6 +114,14 @@ struct PdfPageContentStats {
     const std::filesystem::path& path, int page_1based,
     PdfBackend backend = PdfBackend::Default);
 
+/// Why live tiles at @p scale are refused for this page, or nullopt when the
+/// scale is renderable. Mirrors mupdf_render_tile_cell: image-heavy pages
+/// render denser than kPdfMinLiveTileScaleImageHeavy only from a full-page
+/// raster, which must fit kTileMaxSourcePixels (region draws seam on scans).
+[[nodiscard]] std::optional<std::string> pdf_live_scale_refusal(
+    const std::filesystem::path& path, int page_1based, int scale,
+    PdfBackend backend = PdfBackend::Default);
+
 /**
  * Rasterize one page so the long edge is about max_edge pixels (at least the
  * natural 72 dpi size when max_edge is large). Page is 1-based.

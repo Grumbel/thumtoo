@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "thumtoo/pdf.hpp"
+
+#include <cstdio>
 #include "thumtoo/pdf_mupdf.hpp"
 #include "thumtoo/constants.hpp"
 #include "thumtoo/format.hpp"
@@ -303,6 +305,43 @@ bool pdf_page_allows_live_tiles(const std::filesystem::path& path,
   (void)path;
   (void)page_1based;
   return false;
+#endif
+}
+
+std::optional<std::string> pdf_live_scale_refusal(
+    const std::filesystem::path& path, int page_1based, int scale,
+    PdfBackend backend) {
+  if (scale >= kPdfMinLiveTileScaleImageHeavy) {
+    return std::nullopt;
+  }
+#if defined(THUMTOO_HAVE_MUPDF)
+  auto st = pdf_page_content_stats(path, page_1based, backend);
+  if (!st.image_heavy) {
+    return std::nullopt;
+  }
+  auto layout = mupdf_page_layout_size(path, page_1based);
+  if (!layout || layout->width <= 0 || layout->height <= 0) {
+    return std::string("page layout size unavailable");
+  }
+  const Size full = pdf_page_size_at_scale(*layout, scale);
+  const std::int64_t px = static_cast<std::int64_t>(full.width) *
+                          static_cast<std::int64_t>(full.height);
+  if (px > 0 && px <= kTileMaxSourcePixels) {
+    return std::nullopt;
+  }
+  char buf[200];
+  std::snprintf(buf, sizeof buf,
+                "scale %d needs a %dx%d (%lld MP) full-page raster on an "
+                "image-heavy page; limit is %lld MP",
+                scale, full.width, full.height,
+                static_cast<long long>(px / 1000000),
+                static_cast<long long>(kTileMaxSourcePixels / 1000000));
+  return std::string(buf);
+#else
+  (void)path;
+  (void)page_1based;
+  (void)backend;
+  return std::string("PDF backend unavailable");
 #endif
 }
 
