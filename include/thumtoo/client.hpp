@@ -290,8 +290,29 @@ class Client {
   /// missed matches left Galapix JobHandles REQUESTED forever.
   using TileBatchCallback =
       std::function<void(std::size_t index, std::optional<TileBlob> tile)>;
+  /// Legacy wrapper over request_tile_cells: Ok → tile, Failed/Unavailable →
+  /// nullopt, Cancelled → **no call** (old contract). New hosts should use
+  /// request_tile_cells, which never drops a cell.
   void request_tiles(std::string uri, std::vector<TileCoord> coords,
                      TileBatchCallback on_cell);
+
+  /// Interactive viewport cells with an explicit per-cell outcome.
+  ///
+  /// Contract (normative, see TILES.md "Interactive cell contract"):
+  /// - \a on_cell is invoked **exactly once** per index, always via Executor,
+  ///   in completion order (streamed: a cell is delivered as soon as it is
+  ///   produced, not after the whole batch).
+  /// - Cancellation (cancel_tile_cells / cancel_uri / cancel_pending /
+  ///   shutdown) delivers TileStatus::Cancelled for every cell that was not
+  ///   produced yet. A cell already being computed may still deliver Ok.
+  /// - Worker exceptions deliver TileStatus::Failed with the exception text.
+  /// - Jobs are **not** dropped by bump_interest_epoch / set_interest; the
+  ///   host owns their lifetime via cancel_tile_cells.
+  /// - No same-cell supersede: the host must not request a cell that it
+  ///   already has outstanding (thumtoo does not merge duplicates).
+  using TileResultCallback = std::function<void(std::size_t index, TileResult)>;
+  void request_tile_cells(std::string uri, std::vector<TileCoord> coords,
+                          TileResultCallback on_cell);
 
   void invalidate_tile(std::string_view uri, int scale, int x, int y);
 
@@ -402,9 +423,11 @@ class Client {
   /// Drop queued jobs whose uri matches (exact). Returns removed count.
   std::size_t cancel_uri(std::string_view uri);
 
-  /// Drop queued interactive EnsureTiles for specific cells of one uri (scroll
-  /// cancel). Does not cancel FocusFull pyramids or other URIs. Batch jobs
-  /// lose matching cells; empty batches are dropped.
+  /// Cancel interactive cells of one uri (scroll cancel). Does not cancel
+  /// FocusFull pyramids or other URIs. Legacy single-cell request_tile jobs
+  /// are dropped silently (old contract). request_tile_cells cells — queued
+  /// or inside a running batch — deliver TileStatus::Cancelled unless they
+  /// were already produced. Returns the number of cells cancelled.
   std::size_t cancel_tile_cells(std::string_view uri,
                                 std::span<const TileCoord> cells);
 
@@ -489,6 +512,27 @@ class Client {
 
   enum class JobKind { ProbeSize, EnsurePixels, EnsureTiles, EnsureLqip };
 
+  /// Shared reply state of one request_tile_cells job. Lives in the queued Job
+  /// and, while a worker runs it, in running_cell_batches_ so cancel can reach
+  /// cells that have not been produced yet. Defined in client.cpp.
+  struct TileCellBatch;
+  struct Job;
+  /// Deliver the one result for cell \a index (no-op if already replied).
+  void reply_tile_cell(const std::shared_ptr<TileCellBatch>& batch,
+                       std::size_t index, TileResult result);
+  /// Cancel matching pending cells (all when \a cells is empty). Queued:
+  /// reply Cancelled now. Running: mark so the worker replies Cancelled.
+  /// Returns the number of cells affected.
+  std::size_t cancel_cells_in_batch(const std::shared_ptr<TileCellBatch>& batch,
+                                    std::span<const TileCoord> cells,
+                                    bool running, const char* why);
+  /// Worker body for request_tile_cells jobs.
+  void run_tile_cell_batch(Job& job);
+  /// materialize_tile_cell with a failure classification for TileResult.
+  [[nodiscard]] TileResult materialize_tile_result(const std::string& uri,
+                                                   int scale, int x, int y,
+                                                   bool skip_probe);
+
 
   struct Job {
     JobKind kind = JobKind::ProbeSize;
@@ -514,7 +558,11 @@ class Client {
     bool skip_probe = false;
     /// Non-empty: interactive multi-cell batch for the same uri.
     std::vector<TileCoord> tile_batch;
-    TileBatchCallback tile_batch_cb;
+    /// request_tile_cells: per-cell exactly-once reply state (see TileCellBatch).
+    std::shared_ptr<TileCellBatch> cells;
+    /// true → enqueue does not stamp the interest epoch, so bump_interest_epoch
+    /// never drops the job (host-owned lifetime via cancel_tile_cells).
+    bool epoch_exempt = false;
     SizeCallback size_cb;
     PixelsCallback pixels_cb;
     TileCallback tile_cb;
@@ -627,6 +675,8 @@ class Client {
   /// FocusFull tile-pyramid jobs currently running (worker claimed).
   int focus_full_inflight_ = 0;
   std::uint64_t interest_epoch_ = 1;
+  /// request_tile_cells batches currently claimed by a worker (guarded by mu_).
+  std::vector<std::shared_ptr<TileCellBatch>> running_cell_batches_;
   std::vector<std::thread> workers_;
 
   mutable std::mutex archive_cursor_mu_;

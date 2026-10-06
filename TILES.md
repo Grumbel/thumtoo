@@ -81,6 +81,40 @@ pass on miss; interactive path is single-cell. Finer scales than already stored 
 asked. Sources larger than `kTileMaxSourcePixels` yield no tiles (probe/size
 still work).
 
+## Interactive cell contract (`request_tile_cells`)
+
+Normative for viewers (biltoo tile LOD). `request_tile_cells(uri, coords, cb)`
+delivers **exactly one `TileResult` per index**, always via the Executor,
+streamed per cell as each one finishes (not after the whole batch):
+
+| `TileStatus` | Meaning | Host action |
+|--------------|---------|-------------|
+| `Ok` | `tile` holds rgb888/rgba8 pixels | Paint |
+| `Cancelled` | Host cancel (`cancel_tile_cells`, `cancel_uri`, `cancel_pending`) or shutdown before the cell was produced | Forget; re-request if still wanted |
+| `Failed` | I/O, decode, render or internal error; `error` says why | Show the reason; retry with backoff |
+| `Unavailable` | The cell cannot exist (outside the grid, denser scale on a raster, denser refused for an image-heavy page) | Show the reason; never retry |
+
+Rules:
+
+- **Never silence.** Cancel and shutdown deliver `Cancelled`; worker exceptions
+  deliver `Failed` with the exception text; a backstop after each batch answers
+  any cell the batch body missed.
+- Cancel marks cells and never compacts a batch, so index → coordinate mapping
+  stays stable. A cell that is already being computed may still deliver `Ok`.
+- Cell jobs are **exempt from `bump_interest_epoch` / `set_interest`**: the host
+  owns their lifetime via `cancel_tile_cells`. (Silently dropping queued tile
+  jobs on every Gallery scroll left biltoo cells InFlight forever.)
+- No same-cell supersede and no duplicate merging: the host must keep at most
+  one outstanding request per `(uri, scale, x, y)`.
+- Cell jobs are FIFO among themselves (the host submits coarse cells first);
+  the worker claim loop still prefers interactive tiles over bulk work.
+
+Legacy `request_tile` / `request_tiles` keep the old contract (`nullopt` for
+misses, **no callback** for cancelled jobs). `request_tiles` is a thin wrapper
+over `request_tile_cells`.
+
+Test: `tests/test_tile_cells_contract.cpp`.
+
 ## Prepare
 
 `thumtoo-prepare --tiles [paths…]` prewarms full pyramids (subject to source

@@ -209,6 +209,21 @@ std::optional<std::int64_t> file_mtime_ns(const std::filesystem::path& p) {
 
 }  // namespace
 
+/// Per-cell reply state for request_tile_cells (exactly-once contract).
+struct Client::TileCellBatch {
+  enum CellState : std::uint8_t {
+    kPending = 0,          ///< Not produced, not cancelled
+    kCancelRequested = 1,  ///< Running batch: worker must reply Cancelled
+    kReplied = 2,          ///< Result posted; never reply again
+  };
+  std::string uri;
+  std::vector<TileCoord> coords;
+  TileResultCallback cb;
+  std::mutex mu;
+  std::vector<std::uint8_t> state;  // CellState per index (guarded by mu)
+  std::size_t replied = 0;          // guarded by mu
+};
+
 Client::Client(std::unique_ptr<Store> store, Executor executor,
                unsigned worker_threads)
     : store_(std::move(store)), executor_(std::move(executor)) {
@@ -1452,40 +1467,243 @@ void Client::request_tiles(std::string uri, std::vector<TileCoord> coords,
   if (coords.empty() || !on_cell) {
     return;
   }
-  if (coords.size() == 1) {
-    request_tile(std::move(uri), coords[0].scale, coords[0].x, coords[0].y,
-                 [on_cell = std::move(on_cell)](std::string, int, int, int,
-                                                std::optional<TileBlob> tb) {
-                   on_cell(0, std::move(tb));
-                 });
+  // Legacy contract: Cancelled is not delivered (old hosts treated nullopt as
+  // terminal Failed). Everything else maps onto optional<TileBlob>.
+  request_tile_cells(
+      std::move(uri), std::move(coords),
+      [on_cell = std::move(on_cell)](std::size_t index, TileResult r) {
+        if (r.status == TileStatus::Cancelled) {
+          return;
+        }
+        on_cell(index, r.status == TileStatus::Ok ? std::move(r.tile)
+                                                  : std::nullopt);
+      });
+}
+
+void Client::request_tile_cells(std::string uri, std::vector<TileCoord> coords,
+                                TileResultCallback on_cell) {
+  if (coords.empty() || !on_cell) {
     return;
   }
-  // One job for the whole viewport batch: one worker runs get_tile + encode
-  // for every cell. Fan-out to N EnsureTiles jobs used to wake N workers and
-  // re-decode the same source (archives / non-JPEG) under Gallery load.
+  auto batch = std::make_shared<TileCellBatch>();
+  if (uri.empty()) {
+    batch->coords = coords;
+    batch->cb = std::move(on_cell);
+    batch->state.assign(coords.size(), TileCellBatch::kPending);
+    for (std::size_t i = 0; i < coords.size(); ++i) {
+      reply_tile_cell(batch, i,
+                      TileResult{TileStatus::Failed, std::nullopt, "empty uri"});
+    }
+    return;
+  }
+  batch->uri = uri;
+  batch->coords = coords;
+  batch->cb = std::move(on_cell);
+  batch->state.assign(coords.size(), TileCellBatch::kPending);
+
   Job job;
   job.kind = JobKind::EnsureTiles;
   job.uri = std::move(uri);
   job.tile_pyramid = false;
   job.tile_batch = std::move(coords);
-  job.tile_batch_cb = std::move(on_cell);
-  // Activity: one note for the batch (first cell as representative).
-  if (!job.tile_batch.empty()) {
-    const auto& c0 = job.tile_batch.front();
-    job.tile_scale = c0.scale;
-    job.tile_x = c0.x;
-    job.tile_y = c0.y;
-    job.tile_min_scale = c0.scale;
-    job.tile_max_scale = c0.scale;
-    job.activity_id = global_activity_ledger().note_tile_queued(
-        job.uri, c0.scale, c0.x, c0.y);
-  }
+  job.cells = std::move(batch);
+  // Host owns the lifetime (cancel_tile_cells); set_interest must not drop it.
+  job.epoch_exempt = true;
+  const auto& c0 = job.tile_batch.front();
+  job.tile_scale = c0.scale;
+  job.tile_x = c0.x;
+  job.tile_y = c0.y;
+  job.tile_min_scale = c0.scale;
+  job.tile_max_scale = c0.scale;
+  job.activity_id =
+      global_activity_ledger().note_tile_queued(job.uri, c0.scale, c0.x, c0.y);
   if (debug_enabled()) {
-    dbg("request_tiles uri=%s cells=%zu (one batch job)", job.uri.c_str(),
+    dbg("request_tile_cells uri=%s cells=%zu", job.uri.c_str(),
         job.tile_batch.size());
   }
-  // Same LIFO policy as request_tile — newest viewport batch first.
-  enqueue(std::move(job), /*front=*/true);
+  // FIFO: the host submits highest priority first (coarse overview before
+  // fine). The worker claim loop still prefers interactive EnsureTiles over
+  // bulk work, so FIFO here only orders tile batches among themselves.
+  enqueue(std::move(job), /*front=*/false);
+}
+
+void Client::reply_tile_cell(const std::shared_ptr<TileCellBatch>& batch,
+                             std::size_t index, TileResult result) {
+  if (!batch || index >= batch->coords.size()) {
+    return;
+  }
+  {
+    std::lock_guard lock(batch->mu);
+    if (batch->state[index] == TileCellBatch::kReplied) {
+      return;
+    }
+    batch->state[index] = TileCellBatch::kReplied;
+    ++batch->replied;
+  }
+  if (result.status == TileStatus::Ok && result.tile) {
+    debug_overlay_tile(*result.tile, batch->uri);
+  }
+  if (debug_enabled() && result.status != TileStatus::Ok) {
+    const auto& c = batch->coords[index];
+    dbg("tile cell %s uri=%s s=%d %d,%d: %s", tile_status_name(result.status),
+        batch->uri.c_str(), c.scale, c.x, c.y, result.error.c_str());
+  }
+  executor_.post([batch, index, result = std::move(result)]() mutable {
+    batch->cb(index, std::move(result));
+  });
+}
+
+std::size_t Client::cancel_cells_in_batch(
+    const std::shared_ptr<TileCellBatch>& batch,
+    std::span<const TileCoord> cells, bool running, const char* why) {
+  if (!batch) {
+    return 0;
+  }
+  std::vector<std::size_t> to_reply;
+  std::size_t affected = 0;
+  {
+    std::lock_guard lock(batch->mu);
+    for (std::size_t i = 0; i < batch->coords.size(); ++i) {
+      if (batch->state[i] != TileCellBatch::kPending) {
+        continue;
+      }
+      if (!cells.empty()) {
+        const auto& c = batch->coords[i];
+        bool match = false;
+        for (const auto& want : cells) {
+          if (want.scale == c.scale && want.x == c.x && want.y == c.y) {
+            match = true;
+            break;
+          }
+        }
+        if (!match) {
+          continue;
+        }
+      }
+      ++affected;
+      if (running) {
+        // The worker owns the reply for running batches: it checks the flag
+        // before producing each cell.
+        batch->state[i] = TileCellBatch::kCancelRequested;
+      } else {
+        to_reply.push_back(i);
+      }
+    }
+  }
+  for (std::size_t i : to_reply) {
+    reply_tile_cell(batch, i, TileResult{TileStatus::Cancelled, std::nullopt, why});
+  }
+  return affected;
+}
+
+TileResult Client::materialize_tile_result(const std::string& uri, int scale,
+                                           int x, int y, bool skip_probe) {
+  const bool document = parse_pdf_uri(uri) || parse_djvu_uri(uri) ||
+                        parse_epub_uri(uri);
+  if (scale < 0 && !document) {
+    return {TileStatus::Unavailable, std::nullopt,
+            "negative (denser) scales exist only for document pages"};
+  }
+  std::optional<TileBlob> cell;
+  try {
+    cell = materialize_tile_cell(uri, scale, x, y, skip_probe);
+    if (cell) {
+      cell = decode_tile_blob_to_rgb888(std::move(*cell));
+      if (!cell) {
+        return {TileStatus::Failed, std::nullopt,
+                "tile blob could not be decoded to rgb888"};
+      }
+    }
+  } catch (const std::exception& ex) {
+    return {TileStatus::Failed, std::nullopt,
+            std::string("exception while producing tile: ") + ex.what()};
+  } catch (...) {
+    return {TileStatus::Failed, std::nullopt,
+            "unknown exception while producing tile"};
+  }
+  if (cell) {
+    return {TileStatus::Ok, std::move(cell), {}};
+  }
+
+  // Classify the miss so hosts can show a reason (and stop retrying
+  // impossible cells) instead of sitting on a coarse stand-in forever.
+  char where[96];
+  std::snprintf(where, sizeof where, "s=%d cell %d,%d", scale, x, y);
+  auto sm = meta_from_store(uri);
+  if (!sm || sm->content_id.empty()) {
+    if (auto path = path_from_file_uri(uri)) {
+      std::error_code ec;
+      if (!std::filesystem::is_regular_file(*path, ec)) {
+        return {TileStatus::Failed, std::nullopt,
+                "source file missing or unreadable: " + path->string()};
+      }
+    }
+    return {TileStatus::Failed, std::nullopt,
+            "size probe failed (no Store entry); source unreadable or unsupported"};
+  }
+  if (sm->size && sm->size->width > 0 && sm->size->height > 0) {
+    int w = 0;
+    int h = 0;
+    if (document) {
+      const Size full = pdf_page_size_at_scale(*sm->size, scale);
+      w = full.width;
+      h = full.height;
+    } else {
+      w = dim_at_tile_scale(sm->size->width, scale);
+      h = dim_at_tile_scale(sm->size->height, scale);
+    }
+    const int nx = (w + kTileSize - 1) / kTileSize;
+    const int ny = (h + kTileSize - 1) / kTileSize;
+    if (w < 1 || h < 1 || x < 0 || y < 0 || x >= nx || y >= ny) {
+      return {TileStatus::Unavailable, std::nullopt,
+              std::string("cell outside the tile grid (") + where + ", grid " +
+                  std::to_string(nx) + "x" + std::to_string(ny) + ")"};
+    }
+  }
+  if (scale < 0) {
+    if (auto pdf = parse_pdf_uri(uri)) {
+      if (!pdf_page_allows_live_tiles(pdf->pdf_path, pdf->page, pdf->backend)) {
+        return {TileStatus::Unavailable, std::nullopt,
+                "denser scale refused: image-heavy page exceeds the full-page "
+                "raster budget"};
+      }
+    }
+  }
+  if (auto path = path_from_file_uri(uri)) {
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(*path, ec)) {
+      return {TileStatus::Failed, std::nullopt,
+              "source file missing or unreadable: " + path->string()};
+    }
+  }
+  return {TileStatus::Failed, std::nullopt,
+          std::string("decode/render produced no pixels (") + where + ")"};
+}
+
+void Client::run_tile_cell_batch(Job& job) {
+  const std::shared_ptr<TileCellBatch> batch = job.cells;
+  bool probed = job.skip_probe;
+  for (std::size_t i = 0; i < batch->coords.size(); ++i) {
+    bool cancel = false;
+    {
+      std::lock_guard lock(batch->mu);
+      const auto st = batch->state[i];
+      if (st == TileCellBatch::kReplied) {
+        continue;
+      }
+      cancel = (st == TileCellBatch::kCancelRequested);
+    }
+    if (cancel) {
+      reply_tile_cell(batch, i,
+                      TileResult{TileStatus::Cancelled, std::nullopt,
+                                 "cancelled by host before the cell started"});
+      continue;
+    }
+    const auto& c = batch->coords[i];
+    TileResult r = materialize_tile_result(batch->uri, c.scale, c.x, c.y, probed);
+    probed = true;  // size probe at most once per batch
+    reply_tile_cell(batch, i, std::move(r));
+  }
 }
 
 void Client::request_tile_pyramid(std::string uri, int min_scale, int max_scale,
@@ -1506,7 +1724,7 @@ void Client::request_tile_pyramid(std::string uri, int min_scale, int max_scale,
 void Client::enqueue(Job job, bool front) {
   {
     std::lock_guard lock(mu_);
-    if (job.epoch == 0) {
+    if (job.epoch == 0 && !job.epoch_exempt) {
       job.epoch = interest_epoch_;
     }
     // Drop older pending single-cell EnsureTiles for the same uri/scale/x/y so
@@ -1514,10 +1732,10 @@ void Client::enqueue(Job job, bool front) {
     // jobs). Applies for both FIFO and LIFO enqueue. Batch jobs
     // (tile_batch non-empty) are left alone — they complete every index.
     if (job.kind == JobKind::EnsureTiles && !job.tile_pyramid &&
-        job.tile_batch.empty()) {
+        job.tile_batch.empty() && !job.cells) {
       for (auto it = queue_.begin(); it != queue_.end();) {
         if (it->kind == JobKind::EnsureTiles && !it->tile_pyramid &&
-            it->tile_batch.empty() && it->uri == job.uri &&
+            it->tile_batch.empty() && !it->cells && it->uri == job.uri &&
             it->tile_scale == job.tile_scale && it->tile_x == job.tile_x &&
             it->tile_y == job.tile_y) {
           // Finish activity + miss callback (same as pyramid supersede).
@@ -2554,13 +2772,17 @@ void Client::reply_cancelled_job(Job& job) {
     executor_.post([cb = std::move(cb), uri = std::move(uri), edge]() mutable {
       cb(std::move(uri), edge, std::nullopt);
     });
+  } else if (job.kind == JobKind::EnsureTiles && job.cells) {
+    // request_tile_cells: exactly-once contract — every unproduced cell gets
+    // an explicit Cancelled (never silence).
+    (void)cancel_cells_in_batch(job.cells, {}, /*running=*/false,
+                                "cancelled: queued job dropped (cancel/shutdown)");
   } else if (job.kind == JobKind::EnsureTiles) {
-    // Do not deliver miss callbacks for cancelled tile jobs. Hosts treat nullopt
+    // Legacy request_tile: do not deliver miss callbacks for cancelled jobs. Hosts treat nullopt
     // as terminal Failed for the generation (stuck on LQIP). Scroll cancel /
     // same-cell supersede only need the activity ledger closed; cancel_obsolete
     // erases InFlight so keys can be re-requested.
     job.tile_cb = nullptr;
-    job.tile_batch_cb = nullptr;
   }
   // EnsureLqip has no host callback.
 }
@@ -2608,6 +2830,7 @@ std::size_t Client::cancel_pending() {
 
 std::size_t Client::cancel_uri(std::string_view uri) {
   std::vector<Job> dropped;
+  std::vector<std::shared_ptr<TileCellBatch>> running;
   {
     std::lock_guard lock(mu_);
     for (auto it = queue_.begin(); it != queue_.end();) {
@@ -2618,9 +2841,17 @@ std::size_t Client::cancel_uri(std::string_view uri) {
         ++it;
       }
     }
+    for (const auto& b : running_cell_batches_) {
+      if (b->uri == uri) {
+        running.push_back(b);
+      }
+    }
   }
   for (auto& j : dropped) {
     reply_cancelled_job(j);
+  }
+  for (const auto& b : running) {
+    (void)cancel_cells_in_batch(b, {}, /*running=*/true, "cancelled: uri cancelled");
   }
   return dropped.size();
 }
@@ -2638,7 +2869,9 @@ std::size_t Client::cancel_tile_cells(std::string_view uri,
     }
     return false;
   };
-  std::vector<Job> dropped;
+  std::vector<Job> dropped_legacy;
+  std::vector<std::shared_ptr<TileCellBatch>> queued_batches;
+  std::vector<std::shared_ptr<TileCellBatch>> running;
   {
     std::lock_guard lock(mu_);
     for (auto it = queue_.begin(); it != queue_.end();) {
@@ -2646,29 +2879,69 @@ std::size_t Client::cancel_tile_cells(std::string_view uri,
         ++it;
         continue;
       }
-      if (!it->tile_batch.empty()) {
-        // Do not compact tile_batch in place. Host maps completion index → the
-        // original key list from request time; stripping cells renumbers the
-        // worker's 0..n-1 callbacks onto the wrong keys (same image, wrong
-        // spot). Leave multi-cell jobs alone; only single-cell jobs below are
-        // cancelled on scroll.
+      if (it->cells) {
+        // Index mapping stays intact: cells are marked, never compacted.
+        queued_batches.push_back(it->cells);
         ++it;
         continue;
       }
-      if (cell_match(it->tile_scale, it->tile_x, it->tile_y)) {
-        dropped.push_back(std::move(*it));
+      if (it->tile_batch.empty() &&
+          cell_match(it->tile_scale, it->tile_x, it->tile_y)) {
+        dropped_legacy.push_back(std::move(*it));
         it = queue_.erase(it);
       } else {
         ++it;
       }
     }
+    for (const auto& b : running_cell_batches_) {
+      if (b->uri == uri) {
+        running.push_back(b);
+      }
+    }
   }
-  for (auto& j : dropped) {
+  std::size_t n = dropped_legacy.size();
+  for (auto& j : dropped_legacy) {
     reply_cancelled_job(j);
   }
-  return dropped.size();
+  for (const auto& b : queued_batches) {
+    n += cancel_cells_in_batch(b, cells, /*running=*/false,
+                               "cancelled by host before the cell started");
+  }
+  for (const auto& b : running) {
+    n += cancel_cells_in_batch(b, cells, /*running=*/true,
+                               "cancelled by host before the cell started");
+  }
+  // Fully answered queued batches have no work left — drop them so workers
+  // do not wake for nothing.
+  if (!queued_batches.empty()) {
+    std::vector<Job> finished;
+    {
+      std::lock_guard lock(mu_);
+      for (auto it = queue_.begin(); it != queue_.end();) {
+        if (it->cells) {
+          bool done = false;
+          {
+            std::lock_guard blk(it->cells->mu);
+            done = it->cells->replied >= it->cells->coords.size();
+          }
+          if (done) {
+            finished.push_back(std::move(*it));
+            it = queue_.erase(it);
+            continue;
+          }
+        }
+        ++it;
+      }
+    }
+    for (auto& j : finished) {
+      if (j.activity_id != 0) {
+        global_activity_ledger().note_tile_finished(j.activity_id, false);
+        j.activity_id = 0;
+      }
+    }
+  }
+  return n;
 }
-
 
 Client::PurgeStats Client::purge_uri(std::string_view uri, bool dry_run) {
   PurgeStats out;
@@ -2963,6 +3236,9 @@ void Client::worker_main() {
       }
       single = std::move(queue_.front());
       queue_.erase(queue_.begin());
+      if (single.cells) {
+        running_cell_batches_.push_back(single.cells);
+      }
       if (stop_ && single.uri.empty()) return;
 
       // Coalesce same-archive jobs into one libarchive pass — but NOT for
@@ -3423,6 +3699,10 @@ void Client::worker_main() {
       reply_cancelled_job(single);
       {
         std::lock_guard lock(mu_);
+        if (single.cells) {
+          auto& rb = running_cell_batches_;
+          rb.erase(std::remove(rb.begin(), rb.end(), single.cells), rb.end());
+        }
         release_inflight_locked();
       }
       continue;
@@ -3433,6 +3713,10 @@ void Client::worker_main() {
         std::lock_guard lock(mu_);
         stopping = stop_;
         if (stopping) {
+          if (single.cells) {
+            auto& rb = running_cell_batches_;
+            rb.erase(std::remove(rb.begin(), rb.end(), single.cells), rb.end());
+          }
           // Shutdown: do not start new encode work; finish activity notes.
           if (single.kind == JobKind::EnsureTiles && single.tile_pyramid &&
               focus_full_inflight_ > 0) {
@@ -3470,7 +3754,11 @@ void Client::worker_main() {
         if (single.activity_id != 0) {
           global_activity_ledger().note_tile_running(single.activity_id);
         }
-        handle_ensure_tiles(single);
+        if (single.cells) {
+          run_tile_cell_batch(single);
+        } else {
+          handle_ensure_tiles(single);
+        }
         if (single.activity_id != 0) {
           global_activity_ledger().note_tile_finished(single.activity_id, true);
           single.activity_id = 0;
@@ -3489,8 +3777,31 @@ void Client::worker_main() {
       }
       // Always release inflight_; status stays pending/failed for retry.
     }
+    if (single.cells) {
+      // Exactly-once backstop: anything the batch did not answer (exception
+      // escaped, early return) is reported, never left hanging.
+      std::vector<std::size_t> orphans;
+      {
+        std::lock_guard blk(single.cells->mu);
+        for (std::size_t i = 0; i < single.cells->state.size(); ++i) {
+          if (single.cells->state[i] != TileCellBatch::kReplied) {
+            orphans.push_back(i);
+          }
+        }
+      }
+      for (std::size_t i : orphans) {
+        reply_tile_cell(single.cells, i,
+                        TileResult{TileStatus::Failed, std::nullopt,
+                                   "internal: worker finished without a result "
+                                   "for this cell"});
+      }
+    }
     {
       std::lock_guard lock(mu_);
+      if (single.cells) {
+        auto& rb = running_cell_batches_;
+        rb.erase(std::remove(rb.begin(), rb.end(), single.cells), rb.end());
+      }
       if (single.kind == JobKind::EnsureTiles && single.tile_pyramid) {
         if (focus_full_inflight_ > 0) {
           --focus_full_inflight_;
@@ -4473,32 +4784,6 @@ void Client::handle_ensure_tiles_store(Job& job) {
       });
     }
   };
-
-  // Multi-cell interactive request: one worker walks the coord list.
-  // materialize_tile_cell is the sole encode path (same as single-cell).
-  if (!job.tile_batch.empty() && job.tile_batch_cb) {
-    auto cb = std::move(job.tile_batch_cb);
-    const std::string uri = job.uri;
-    const auto coords = std::move(job.tile_batch);
-    const bool skip_probe = job.skip_probe;
-    std::vector<std::optional<TileBlob>> results;
-    results.reserve(coords.size());
-    bool probed = skip_probe;
-    for (const auto& c : coords) {
-      auto cell = materialize_tile_cell(uri, c.scale, c.x, c.y, probed);
-      probed = true;  // size probe at most once for the uri
-      if (cell) {
-        cell = decode_tile_blob_to_rgb888(std::move(*cell));
-      }
-      results.push_back(std::move(cell));
-    }
-    executor_.post([cb = std::move(cb), results = std::move(results)]() mutable {
-      for (std::size_t i = 0; i < results.size(); ++i) {
-        cb(i, std::move(results[i]));
-      }
-    });
-    return;
-  }
 
   // Single interactive cell.
   if (!job.tile_pyramid) {

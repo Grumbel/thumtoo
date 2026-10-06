@@ -147,6 +147,32 @@ struct TileBlob {
   TileSource source = TileSource::Full;
 };
 
+/// Outcome of one interactive tile cell (Client::request_tile_cells).
+/// Every requested cell gets exactly one result — never silence.
+enum class TileStatus : std::uint8_t {
+  Ok = 0,           ///< TileResult::tile holds the pixels
+  Cancelled = 1,    ///< Host cancel / shutdown before the cell was produced; retry is fine
+  Failed = 2,       ///< Could not produce the cell (I/O, decode, internal); see error
+  Unavailable = 3,  ///< Cell can never exist for this content (outside grid,
+                    ///< unsupported scale); retrying is pointless
+};
+
+[[nodiscard]] constexpr const char* tile_status_name(TileStatus s) noexcept {
+  switch (s) {
+    case TileStatus::Ok: return "ok";
+    case TileStatus::Cancelled: return "cancelled";
+    case TileStatus::Failed: return "failed";
+    case TileStatus::Unavailable: return "unavailable";
+  }
+  return "?";
+}
+
+struct TileResult {
+  TileStatus status = TileStatus::Failed;
+  std::optional<TileBlob> tile;  ///< Set iff status == Ok
+  std::string error;             ///< Human-readable reason when status != Ok
+};
+
 struct TileCoverage {
   int min_scale = 0;
   int max_scale = 0;
