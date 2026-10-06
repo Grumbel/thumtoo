@@ -72,11 +72,19 @@ Ladder blobs: `blobs.sqlite`. Tile blobs will share that file under `tile_blobs`
 
 
 
-## Bundle handovers (agents)
+## Delivery by environment
 
-Agents often lack push access to the human’s remotes. Deliver work as sequential
-**git bundles** (`thumtoo-NNN-slug.bundle` from `HEAD`), copy to a downloadable
-artifacts path when available, and state the path in the chat reply.
+| Agent | Repo access | Delivery |
+|-------|-------------|----------|
+| **Claude Code** (local, in the human’s checkout) | Direct | Commit directly on the current branch. No bundles. Do not push unless asked. |
+| **Grok Web** (remote sandbox) | None to the human’s tree/remotes | Sequential **git bundles** — see below |
+
+### Bundle handovers (Grok Web only)
+
+Applies only to sandboxed agents that lack access to the human’s repository.
+Deliver work as sequential **git bundles** (`thumtoo-NNN-slug.bundle` from
+`HEAD`), copy to a downloadable artifacts path when available, and state the
+path in the chat reply.
 
 ```bash
 git pull /path/to/thumtoo-NNN-slug.bundle HEAD
@@ -90,6 +98,9 @@ be a short task + tip pointer. Refresh AGENTS.md / TODO.md at session end.
 
 ## Agent sandbox notes
 
+Mostly relevant to sandboxed agents (Grok Web); local agents run in the
+human’s checkout with the Nix dev shell.
+
 - Full `nix build` of consumers (biltoo) may fail until **this** tip is pulled.
 - No assumption of local MuPDF beyond what the flake provides (Poppler is not used).
 - `make -k` is not the Nix default; use `cmake --build . -- -k` to collect
@@ -101,5 +112,7 @@ be a short task + tip pointer. Refresh AGENTS.md / TODO.md at session end.
 ## Commits
 
 Author: Ingo Ruhnke \<grumbel@gmail.com\>  
-Co-authored-by: Grok \<grok@x.ai\> when applicable  
+Co-authored-by: trailer naming the **actual model** that did the work (not a
+hard-coded name), e.g. `Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>`
+or `Co-authored-by: Grok <grok@x.ai>`  
 License: GPL-3.0-or-later, REUSE SPDX headers on new files
