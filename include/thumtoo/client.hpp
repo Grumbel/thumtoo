@@ -532,6 +532,12 @@ class Client {
   [[nodiscard]] TileResult materialize_tile_result(const std::string& uri,
                                                    int scale, int x, int y,
                                                    bool skip_probe);
+  /// Render one PDF page cell from the shared display list; durable JPEG for
+  /// scale >= kPdfMinDurableTileScale when \a content_id is known. The
+  /// status and reason come straight from the renderer.
+  [[nodiscard]] TileResult render_pdf_cell(const std::string& content_id,
+                                           const ParsedPdfUri& pdf, int scale,
+                                           int x, int y);
 
 
   struct Job {

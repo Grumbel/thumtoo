@@ -56,9 +56,7 @@ void expect_eq_str(const std::string& a, const std::string& b, const char* msg) 
 
 /// Self-contained letter-page PDF (no Ghostscript / external tools).
 /// MediaBox 612×792 pt → layout 1224×1584 @ 144 dpi.
-/// Content has enough printable characters that the sparse-text /
-/// image-heavy gate (kPdfSparseTextPerPoint2) does not refuse negative
-/// live scales — those are reserved for blank / scanned pages.
+/// Text-only content: a Vector page, so every live scale renders.
 std::optional<fs::path> make_test_pdf(const fs::path& dir) {
   // Build a content stream with ~1600 printable chars (40 lines × ~40).
   std::string body;
@@ -294,7 +292,8 @@ int main() {
 
   // --- Direct pdf_render_tile_cell matches Client live path dimensions ---
   {
-    auto direct = thumtoo::pdf_render_tile_cell(*pdf_path, 1, -1, 0, 0);
+    auto cell = thumtoo::pdf_render_tile_cell(*pdf_path, 1, -1, 0, 0);
+    auto& direct = cell.raster;
     expect(static_cast<bool>(direct), "pdf_render_tile_cell scale-1");
     if (direct) {
       expect_eq(direct->width, T, "direct cell width");
@@ -316,6 +315,7 @@ int main() {
     }
   }
 
+  thumtoo::pdf_release_document_cache();
   // Cleanup
   fs::remove_all(work, ec);
 

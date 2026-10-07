@@ -2,8 +2,23 @@
 
 ## Status (2026-10-07)
 
-**Tip:** `request_tile_cells` — exactly-once per-cell tile results (Claude Code,
-direct commit on master).
+**Tip:** PDF rendering rewrite — shared display lists, decode-once images,
+page profiles (Claude Code, direct commit on master).
+
+### PDF rendering rewrite
+Shared MuPDF runtime (one store, cloned contexts), one document per file,
+display list + `PdfPageProfile` per page, `CountingImage` decode-once with
+exact `PdfDecodeStats`, per-cell region renders at any scale (full-page raster
+and its 100 MP limit removed; broken stext "image-heavy" heuristic removed).
+Raster pages cap at their native dpi (`Unavailable` + reason below the cap).
+API: `pdf_page_profile`, `pdf_scale_refusal`, `pdf_document_render_stats`,
+`pdf_render_tile_cell` → `PdfCellRender{status, raster, error}`.
+Docs: TILES.md "PDF rendering". Tests: `tests/test_pdf_profile.cpp` (fixtures
+built with MuPDF's writer, `tests/pdf_fixtures.cpp`). Tool:
+`thumtoo-pdf-profile`. Corpus: benchtoo `gen_pdf_classes.py`.
+
+Open: DjVu / EPUB still render per cell without a profile (no cap, no decode
+stats).
 
 ### request_tile_cells
 Interactive cells now answer exactly once each (Ok / Cancelled / Failed /

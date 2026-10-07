@@ -34,12 +34,26 @@ std::optional<Size> mupdf_page_layout_size(const std::filesystem::path& path,
   return std::nullopt;
 }
 
-PdfPageContentStats mupdf_page_content_stats(const std::filesystem::path& path,
-                                             int page_1based) {
-  (void)path;
-  (void)page_1based;
-  return {};
+std::optional<PdfPageProfile> mupdf_page_profile(const std::filesystem::path&, int,
+                                                 std::string* error) {
+  if (error) *error = "PDF backend unavailable";
+  return std::nullopt;
 }
+
+std::optional<std::string> mupdf_scale_refusal(const std::filesystem::path&, int, int) {
+  return std::string("PDF backend unavailable");
+}
+
+std::optional<PdfDocumentRenderStats> mupdf_document_render_stats(
+    const std::filesystem::path&) {
+  return std::nullopt;
+}
+
+void mupdf_reset_render_stats() {}
+
+void pdf_set_full_image_decode_budget(std::size_t) {}
+void pdf_release_document_cache() {}
+std::size_t pdf_full_image_decode_budget() { return kPdfFullImageDecodeBudget; }
 
 std::optional<PdfRaster> mupdf_rasterize_page(const std::filesystem::path& path,
                                                int page_1based, int max_edge) {
@@ -62,15 +76,9 @@ std::optional<PdfRaster> mupdf_rasterize_page_region(
   return std::nullopt;
 }
 
-std::optional<PdfRaster> mupdf_render_tile_cell(const std::filesystem::path& path,
-                                                 int page_1based, int scale,
-                                                 int x, int y) {
-  (void)path;
-  (void)page_1based;
-  (void)scale;
-  (void)x;
-  (void)y;
-  return std::nullopt;
+PdfCellRender mupdf_render_tile_cell(const std::filesystem::path&, int, int, int,
+                                     int) {
+  return {TileStatus::Failed, std::nullopt, "PDF backend unavailable"};
 }
 
 std::optional<int> mupdf_embedded_image_count(const std::filesystem::path& path) {

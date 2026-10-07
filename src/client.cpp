@@ -1604,15 +1604,26 @@ TileResult Client::materialize_tile_result(const std::string& uri, int scale,
     return {TileStatus::Unavailable, std::nullopt,
             "negative (denser) scales exist only for document pages"};
   }
-  if (scale < 0) {
-    // Refused denser scale: answer before rendering (each attempt would
-    // otherwise cost a page-stats pass and still produce nothing).
-    if (auto pdf = parse_pdf_uri(uri)) {
-      if (auto why = pdf_live_scale_refusal(pdf->pdf_path, pdf->page, scale,
-                                            pdf->backend)) {
-        return {TileStatus::Unavailable, std::nullopt,
-                "denser scale refused: " + *why};
+  if (auto pdf = parse_pdf_uri(uri)) {
+    // PDF pages: the renderer knows why a cell has no pixels (page profile
+    // refusal, MuPDF error) — report that instead of guessing afterwards.
+    try {
+      if (auto t = get_tile(uri, scale, x, y)) {
+        if (auto rgb = decode_tile_blob_to_rgb888(std::move(*t))) {
+          return {TileStatus::Ok, std::move(rgb), {}};
+        }
       }
+      if (!skip_probe) {
+        Job probe;
+        probe.kind = JobKind::ProbeSize;
+        probe.uri = uri;
+        handle_probe_size_store(probe);
+      }
+      auto sm = meta_from_store(uri);
+      return render_pdf_cell(sm ? sm->content_id : std::string(), *pdf, scale, x, y);
+    } catch (const std::exception& ex) {
+      return {TileStatus::Failed, std::nullopt,
+              std::string("exception while rendering PDF cell: ") + ex.what()};
     }
   }
   std::optional<TileBlob> cell;
@@ -4610,6 +4621,38 @@ thread_local std::vector<DeferredTileStore> g_deferred_tile_stores;
 
 
 
+TileResult Client::render_pdf_cell(const std::string& content_id,
+                                   const ParsedPdfUri& pdf, int scale, int x,
+                                   int y) {
+  PdfCellRender cell =
+      pdf_render_tile_cell(pdf.pdf_path, pdf.page, scale, x, y, pdf.backend);
+  if (cell.status != TileStatus::Ok || !cell.raster || cell.raster->rgb.empty()) {
+    if (cell.status == TileStatus::Ok) {
+      return {TileStatus::Failed, std::nullopt, "renderer returned no pixels"};
+    }
+    return {cell.status, std::nullopt, std::move(cell.error)};
+  }
+  PdfRaster& raster = *cell.raster;
+  if (scale >= kPdfMinDurableTileScale && !content_id.empty()) {
+    if (auto jpeg = encode_tile_cell_rgb(raster.rgb.data(), raster.width,
+                                         raster.height, scale, x, y,
+                                         kPdfTileQuality)) {
+      jpeg->source = TileSource::PdfRegion;
+      store_tiles(content_id, std::vector<TileBlob>{*jpeg});
+    }
+  }
+  TileBlob live;
+  live.scale = scale;
+  live.x = x;
+  live.y = y;
+  live.width = raster.width;
+  live.height = raster.height;
+  live.codec = kTileCodecRgb888;
+  live.source = TileSource::PdfRegion;
+  live.bytes = std::move(raster.rgb);
+  return {TileStatus::Ok, std::move(live), {}};
+}
+
 std::optional<TileBlob> Client::materialize_tile_cell(const std::string& uri,
                                                      int scale, int x, int y,
                                                      bool skip_probe) {
@@ -4633,27 +4676,9 @@ std::optional<TileBlob> Client::materialize_tile_cell(const std::string& uri,
 
   std::optional<TileBlob> cell;
   if (auto pdf = parse_pdf_uri(uri)) {
-    auto raster = pdf_render_tile_cell(pdf->pdf_path, pdf->page, scale, x, y,
-                                       pdf->backend);
-    if (raster && !raster->rgb.empty()) {
-      if (scale >= kPdfMinDurableTileScale) {
-        if (auto jpeg = encode_tile_cell_rgb(
-                raster->rgb.data(), raster->width, raster->height, scale, x, y,
-                kPdfTileQuality)) {
-          jpeg->source = TileSource::PdfRegion;
-          store_tiles(content_id, std::vector<TileBlob>{*jpeg});
-        }
-      }
-      TileBlob live;
-      live.scale = scale;
-      live.x = x;
-      live.y = y;
-      live.width = raster->width;
-      live.height = raster->height;
-      live.codec = kTileCodecRgb888;
-      live.source = TileSource::PdfRegion;
-      live.bytes = std::move(raster->rgb);
-      return live;
+    TileResult r = render_pdf_cell(content_id, *pdf, scale, x, y);
+    if (r.tile) {
+      return std::move(r.tile);
     }
   } else if (auto pimg = parse_pdf_image_uri(uri)) {
     auto full = pdf_rasterize_embedded_image(pimg->pdf_path, pimg->image, 0);

@@ -25,6 +25,16 @@ constexpr std::string_view kMupdfPagePipe = "//mupdf-page:";
 
 }  // namespace
 
+const char* page_content_kind_name(PageContentKind kind) {
+  switch (kind) {
+    case PageContentKind::Empty: return "empty";
+    case PageContentKind::Vector: return "vector";
+    case PageContentKind::Raster: return "raster";
+    case PageContentKind::Mixed: return "mixed";
+  }
+  return "?";
+}
+
 bool is_likely_pdf_path(const std::filesystem::path& path) {
   return is_pdf_path(path);
 }
@@ -270,78 +280,43 @@ std::optional<PdfRaster> pdf_rasterize_page(const std::filesystem::path& path,
 #endif
 }
 
-PdfPageContentStats pdf_page_content_stats(const std::filesystem::path& path,
-                                           int page_1based,
-                                           PdfBackend backend) {
-  (void)backend;
+std::optional<PdfPageProfile> pdf_page_profile(const std::filesystem::path& path,
+                                               int page_1based, std::string* error) {
 #if defined(THUMTOO_HAVE_MUPDF)
-  return mupdf_page_content_stats(path, page_1based);
+  return mupdf_page_profile(path, page_1based, error);
 #else
   (void)path;
   (void)page_1based;
-  return {};
+  if (error) *error = "PDF backend unavailable";
+  return std::nullopt;
 #endif
 }
 
-bool pdf_page_allows_live_tiles(const std::filesystem::path& path,
-                                int page_1based, PdfBackend backend) {
-  // Non-image-heavy: denser always allowed (region or full-page).
-  // Image-heavy: denser only when the densest durable level (−2) still fits
-  // the full-page raster path (≤ kTileMaxSourcePixels).
-  auto st = pdf_page_content_stats(path, page_1based, backend);
-  if (!st.image_heavy) {
-    return true;
-  }
+std::optional<std::string> pdf_scale_refusal(const std::filesystem::path& path,
+                                             int page_1based, int scale) {
 #if defined(THUMTOO_HAVE_MUPDF)
-  auto layout = mupdf_page_layout_size(path, page_1based);
-  if (!layout || layout->width <= 0 || layout->height <= 0) {
-    return false;
-  }
-  const Size full = pdf_page_size_at_scale(*layout, kPdfMinDurableTileScale);
-  const std::int64_t px = static_cast<std::int64_t>(full.width) *
-                          static_cast<std::int64_t>(full.height);
-  return px > 0 && px <= kTileMaxSourcePixels;
+  return mupdf_scale_refusal(path, page_1based, scale);
 #else
   (void)path;
   (void)page_1based;
-  return false;
-#endif
-}
-
-std::optional<std::string> pdf_live_scale_refusal(
-    const std::filesystem::path& path, int page_1based, int scale,
-    PdfBackend backend) {
-  if (scale >= kPdfMinLiveTileScaleImageHeavy) {
-    return std::nullopt;
-  }
-#if defined(THUMTOO_HAVE_MUPDF)
-  auto st = pdf_page_content_stats(path, page_1based, backend);
-  if (!st.image_heavy) {
-    return std::nullopt;
-  }
-  auto layout = mupdf_page_layout_size(path, page_1based);
-  if (!layout || layout->width <= 0 || layout->height <= 0) {
-    return std::string("page layout size unavailable");
-  }
-  const Size full = pdf_page_size_at_scale(*layout, scale);
-  const std::int64_t px = static_cast<std::int64_t>(full.width) *
-                          static_cast<std::int64_t>(full.height);
-  if (px > 0 && px <= kTileMaxSourcePixels) {
-    return std::nullopt;
-  }
-  char buf[200];
-  std::snprintf(buf, sizeof buf,
-                "scale %d needs a %dx%d (%lld MP) full-page raster on an "
-                "image-heavy page; limit is %lld MP",
-                scale, full.width, full.height,
-                static_cast<long long>(px / 1000000),
-                static_cast<long long>(kTileMaxSourcePixels / 1000000));
-  return std::string(buf);
-#else
-  (void)path;
-  (void)page_1based;
-  (void)backend;
+  (void)scale;
   return std::string("PDF backend unavailable");
+#endif
+}
+
+std::optional<PdfDocumentRenderStats> pdf_document_render_stats(
+    const std::filesystem::path& path) {
+#if defined(THUMTOO_HAVE_MUPDF)
+  return mupdf_document_render_stats(path);
+#else
+  (void)path;
+  return std::nullopt;
+#endif
+}
+
+void pdf_reset_render_stats() {
+#if defined(THUMTOO_HAVE_MUPDF)
+  mupdf_reset_render_stats();
 #endif
 }
 
@@ -363,9 +338,9 @@ std::optional<PdfRaster> pdf_rasterize_page_region(
 #endif
 }
 
-std::optional<PdfRaster> pdf_render_tile_cell(const std::filesystem::path& path,
-                                               int page_1based, int scale, int x,
-                                               int y, PdfBackend backend) {
+PdfCellRender pdf_render_tile_cell(const std::filesystem::path& path,
+                                   int page_1based, int scale, int x, int y,
+                                   PdfBackend backend) {
   (void)backend;
 #if defined(THUMTOO_HAVE_MUPDF)
   return mupdf_render_tile_cell(path, page_1based, scale, x, y);
@@ -375,7 +350,7 @@ std::optional<PdfRaster> pdf_render_tile_cell(const std::filesystem::path& path,
   (void)scale;
   (void)x;
   (void)y;
-  return std::nullopt;
+  return {TileStatus::Failed, std::nullopt, "PDF backend unavailable"};
 #endif
 }
 
@@ -383,10 +358,10 @@ std::optional<TileBlob> pdf_build_tile_cell(const std::filesystem::path& path,
                                             int page_1based, int scale, int x,
                                             int y, int jpeg_quality,
                                             PdfBackend backend) {
-  auto raster = pdf_render_tile_cell(path, page_1based, scale, x, y, backend);
-  if (!raster || raster->rgb.empty()) return std::nullopt;
-  return encode_tile_cell_rgb(raster->rgb.data(), raster->width, raster->height,
-                              scale, x, y, jpeg_quality);
+  auto cell = pdf_render_tile_cell(path, page_1based, scale, x, y, backend);
+  if (!cell.raster || cell.raster->rgb.empty()) return std::nullopt;
+  return encode_tile_cell_rgb(cell.raster->rgb.data(), cell.raster->width,
+                              cell.raster->height, scale, x, y, jpeg_quality);
 }
 
 std::optional<PageTextLayer> pdf_page_text_layer(const std::filesystem::path& path,

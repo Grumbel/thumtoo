@@ -12,6 +12,7 @@
  */
 
 #include "thumtoo/client.hpp"
+#include "thumtoo/pdf.hpp"
 #include "thumtoo/image.hpp"
 #include "thumtoo/uri.hpp"
 
@@ -76,7 +77,7 @@ void write_bmp(const fs::path& path, int w, int h) {
             static_cast<std::streamsize>(buf.size()));
 }
 
-/// Letter page fully covered by one JPEG image (scan-like, image-heavy).
+/// Letter page fully covered by one 256x256 JPEG (a 30 dpi raster page).
 bool write_scan_pdf(const fs::path& path) {
   std::vector<std::uint8_t> rgb(256 * 256 * 3, 128);
   for (std::size_t i = 0; i < rgb.size(); ++i) {
@@ -288,9 +289,9 @@ int main() {
     expect(ok == 2, "legacy request_tiles delivers both cells");
   }
 
-  // 6. Image-heavy PDF: denser scales whose full-page raster exceeds the
-  //    budget are Unavailable with the real reason (not a generic Failed
-  //    that hosts retry); smaller denser scales still render.
+  // 6. Raster-only PDF page: scales finer than the image's native
+  //    resolution are Unavailable with the reason from the page profile (not
+  //    a generic Failed that hosts retry); the layout scale renders.
 #if defined(THUMTOO_HAVE_MUPDF)
   {
     const auto pdf = root / "scan.pdf";
@@ -298,23 +299,24 @@ int main() {
     auto client = Client::open(cache, {}, 2, cache);
     Recorder rec;
     const std::string page = file_uri_from_path(pdf) + "//page:1";
-    // Letter at 144 dpi = 1224x1584: s=-1 fits, s=-3 is ~124 MP.
-    client->request_tile_cells(page, {{-1, 1, 1}, {-3, 5, 5}}, rec.for_batch(0));
+    // 256 px across 8.5 in = 30 dpi: the finest useful scale is 0 (144 dpi).
+    client->request_tile_cells(page, {{0, 1, 1}, {-1, 2, 2}}, rec.for_batch(0));
     settle(*client, rec, 2);
-    rec.expect_exactly_once(0, 2, "image-heavy denser");
+    rec.expect_exactly_once(0, 2, "raster page cap");
     auto ok = rec.result(0, 0);
     expect(ok.status == TileStatus::Ok,
-           std::string("s=-1 renders, got ") + tile_status_name(ok.status) +
+           std::string("s=0 renders, got ") + tile_status_name(ok.status) +
                " (" + ok.error + ")");
-    auto big = rec.result(0, 1);
-    expect(big.status == TileStatus::Unavailable,
-           std::string("s=-3 is Unavailable, got ") + tile_status_name(big.status) +
-               " (" + big.error + ")");
-    expect(big.error.find("MP") != std::string::npos,
-           "refusal names the raster size: " + big.error);
+    auto fine = rec.result(0, 1);
+    expect(fine.status == TileStatus::Unavailable,
+           std::string("s=-1 is Unavailable, got ") + tile_status_name(fine.status) +
+               " (" + fine.error + ")");
+    expect(fine.error.find("finest useful scale 0") != std::string::npos,
+           "refusal names the cap: " + fine.error);
   }
 #endif
 
+  thumtoo::pdf_release_document_cache();
   fs::remove_all(root);
   if (g_failures) {
     std::cerr << g_failures << " failure(s)\n";

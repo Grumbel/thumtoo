@@ -199,10 +199,60 @@ Let `L` = layout size at 144 dpi. Tile size `T = 256`.
 
 `dpi = kPdfLayoutDpi * 2^{-s}`
 
-Interactive `request_tile` for `//page:N` builds exclusive cells from a
-**full-page raster** at that scale’s dpi (thread-local page level cache), then
-crops — same model as image tiles. Per-cell region draws are only a fallback
-when the page level would exceed `kTileMaxSourcePixels`.
+### PDF rendering (2026-10-07)
+
+Every PDF cell is a region render of the page's **display list** with the
+cell as the device rect, at any scale. There is no full-page raster and no
+page-size limit (a Letter page at −4 is 496 MP; one cell is still 256²).
+
+Runtime (`src/pdf_mupdf.cpp`):
+
+- One base `fz_context` with locks owns the **shared store** (decoded images,
+  glyphs; `kPdfStoreBytes`). Each thread renders with an `fz_clone_context`.
+- One `fz_document` per file (`DocEntry`, LRU `kPdfDocumentCacheSize`), used
+  under a mutex — MuPDF documents are single-threaded. Waits are counted
+  (`PdfDocumentRenderStats::lock_waits`).
+- Each page (LRU `kPdfPageCacheSize`) keeps a display list built **once**
+  through a profiling pass-through device. Cells run that list outside the
+  document lock, concurrently.
+- The profiling device records `PdfPageProfile` (below) and wraps every image
+  in a `CountingImage`.
+
+**Decode once.** `CountingImage` decodes the whole image (at the requested
+subsample level) when it fits `kPdfFullImageDecodeBudget`, so the store keys
+it as the full image and every later cell hits it. Each real decode is
+counted in `PdfDecodeStats` (full / subarea, pixels, ms). Images over the
+budget fall back to MuPDF's per-cell subarea decode, counted with a reason.
+
+Why whole-image decode matters: MuPDF re-derives the image matrix for every
+subarea (`update_ctm_for_subarea`), so per-cell subarea decodes resample with
+a slightly different phase and neighbouring cells disagree (measured: up to
+209/255 on a high-frequency scan). That was the "region draws seam on scans"
+the old full-page-raster path worked around. With one decode, stitched cells
+are byte-identical to one render (`tests/test_pdf_profile.cpp`). Diagonal
+strokes differ by a few levels on anti-aliased edge pixels between any two
+clip regions — MuPDF clips stroke segments to the scissor in floating point
+(`draw-path.c`); the test allows that explicitly.
+
+**Page profile** (`pdf_page_profile`): kind = Empty / Vector / Raster /
+Mixed, from what the page actually draws (contents, annotations, widgets):
+
+| Observed | Counts as |
+|----------|-----------|
+| fill/stroke paths, shadings, visible glyphs, clip glyphs | vector detail |
+| `fill_image`, `fill_image_mask`, `clip_image_mask` | image (dpi from the ctm) |
+| invisible text (render mode 3, OCR layers) | ignored (`invisible_glyphs`) |
+| first fill covering ≥ `kPdfBackgroundFillCoverage` of the page | paper background, ignored |
+
+Only **Raster** pages get a resolution cap: `finest_useful_scale` is the
+coarsest scale whose dpi reaches `native_dpi / kPdfNativeDpiTolerance`
+(300 dpi scan → −1, 600 dpi → −2). Finer cells answer `Unavailable` with the
+reason. Vector and Mixed pages are never capped (a stamp on a scan stays
+sharp). `PdfPageProfile::summary` states the decision in one line; hosts show
+it.
+
+Inspect any file: `thumtoo-pdf-profile [--json] [--render SCALE|cap]
+[--threads N] FILE.pdf [PAGE…]` — profile plus a decode-count benchmark.
 
 **Layout pixels:** one `lround(page_pt * dpi/72)` from the continuous page
 bound (`fz_bound_page`). Do not round to integer 72dpi points and scale again

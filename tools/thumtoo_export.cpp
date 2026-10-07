@@ -296,13 +296,16 @@ int main(int argc, char** argv) {
         int left = 0, top = 0, tw = 0, th = 0;
         thumtoo::tile_cell_pixel_rect(sw, sh, tx, ty, &left, &top, &tw, &th);
         if (tw < 1 || th < 1) continue;
-        // Same path as durable/live tiles (1px overscan + exclusive crop).
-        auto raster = thumtoo::pdf_render_tile_cell(parsed->pdf_path,
-                                                   parsed->page, scale, tx, ty);
-        if (!raster || raster->rgb.empty()) {
-          std::cerr << "raw-pdf rasterize failed at " << tx << "," << ty << "\n";
+        // Same path as durable/live tiles.
+        auto cell = thumtoo::pdf_render_tile_cell(parsed->pdf_path,
+                                                 parsed->page, scale, tx, ty);
+        if (!cell.raster || cell.raster->rgb.empty()) {
+          std::cerr << "raw-pdf cell " << tx << "," << ty << " "
+                    << thumtoo::tile_status_name(cell.status) << ": "
+                    << cell.error << "\n";
           return 1;
         }
+        auto& raster = cell.raster;
         if (raster->width != tw || raster->height != th) {
           std::cerr << "warn: cell " << tx << "," << ty << " raster "
                     << raster->width << "x" << raster->height << " expected "

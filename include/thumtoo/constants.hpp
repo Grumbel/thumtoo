@@ -4,6 +4,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <string_view>
 
@@ -84,17 +85,30 @@ inline constexpr int kPdfLayoutDpi = 144;
 /// are not stored — avoids filling the cache with 1k–9k dpi cells.
 inline constexpr int kPdfMinDurableTileScale = -2;  // 144 * 4 = 576 dpi
 
-/// Image-heavy denser floor: scales below this need the full-page crop path
-/// (region draws seam on scans). 0 = layout dpi; denser allowed when the
-/// level fits kTileMaxSourcePixels (see mupdf_render_tile_cell).
-inline constexpr int kPdfMinLiveTileScaleImageHeavy = 0;
+/// Raster-only PDF pages (no visible vector content or text) stop refining
+/// once the rendered dpi reaches the sharpest image's native dpi divided by
+/// this tolerance: a 300 dpi scan caps at scale -1 (288 dpi) instead of
+/// paying 4x the pixels at -2 for 4% more resolution. Reported in
+/// PdfPageProfile::summary.
+inline constexpr double kPdfNativeDpiTolerance = 1.25;
 
-/// Fraction of page area covered by image XObjects → treat as image-heavy.
-inline constexpr double kPdfImageHeavyCoverage = 0.45;
+/// A first painted fill covering at least this fraction of the page is a
+/// paper background (common in scan PDFs), not vector detail. Reported in
+/// PdfPageProfile::background_fill_ignored.
+inline constexpr double kPdfBackgroundFillCoverage = 0.98;
 
-/// Sparse text (chars per square point of media box) → scanned heuristic
-/// when image-mapping is unavailable.
-inline constexpr double kPdfSparseTextPerPoint2 = 0.002;
+/// Embedded images whose decoded size (at the requested subsample factor)
+/// fits this budget are decoded whole once and kept in the shared MuPDF
+/// store, so every tile cell reuses the decode. Larger images fall back to
+/// MuPDF's per-cell subarea decode. Counted in PdfDecodeStats.
+inline constexpr std::size_t kPdfFullImageDecodeBudget = 128u << 20;  // 128 MiB
+
+/// Shared MuPDF store (decoded images, glyphs) for all worker threads.
+inline constexpr std::size_t kPdfStoreBytes = 512u << 20;  // 512 MiB
+
+/// Open documents / cached pages (display list + profile) per document.
+inline constexpr int kPdfDocumentCacheSize = 8;
+inline constexpr int kPdfPageCacheSize = 32;
 
 /// EPUB default virtual page size in **pixels** at kEpubLayoutDpi and base font
 /// size in points for fz_layout_document. Changing these invalidates default

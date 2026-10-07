@@ -32,8 +32,16 @@ void mupdf_clear_last_error();
 [[nodiscard]] std::optional<Size> mupdf_page_layout_size(
     const std::filesystem::path& path, int page_1based);
 
-[[nodiscard]] PdfPageContentStats mupdf_page_content_stats(
-    const std::filesystem::path& path, int page_1based);
+[[nodiscard]] std::optional<PdfPageProfile> mupdf_page_profile(
+    const std::filesystem::path& path, int page_1based, std::string* error);
+
+[[nodiscard]] std::optional<std::string> mupdf_scale_refusal(
+    const std::filesystem::path& path, int page_1based, int scale);
+
+[[nodiscard]] std::optional<PdfDocumentRenderStats> mupdf_document_render_stats(
+    const std::filesystem::path& path);
+
+void mupdf_reset_render_stats();
 
 [[nodiscard]] std::optional<PdfRaster> mupdf_rasterize_page(
     const std::filesystem::path& path, int page_1based, int max_edge);
@@ -42,7 +50,7 @@ void mupdf_clear_last_error();
     const std::filesystem::path& path, int page_1based, double dpi, int px,
     int py, int pw, int ph);
 
-[[nodiscard]] std::optional<PdfRaster> mupdf_render_tile_cell(
+[[nodiscard]] PdfCellRender mupdf_render_tile_cell(
     const std::filesystem::path& path, int page_1based, int scale, int x,
     int y);
 
