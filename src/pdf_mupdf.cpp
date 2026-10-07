@@ -620,7 +620,7 @@ void ProfileBuilder::finish() {
     cap = std::min(cap, 0);
     prof.finest_useful_scale = cap;
     std::snprintf(buf, sizeof buf,
-                  " → finest useful scale %d (%.0f dpi ≥ %.0f/%.2g)", cap,
+                  " → finest useful scale %d (%.0f dpi ≥ %.0f/%.3g)", cap,
                   static_cast<double>(kPdfLayoutDpi) * std::ldexp(1.0, -cap),
                   prof.native_dpi, kPdfNativeDpiTolerance);
     s += buf;
