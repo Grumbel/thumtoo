@@ -159,12 +159,12 @@ int main(int argc, char** argv) {
   bool first = true;
   for (int page : pages) {
     std::string error;
+    thumtoo::pdf_reset_render_stats();
     auto prof = thumtoo::pdf_page_profile(pdf, page, &error);
     std::optional<RenderResult> rr;
     if (prof && render) {
       const int scale = *render == "cap" ? prof->finest_useful_scale.value_or(0)
                                          : std::atoi(render->c_str());
-      thumtoo::pdf_reset_render_stats();
       rr = render_page(pdf, page, scale, threads);
       failures += rr->failed;
     }
@@ -209,7 +209,8 @@ int main(int argc, char** argv) {
               << ",\"full_decodes\":" << s.decode.full_decodes
               << ",\"subarea_decodes\":" << s.decode.subarea_decodes
               << ",\"decoded_pixels\":" << s.decode.decoded_pixels
-              << ",\"decode_ms\":" << s.decode.decode_ms;
+              << ",\"decode_ms\":" << s.decode.decode_ms
+              << ",\"shared_waits\":" << s.decode.shared_waits;
           }
           o << ",\"first_error\":\"" << json_escape(rr->first_error) << "\"}";
         }
@@ -238,12 +239,13 @@ int main(int argc, char** argv) {
       if (rr->stats) {
         const auto& s = *rr->stats;
         std::printf("    display lists %lld (%.1f ms)  decodes %lld (full %lld, subarea "
-                    "%lld, %.1f MP, %.1f ms)\n",
+                    "%lld, %.1f MP, %.1f ms), %lld waited for a shared decode\n",
                     static_cast<long long>(s.display_list_builds), s.display_list_ms,
                     static_cast<long long>(s.decode.decodes),
                     static_cast<long long>(s.decode.full_decodes),
                     static_cast<long long>(s.decode.subarea_decodes),
-                    s.decode.decoded_pixels / 1e6, s.decode.decode_ms);
+                    s.decode.decoded_pixels / 1e6, s.decode.decode_ms,
+                    static_cast<long long>(s.decode.shared_waits));
         if (!s.decode.last_subarea_reason.empty()) {
           std::cout << "    subarea: " << s.decode.last_subarea_reason << "\n";
         }

@@ -165,6 +165,9 @@ struct PdfDecodeStats {
   std::int64_t subarea_decodes = 0;   ///< partial (image above the budget)
   std::int64_t decoded_pixels = 0;
   double decode_ms = 0.0;
+  /// Cells that needed an image another thread was already decoding and
+  /// waited for that decode instead of repeating it.
+  std::int64_t shared_waits = 0;
   /// Largest single decode (pixels) and why it was partial, if it was.
   std::int64_t largest_decode_pixels = 0;
   std::string last_subarea_reason;

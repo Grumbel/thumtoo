@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -240,32 +241,83 @@ void add_decode(PdfDecodeStats& s, bool full, std::int64_t pixels, double ms,
 
 // --- CountingImage: decode-once + exact decode accounting --------------------
 
+/// Single-flight per image: concurrent cells needing the same decode wait for
+/// the first thread instead of decoding again. The result is held only until
+/// the last waiter took it; afterwards the shared store owns it.
+struct DecodeFlight {
+  fz_irect rect{};
+  int l2 = 0;
+  bool done = false;
+  int waiters = 0;
+  fz_pixmap* result = nullptr;  // own ref while waiters > 0
+  fz_irect rect_out{};
+  int l2_out = 0;
+};
+
+struct DecodeGate {
+  std::mutex mu;
+  std::condition_variable_any cv;
+  std::list<DecodeFlight> flights;
+};
+
 struct CountingImage {
   fz_image super;
   fz_image* inner;
   std::string* doc_key;  // owned
+  DecodeGate* gate;      // owned
   int page;
 };
 
+void record_decode(const CountingImage* ci, bool full, std::int64_t pixels, double ms,
+                   bool over_budget, std::size_t bytes, std::size_t budget) {
+  std::string reason;
+  if (over_budget) {
+    char buf[160];
+    std::snprintf(buf, sizeof buf,
+                  "image %dx%d needs %zu MiB decoded (> %zu MiB budget); "
+                  "decoded per cell",
+                  ci->inner->w, ci->inner->h, bytes >> 20, budget >> 20);
+    reason = buf;
+  }
+  with_page_stats(*ci->doc_key, ci->page,
+                  [&](PdfDocumentRenderStats& d, PdfPageRenderStats& p) {
+                    add_decode(p.decode, full, pixels, ms, reason);
+                    add_decode(d.decode, full, pixels, ms, reason);
+                  });
+}
+
+void record_shared_wait(const CountingImage* ci) {
+  with_page_stats(*ci->doc_key, ci->page,
+                  [](PdfDocumentRenderStats& d, PdfPageRenderStats& p) {
+                    ++p.decode.shared_waits;
+                    ++d.decode.shared_waits;
+                  });
+}
+
+bool same_rect(const fz_irect& a, const fz_irect& b) {
+  return a.x0 == b.x0 && a.y0 == b.y0 && a.x1 == b.x1 && a.y1 == b.y1;
+}
+
+// Called by fz_get_pixmap_from_image after its store lookup missed. May be
+// entered by several threads at once (shared display list). No C++ object
+// with a destructor may be live across a call that can throw (longjmp).
 fz_pixmap* counting_get_pixmap(fz_context* ctx, fz_image* img, fz_irect* subarea,
                                int w, int h, int* l2factor) {
   auto* ci = reinterpret_cast<CountingImage*>(img);
   fz_image* inner = ci->inner;
-  if (inner->decoded || inner->scalable) {
+  if (inner->decoded || inner->scalable || !subarea || !l2factor) {
     // Already-decoded pixmap images / vector images: no decompression here.
     return inner->get_pixmap(ctx, inner, subarea, w, h, l2factor);
   }
-  // Only trivially destructible locals until get_pixmap returns: it may throw
-  // (longjmp) through this frame.
-  const int l2 = l2factor ? *l2factor : 0;
+  const int l2 = *l2factor;
   const std::size_t f = std::size_t{1} << l2;
   const std::size_t dw = (static_cast<std::size_t>(inner->w) + f - 1) >> l2;
   const std::size_t dh = (static_cast<std::size_t>(inner->h) + f - 1) >> l2;
   const std::size_t bytes = dw * dh * std::max<std::size_t>(1, inner->n);
   const std::size_t budget = g_full_decode_budget.load(std::memory_order_relaxed);
   bool over_budget = false;
-  if (subarea && (subarea->x0 > 0 || subarea->y0 > 0 || subarea->x1 < inner->w ||
-                  subarea->y1 < inner->h)) {
+  if (subarea->x0 > 0 || subarea->y0 > 0 || subarea->x1 < inner->w ||
+      subarea->y1 < inner->h) {
     if (bytes <= budget) {
       // Decode the whole image once; the store keys it as the full image and
       // every later cell (any subarea) hits it.
@@ -277,28 +329,85 @@ fz_pixmap* counting_get_pixmap(fz_context* ctx, fz_image* img, fz_irect* subarea
       over_budget = true;
     }
   }
+
+  DecodeGate* gate = ci->gate;
+  DecodeFlight* flight = nullptr;
+  gate->mu.lock();
+  for (DecodeFlight& fl : gate->flights) {
+    if (fl.l2 != l2 || !same_rect(fl.rect, *subarea)) continue;
+    ++fl.waiters;
+    gate->cv.wait(gate->mu, [&fl] { return fl.done; });
+    --fl.waiters;
+    fz_pixmap* shared = fl.result ? fz_keep_pixmap(ctx, fl.result) : nullptr;
+    if (shared) {
+      *subarea = fl.rect_out;
+      *l2factor = fl.l2_out;
+    }
+    if (fl.waiters == 0) {
+      fz_drop_pixmap(ctx, fl.result);
+      fl.result = nullptr;
+      for (auto it = gate->flights.begin(); it != gate->flights.end(); ++it) {
+        if (&*it == &fl) {
+          gate->flights.erase(it);
+          break;
+        }
+      }
+    }
+    gate->mu.unlock();
+    if (shared) {
+      record_shared_wait(ci);
+      return shared;
+    }
+    gate->mu.lock();  // the other decode failed: try ourselves
+    break;
+  }
+  gate->flights.emplace_back();
+  flight = &gate->flights.back();
+  flight->rect = *subarea;
+  flight->l2 = l2;
+  gate->mu.unlock();
+
+  fz_pixmap* pix = nullptr;
+  int failed = 0;
+  int code = 0;
+  char message[256] = {0};
+  fz_var(pix);
+  fz_var(failed);
   const Clock::time_point t0 = Clock::now();
-  fz_pixmap* pix = inner->get_pixmap(ctx, inner, subarea, w, h, l2factor);
+  fz_try(ctx) { pix = inner->get_pixmap(ctx, inner, subarea, w, h, l2factor); }
+  fz_catch(ctx) {
+    failed = 1;
+    code = fz_caught(ctx);
+    std::snprintf(message, sizeof message, "%s", fz_caught_message(ctx));
+  }
   const double ms = ms_since(t0);
-  const bool full = !subarea || (subarea->x0 <= 0 && subarea->y0 <= 0 &&
-                                 subarea->x1 >= inner->w && subarea->y1 >= inner->h);
+
+  gate->mu.lock();
+  flight->done = true;
+  flight->rect_out = *subarea;
+  flight->l2_out = *l2factor;
+  if (flight->waiters > 0 && pix) {
+    flight->result = fz_keep_pixmap(ctx, pix);
+  } else if (flight->waiters == 0) {
+    for (auto it = gate->flights.begin(); it != gate->flights.end(); ++it) {
+      if (&*it == flight) {
+        gate->flights.erase(it);
+        break;
+      }
+    }
+  }
+  gate->cv.notify_all();
+  gate->mu.unlock();
+
+  if (failed) {
+    fz_throw(ctx, code, "%s", message);
+  }
+  const bool full = subarea->x0 <= 0 && subarea->y0 <= 0 && subarea->x1 >= inner->w &&
+                    subarea->y1 >= inner->h;
   const std::int64_t pixels =
       pix ? static_cast<std::int64_t>(fz_pixmap_width(ctx, pix)) * fz_pixmap_height(ctx, pix)
           : 0;
-  std::string reason;
-  if (over_budget) {
-    char buf[160];
-    std::snprintf(buf, sizeof buf,
-                  "image %dx%d needs %zu MiB decoded (> %zu MiB budget); "
-                  "decoded per cell",
-                  inner->w, inner->h, bytes >> 20, budget >> 20);
-    reason = buf;
-  }
-  with_page_stats(*ci->doc_key, ci->page,
-                  [&](PdfDocumentRenderStats& d, PdfPageRenderStats& p) {
-                    add_decode(p.decode, full, pixels, ms, reason);
-                    add_decode(d.decode, full, pixels, ms, reason);
-                  });
+  record_decode(ci, full, pixels, ms, over_budget, bytes, budget);
   return pix;
 }
 
@@ -321,12 +430,15 @@ void counting_drop(fz_context* ctx, fz_image* img) {
   fz_drop_image(ctx, ci->inner);
   delete ci->doc_key;
   ci->doc_key = nullptr;
+  delete ci->gate;  // no flights: the image is only dropped when unused
+  ci->gate = nullptr;
 }
 
 /// New reference to a CountingImage around @p inner. Throws (fz) on OOM.
 fz_image* new_counting_image(fz_context* ctx, fz_image* inner,
                              const std::string& doc_key, int page) {
   auto* key = new std::string(doc_key);
+  auto* gate = new DecodeGate;
   CountingImage* ci = nullptr;
   fz_var(ci);
   fz_try(ctx) {
@@ -340,10 +452,12 @@ fz_image* new_counting_image(fz_context* ctx, fz_image* inner,
   }
   fz_catch(ctx) {
     delete key;
+    delete gate;
     fz_rethrow(ctx);
   }
   ci->inner = fz_keep_image(ctx, inner);
   ci->doc_key = key;
+  ci->gate = gate;
   ci->page = page;
   // Mirror the fields fz_new_image_of_size does not take.
   std::memcpy(ci->super.decode, inner->decode, sizeof inner->decode);

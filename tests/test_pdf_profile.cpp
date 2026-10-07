@@ -208,8 +208,8 @@ int main() {
     for (auto& t : threads) t.join();
     expect(ok == kThreads * nx * ny, "threaded cells render");
     const auto n = decodes(pdf, scan);
-    expect(n >= 1 && n <= kThreads, "threaded decodes " + std::to_string(n) +
-                                        " (want 1, at most one per racing thread)");
+    expect(n == 1, "threaded decodes " + std::to_string(n) +
+                       " (concurrent cells wait for the one decode)");
   }
 
   // 4. No seams: stitched cells == one region render.

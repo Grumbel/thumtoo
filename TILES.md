@@ -223,6 +223,9 @@ subsample level) when it fits `kPdfFullImageDecodeBudget`, so the store keys
 it as the full image and every later cell hits it. Each real decode is
 counted in `PdfDecodeStats` (full / subarea, pixels, ms). Images over the
 budget fall back to MuPDF's per-cell subarea decode, counted with a reason.
+Decodes are **single-flight** per image: cells on other threads that need the
+same decode wait for it (`shared_waits`) instead of decoding again, so a page
+costs one decode per image and subsample level regardless of worker count.
 
 Why whole-image decode matters: MuPDF re-derives the image matrix for every
 subarea (`update_ctm_for_subarea`), so per-cell subarea decodes resample with
