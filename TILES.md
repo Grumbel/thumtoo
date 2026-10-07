@@ -92,7 +92,7 @@ streamed per cell as each one finishes (not after the whole batch):
 | `Ok` | `tile` holds rgb888/rgba8 pixels | Paint |
 | `Cancelled` | Host cancel (`cancel_tile_cells`, `cancel_uri`, `cancel_pending`) or shutdown before the cell was produced | Forget; re-request if still wanted |
 | `Failed` | I/O, decode, render or internal error; `error` says why | Show the reason; retry with backoff |
-| `Unavailable` | The cell cannot exist (outside the grid, denser scale on a raster, denser refused for an image-heavy page) | Show the reason; never retry |
+| `Unavailable` | The cell cannot exist (outside the grid, denser scale on a raster image, PDF raster page finer than its native dpi) | Show the reason; never retry |
 
 Rules:
 

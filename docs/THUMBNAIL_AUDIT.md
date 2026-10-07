@@ -503,6 +503,12 @@ Output: machine-readable JSON + markdown table in this doc.
 
 ## 6f. Scanned PDFs and image-heavy pages (historical: Poppler; now MuPDF)
 
+> **Superseded (2026-10-07).** The image-heavy heuristic, the full-page RGB
+> cache and the refusal of live tiles on scans are gone. Pages are classified
+> by a profiling device (`PdfPageProfile`), raster pages cap at their native
+> dpi, and images decode once per page and level. See TILES.md "PDF
+> rendering". The text below is history.
+
 **Document** is already TLS-cached per Client worker (`cached_pdf_document`).
 **Page** was re-`create_page`d on every region render — now TLS-cached too.
 
