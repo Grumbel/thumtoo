@@ -538,6 +538,15 @@ class Client {
   [[nodiscard]] TileResult render_pdf_cell(const std::string& content_id,
                                            const ParsedPdfUri& pdf, int scale,
                                            int x, int y);
+  /// Same contract for DjVu pages.
+  [[nodiscard]] TileResult render_djvu_cell(const std::string& content_id,
+                                            const ParsedDjvuUri& djvu, int scale,
+                                            int x, int y);
+  /// Shared tail: rgb888 live blob + durable JPEG for scale >= the durable floor.
+  [[nodiscard]] TileResult finish_document_cell(const std::string& content_id,
+                                                std::vector<std::uint8_t> rgb,
+                                                int width, int height, int scale,
+                                                int x, int y, TileSource source);
 
 
   struct Job {

@@ -257,6 +257,35 @@ it.
 Inspect any file: `thumtoo-pdf-profile [--json] [--render SCALE|cap]
 [--threads N] FILE.pdf [PAGE…]` — profile plus a decode-count benchmark.
 
+### DjVu rendering (2026-10-07)
+
+`src/djvu.cpp`. Layout (scale 0) is the page's **native pixel grid**; coarser
+scales floor-halve like the host grid (`dim_at_tile_scale`). A DjVu page is a
+raster, so scales < 0 answer `Unavailable` ("finer than the page's native
+pixels") instead of interpolating.
+
+- One cached document per file (LRU 4), each with its own ddjvu context and
+  mutex: books render in parallel; one book serializes (ddjvu contexts are
+  single-threaded). `ddjvu_context_create` itself is serialized globally
+  (it calls `setlocale`).
+- Decoded pages stay alive (LRU 4 per document): every cell of a page renders
+  from **one decode** (was: create + decode + `ddjvu_cache_clear` per cell —
+  13–25 ms per cell on IW44 pages, now 0.2–2 ms).
+- `djvu_page_profile` (same `PdfPageProfile` type): Raster with the JB2 mask
+  and IW44 layers and their dpi (sizes from `ddjvu_document_get_pagedump`),
+  hidden text layer size as `invisible_glyphs`, `finest_useful_scale` 0;
+  Empty for pages without image layers (those render white — the only case
+  where a FALSE `ddjvu_page_render` is not an error).
+- Decoder errors (ddjvu error messages) are kept and returned as the cell's
+  reason; `djvu_document_render_stats` counts page decodes, cells, refusals,
+  failures and lock waits.
+- Stitching: JB2 is exact; IW44 layers differ by ≤ 6/255 between render rects
+  (djvulibre reconstructs wavelets per rect; removing it needs a ~128 px margin
+  per cell — not worth 3× the pixels). `tests/test_djvu_tiles.cpp` on
+  `tests/fixtures/pages.djvu` (regenerate: `make_djvu_fixtures.sh`).
+- Known: TSan reports djvulibre's decoder thread unlocking a page monitor
+  that is destroyed later on eviction (inside djvulibre, no visible edge).
+
 **Layout pixels:** one `lround(page_pt * dpi/72)` from the continuous page
 bound (`fz_bound_page`). Do not round to integer 72dpi points and scale again
 (that drifts by up to 1 device pixel vs the region ctm).

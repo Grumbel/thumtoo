@@ -17,8 +17,14 @@ Docs: TILES.md "PDF rendering". Tests: `tests/test_pdf_profile.cpp` (fixtures
 built with MuPDF's writer, `tests/pdf_fixtures.cpp`). Tool:
 `thumtoo-pdf-profile`. Corpus: benchtoo `gen_pdf_classes.py`.
 
-Open: DjVu / EPUB still render per cell without a profile (no cap, no decode
-stats).
+### DjVu rendering
+Per-document cache + contexts, decoded pages reused across cells (6–17×
+faster), host-matching coarse grid, page profile + render stats, real error
+reasons, scales < 0 Unavailable. TILES.md "DjVu rendering"; test
+`test_djvu_tiles` with committed `tests/fixtures/pages.djvu`.
+
+Open: EPUB still renders per cell with per-thread MuPDF contexts and no
+profile/stats.
 
 ### request_tile_cells
 Interactive cells now answer exactly once each (Ok / Cancelled / Failed /

@@ -1,6 +1,19 @@
 // SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+// DjVu backend (djvulibre ddjvuapi).
+//
+// Runtime model (TILES.md "DjVu rendering"):
+//   * One cached document per file (DjvuDoc, LRU kDjvuDocumentCacheSize),
+//     each with its own ddjvu context and mutex — a ddjvu context is not
+//     thread-safe, but different books render in parallel.
+//   * Decoded pages stay alive per document (LRU kDjvuPageCacheSize); every
+//     tile cell of a page renders from the same decoded page. Each decode is
+//     counted (render stats).
+//   * Layout (scale 0) is the page's native pixel grid. DjVu pages are
+//     rasters: finer scales are refused (Unavailable) instead of interpolated.
+//   * Decoder errors arrive as ddjvu messages; they are kept and reported.
+
 #include "thumtoo/djvu.hpp"
 
 #include "thumtoo/format.hpp"
@@ -8,11 +21,16 @@
 #include "thumtoo/uri.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
-#include <cstring>
 #include <cstdio>
-#include <string>
+#include <cstdlib>
+#include <cstring>
+#include <list>
+#include <map>
+#include <memory>
 #include <mutex>
+#include <string>
 
 #if defined(THUMTOO_HAVE_DJVU)
 #  include <libdjvu/ddjvuapi.h>
@@ -26,114 +44,433 @@ constexpr std::string_view kPagePipe = "//page:";
 
 #if defined(THUMTOO_HAVE_DJVU)
 
-// One shared document for the process. TLS caches used to open the same
-// multipage book on every worker (×N full documents in RAM + decode thrash).
-// ddjvu contexts are not safe for concurrent use; serialize all API calls.
-struct SharedDjvuDoc {
+constexpr int kDjvuDocumentCacheSize = 4;
+constexpr int kDjvuPageCacheSize = 4;
+
+using Clock = std::chrono::steady_clock;
+
+double ms_since(Clock::time_point t0) {
+  return std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
+}
+
+// --- Render / decode accounting ---------------------------------------------
+
+struct StatsRegistry {
   std::mutex mu;
-  std::string path_key;
-  std::filesystem::file_time_type mtime{};
-  ddjvu_context_t* ctx = nullptr;
-  ddjvu_document_t* doc = nullptr;
-  // Layout cache for the open document only.
-  int layout_page = 0;
-  Size layout_native{0, 0};
+  std::map<std::string, PdfDocumentRenderStats> docs;
 };
 
-SharedDjvuDoc g_djvu;
-
-void release_shared_djvu_unlocked() {
-  if (g_djvu.doc) {
-    ddjvu_document_release(g_djvu.doc);
-    g_djvu.doc = nullptr;
-  }
-  if (g_djvu.ctx) {
-    ddjvu_context_release(g_djvu.ctx);
-    g_djvu.ctx = nullptr;
-  }
-  g_djvu.path_key.clear();
-  g_djvu.mtime = {};
-  g_djvu.layout_page = 0;
-  g_djvu.layout_native = {};
+StatsRegistry& stats_registry() {
+  static auto* r = new StatsRegistry;
+  return *r;
 }
 
-void pump_messages(ddjvu_context_t* ctx) {
-  if (!ctx) return;
-  const ddjvu_message_t* msg;
-  while ((msg = ddjvu_message_peek(ctx)) != nullptr) {
-    ddjvu_message_pop(ctx);
-  }
+template <class F>
+void with_doc_stats(const std::string& key, F&& f) {
+  auto& r = stats_registry();
+  std::lock_guard lock(r.mu);
+  auto& d = r.docs[key];
+  if (d.path.empty()) d.path = key;
+  f(d);
 }
 
-void wait_doc_decoded(ddjvu_context_t* ctx, ddjvu_document_t* doc) {
-  if (!ctx || !doc) return;
-  while (!ddjvu_document_decoding_done(doc)) {
+template <class F>
+void with_page_stats(const std::string& key, int page, F&& f) {
+  auto& r = stats_registry();
+  std::lock_guard lock(r.mu);
+  auto& d = r.docs[key];
+  if (d.path.empty()) d.path = key;
+  auto it = std::lower_bound(d.pages.begin(), d.pages.end(), page,
+                             [](const PdfPageRenderStats& p, int v) { return p.page < v; });
+  if (it == d.pages.end() || it->page != page) {
+    PdfPageRenderStats fresh;
+    fresh.page = page;
+    it = d.pages.insert(it, std::move(fresh));
+  }
+  f(d, *it);
+}
+
+// --- Document / page cache ---------------------------------------------------
+
+struct PageSlot {
+  ddjvu_page_t* page = nullptr;
+  int width = 0;
+  int height = 0;
+  int dpi = 0;
+  std::optional<PdfPageProfile> profile;
+  std::uint64_t last_use = 0;
+};
+
+struct DjvuDoc {
+  std::string key;  // normalized path
+  std::filesystem::path path;
+  std::filesystem::file_time_type mtime{};
+
+  std::mutex mu;  // guards everything below (ddjvu context is single-threaded)
+  bool open_attempted = false;
+  std::string open_error;
+  ddjvu_context_t* ctx = nullptr;
+  ddjvu_document_t* doc = nullptr;
+  std::map<int, PageSlot> pages;  // 0-based
+  std::uint64_t clock = 0;
+  std::string last_error;  // latest DDJVU_ERROR message text
+
+  void pump() {
+    if (!ctx) return;
+    const ddjvu_message_t* msg;
+    while ((msg = ddjvu_message_peek(ctx)) != nullptr) {
+      if (msg->m_any.tag == DDJVU_ERROR && msg->m_error.message) {
+        last_error = msg->m_error.message;
+      }
+      ddjvu_message_pop(ctx);
+    }
+  }
+
+  void wait() {
     ddjvu_message_wait(ctx);
-    pump_messages(ctx);
+    pump();
   }
+
+  ~DjvuDoc() {
+    for (auto& [idx, s] : pages) {
+      if (s.page) ddjvu_page_release(s.page);
+    }
+    if (doc) ddjvu_document_release(doc);
+    if (ctx) ddjvu_context_release(ctx);
+  }
+};
+
+struct DocCache {
+  std::mutex mu;
+  std::list<std::shared_ptr<DjvuDoc>> lru;  // front = most recent
+};
+
+DocCache& doc_cache() {
+  static auto* c = new DocCache;
+  return *c;
 }
 
-void wait_page_decoded(ddjvu_context_t* ctx, ddjvu_page_t* page) {
-  if (!ctx || !page) return;
-  while (!ddjvu_page_decoding_done(page)) {
-    ddjvu_message_wait(ctx);
-    pump_messages(ctx);
-  }
-}
-
-// Caller must hold g_djvu.mu.
-ddjvu_document_t* cached_djvu_document_unlocked(const std::filesystem::path& path) {
+std::shared_ptr<DjvuDoc> cache_entry(const std::filesystem::path& path) {
   std::error_code ec;
   const auto mtime = std::filesystem::last_write_time(path, ec);
   const std::string key = path.lexically_normal().string();
-  if (g_djvu.doc && g_djvu.path_key == key && !ec && g_djvu.mtime == mtime) {
-    return g_djvu.doc;
+  auto& c = doc_cache();
+  std::lock_guard lock(c.mu);
+  for (auto it = c.lru.begin(); it != c.lru.end(); ++it) {
+    if ((*it)->key != key) continue;
+    if (!ec && (*it)->mtime == mtime) {
+      auto e = *it;
+      c.lru.erase(it);
+      c.lru.push_front(e);
+      return e;
+    }
+    c.lru.erase(it);  // file changed: reopen
+    break;
   }
-
-  release_shared_djvu_unlocked();
-
-  ddjvu_context_t* ctx = ddjvu_context_create("thumtoo");
-  if (!ctx) return nullptr;
-
-  ddjvu_document_t* doc =
-      ddjvu_document_create_by_filename_utf8(ctx, path.string().c_str(), TRUE);
-  if (!doc) {
-    ddjvu_context_release(ctx);
-    return nullptr;
+  auto e = std::make_shared<DjvuDoc>();
+  e->key = key;
+  e->path = path;
+  e->mtime = ec ? std::filesystem::file_time_type{} : mtime;
+  c.lru.push_front(e);
+  while (static_cast<int>(c.lru.size()) > kDjvuDocumentCacheSize) {
+    c.lru.pop_back();  // users keep their shared_ptr
   }
-
-  wait_doc_decoded(ctx, doc);
-  if (ddjvu_document_decoding_error(doc)) {
-    ddjvu_document_release(doc);
-    ddjvu_context_release(ctx);
-    return nullptr;
-  }
-
-  g_djvu.path_key = key;
-  g_djvu.mtime = ec ? std::filesystem::file_time_type{} : mtime;
-  g_djvu.ctx = ctx;
-  g_djvu.doc = doc;
-  g_djvu.layout_page = 0;
-  g_djvu.layout_native = {};
-  return doc;
+  return e;
 }
 
-// Caller must hold g_djvu.mu.
-std::optional<Size> page_native_size_unlocked(ddjvu_context_t* ctx,
-                                              ddjvu_document_t* doc,
-                                              int page_1based) {
-  if (!ctx || !doc || page_1based < 1) return std::nullopt;
-  const int n = ddjvu_document_get_pagenum(doc);
-  if (page_1based > n) return std::nullopt;
+// ddjvu_context_create calls setlocale() (process-global): serialize it.
+std::mutex g_context_create_mu;
 
-  ddjvu_pageinfo_t info{};
-  while (ddjvu_document_get_pageinfo(doc, page_1based - 1, &info) <
-         DDJVU_JOB_OK) {
-    ddjvu_message_wait(ctx);
-    pump_messages(ctx);
+void open_locked(DjvuDoc& e) {
+  e.open_attempted = true;
+  {
+    std::lock_guard lock(g_context_create_mu);
+    e.ctx = ddjvu_context_create("thumtoo");
   }
-  if (info.width <= 0 || info.height <= 0) return std::nullopt;
-  return Size{info.width, info.height};
+  if (!e.ctx) {
+    e.open_error = "ddjvu_context_create failed";
+    return;
+  }
+  // Decoded data we keep lives in our page slots; the context cache would
+  // only duplicate it.
+  ddjvu_cache_set_size(e.ctx, 0);
+  e.doc = ddjvu_document_create_by_filename_utf8(e.ctx, e.path.string().c_str(), TRUE);
+  if (!e.doc) {
+    e.open_error = "cannot open " + e.path.string();
+    return;
+  }
+  while (!ddjvu_document_decoding_done(e.doc)) e.wait();
+  if (ddjvu_document_decoding_error(e.doc)) {
+    e.open_error = e.last_error.empty() ? "document decoding failed" : e.last_error;
+    ddjvu_document_release(e.doc);
+    e.doc = nullptr;
+    return;
+  }
+  with_doc_stats(e.key, [](PdfDocumentRenderStats& d) { ++d.opens; });
+}
+
+/// Exclusive access to one cached document for the lifetime of the object.
+class DjvuAccess {
+ public:
+  explicit DjvuAccess(const std::filesystem::path& path) : entry_(cache_entry(path)) {
+    lock_ = std::unique_lock<std::mutex>(entry_->mu, std::try_to_lock);
+    if (!lock_.owns_lock()) {
+      const Clock::time_point t0 = Clock::now();
+      lock_.lock();
+      const double waited = ms_since(t0);
+      with_doc_stats(entry_->key, [&](PdfDocumentRenderStats& d) {
+        ++d.lock_waits;
+        d.lock_wait_ms += waited;
+        d.lock_wait_max_ms = std::max(d.lock_wait_max_ms, waited);
+      });
+    }
+    if (!entry_->open_attempted) open_locked(*entry_);
+    if (!entry_->doc) error_ = entry_->open_error;
+  }
+
+  explicit operator bool() const { return entry_->doc != nullptr; }
+  DjvuDoc& doc() { return *entry_; }
+  const std::string& error() const { return error_; }
+
+  int page_count() {
+    if (!*this) return 0;
+    entry_->pump();
+    return ddjvu_document_get_pagenum(entry_->doc);
+  }
+
+  /// Page size/dpi from the document directory (no page decode).
+  std::optional<ddjvu_pageinfo_t> page_info(int page_1based) {
+    if (!*this) return std::nullopt;
+    if (page_1based < 1 || page_1based > page_count()) {
+      error_ = "page " + std::to_string(page_1based) + " out of range (document has " +
+               std::to_string(page_count()) + ")";
+      return std::nullopt;
+    }
+    ddjvu_pageinfo_t info{};
+    ddjvu_status_t st;
+    while ((st = ddjvu_document_get_pageinfo(entry_->doc, page_1based - 1, &info)) <
+           DDJVU_JOB_OK) {
+      entry_->wait();
+    }
+    if (st != DDJVU_JOB_OK || info.width <= 0 || info.height <= 0) {
+      error_ = entry_->last_error.empty() ? "page info unavailable" : entry_->last_error;
+      return std::nullopt;
+    }
+    return info;
+  }
+
+  /// Decoded page (decoded once, kept), or nullptr with error().
+  PageSlot* decoded(int page_1based);
+
+ private:
+  void build_profile(PageSlot& s, int page_1based);
+
+  std::shared_ptr<DjvuDoc> entry_;
+  std::unique_lock<std::mutex> lock_;
+  std::string error_;
+};
+
+PageSlot* DjvuAccess::decoded(int page_1based) {
+  if (!page_info(page_1based)) return nullptr;
+  DjvuDoc& e = *entry_;
+  const int idx = page_1based - 1;
+  auto it = e.pages.find(idx);
+  if (it != e.pages.end() && it->second.page) {
+    it->second.last_use = ++e.clock;
+    return &it->second;
+  }
+  const Clock::time_point t0 = Clock::now();
+  e.last_error.clear();
+  ddjvu_page_t* page = ddjvu_page_create_by_pageno(e.doc, idx);
+  if (!page) {
+    error_ = "cannot create page " + std::to_string(page_1based);
+    return nullptr;
+  }
+  while (!ddjvu_page_decoding_done(page)) e.wait();
+  const double ms = ms_since(t0);
+  if (ddjvu_page_decoding_error(page)) {
+    error_ = "page decoding failed" + (e.last_error.empty() ? "" : ": " + e.last_error);
+    ddjvu_page_release(page);
+    with_page_stats(e.key, page_1based, [&](PdfDocumentRenderStats&, PdfPageRenderStats& p) {
+      p.last_error = error_;
+    });
+    return nullptr;
+  }
+  PageSlot& s = e.pages[idx];
+  s.page = page;
+  s.width = ddjvu_page_get_width(page);
+  s.height = ddjvu_page_get_height(page);
+  s.dpi = ddjvu_page_get_resolution(page);
+  s.last_use = ++e.clock;
+  const std::int64_t pixels = static_cast<std::int64_t>(s.width) * s.height;
+  with_page_stats(e.key, page_1based, [&](PdfDocumentRenderStats& d, PdfPageRenderStats& p) {
+    for (PdfDecodeStats* ds : {&p.decode, &d.decode}) {
+      ++ds->decodes;
+      ++ds->full_decodes;
+      ds->decoded_pixels += pixels;
+      ds->decode_ms += ms;
+      ds->largest_decode_pixels = std::max(ds->largest_decode_pixels, pixels);
+    }
+  });
+  build_profile(s, page_1based);
+  // Keep at most kDjvuPageCacheSize decoded pages.
+  while (static_cast<int>(e.pages.size()) > kDjvuPageCacheSize) {
+    auto victim = e.pages.begin();
+    for (auto v = e.pages.begin(); v != e.pages.end(); ++v) {
+      if (v->second.last_use < victim->second.last_use) victim = v;
+    }
+    if (victim->second.page) ddjvu_page_release(victim->second.page);
+    e.pages.erase(victim);
+  }
+  return &e.pages[idx];
+}
+
+/// "BG44 [7851]  IW4 data #1, 74 slices, v1.2 (color), 850x1100" → 850x1100.
+bool layer_size_from_dump(const char* dump, const char* chunk, int* w, int* h,
+                          bool* color) {
+  if (!dump) return false;
+  for (const char* line = std::strstr(dump, chunk); line;
+       line = std::strstr(line + 1, chunk)) {
+    const char* eol = std::strchr(line, '\n');
+    const std::string text(line, eol ? static_cast<std::size_t>(eol - line) : std::strlen(line));
+    const auto paren = text.rfind("), ");
+    if (paren == std::string::npos) continue;
+    if (std::sscanf(text.c_str() + paren + 3, "%dx%d", w, h) == 2) {
+      *color = text.find("(color)") != std::string::npos;
+      return true;
+    }
+  }
+  return false;
+}
+
+int utf8_codepoints(const char* s) {
+  int n = 0;
+  for (; s && *s; ++s) {
+    const unsigned char c = static_cast<unsigned char>(*s);
+    if ((c & 0xC0) != 0x80 && c > ' ') ++n;
+  }
+  return n;
+}
+
+void DjvuAccess::build_profile(PageSlot& s, int page_1based) {
+  DjvuDoc& e = *entry_;
+  PdfPageProfile p;
+  const double dpi = s.dpi > 0 ? s.dpi : 300.0;
+  p.width_pt = s.width * 72.0 / dpi;
+  p.height_pt = s.height * 72.0 / dpi;
+  p.native_dpi = s.dpi;
+
+  char* dump = nullptr;
+  while ((dump = ddjvu_document_get_pagedump(e.doc, page_1based - 1)) == nullptr) {
+    if (ddjvu_document_decoding_error(e.doc)) break;
+    e.wait();
+  }
+  const bool has_mask = dump && std::strstr(dump, "Sjbz") != nullptr;
+  int bw = 0, bh = 0;
+  bool bcolor = false;
+  const bool has_bg = layer_size_from_dump(dump, "BG44", &bw, &bh, &bcolor);
+  int fw = 0, fh = 0;
+  bool fcolor = false;
+  const bool has_fg44 = layer_size_from_dump(dump, "FG44", &fw, &fh, &fcolor);
+  std::free(dump);
+
+  auto add = [&](int w, int h, int comps, int bpc, bool stencil) {
+    PdfPageImage im;
+    im.width = w;
+    im.height = h;
+    im.components = comps;
+    im.bpc = bpc;
+    im.stencil = stencil;
+    im.dpi = s.width > 0 ? dpi * w / s.width : 0.0;
+    im.page_fraction = 1.0;
+    p.images.push_back(im);
+  };
+  if (has_mask) add(s.width, s.height, 1, 1, true);
+  if (has_bg) add(bw, bh, bcolor ? 3 : 1, 8, false);
+  if (has_fg44) add(fw, fh, fcolor ? 3 : 1, 8, false);
+  p.image_draws = static_cast<int>(p.images.size());
+  p.image_coverage = p.images.empty() ? 0.0 : 1.0;
+
+  miniexp_t text = miniexp_dummy;
+  while ((text = ddjvu_document_get_pagetext(e.doc, page_1based - 1, "page")) ==
+         miniexp_dummy) {
+    e.wait();
+  }
+  if (text && text != miniexp_nil && miniexp_consp(text)) {
+    for (miniexp_t q = text; miniexp_consp(q); q = miniexp_cdr(q)) {
+      if (miniexp_stringp(miniexp_car(q))) {
+        p.invisible_glyphs += utf8_codepoints(miniexp_to_str(miniexp_car(q)));
+      }
+    }
+    ddjvu_miniexp_release(e.doc, text);
+  }
+
+  char buf[256];
+  const char* type = "page";
+  switch (ddjvu_page_get_type(s.page)) {
+    case DDJVU_PAGETYPE_BITONAL: type = "bitonal"; break;
+    case DDJVU_PAGETYPE_PHOTO: type = "photo"; break;
+    case DDJVU_PAGETYPE_COMPOUND: type = "compound"; break;
+    default: break;
+  }
+  if (p.images.empty()) {
+    p.kind = PageContentKind::Empty;
+    p.summary = "empty: DjVu page without image layers (renders white)";
+  } else {
+    p.kind = PageContentKind::Raster;
+    p.finest_useful_scale = 0;
+    std::snprintf(buf, sizeof buf,
+                  "raster: DjVu %s page %dx%d at %d dpi, %d layer%s", type, s.width,
+                  s.height, s.dpi, p.image_draws, p.image_draws == 1 ? "" : "s");
+    p.summary = buf;
+    if (p.invisible_glyphs > 0) {
+      std::snprintf(buf, sizeof buf, "; hidden text layer (%d glyphs)", p.invisible_glyphs);
+      p.summary += buf;
+    }
+    p.summary += " → finest useful scale 0 (native page pixels)";
+  }
+  s.profile = p;
+  with_page_stats(e.key, page_1based, [&](PdfDocumentRenderStats&, PdfPageRenderStats& ps) {
+    ps.profile = p;
+  });
+}
+
+/// Render @p rect of the page scaled to @p full_w x @p full_h (exact grid).
+/// Caller holds the document lock.
+std::optional<DjvuRaster> render_rect(DjvuDoc& e, PageSlot& s, int full_w, int full_h,
+                                      int px, int py, int pw, int ph, std::string* error) {
+  ddjvu_rect_t pagerect{0, 0, static_cast<unsigned>(full_w), static_cast<unsigned>(full_h)};
+  ddjvu_rect_t renderrect{px, py, static_cast<unsigned>(pw), static_cast<unsigned>(ph)};
+  ddjvu_format_t* fmt = ddjvu_format_create(DDJVU_FORMAT_RGB24, 0, nullptr);
+  if (!fmt) {
+    if (error) *error = "ddjvu_format_create failed";
+    return std::nullopt;
+  }
+  // Image-style coordinates: y grows downward (the tile grid's convention).
+  ddjvu_format_set_row_order(fmt, 1);
+  ddjvu_format_set_y_direction(fmt, 1);
+  DjvuRaster out;
+  out.width = pw;
+  out.height = ph;
+  out.rgb.resize(static_cast<std::size_t>(pw) * static_cast<std::size_t>(ph) * 3u);
+  e.last_error.clear();
+  const int ok = ddjvu_page_render(s.page, DDJVU_RENDER_COLOR, &pagerect, &renderrect, fmt,
+                                   pw * 3, reinterpret_cast<char*>(out.rgb.data()));
+  ddjvu_format_release(fmt);
+  e.pump();
+  if (!ok) {
+    // FALSE on a fully decoded page means it has no image layer at all (the
+    // profile says Empty): white is the true content. Anything else failed.
+    if (s.profile && s.profile->kind == PageContentKind::Empty && e.last_error.empty()) {
+      std::fill(out.rgb.begin(), out.rgb.end(), static_cast<std::uint8_t>(255));
+      return out;
+    }
+    if (error) {
+      *error = "render failed" + (e.last_error.empty() ? "" : ": " + e.last_error);
+    }
+    return std::nullopt;
+  }
+  return out;
 }
 
 #endif  // THUMTOO_HAVE_DJVU
@@ -182,11 +519,8 @@ std::optional<int> djvu_page_count(const std::filesystem::path& path) {
   (void)path;
   return std::nullopt;
 #else
-  std::lock_guard lock(g_djvu.mu);
-  ddjvu_document_t* doc = cached_djvu_document_unlocked(path);
-  if (!doc || !g_djvu.ctx) return std::nullopt;
-  pump_messages(g_djvu.ctx);
-  const int n = ddjvu_document_get_pagenum(doc);
+  DjvuAccess acc(path);
+  const int n = acc.page_count();
   if (n <= 0) return std::nullopt;
   return n;
 #endif
@@ -199,20 +533,10 @@ std::optional<Size> djvu_page_size_native(const std::filesystem::path& path,
   (void)page_1based;
   return std::nullopt;
 #else
-  if (page_1based < 1) return std::nullopt;
-  std::lock_guard lock(g_djvu.mu);
-  const std::string key = path.lexically_normal().string();
-  if (g_djvu.path_key == key && g_djvu.layout_page == page_1based &&
-      g_djvu.layout_native.width > 0) {
-    return g_djvu.layout_native;
-  }
-  ddjvu_document_t* doc = cached_djvu_document_unlocked(path);
-  if (!doc || !g_djvu.ctx) return std::nullopt;
-  auto sz = page_native_size_unlocked(g_djvu.ctx, doc, page_1based);
-  if (!sz) return std::nullopt;
-  g_djvu.layout_page = page_1based;
-  g_djvu.layout_native = *sz;
-  return sz;
+  DjvuAccess acc(path);
+  auto info = acc.page_info(page_1based);
+  if (!info) return std::nullopt;
+  return Size{info->width, info->height};
 #endif
 }
 
@@ -225,18 +549,13 @@ std::optional<Size> djvu_page_layout_size(const std::filesystem::path& path,
 
 Size djvu_page_size_at_scale(Size layout, int scale) {
   if (layout.width <= 0 || layout.height <= 0) return Size{0, 0};
-  if (scale == 0) return layout;
-  const double factor = std::ldexp(1.0, -scale);
-  const int w =
-      std::max(1, static_cast<int>(std::lround(layout.width * factor)));
-  const int h =
-      std::max(1, static_cast<int>(std::lround(layout.height * factor)));
-  return Size{w, h};
-}
-
-double djvu_dpi_for_scale(int scale) {
-  // Relative to native page pixels as "layout". Factor is 2^{-scale}.
-  return std::ldexp(1.0, -scale);
+  if (scale < 0) {
+    const int mul = 1 << (-scale);
+    return Size{layout.width * mul, layout.height * mul};
+  }
+  // Successive floor-half: the host's tile grid (dim_at_tile_scale).
+  return Size{dim_at_tile_scale(layout.width, scale),
+              dim_at_tile_scale(layout.height, scale)};
 }
 
 std::optional<DjvuRaster> djvu_rasterize_page(const std::filesystem::path& path,
@@ -247,70 +566,23 @@ std::optional<DjvuRaster> djvu_rasterize_page(const std::filesystem::path& path,
   (void)max_edge;
   return std::nullopt;
 #else
-  if (page_1based < 1) return std::nullopt;
-  std::lock_guard lock(g_djvu.mu);
-  ddjvu_document_t* doc = cached_djvu_document_unlocked(path);
-  if (!doc || !g_djvu.ctx) return std::nullopt;
-
-  ddjvu_page_t* page = ddjvu_page_create_by_pageno(doc, page_1based - 1);
-  if (!page) return std::nullopt;
-  wait_page_decoded(g_djvu.ctx, page);
-  if (ddjvu_page_decoding_error(page)) {
-    ddjvu_page_release(page);
-    return std::nullopt;
+  DjvuAccess acc(path);
+  PageSlot* s = acc.decoded(page_1based);
+  if (!s || s->width <= 0 || s->height <= 0) return std::nullopt;
+  int out_w = s->width;
+  int out_h = s->height;
+  if (max_edge > 0 && std::max(out_w, out_h) > max_edge) {
+    const double f = static_cast<double>(max_edge) / std::max(out_w, out_h);
+    out_w = std::max(1, static_cast<int>(std::lround(out_w * f)));
+    out_h = std::max(1, static_cast<int>(std::lround(out_h * f)));
   }
-
-  const int nw = ddjvu_page_get_width(page);
-  const int nh = ddjvu_page_get_height(page);
-  if (nw <= 0 || nh <= 0) {
-    ddjvu_page_release(page);
-    return std::nullopt;
-  }
-
-  int out_w = nw;
-  int out_h = nh;
-  if (max_edge > 0) {
-    const int long_edge = std::max(nw, nh);
-    if (long_edge > max_edge) {
-      const double f = static_cast<double>(max_edge) / long_edge;
-      out_w = std::max(1, static_cast<int>(std::lround(nw * f)));
-      out_h = std::max(1, static_cast<int>(std::lround(nh * f)));
-    }
-  }
-
-  ddjvu_rect_t pagerect{0, 0, static_cast<unsigned>(out_w),
-                        static_cast<unsigned>(out_h)};
-  ddjvu_rect_t renderrect = pagerect;
-
-  ddjvu_format_t* fmt = ddjvu_format_create(DDJVU_FORMAT_RGB24, 0, nullptr);
-  if (!fmt) {
-    ddjvu_page_release(page);
-    return std::nullopt;
-  }
-  // Image-style coordinates: y increases downward (matches tile grid / Galapix).
-  // Default ddjvu y-direction is PostScript-style (upwards); without this, tile
-  // crops flip vertically and appear to walk up the page as zoom increases.
-  ddjvu_format_set_row_order(fmt, 1);
-  ddjvu_format_set_y_direction(fmt, 1);
-
-  DjvuRaster out;
-  out.width = out_w;
-  out.height = out_h;
-  out.rgb.resize(static_cast<std::size_t>(out_w) *
-                 static_cast<std::size_t>(out_h) * 3u);
-
-  const int rowsize = out_w * 3;
-  const int ok = ddjvu_page_render(page, DDJVU_RENDER_COLOR, &pagerect,
-                                   &renderrect, fmt, rowsize,
-                                   reinterpret_cast<char*>(out.rgb.data()));
-  ddjvu_format_release(fmt);
-  ddjvu_page_release(page);
-  if (g_djvu.ctx) ddjvu_cache_clear(g_djvu.ctx);
-  // Blank / non-image DjVu pages often return 0 from render with a valid size.
-  // Emit white so Galapix does not keep a permanent purple missing-tile cell.
-  if (!ok) {
-    std::fill(out.rgb.begin(), out.rgb.end(), static_cast<std::uint8_t>(255));
-  }
+  std::string error;
+  auto out = render_rect(acc.doc(), *s, out_w, out_h, 0, 0, out_w, out_h, &error);
+  with_page_stats(acc.doc().key, page_1based,
+                  [&](PdfDocumentRenderStats&, PdfPageRenderStats& p) {
+                    ++p.page_rasters;
+                    if (!out) p.last_error = error;
+                  });
   return out;
 #endif
 }
@@ -328,92 +600,144 @@ std::optional<DjvuRaster> djvu_rasterize_page_region(
   (void)ph;
   return std::nullopt;
 #else
-  if (page_1based < 1 || pw <= 0 || ph <= 0) return std::nullopt;
-  std::lock_guard lock(g_djvu.mu);
-  ddjvu_document_t* doc = cached_djvu_document_unlocked(path);
-  if (!doc || !g_djvu.ctx) return std::nullopt;
-
-  ddjvu_page_t* page = ddjvu_page_create_by_pageno(doc, page_1based - 1);
-  if (!page) return std::nullopt;
-  wait_page_decoded(g_djvu.ctx, page);
-  if (ddjvu_page_decoding_error(page)) {
-    ddjvu_page_release(page);
-    return std::nullopt;
-  }
-
-  const int nw = ddjvu_page_get_width(page);
-  const int nh = ddjvu_page_get_height(page);
-  if (nw <= 0 || nh <= 0) {
-    ddjvu_page_release(page);
-    return std::nullopt;
-  }
-
-  const double factor = scale_factor > 0.0 ? scale_factor : 1.0;
-  const int full_w = std::max(1, static_cast<int>(std::lround(nw * factor)));
-  const int full_h = std::max(1, static_cast<int>(std::lround(nh * factor)));
-
-  // pagerect = full page in output pixels; renderrect = crop in that space.
-  ddjvu_rect_t pagerect{0, 0, static_cast<unsigned>(full_w),
-                        static_cast<unsigned>(full_h)};
-  ddjvu_rect_t renderrect{px, py, static_cast<unsigned>(pw),
-                          static_cast<unsigned>(ph)};
-
-  ddjvu_format_t* fmt = ddjvu_format_create(DDJVU_FORMAT_RGB24, 0, nullptr);
-  if (!fmt) {
-    ddjvu_page_release(page);
-    return std::nullopt;
-  }
-  // Image-style coordinates: y increases downward (matches tile grid / Galapix).
-  // Default ddjvu y-direction is PostScript-style (upwards); without this, tile
-  // crops flip vertically and appear to walk up the page as zoom increases.
-  ddjvu_format_set_row_order(fmt, 1);
-  ddjvu_format_set_y_direction(fmt, 1);
-
-  DjvuRaster out;
-  out.width = pw;
-  out.height = ph;
-  out.rgb.resize(static_cast<std::size_t>(pw) * static_cast<std::size_t>(ph) *
-                 3u);
-
-  const int rowsize = pw * 3;
-  const int ok = ddjvu_page_render(page, DDJVU_RENDER_COLOR, &pagerect,
-                                   &renderrect, fmt, rowsize,
-                                   reinterpret_cast<char*>(out.rgb.data()));
-  ddjvu_format_release(fmt);
-  ddjvu_page_release(page);
-  if (g_djvu.ctx) ddjvu_cache_clear(g_djvu.ctx);
-  // Blank / non-image DjVu pages often return 0 from render with a valid size.
-  // Emit white so Galapix does not keep a permanent purple missing-tile cell.
-  if (!ok) {
-    std::fill(out.rgb.begin(), out.rgb.end(), static_cast<std::uint8_t>(255));
-  }
-  return out;
+  if (pw <= 0 || ph <= 0) return std::nullopt;
+  DjvuAccess acc(path);
+  PageSlot* s = acc.decoded(page_1based);
+  if (!s) return std::nullopt;
+  const double f = scale_factor > 0.0 ? scale_factor : 1.0;
+  const int full_w = std::max(1, static_cast<int>(std::lround(s->width * f)));
+  const int full_h = std::max(1, static_cast<int>(std::lround(s->height * f)));
+  return render_rect(acc.doc(), *s, full_w, full_h, px, py, pw, ph, nullptr);
 #endif
 }
 
-std::optional<DjvuRaster> djvu_render_tile_cell(const std::filesystem::path& path,
-                                                int page_1based, int scale,
-                                                int x, int y) {
-  auto layout = djvu_page_layout_size(path, page_1based);
-  if (!layout) return std::nullopt;
-  const Size full = djvu_page_size_at_scale(*layout, scale);
-  if (full.width <= 0 || full.height <= 0) return std::nullopt;
-
+DjvuCellRender djvu_render_tile_cell(const std::filesystem::path& path,
+                                     int page_1based, int scale, int x, int y) {
+  DjvuCellRender out;
+#if !defined(THUMTOO_HAVE_DJVU)
+  (void)path;
+  (void)page_1based;
+  (void)scale;
+  (void)x;
+  (void)y;
+  out.error = "DjVu backend unavailable";
+  return out;
+#else
+  DjvuAccess acc(path);
+  if (!acc) {
+    out.error = acc.error();
+    return out;
+  }
+  const std::string key = acc.doc().key;
+  if (scale < 0) {
+    with_page_stats(key, page_1based, [](PdfDocumentRenderStats&, PdfPageRenderStats& p) {
+      ++p.cells_refused;
+    });
+    out.status = TileStatus::Unavailable;
+    out.error = "scale " + std::to_string(scale) +
+                " is finer than the DjVu page's native pixels (finest useful scale 0)";
+    return out;
+  }
+  PageSlot* s = acc.decoded(page_1based);
+  if (!s) {
+    out.error = acc.error();
+    with_page_stats(key, page_1based, [](PdfDocumentRenderStats&, PdfPageRenderStats& p) {
+      ++p.cells_failed;
+    });
+    return out;
+  }
+  const Size full = djvu_page_size_at_scale(Size{s->width, s->height}, scale);
   int x0 = 0, y0 = 0, pw = 0, ph = 0;
   tile_cell_pixel_rect(full.width, full.height, x, y, &x0, &y0, &pw, &ph);
-  if (pw <= 0 || ph <= 0) return std::nullopt;
-
-  const double factor = std::ldexp(1.0, -scale);
-  return djvu_rasterize_page_region(path, page_1based, factor, x0, y0, pw, ph);
+  if (pw <= 0 || ph <= 0) {
+    out.status = TileStatus::Unavailable;
+    out.error = "cell " + std::to_string(x) + "," + std::to_string(y) + " outside the " +
+                std::to_string(full.width) + "x" + std::to_string(full.height) +
+                " page at scale " + std::to_string(scale);
+    return out;
+  }
+  const Clock::time_point t0 = Clock::now();
+  std::string error;
+  auto raster = render_rect(acc.doc(), *s, full.width, full.height, x0, y0, pw, ph, &error);
+  const double ms = ms_since(t0);
+  with_page_stats(key, page_1based, [&](PdfDocumentRenderStats&, PdfPageRenderStats& p) {
+    if (raster) {
+      ++p.cells_rendered;
+      p.render_ms += ms;
+    } else {
+      ++p.cells_failed;
+      p.last_error = error;
+    }
+  });
+  if (!raster) {
+    out.error = error;
+    return out;
+  }
+  out.status = TileStatus::Ok;
+  out.raster = std::move(raster);
+  return out;
+#endif
 }
 
 std::optional<TileBlob> djvu_build_tile_cell(const std::filesystem::path& path,
                                              int page_1based, int scale, int x,
                                              int y, int jpeg_quality) {
-  auto raster = djvu_render_tile_cell(path, page_1based, scale, x, y);
-  if (!raster) return std::nullopt;
-  return encode_tile_cell_rgb(raster->rgb.data(), raster->width, raster->height,
-                              scale, x, y, jpeg_quality);
+  auto cell = djvu_render_tile_cell(path, page_1based, scale, x, y);
+  if (!cell.raster) return std::nullopt;
+  return encode_tile_cell_rgb(cell.raster->rgb.data(), cell.raster->width,
+                              cell.raster->height, scale, x, y, jpeg_quality);
+}
+
+std::optional<PdfPageProfile> djvu_page_profile(const std::filesystem::path& path,
+                                                int page_1based, std::string* error) {
+#if !defined(THUMTOO_HAVE_DJVU)
+  (void)path;
+  (void)page_1based;
+  if (error) *error = "DjVu backend unavailable";
+  return std::nullopt;
+#else
+  DjvuAccess acc(path);
+  PageSlot* s = acc.decoded(page_1based);
+  if (!s || !s->profile) {
+    if (error) *error = acc.error().empty() ? "no profile" : acc.error();
+    return std::nullopt;
+  }
+  return s->profile;
+#endif
+}
+
+std::optional<PdfDocumentRenderStats> djvu_document_render_stats(
+    const std::filesystem::path& path) {
+#if !defined(THUMTOO_HAVE_DJVU)
+  (void)path;
+  return std::nullopt;
+#else
+  const std::string key = path.lexically_normal().string();
+  auto& r = stats_registry();
+  std::lock_guard lock(r.mu);
+  auto it = r.docs.find(key);
+  if (it == r.docs.end()) return std::nullopt;
+  return it->second;
+#endif
+}
+
+void djvu_reset_render_stats() {
+#if defined(THUMTOO_HAVE_DJVU)
+  auto& r = stats_registry();
+  std::lock_guard lock(r.mu);
+  r.docs.clear();
+#endif
+}
+
+void djvu_release_document_cache() {
+#if defined(THUMTOO_HAVE_DJVU)
+  std::list<std::shared_ptr<DjvuDoc>> drop;
+  {
+    auto& c = doc_cache();
+    std::lock_guard lock(c.mu);
+    drop.swap(c.lru);
+  }
+#endif
 }
 
 #if defined(THUMTOO_HAVE_DJVU)
@@ -608,6 +932,7 @@ void walk_outline_sexpr(miniexp_t expr, int level, DocumentOutline& out) {
 
 #endif  // THUMTOO_HAVE_DJVU
 
+
 std::optional<PageTextLayer> djvu_page_text_layer(const std::filesystem::path& path,
                                                   int page_1based) {
 #if !defined(THUMTOO_HAVE_DJVU)
@@ -615,43 +940,35 @@ std::optional<PageTextLayer> djvu_page_text_layer(const std::filesystem::path& p
   (void)page_1based;
   return std::nullopt;
 #else
-  if (page_1based < 1) return std::nullopt;
-  std::lock_guard lock(g_djvu.mu);
-  ddjvu_document_t* doc = cached_djvu_document_unlocked(path);
-  if (!doc || !g_djvu.ctx) return std::nullopt;
-
-  auto sz = page_native_size_unlocked(g_djvu.ctx, doc, page_1based);
-  if (!sz) return std::nullopt;
+  DjvuAccess acc(path);
+  auto info = acc.page_info(page_1based);
+  if (!info) return std::nullopt;
+  DjvuDoc& e = acc.doc();
 
   PageTextLayer layer;
   layer.page_1based = page_1based;
-  layer.page_bounds = TextRect{0, 0, static_cast<double>(sz->width),
-                               static_cast<double>(sz->height)};
+  layer.page_bounds = TextRect{0, 0, static_cast<double>(info->width),
+                               static_cast<double>(info->height)};
   layer.page_y_up = true;  // DjVu text zones: bottom-left origin
 
-  // Wait for page text (may need to fetch page data).
   miniexp_t text = miniexp_dummy;
-  while ((text = ddjvu_document_get_pagetext(doc, page_1based - 1, "word")) ==
+  while ((text = ddjvu_document_get_pagetext(e.doc, page_1based - 1, "word")) ==
          miniexp_dummy) {
-    ddjvu_message_wait(g_djvu.ctx);
-    pump_messages(g_djvu.ctx);
+    e.wait();
   }
   if (text && text != miniexp_nil && !miniexp_symbolp(text)) {
-    walk_text_sexpr(text, layer.regions, sz->height);
-    ddjvu_miniexp_release(doc, text);
+    walk_text_sexpr(text, layer.regions, info->height);
+    ddjvu_miniexp_release(e.doc, text);
   }
 
   miniexp_t anno = miniexp_dummy;
-  while ((anno = ddjvu_document_get_pageanno(doc, page_1based - 1)) ==
-         miniexp_dummy) {
-    ddjvu_message_wait(g_djvu.ctx);
-    pump_messages(g_djvu.ctx);
+  while ((anno = ddjvu_document_get_pageanno(e.doc, page_1based - 1)) == miniexp_dummy) {
+    e.wait();
   }
   if (anno && anno != miniexp_nil && !miniexp_symbolp(anno)) {
     walk_anno_sexpr(anno, layer.regions);
-    ddjvu_miniexp_release(doc, anno);
+    ddjvu_miniexp_release(e.doc, anno);
   }
-
   return layer;
 #endif
 }
@@ -662,26 +979,20 @@ std::optional<DocumentOutline> djvu_document_outline(
   (void)path;
   return std::nullopt;
 #else
-  std::lock_guard lock(g_djvu.mu);
-  ddjvu_document_t* doc = cached_djvu_document_unlocked(path);
-  if (!doc || !g_djvu.ctx) return std::nullopt;
-
-  // Outline is document-level; try get_outline if available via anno/bookmarks.
-  // ddjvu_document_get_outline exists in modern djvulibre (returns miniexp).
+  DjvuAccess acc(path);
+  if (!acc) return std::nullopt;
+  DjvuDoc& e = acc.doc();
   miniexp_t root = miniexp_dummy;
-  // ddjvu_document_get_outline is part of modern ddjvuapi (bookmarks / NAVM).
-  while ((root = ddjvu_document_get_outline(doc)) == miniexp_dummy) {
-    ddjvu_message_wait(g_djvu.ctx);
-    pump_messages(g_djvu.ctx);
+  while ((root = ddjvu_document_get_outline(e.doc)) == miniexp_dummy) {
+    e.wait();
   }
   DocumentOutline out;
   if (root && root != miniexp_nil && !miniexp_symbolp(root)) {
     walk_outline_sexpr(root, 1, out);
-    ddjvu_miniexp_release(doc, root);
+    ddjvu_miniexp_release(e.doc, root);
   }
   return out;
 #endif
 }
-
 
 }  // namespace thumtoo

@@ -4,6 +4,7 @@
 #pragma once
 
 #include "thumtoo/constants.hpp"
+#include "thumtoo/pdf.hpp"  // page profile / render stats types (shared by both backends)
 #include "thumtoo/types.hpp"
 #include "thumtoo/text.hpp"
 
@@ -50,21 +51,55 @@ struct DjvuRaster {
 [[nodiscard]] std::optional<Size> djvu_page_layout_size(
     const std::filesystem::path& path, int page_1based);
 
+/// Page pixel size at tile scale @p scale. Layout (scale 0) is the page's
+/// native pixel grid. Coarser scales floor-halve per step (dim_at_tile_scale,
+/// the host's grid); denser scales multiply exactly.
 [[nodiscard]] Size djvu_page_size_at_scale(Size layout, int scale);
 
-[[nodiscard]] double djvu_dpi_for_scale(int scale);
-
+/**
+ * Rasterize a pixel rectangle of the page scaled by @p scale_factor
+ * (native pixels × factor). Reuses the decoded page.
+ */
 [[nodiscard]] std::optional<DjvuRaster> djvu_rasterize_page_region(
-    const std::filesystem::path& path, int page_1based, double dpi, int px,
+    const std::filesystem::path& path, int page_1based, double scale_factor, int px,
     int py, int pw, int ph);
 
-[[nodiscard]] std::optional<DjvuRaster> djvu_render_tile_cell(
-    const std::filesystem::path& path, int page_1based, int scale, int x,
-    int y);
+/// Outcome of one live cell render: pixels, or a status with the reason.
+struct DjvuCellRender {
+  TileStatus status = TileStatus::Failed;
+  std::optional<DjvuRaster> raster;
+  std::string error;
+};
+
+/**
+ * One tile cell. Scales finer than 0 are Unavailable: layout already is the
+ * page's native pixel grid (a DjVu page is a raster), so denser cells would
+ * only interpolate.
+ */
+[[nodiscard]] DjvuCellRender djvu_render_tile_cell(
+    const std::filesystem::path& path, int page_1based, int scale, int x, int y);
 
 [[nodiscard]] std::optional<TileBlob> djvu_build_tile_cell(
     const std::filesystem::path& path, int page_1based, int scale, int x,
     int y, int jpeg_quality = kDefaultTileQuality);
+
+/**
+ * Page profile from the decoded page: always Raster (or Empty for a page
+ * without image layers); `images` lists the JB2 mask / IW44 layers with their
+ * resolution, `invisible_glyphs` counts the hidden text layer, native_dpi is
+ * the page dpi and finest_useful_scale is 0 (native pixels).
+ */
+[[nodiscard]] std::optional<PdfPageProfile> djvu_page_profile(
+    const std::filesystem::path& path, int page_1based, std::string* error = nullptr);
+
+/// Decode / render accounting (same structure as PDF; `decode` counts page
+/// decodes, display_list_builds stays 0). Cheap; any thread.
+[[nodiscard]] std::optional<PdfDocumentRenderStats> djvu_document_render_stats(
+    const std::filesystem::path& path);
+void djvu_reset_render_stats();
+
+/// Close every cached DjVu document (memory pressure, leak-checked shutdown).
+void djvu_release_document_cache();
 
 /**
  * Hidden text layer + hyperlink mapareas for one DjVu page.

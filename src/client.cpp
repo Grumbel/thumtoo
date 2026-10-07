@@ -1604,6 +1604,27 @@ TileResult Client::materialize_tile_result(const std::string& uri, int scale,
     return {TileStatus::Unavailable, std::nullopt,
             "negative (denser) scales exist only for document pages"};
   }
+  if (auto dj = parse_djvu_uri(uri)) {
+    // DjVu pages: same as PDF — the renderer reports why.
+    try {
+      if (auto t = get_tile(uri, scale, x, y)) {
+        if (auto rgb = decode_tile_blob_to_rgb888(std::move(*t))) {
+          return {TileStatus::Ok, std::move(rgb), {}};
+        }
+      }
+      if (!skip_probe) {
+        Job probe;
+        probe.kind = JobKind::ProbeSize;
+        probe.uri = uri;
+        handle_probe_size_store(probe);
+      }
+      auto sm = meta_from_store(uri);
+      return render_djvu_cell(sm ? sm->content_id : std::string(), *dj, scale, x, y);
+    } catch (const std::exception& ex) {
+      return {TileStatus::Failed, std::nullopt,
+              std::string("exception while rendering DjVu cell: ") + ex.what()};
+    }
+  }
   if (auto pdf = parse_pdf_uri(uri)) {
     // PDF pages: the renderer knows why a cell has no pixels (page profile
     // refusal, MuPDF error) — report that instead of guessing afterwards.
@@ -4621,6 +4642,29 @@ thread_local std::vector<DeferredTileStore> g_deferred_tile_stores;
 
 
 
+TileResult Client::finish_document_cell(const std::string& content_id,
+                                        std::vector<std::uint8_t> rgb, int width,
+                                        int height, int scale, int x, int y,
+                                        TileSource source) {
+  if (scale >= kPdfMinDurableTileScale && !content_id.empty()) {
+    if (auto jpeg = encode_tile_cell_rgb(rgb.data(), width, height, scale, x, y,
+                                         kPdfTileQuality)) {
+      jpeg->source = source;
+      store_tiles(content_id, std::vector<TileBlob>{*jpeg});
+    }
+  }
+  TileBlob live;
+  live.scale = scale;
+  live.x = x;
+  live.y = y;
+  live.width = width;
+  live.height = height;
+  live.codec = kTileCodecRgb888;
+  live.source = source;
+  live.bytes = std::move(rgb);
+  return {TileStatus::Ok, std::move(live), {}};
+}
+
 TileResult Client::render_pdf_cell(const std::string& content_id,
                                    const ParsedPdfUri& pdf, int scale, int x,
                                    int y) {
@@ -4632,25 +4676,22 @@ TileResult Client::render_pdf_cell(const std::string& content_id,
     }
     return {cell.status, std::nullopt, std::move(cell.error)};
   }
-  PdfRaster& raster = *cell.raster;
-  if (scale >= kPdfMinDurableTileScale && !content_id.empty()) {
-    if (auto jpeg = encode_tile_cell_rgb(raster.rgb.data(), raster.width,
-                                         raster.height, scale, x, y,
-                                         kPdfTileQuality)) {
-      jpeg->source = TileSource::PdfRegion;
-      store_tiles(content_id, std::vector<TileBlob>{*jpeg});
+  return finish_document_cell(content_id, std::move(cell.raster->rgb), cell.raster->width,
+                              cell.raster->height, scale, x, y, TileSource::PdfRegion);
+}
+
+TileResult Client::render_djvu_cell(const std::string& content_id,
+                                    const ParsedDjvuUri& djvu, int scale, int x,
+                                    int y) {
+  DjvuCellRender cell = djvu_render_tile_cell(djvu.djvu_path, djvu.page, scale, x, y);
+  if (cell.status != TileStatus::Ok || !cell.raster || cell.raster->rgb.empty()) {
+    if (cell.status == TileStatus::Ok) {
+      return {TileStatus::Failed, std::nullopt, "renderer returned no pixels"};
     }
+    return {cell.status, std::nullopt, std::move(cell.error)};
   }
-  TileBlob live;
-  live.scale = scale;
-  live.x = x;
-  live.y = y;
-  live.width = raster.width;
-  live.height = raster.height;
-  live.codec = kTileCodecRgb888;
-  live.source = TileSource::PdfRegion;
-  live.bytes = std::move(raster.rgb);
-  return {TileStatus::Ok, std::move(live), {}};
+  return finish_document_cell(content_id, std::move(cell.raster->rgb), cell.raster->width,
+                              cell.raster->height, scale, x, y, TileSource::DjvuRegion);
 }
 
 std::optional<TileBlob> Client::materialize_tile_cell(const std::string& uri,
@@ -4692,26 +4733,9 @@ std::optional<TileBlob> Client::materialize_tile_cell(const std::string& uri,
       }
     }
   } else if (auto dj = parse_djvu_uri(uri)) {
-    auto raster = djvu_render_tile_cell(dj->djvu_path, dj->page, scale, x, y);
-    if (raster && !raster->rgb.empty()) {
-      if (scale >= kPdfMinDurableTileScale) {
-        if (auto jpeg = encode_tile_cell_rgb(
-                raster->rgb.data(), raster->width, raster->height, scale, x, y,
-                kPdfTileQuality)) {
-          jpeg->source = TileSource::DjvuRegion;
-          store_tiles(content_id, std::vector<TileBlob>{*jpeg});
-        }
-      }
-      TileBlob live;
-      live.scale = scale;
-      live.x = x;
-      live.y = y;
-      live.width = raster->width;
-      live.height = raster->height;
-      live.codec = kTileCodecRgb888;
-      live.source = TileSource::DjvuRegion;
-      live.bytes = std::move(raster->rgb);
-      return live;
+    TileResult r = render_djvu_cell(content_id, *dj, scale, x, y);
+    if (r.tile) {
+      return std::move(r.tile);
     }
   } else if (auto ep = parse_epub_uri(uri)) {
     auto raster = epub_render_tile_cell(ep->epub_path, ep->page, ep->layout,
