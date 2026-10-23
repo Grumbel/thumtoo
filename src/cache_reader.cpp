@@ -6,6 +6,7 @@
 #include "thumtoo/constants.hpp"
 #include "thumtoo/djvu.hpp"
 #include "thumtoo/epub.hpp"
+#include "thumtoo/lqip.hpp"
 #include "thumtoo/pdf.hpp"
 #include "thumtoo/uri.hpp"
 
@@ -318,6 +319,60 @@ std::vector<Store::TileRow> CacheReader::list_tiles(std::string_view uri) const 
   auto tgt = tile_target(m->content_id);
   if (!tgt) return {};
   return store_->list_tiles_for_region(tgt->media_id, tgt->region_id);
+}
+
+std::optional<CacheReader::LqipKey> CacheReader::lqip_key(
+    std::string_view uri) const {
+  const Store& store = *store_;
+  if (auto pdf = parse_pdf_uri(uri)) {
+    // Prefer page URI locator, else document file locator.
+    if (auto loc = store.find_locator(uri); loc && loc->blob_id)
+      return LqipKey{*loc->blob_id, pdf->page};
+    const auto fu = file_uri_from_path(pdf->pdf_path);
+    if (auto loc = store.find_locator(fu); loc && loc->blob_id)
+      return LqipKey{*loc->blob_id, pdf->page};
+    return std::nullopt;
+  }
+  if (auto pimg = parse_pdf_image_uri(uri)) {
+    if (auto loc = store.find_locator(uri); loc && loc->blob_id)
+      return LqipKey{*loc->blob_id, 0};
+    const auto fu = file_uri_from_path(pimg->pdf_path);
+    if (auto loc = store.find_locator(fu); loc && loc->blob_id)
+      return LqipKey{*loc->blob_id, 0};
+    return std::nullopt;
+  }
+  if (auto dj = parse_djvu_uri(uri)) {
+    if (auto loc = store.find_locator(uri); loc && loc->blob_id)
+      return LqipKey{*loc->blob_id, dj->page};
+    const auto fu = file_uri_from_path(dj->djvu_path);
+    if (auto loc = store.find_locator(fu); loc && loc->blob_id)
+      return LqipKey{*loc->blob_id, dj->page};
+    return std::nullopt;
+  }
+  if (auto ep = parse_epub_uri(uri)) {
+    if (auto loc = store.find_locator(uri); loc && loc->blob_id)
+      return LqipKey{*loc->blob_id, ep->page};
+    const auto fu = file_uri_from_path(ep->epub_path);
+    if (auto loc = store.find_locator(fu); loc && loc->blob_id)
+      return LqipKey{*loc->blob_id, ep->page};
+    return std::nullopt;
+  }
+  if (auto loc = store.find_locator(uri); loc && loc->blob_id)
+    return LqipKey{*loc->blob_id, 0};
+  return std::nullopt;
+}
+
+std::optional<std::vector<std::uint8_t>> CacheReader::lqip(
+    std::string_view uri) const {
+  auto key = lqip_key(uri);
+  if (!key) return std::nullopt;
+  // Embedded JPEG previews share blob_lqip storage under a distinct kind —
+  // never treat them as ThumbHash/Handsum LQIP.
+  if (auto kind = store_->get_blob_lqip_kind(key->blob_id, key->page_1based);
+      kind && *kind == kLqipKindEmbeddedJpeg) {
+    return std::nullopt;
+  }
+  return store_->get_blob_lqip(key->blob_id, key->page_1based);
 }
 
 std::vector<std::string> CacheReader::list_locations(std::string_view prefix,

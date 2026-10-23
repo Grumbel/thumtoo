@@ -1560,6 +1560,32 @@ std::vector<std::string> Store::list_locator_uris(std::string_view uri_prefix,
   return out;
 }
 
+std::vector<std::string> Store::list_locator_uris_like(
+    std::string_view uri_like_pattern, std::string_view after,
+    int limit) const {
+  if (limit <= 0 || uri_like_pattern.empty()) return {};
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(index_,
+                         "SELECT uri FROM locator WHERE uri LIKE ?1 ESCAPE '\\' "
+                         "AND uri > ?2 AND blob_id IS NOT NULL ORDER BY uri "
+                         "LIMIT ?3;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    throw_sqlite(index_, "prepare list_locator_uris_like");
+  }
+  const std::string pattern_s(uri_like_pattern);
+  const std::string after_s(after);
+  sqlite3_bind_text(stmt, 1, pattern_s.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 2, after_s.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 3, limit);
+  std::vector<std::string> out;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    out.emplace_back(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)),
+                     static_cast<std::size_t>(sqlite3_column_bytes(stmt, 0)));
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
 std::vector<Store::LocatorRow> Store::list_locators_by_uri_prefix(
     std::string_view uri_prefix, int limit) const {
   if (uri_prefix.empty()) return {};

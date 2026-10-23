@@ -2,20 +2,17 @@
 
 ## Status (2026-10-23)
 
-**Tip:** `CacheReader` + `Store::open_readonly` (step 1 of `thumtoo-serve`).
-Location → meta/tile/coverage resolution moved out of Client into
-`src/cache_reader.cpp` (Client wraps it); `parse_content_id` shared with
-`put_tiles_to_store`. `Store::list_locator_uris` pages locators by uri range.
-Verified read-only against a live ~11 GB biltoo cache.
+**Tip:** `thumtoo-serve` + `Client::open_remote` ([docs/REMOTE.md](docs/REMOTE.md)).
+Read-only HTTP server (cpp-httplib, optional `THUMTOO_BUILD_SERVE`) over
+`Store::open_readonly` + `CacheReader`; token auth (loopback exempt), no TLS,
+`--allow-prefix`. Remote Client = same `Client` class with `remote_`
+(`src/remote_cache.*`, libcurl + nlohmann_json): get_* from an in-RAM memo
+filled by listings / request_size, request_tile_cells over HTTP, 404 →
+Unavailable. Tests `test_remote` (spawns the server), `test_cache_reader`.
+galapix: `--thumtoo-cache http://HOST:PORT/?token=…` + `-p PATTERN`.
 
-**Next (step 2):** optional `tools/thumtoo_serve.cpp` (`THUMTOO_BUILD_SERVE`,
-cpp-httplib), ad-hoc CLI only. Routes: `GET /{location}//tile:S,X,Y`,
-`//info`, `//tiles`, `/locations?prefix=&after=&limit=`,
-`/blob/sha256:<hex>//tile:S,X,Y` (immutable). Read-only: miss = 404.
-Plain HTTP; bind 127.0.0.1 by default; on `--listen` a random token
-(`?token=` / Bearer / cookie, `--token FILE`, `--no-auth`); `--allow-prefix`
-filters locations. Encryption via ssh -L / Tailscale, not in-process TLS.
-One `Store::open_readonly` + `CacheReader` per worker thread.
+**Later:** parallel cell fetch inside one request_tile_cells batch; HTTP
+keep-alive tuning; optional generate-on-miss (server would become a writer).
 
 ## Status (2026-10-07)
 

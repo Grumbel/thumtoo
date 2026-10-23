@@ -222,6 +222,10 @@ class Store {
   /// Range scan on the uri index; page with after = last uri returned.
   [[nodiscard]] std::vector<std::string> list_locator_uris(
       std::string_view uri_prefix, std::string_view after, int limit) const;
+  /// Same, filtered by SQL LIKE on uri (% and _ wildcards, '\\' escapes).
+  [[nodiscard]] std::vector<std::string> list_locator_uris_like(
+      std::string_view uri_like_pattern, std::string_view after,
+      int limit) const;
   /// SQL LIKE on uri (caller supplies pattern; % and _ wildcards).
   [[nodiscard]] std::vector<LocatorRow> list_locators_like(
       std::string_view uri_like_pattern, int limit = 100) const;

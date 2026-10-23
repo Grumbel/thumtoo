@@ -65,6 +65,17 @@ class CacheReader {
   [[nodiscard]] std::vector<Store::TileRow> list_tiles(
       std::string_view uri) const;
 
+  /// blob_lqip row key of a location (documents: blob of the page or file).
+  struct LqipKey {
+    std::int64_t blob_id = 0;
+    int page_1based = 0;  // 0 = whole blob
+  };
+  [[nodiscard]] std::optional<LqipKey> lqip_key(std::string_view uri) const;
+
+  /// ThumbHash / Handsum placeholder; never an embedded JPEG preview.
+  [[nodiscard]] std::optional<std::vector<std::uint8_t>> lqip(
+      std::string_view uri) const;
+
   /// Known location URIs (see Store::list_locator_uris).
   [[nodiscard]] std::vector<std::string> list_locations(
       std::string_view prefix, std::string_view after = {},

@@ -80,7 +80,8 @@ wrappers over it. Pair it with `Store::open_readonly(cache_root)` to read a
 cache next to a live writer (WAL; schema_version must match this build, nothing
 is created, migrated or deleted). `list_tiles(uri)` lists stored cells;
 `list_locations(prefix, after, limit)` pages blob-bound locator URIs. Basis for
-the planned `thumtoo-serve` HTTP tool. Test: `tests/test_cache_reader.cpp`.
+`thumtoo-serve` and the remote Client ([docs/REMOTE.md](docs/REMOTE.md)).
+Test: `tests/test_cache_reader.cpp`.
 
 On miss, interactive `request_tile(s)` encode **one cell** (not the full pyramid).
 JPEG `scale>0` uses DCT `jpegload` shrink; concurrent cells of the same file share
