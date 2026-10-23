@@ -4,6 +4,7 @@
 #pragma once
 
 #include "thumtoo/archive.hpp"
+#include "thumtoo/cache_reader.hpp"
 #include "thumtoo/executor.hpp"
 #include "thumtoo/store.hpp"
 #include "thumtoo/types.hpp"
@@ -603,10 +604,7 @@ class Client {
                              const std::vector<TileBlob>& tiles);
 
   /// Resolve pure/page content_id to Store media+region for tile read fallback.
-  struct StoreTileTarget {
-    std::int64_t media_id = 0;
-    std::int64_t region_id = 0;
-  };
+  using StoreTileTarget = CacheReader::TileTarget;
   [[nodiscard]] std::optional<StoreTileTarget> store_tile_target_for_content_id(
       std::string_view content_id) const;
 

@@ -1,5 +1,22 @@
 # TODO / agent handoff
 
+## Status (2026-10-23)
+
+**Tip:** `CacheReader` + `Store::open_readonly` (step 1 of `thumtoo-serve`).
+Location → meta/tile/coverage resolution moved out of Client into
+`src/cache_reader.cpp` (Client wraps it); `parse_content_id` shared with
+`put_tiles_to_store`. `Store::list_locator_uris` pages locators by uri range.
+Verified read-only against a live ~11 GB biltoo cache.
+
+**Next (step 2):** optional `tools/thumtoo_serve.cpp` (`THUMTOO_BUILD_SERVE`,
+cpp-httplib), ad-hoc CLI only. Routes: `GET /{location}//tile:S,X,Y`,
+`//info`, `//tiles`, `/locations?prefix=&after=&limit=`,
+`/blob/sha256:<hex>//tile:S,X,Y` (immutable). Read-only: miss = 404.
+Plain HTTP; bind 127.0.0.1 by default; on `--listen` a random token
+(`?token=` / Bearer / cookie, `--token FILE`, `--no-auth`); `--allow-prefix`
+filters locations. Encryption via ssh -L / Tailscale, not in-process TLS.
+One `Store::open_readonly` + `CacheReader` per worker thread.
+
 ## Status (2026-10-07)
 
 **Tip:** PDF rendering rewrite — shared display lists, decode-once images,

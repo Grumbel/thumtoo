@@ -144,6 +144,7 @@ pkg_check_modules(LIBCURL IMPORTED_TARGET libcurl)
 
 add_library(thumtoo
   src/store.cpp
+  src/cache_reader.cpp
   src/uri.cpp
   src/client.cpp
   src/activity.cpp
@@ -356,6 +357,9 @@ if(THUMTOO_BUILD_TESTS)
   add_executable(thumtoo-test-store-root tests/test_store_root.cpp)
   target_link_libraries(thumtoo-test-store-root PRIVATE thumtoo)
   add_test(NAME store_root COMMAND thumtoo-test-store-root)
+  add_executable(thumtoo-test-cache-reader tests/test_cache_reader.cpp)
+  target_link_libraries(thumtoo-test-cache-reader PRIVATE thumtoo)
+  add_test(NAME cache_reader COMMAND thumtoo-test-cache-reader)
   add_executable(thumtoo-test-store-only tests/test_store_only.cpp)
   target_link_libraries(thumtoo-test-store-only PRIVATE thumtoo)
   add_test(NAME store_only COMMAND thumtoo-test-store-only)
