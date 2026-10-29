@@ -171,6 +171,8 @@ inline constexpr int kDefaultTileQuality = 80;
 /// PDF live/durable cells: text rings badly at Q=80 when zoomed; use higher.
 inline constexpr int kPdfTileQuality = 95;
 inline constexpr char kDefaultTileCodec[] = "jpeg";
+/// Durable tiles of images with alpha (JPEG has none).
+inline constexpr char kTileCodecWebp[] = "webp";
 /// Uncompressed RGB888 payload in TileBlob::bytes (live PDF cells).
 inline constexpr char kTileCodecRgb888[] = "rgb888";
 

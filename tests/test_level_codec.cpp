@@ -1,17 +1,26 @@
 // SPDX-FileCopyrightText: 2026 Ingo Ruhnke <grumbel@gmail.com>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-/// Ladder level codec: JPEG for opaque images, WebP when there is alpha;
-/// an encoded level downscales again without the source.
+/// Level and tile codec: JPEG for opaque images, WebP when there is alpha;
+/// an encoded level downscales again without the source, and TileSynth
+/// keeps the alpha of WebP tiles.
 
+#include "thumtoo/client.hpp"
+#include "thumtoo/constants.hpp"
 #include "thumtoo/image.hpp"
+#include "thumtoo/uri.hpp"
 
 #include <vips/vips.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <vector>
+
+namespace fs = std::filesystem;
 
 namespace {
 
@@ -89,6 +98,49 @@ int main() {
       expect(std::max(small->width, small->height) <= 128, "downscaled edge");
     }
   }
+
+  // Durable tile cells: WebP with alpha, JPEG without; host rgb888 decode
+  // accepts both.
+  for (const bool with_alpha : {false, true}) {
+    const auto& png = with_alpha ? rgba : rgb;
+    auto tiles = thumtoo::build_tile_pyramid_buffer(png.data(), png.size(), 0, -1);
+    expect(!tiles.empty(), "tile pyramid");
+    for (const auto& t : tiles) {
+      expect(t.codec == (with_alpha ? "webp" : "jpeg"), "tile codec");
+      expect(has_magic(t.bytes, with_alpha), "tile bytes");
+    }
+    if (!tiles.empty()) {
+      auto dec = thumtoo::decode_tile_blob_to_rgb888(tiles.front());
+      expect(dec && dec->codec == thumtoo::kTileCodecRgb888, "tile → rgb888");
+    }
+  }
+
+  // Client: pyramid into the Store, TileSynth preview keeps alpha.
+  const fs::path root =
+      fs::temp_directory_path() / "thumtoo-level-codec-test" /
+      std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+  fs::create_directories(root);
+  {
+    auto client = thumtoo::Client::open(root / "cache", {}, 0, root / "cache");
+    expect(static_cast<bool>(client), "client open");
+    for (const bool with_alpha : {false, true}) {
+      const auto& png = with_alpha ? rgba : rgb;
+      const fs::path file = root / (with_alpha ? "alpha.png" : "opaque.png");
+      std::ofstream(file, std::ios::binary)
+          .write(reinterpret_cast<const char*>(png.data()),
+                 static_cast<std::streamsize>(png.size()));
+      const std::string uri = thumtoo::file_uri_from_path(file);
+      client->request_tile_pyramid(uri, 0, -1);
+      client->drain();
+      auto px = client->get_pixels_from_tiles(uri, 256);
+      expect(px.has_value(), "tile synth");
+      if (px) {
+        expect(px->codec == (with_alpha ? "webp" : "jpeg"), "tile synth codec");
+        expect(std::max(px->width, px->height) <= 256, "tile synth edge");
+      }
+    }
+  }
+  fs::remove_all(root);
 
   if (g_failures) {
     std::cerr << g_failures << " failure(s)\n";

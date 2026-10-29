@@ -160,7 +160,7 @@ Durable display pixels are **not** a full multi-edge ladder by default.
 |-------|----------|------|
 | **Size / identity** | Yes | Layout, invalidation, content id |
 | **Single preview** (JPEG / WebP, one long-edge ≤ request) | Yes | Fast first paint / filmstrip (`request_pixels`) |
-| **Grid tiles** 256² JPEG | Yes (optional) | Smooth zoom for Galapix (`request_tile`) |
+| **Grid tiles** 256² JPEG (WebP with alpha) | Yes (optional) | Smooth zoom for Galapix (`request_tile`) |
 | **Multi-edge ladder** (128+256+512+…) | No (on demand) | Derive by another `request_pixels` or downscale in the app |
 | **Original full-res** | No | Viewer decodes past max cached tile scale |
 

@@ -530,6 +530,7 @@ void Store::seed_lookups() {
   bind_codec(static_cast<int>(CodecId::Jpeg), "jpeg");
   bind_codec(static_cast<int>(CodecId::Jxl), "jxl");
   bind_codec(static_cast<int>(CodecId::Png), "png");
+  bind_codec(static_cast<int>(CodecId::Webp), "webp");
   sqlite3_finalize(stmt);
 }
 

@@ -18,7 +18,7 @@ biltoo `docs/THUMTOO_HOST_CONTRACT.md`.
 
 | Product | Storage | API |
 |---------|---------|-----|
-| **Grid tiles** (256² JPEG pyramid) | Yes — `tiles` + bulk blobs | `get_tile` / `request_tile` / prepare `--tiles` |
+| **Grid tiles** (256² JPEG pyramid; WebP when the image has alpha) | Yes — `tiles` + bulk blobs | `get_tile` / `request_tile` / prepare `--tiles` |
 | **LQIP** (ThumbHash / Handsum) | Yes — per blob | `get_lqip` / `request_lqip` / `ensure_lqip` |
 | **Size / meta / TOC** | Yes | `get_size` / `request_size` / archive TOC |
 

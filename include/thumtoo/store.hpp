@@ -28,6 +28,7 @@ enum class CodecId : int {
   Jpeg = 1,
   Jxl = 2,
   Png = 3,
+  Webp = 4,
 };
 
 /// Index DB status values for blob.status (extensible).

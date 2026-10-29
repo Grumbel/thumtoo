@@ -2,6 +2,13 @@
 
 ## Status (2026-10-29)
 
+**Tip:** durable tiles of images with alpha are WebP (`kTileCodecWebp`,
+`CodecId::Webp` = 4, seeded on open); `get_pixels_from_tiles` composes
+RGBA and returns a WebP level when any cell has alpha (`build_ladder_pixels`
+takes 3 or 4 bands). `decode_tile_blob_to_rgb888` accepts WebP (drops alpha,
+hosts unchanged). Interactive rgb888 cells still drop alpha. For xanatoo's
+inline thumbnails (coarse scales + TileSynth, transparency kept).
+
 **Tip:** ladder levels are JPEG, or WebP when the image has alpha
 (`encode_level`, `kDefaultCodec` = "jpeg", `kDefaultLevelQuality`); JXL was
 the default only because it was new, and levels are ephemeral, so the codec

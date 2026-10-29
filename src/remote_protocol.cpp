@@ -128,6 +128,7 @@ std::string remote_query_escape(std::string_view s) {
 const char* tile_codec_mime(std::string_view codec) noexcept {
   if (codec == "png") return "image/png";
   if (codec == "jxl") return "image/jxl";
+  if (codec == "webp") return "image/webp";
   return "image/jpeg";
 }
 
@@ -137,6 +138,7 @@ std::string tile_codec_from_mime(std::string_view mime) {
   }
   if (mime == "image/png") return "png";
   if (mime == "image/jxl") return "jxl";
+  if (mime == "image/webp") return "webp";
   return "jpeg";
 }
 

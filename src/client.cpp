@@ -735,27 +735,22 @@ std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
     return std::nullopt;
   }
 
-  std::vector<std::uint8_t> canvas(static_cast<std::size_t>(sw) * static_cast<std::size_t>(sh) * 3u, 0);
+  // RGBA canvas; WebP cells (images with alpha) keep theirs, JPEG cells are
+  // opaque. An all-opaque result is encoded as RGB (JPEG level).
+  std::vector<std::uint8_t> canvas(
+      static_cast<std::size_t>(sw) * static_cast<std::size_t>(sh) * 4u, 255);
+  bool any_alpha = false;
   for (int ty = 0; ty < ny; ++ty) {
     for (int tx = 0; tx < nx; ++tx) {
       auto tile = get_tile(uri, best_s, tx, ty);
       if (!tile || tile->bytes.empty()) {
         return std::nullopt;  // incomplete pyramid at this scale
       }
-      VipsImage* im = nullptr;
-      if (vips_jpegload_buffer(
-              const_cast<std::uint8_t*>(tile->bytes.data()),
-              static_cast<size_t>(tile->bytes.size()), &im, nullptr) != 0 ||
-          !im) {
-        return std::nullopt;
-      }
-      if (vips_image_wio_input(im) != 0) {
-        g_object_unref(im);
-        return std::nullopt;
-      }
-      VipsImage* rgb = nullptr;
-      if (im->Type != VIPS_INTERPRETATION_sRGB || im->Bands != 3 ||
-          im->BandFmt != VIPS_FORMAT_UCHAR) {
+      VipsImage* im = vips_image_new_from_buffer(
+          tile->bytes.data(), tile->bytes.size(), nullptr, nullptr);
+      if (!im) return std::nullopt;
+      if (im->Type != VIPS_INTERPRETATION_sRGB || im->BandFmt != VIPS_FORMAT_UCHAR) {
+        VipsImage* rgb = nullptr;
         if (vips_colourspace(im, &rgb, VIPS_INTERPRETATION_sRGB, nullptr) != 0 ||
             !rgb) {
           g_object_unref(im);
@@ -763,7 +758,6 @@ std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
         }
         g_object_unref(im);
         im = rgb;
-        rgb = nullptr;
         if (im->BandFmt != VIPS_FORMAT_UCHAR) {
           VipsImage* u8 = nullptr;
           if (vips_cast_uchar(im, &u8, nullptr) != 0 || !u8) {
@@ -773,10 +767,10 @@ std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
           g_object_unref(im);
           im = u8;
         }
-        if (vips_image_wio_input(im) != 0) {
-          g_object_unref(im);
-          return std::nullopt;
-        }
+      }
+      if (vips_image_wio_input(im) != 0) {
+        g_object_unref(im);
+        return std::nullopt;
       }
       int left = 0, top = 0, tw = 0, th = 0;
       tile_cell_pixel_rect(sw, sh, tx, ty, &left, &top, &tw, &th);
@@ -787,6 +781,8 @@ std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
         g_object_unref(im);
         return std::nullopt;
       }
+      const bool alpha = bands >= 4;
+      any_alpha = any_alpha || alpha;
       for (int y = 0; y < ch; ++y) {
         const std::uint8_t* src =
             static_cast<const std::uint8_t*>(VIPS_IMAGE_ADDR(im, 0, y));
@@ -795,54 +791,35 @@ std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
             (static_cast<std::size_t>(ty * kTileSize + y) *
                  static_cast<std::size_t>(sw) +
              static_cast<std::size_t>(tx * kTileSize)) *
-                3u;
-        if (bands == 3) {
-          std::memcpy(dst, src, static_cast<std::size_t>(cw) * 3u);
-        } else {
-          for (int x = 0; x < cw; ++x) {
-            dst[x * 3 + 0] = src[x * bands + 0];
-            dst[x * 3 + 1] = src[x * bands + 1];
-            dst[x * 3 + 2] = src[x * bands + 2];
-          }
+                4u;
+        for (int x = 0; x < cw; ++x) {
+          dst[x * 4 + 0] = src[x * bands + 0];
+          dst[x * 4 + 1] = src[x * bands + 1];
+          dst[x * 4 + 2] = src[x * bands + 2];
+          dst[x * 4 + 3] = alpha ? src[x * bands + 3] : 255;
         }
       }
       g_object_unref(im);
     }
   }
 
-  int out_w = sw;
-  int out_h = sh;
-  std::vector<std::uint8_t> out_rgb = std::move(canvas);
-  const int long_px = std::max(sw, sh);
-  if (want > 0 && long_px > want) {
-    VipsImage* in = vips_image_new_from_memory(
-        out_rgb.data(), out_rgb.size(), sw, sh, 3, VIPS_FORMAT_UCHAR);
-    if (!in) return std::nullopt;
-    in->Type = VIPS_INTERPRETATION_sRGB;
-    VipsImage* small = nullptr;
-    const double scale = static_cast<double>(want) / static_cast<double>(long_px);
-    if (vips_resize(in, &small, scale, nullptr) != 0 || !small) {
-      g_object_unref(in);
-      return std::nullopt;
+  const int out_bands = any_alpha ? 4 : 3;
+  if (!any_alpha) {
+    // Opaque: pack RGBA → RGB in place.
+    const std::size_t n = static_cast<std::size_t>(sw) * static_cast<std::size_t>(sh);
+    for (std::size_t i = 0; i < n; ++i) {
+      canvas[i * 3 + 0] = canvas[i * 4 + 0];
+      canvas[i * 3 + 1] = canvas[i * 4 + 1];
+      canvas[i * 3 + 2] = canvas[i * 4 + 2];
     }
-    g_object_unref(in);
-    if (vips_image_wio_input(small) != 0) {
-      g_object_unref(small);
-      return std::nullopt;
-    }
-    out_w = small->Xsize;
-    out_h = small->Ysize;
-    out_rgb.resize(static_cast<std::size_t>(out_w) * static_cast<std::size_t>(out_h) * 3u);
-    for (int y = 0; y < out_h; ++y) {
-      std::memcpy(out_rgb.data() + static_cast<std::size_t>(y * out_w) * 3u,
-                  VIPS_IMAGE_ADDR(small, 0, y),
-                  static_cast<std::size_t>(out_w) * 3u);
-    }
-    g_object_unref(small);
+    canvas.resize(n * 3u);
   }
 
-  auto levels = build_ladder_rgb(out_rgb.data(), out_w, out_h, meta->content_id,
-                                 /*quality=*/70, std::max(out_w, out_h));
+  // build_ladder_pixels shrinks to the ladder step ≤ want (vips_thumbnail,
+  // alpha premultiplied) and encodes JPEG / WebP.
+  auto levels = build_ladder_pixels(canvas.data(), sw, sh, out_bands,
+                                    meta->content_id, /*quality=*/70,
+                                    std::min(want, std::max(sw, sh)));
   if (levels.empty()) return std::nullopt;
   PixelLevel px;
   px.max_edge = levels[0].max_edge;
@@ -4379,6 +4356,8 @@ void Client::put_tiles_to_store(const std::string& content_id,
         meta.codec_id = CodecId::Jxl;
       } else if (t.codec == "png") {
         meta.codec_id = CodecId::Png;
+      } else if (t.codec == kTileCodecWebp) {
+        meta.codec_id = CodecId::Webp;
       } else {
         meta.codec_id = CodecId::Jpeg;
       }

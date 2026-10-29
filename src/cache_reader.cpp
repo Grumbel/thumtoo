@@ -91,6 +91,7 @@ const char* tile_codec_name(CodecId codec) noexcept {
   switch (codec) {
     case CodecId::Jxl: return "jxl";
     case CodecId::Png: return "png";
+    case CodecId::Webp: return "webp";
     case CodecId::Jpeg: break;
   }
   return kDefaultTileCodec;

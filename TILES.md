@@ -39,7 +39,7 @@ Tiles are the durable multi-res path; soft/overview is ephemeral or TileSynth.
 | `scale` | 0 = full resolution; each +1 halves width and height |
 | `x`, `y` | Tile indices from the top-left of that scale’s image |
 | Tile size | **256×256** (`kTileSize`); edge tiles may be smaller |
-| Codec | Default **JPEG** q=80 (`kDefaultTileCodec` / `kDefaultTileQuality`) |
+| Codec | Default **JPEG** q=80 (`kDefaultTileCodec` / `kDefaultTileQuality`); **WebP** for images with alpha (`kTileCodecWebp`, durable cells only — interactive `rgb888` cells drop alpha) |
 | Source cap | Encode refused when `width*height > kTileMaxSourcePixels` (100 MP) |
 
 Whole-image coverage at scale `s` is:

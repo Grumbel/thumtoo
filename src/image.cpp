@@ -444,6 +444,26 @@ int pick_preview_edge(int long_edge, int max_edge_limit) {
   return best > 0 ? best : kLadderEdges.front();
 }
 
+/// Encode one durable tile cell: JPEG, or WebP when the image has alpha
+/// (same rule as encode_level). Sets @p codec; false on encoder failure.
+bool encode_tile_crop(VipsImage* crop, int q, std::vector<std::uint8_t>& out,
+                      std::string& codec) {
+  void* buf = nullptr;
+  size_t len = 0;
+  const bool alpha = vips_image_hasalpha(crop);
+  {
+    ScopedNsAccumulator timer(global_build_stats().jpeg_encode_ns);
+    const int rc = alpha
+        ? vips_webpsave_buffer(crop, &buf, &len, "Q", q, nullptr)
+        : vips_jpegsave_buffer(crop, &buf, &len, "Q", q, nullptr);
+    if (rc != 0 || !buf) return false;
+  }
+  out.assign(static_cast<std::uint8_t*>(buf), static_cast<std::uint8_t*>(buf) + len);
+  g_free(buf);
+  codec = alpha ? kTileCodecWebp : kDefaultTileCodec;
+  return true;
+}
+
 /// Encode one ladder level: JPEG, or WebP when the image has alpha (JPEG
 /// has none). Both are fast to encode and decode everywhere libvips runs.
 LevelBlob encode_level(VipsImage* thumb, int edge,
@@ -664,14 +684,28 @@ std::vector<LevelBlob> build_ladder_buffer(const std::uint8_t* data,
 std::vector<LevelBlob> build_ladder_rgb(const std::uint8_t* rgb, int width,
                                         int height, const std::string& content_id,
                                         int quality, int max_edge_limit) {
+  return build_ladder_pixels(rgb, width, height, 3, content_id, quality,
+                             max_edge_limit);
+}
+
+std::vector<LevelBlob> build_ladder_pixels(const std::uint8_t* px, int width,
+                                           int height, int bands,
+                                           const std::string& content_id,
+                                           int quality, int max_edge_limit) {
   ensure_vips();
   std::vector<LevelBlob> levels;
-  if (!rgb || width <= 0 || height <= 0) return levels;
+  if (!px || width <= 0 || height <= 0 || (bands != 3 && bands != 4)) {
+    return levels;
+  }
 
   VipsImage* full = vips_image_new_from_memory_copy(
-      rgb, static_cast<size_t>(width) * static_cast<size_t>(height) * 3u, width,
-      height, 3, VIPS_FORMAT_UCHAR);
+      px,
+      static_cast<size_t>(width) * static_cast<size_t>(height) *
+          static_cast<size_t>(bands),
+      width, height, bands, VIPS_FORMAT_UCHAR);
   if (!full) return levels;
+  // sRGB(A), so encode_level sees the alpha band.
+  full->Type = VIPS_INTERPRETATION_sRGB;
 
   const int long_edge = std::max(width, height);
   const int edge = pick_preview_edge(long_edge, max_edge_limit);
@@ -945,27 +979,15 @@ std::vector<TileBlob> cut_pyramid_from_vips(VipsImage* full, int min_scale,
             !crop) {
           continue;
         }
-        void* buf = nullptr;
-        size_t len = 0;
-        {
-          ScopedNsAccumulator timer(global_build_stats().jpeg_encode_ns);
-          if (vips_jpegsave_buffer(crop, &buf, &len, "Q", q, nullptr) != 0 ||
-              !buf) {
-            g_object_unref(crop);
-            continue;
-          }
-        }
-        g_object_unref(crop);
         TileBlob tb;
+        const bool ok = encode_tile_crop(crop, q, tb.bytes, tb.codec);
+        g_object_unref(crop);
+        if (!ok) continue;
         tb.scale = scale;
         tb.x = c.tx;
         tb.y = c.ty;
         tb.width = c.tw;
         tb.height = c.th;
-        tb.codec = kDefaultTileCodec;
-        tb.bytes.assign(static_cast<std::uint8_t*>(buf),
-                        static_cast<std::uint8_t*>(buf) + len);
-        g_free(buf);
         scale_tiles[i] = std::move(tb);
         global_build_stats().tiles_encoded.fetch_add(1, std::memory_order_relaxed);
       }
@@ -1377,27 +1399,15 @@ std::optional<TileBlob> cut_cell_from_vips(VipsImage* full, int scale, int x,
   }
   g_object_unref(current);
 
-  void* buf = nullptr;
-  size_t len = 0;
-  {
-    ScopedNsAccumulator timer(global_build_stats().jpeg_encode_ns);
-    if (vips_jpegsave_buffer(crop, &buf, &len, "Q", q, nullptr) != 0 || !buf) {
-      g_object_unref(crop);
-      return std::nullopt;
-    }
-  }
-  g_object_unref(crop);
-
   TileBlob tb;
+  const bool ok = encode_tile_crop(crop, q, tb.bytes, tb.codec);
+  g_object_unref(crop);
+  if (!ok) return std::nullopt;
   tb.scale = scale;
   tb.x = x;
   tb.y = y;
   tb.width = tw;
   tb.height = th;
-  tb.codec = kDefaultTileCodec;
-  tb.bytes.assign(static_cast<std::uint8_t*>(buf),
-                  static_cast<std::uint8_t*>(buf) + len);
-  g_free(buf);
   global_build_stats().tiles_encoded.fetch_add(1, std::memory_order_relaxed);
   return tb;
 }
@@ -1641,9 +1651,10 @@ std::optional<TileBlob> decode_tile_blob_to_rgb888(TileBlob blob) {
   if (blob.codec == kTileCodecRgb888 || blob.codec == "rgba8") {
     return blob;
   }
-  // Durable tiles: codec "jpeg" (default) or empty legacy rows.
+  // Durable tiles: codec "jpeg" (default), "webp" (alpha; flattened to its
+  // colour bands here) or empty legacy rows.
   if (!blob.codec.empty() && blob.codec != "jpeg" && blob.codec != "jpg" &&
-      blob.codec != kDefaultTileCodec) {
+      blob.codec != kDefaultTileCodec && blob.codec != kTileCodecWebp) {
     return blob;  // unknown encoded form — leave for host
   }
   ensure_vips();

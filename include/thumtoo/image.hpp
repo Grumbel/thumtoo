@@ -83,6 +83,12 @@ void image_library_init();
     const std::uint8_t* rgb, int width, int height, const std::string& content_id,
     int quality, int max_edge_limit = 0);
 
+/// Same from contiguous RGB888 (bands = 3) or RGBA8888 (bands = 4) pixels;
+/// RGBA encodes as WebP.
+[[nodiscard]] std::vector<LevelBlob> build_ladder_pixels(
+    const std::uint8_t* px, int width, int height, int bands,
+    const std::string& content_id, int quality, int max_edge_limit = 0);
+
 /// Encode one level at an exact long-edge target (clamped to source).
 /// Used for //pdfimage native storage keyed by source long edge.
 [[nodiscard]] std::optional<LevelBlob> build_level_rgb_at_edge(
