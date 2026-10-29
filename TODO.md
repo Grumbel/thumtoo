@@ -1,5 +1,18 @@
 # TODO / agent handoff
 
+## Status (2026-10-29)
+
+**Tip:** ladder levels are JPEG, or WebP when the image has alpha
+(`encode_level`, `kDefaultCodec` = "jpeg", `kDefaultLevelQuality`); JXL was
+the default only because it was new, and levels are ephemeral, so the codec
+just has to be fast and available. thumtoo no longer calls a JXL encoder,
+so libvips without libjxl works (xanatoo's Android probe: static glib +
+libvips JPEG / PNG / WebP / GIF + libarchive + SQLite, aarch64 API 21).
+Decoding stays format-agnostic (`vips_image_new_from_buffer`).
+Renamed: `downscale_preview_jxl` → `downscale_preview_level`,
+`jxl_encode_ns` → `level_encode_ns` (stats / bench `level=`).
+Test `test_level_codec`. The flake still lists libjxl for vips' .pc.
+
 ## Status (2026-10-23)
 
 **Tip:** `thumtoo-serve` + `Client::open_remote` ([docs/REMOTE.md](docs/REMOTE.md)).

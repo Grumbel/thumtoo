@@ -52,9 +52,11 @@ inline constexpr int kFocusFullMaxConcurrent = 1;
 /// Speculative interest only enqueues when pending queue length is below this.
 inline constexpr std::size_t kSpeculativeEnqueueWhenQueueBelow = 8;
 
-/// Ladder codec is JPEG-XL via libvips (required dependency; see flake.nix).
-inline constexpr int kDefaultJxlQuality = 80;
-inline constexpr char kDefaultCodec[] = "jxl";
+/// Ladder codec: JPEG via libvips, WebP for images with alpha. Levels are
+/// ephemeral, so the codec only has to be fast and available everywhere
+/// (JPEG-XL used to be the default; libjxl is optional now).
+inline constexpr int kDefaultLevelQuality = 80;
+inline constexpr char kDefaultCodec[] = "jpeg";
 
 /// Video temporal stills (plus poster as frame_idx 0).
 inline constexpr int kDefaultVideoStillCount = 16;

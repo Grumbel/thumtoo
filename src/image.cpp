@@ -444,14 +444,20 @@ int pick_preview_edge(int long_edge, int max_edge_limit) {
   return best > 0 ? best : kLadderEdges.front();
 }
 
-LevelBlob encode_jxl_level(VipsImage* thumb, int edge,
-                           const std::string& id_dir, int q) {
+/// Encode one ladder level: JPEG, or WebP when the image has alpha (JPEG
+/// has none). Both are fast to encode and decode everywhere libvips runs.
+LevelBlob encode_level(VipsImage* thumb, int edge,
+                       const std::string& id_dir, int q) {
   LevelBlob b;
   void* buf = nullptr;
   size_t len = 0;
+  const bool alpha = vips_image_hasalpha(thumb);
   {
-    ScopedNsAccumulator timer(global_build_stats().jxl_encode_ns);
-    if (vips_jxlsave_buffer(thumb, &buf, &len, "Q", q, nullptr) != 0 || !buf) {
+    ScopedNsAccumulator timer(global_build_stats().level_encode_ns);
+    const int rc = alpha
+        ? vips_webpsave_buffer(thumb, &buf, &len, "Q", q, nullptr)
+        : vips_jpegsave_buffer(thumb, &buf, &len, "Q", q, nullptr);
+    if (rc != 0 || !buf) {
       return b;
     }
   }
@@ -459,10 +465,10 @@ LevelBlob encode_jxl_level(VipsImage* thumb, int edge,
   b.frame_idx = 0;
   b.width = vips_image_get_width(thumb);
   b.height = vips_image_get_height(thumb);
-  b.codec = "jxl";
+  b.codec = alpha ? "webp" : "jpeg";
   b.quality = q;
   std::ostringstream rel;
-  rel << "blobs/" << id_dir << "/" << edge << "_f0.jxl";
+  rel << "blobs/" << id_dir << "/" << edge << "_f0." << (alpha ? "webp" : "jpg");
   b.relative_path = rel.str();
   auto* bytes = static_cast<std::uint8_t*>(buf);
   b.bytes.assign(bytes, bytes + len);
@@ -489,7 +495,7 @@ std::optional<EmbeddedPreview> try_exif_embedded_preview_file(
 
 std::vector<LevelBlob> build_ladder(const std::filesystem::path& path,
                                     const std::string& content_id,
-                                    int jxl_quality, int max_edge_limit) {
+                                    int quality, int max_edge_limit) {
   std::vector<LevelBlob> levels;
   if (is_mupdf_page_document_path(path) || is_djvu_path(path) || is_epub_path(path)) {
     return levels;
@@ -505,7 +511,7 @@ std::vector<LevelBlob> build_ladder(const std::filesystem::path& path,
   if (long_edge <= 0) return levels;
 
   const int edge = pick_preview_edge(long_edge, max_edge_limit);
-  const int q = std::clamp(jxl_quality, 1, 100);
+  const int q = std::clamp(quality, 1, 100);
   const std::string id_dir = content_id_to_blob_dir(content_id);
   const std::string path_str = path.string();
 
@@ -535,7 +541,7 @@ std::vector<LevelBlob> build_ladder(const std::filesystem::path& path,
           }
           g_object_unref(emb);
           if (thumb) {
-            LevelBlob b = encode_jxl_level(thumb, edge, id_dir, q);
+            LevelBlob b = encode_level(thumb, edge, id_dir, q);
             g_object_unref(thumb);
             if (!b.bytes.empty()) {
               b.source = PixelSource::Embedded;
@@ -562,7 +568,7 @@ std::vector<LevelBlob> build_ladder(const std::filesystem::path& path,
     }
   }
 
-  LevelBlob b = encode_jxl_level(thumb, edge, id_dir, q);
+  LevelBlob b = encode_level(thumb, edge, id_dir, q);
   g_object_unref(thumb);
   if (!b.bytes.empty()) {
     if (edge > kMaxSoftLadderEdge) {
@@ -576,7 +582,7 @@ std::vector<LevelBlob> build_ladder(const std::filesystem::path& path,
 std::vector<LevelBlob> build_ladder_buffer(const std::uint8_t* data,
                                            std::size_t size,
                                            const std::string& content_id,
-                                           int jxl_quality, int max_edge_limit) {
+                                           int quality, int max_edge_limit) {
   ensure_vips();
   std::vector<LevelBlob> levels;
   if (!data || size == 0) return levels;
@@ -590,7 +596,7 @@ std::vector<LevelBlob> build_ladder_buffer(const std::uint8_t* data,
   if (long_edge <= 0) return levels;
 
   const int edge = pick_preview_edge(long_edge, max_edge_limit);
-  const int q = std::clamp(jxl_quality, 1, 100);
+  const int q = std::clamp(quality, 1, 100);
   const std::string id_dir = content_id_to_blob_dir(content_id);
 
   if (auto exif_jpeg = extract_exif_jpeg_thumbnail(data, size)) {
@@ -617,7 +623,7 @@ std::vector<LevelBlob> build_ladder_buffer(const std::uint8_t* data,
         }
         g_object_unref(emb);
         if (thumb) {
-          LevelBlob b = encode_jxl_level(thumb, edge, id_dir, q);
+          LevelBlob b = encode_level(thumb, edge, id_dir, q);
           g_object_unref(thumb);
           if (!b.bytes.empty()) {
             b.source = PixelSource::Embedded;
@@ -643,7 +649,7 @@ std::vector<LevelBlob> build_ladder_buffer(const std::uint8_t* data,
     }
   }
 
-  LevelBlob b = encode_jxl_level(thumb, edge, id_dir, q);
+  LevelBlob b = encode_level(thumb, edge, id_dir, q);
   g_object_unref(thumb);
   if (!b.bytes.empty()) {
     // Above soft band is a Full/display level, not soft shrink.
@@ -657,7 +663,7 @@ std::vector<LevelBlob> build_ladder_buffer(const std::uint8_t* data,
 
 std::vector<LevelBlob> build_ladder_rgb(const std::uint8_t* rgb, int width,
                                         int height, const std::string& content_id,
-                                        int jxl_quality, int max_edge_limit) {
+                                        int quality, int max_edge_limit) {
   ensure_vips();
   std::vector<LevelBlob> levels;
   if (!rgb || width <= 0 || height <= 0) return levels;
@@ -670,7 +676,7 @@ std::vector<LevelBlob> build_ladder_rgb(const std::uint8_t* rgb, int width,
   const int long_edge = std::max(width, height);
   const int edge = pick_preview_edge(long_edge, max_edge_limit);
   const std::string id_dir = content_id_to_blob_dir(content_id);
-  const int q = jxl_quality > 0 ? jxl_quality : kDefaultJxlQuality;
+  const int q = quality > 0 ? quality : kDefaultLevelQuality;
 
   VipsImage* thumb = nullptr;
   {
@@ -684,7 +690,7 @@ std::vector<LevelBlob> build_ladder_rgb(const std::uint8_t* rgb, int width,
   }
   g_object_unref(full);
 
-  LevelBlob b = encode_jxl_level(thumb, edge, id_dir, q);
+  LevelBlob b = encode_level(thumb, edge, id_dir, q);
   g_object_unref(thumb);
   if (!b.bytes.empty()) levels.push_back(std::move(b));
   return levels;
@@ -693,7 +699,7 @@ std::vector<LevelBlob> build_ladder_rgb(const std::uint8_t* rgb, int width,
 std::optional<LevelBlob> build_level_rgb_at_edge(const std::uint8_t* rgb, int width,
                                                  int height,
                                                  const std::string& content_id,
-                                                 int jxl_quality, int target_edge) {
+                                                 int quality, int target_edge) {
   ensure_vips();
   if (!rgb || width <= 0 || height <= 0 || target_edge <= 0) return std::nullopt;
 
@@ -705,7 +711,7 @@ std::optional<LevelBlob> build_level_rgb_at_edge(const std::uint8_t* rgb, int wi
   const int long_edge = std::max(width, height);
   const int edge = std::min(target_edge, long_edge);
   const std::string id_dir = content_id_to_blob_dir(content_id);
-  const int q = jxl_quality > 0 ? jxl_quality : kDefaultJxlQuality;
+  const int q = quality > 0 ? quality : kDefaultLevelQuality;
 
   VipsImage* out_img = full;
   VipsImage* thumb = nullptr;
@@ -721,7 +727,7 @@ std::optional<LevelBlob> build_level_rgb_at_edge(const std::uint8_t* rgb, int wi
     out_img = thumb;
   }
 
-  LevelBlob b = encode_jxl_level(out_img, edge, id_dir, q);
+  LevelBlob b = encode_level(out_img, edge, id_dir, q);
   g_object_unref(out_img);
   if (b.bytes.empty()) return std::nullopt;
   // Full only when the level is past soft max and matches the source long edge.
@@ -733,28 +739,25 @@ std::optional<LevelBlob> build_level_rgb_at_edge(const std::uint8_t* rgb, int wi
 }
 
 
-std::optional<LevelBlob> downscale_preview_jxl(const std::uint8_t* jxl_data,
-                                               std::size_t jxl_size,
-                                               const std::string& content_id,
-                                               int target_edge,
-                                               int jxl_quality) {
+std::optional<LevelBlob> downscale_preview_level(const std::uint8_t* data,
+                                                 std::size_t size,
+                                                 const std::string& content_id,
+                                                 int target_edge,
+                                                 int quality) {
   ensure_vips();
-  if (!jxl_data || jxl_size == 0 || target_edge <= 0) return std::nullopt;
+  if (!data || size == 0 || target_edge <= 0) return std::nullopt;
 
   VipsImage* full = nullptr;
   {
     ScopedNsAccumulator timer(global_build_stats().thumb_ns);
-    // libvips JXL loader from memory buffer
-    if (vips_jxlload_buffer(const_cast<void*>(static_cast<const void*>(jxl_data)),
-                            jxl_size, &full, nullptr) != 0 ||
-        !full) {
-      return std::nullopt;
-    }
+    // Any encoded level (JPEG / WebP, older JXL when libvips has it).
+    full = vips_image_new_from_buffer(data, size, nullptr, nullptr);
+    if (!full) return std::nullopt;
   }
   const int long_edge =
       std::max(vips_image_get_width(full), vips_image_get_height(full));
   const int edge = pick_preview_edge(long_edge, target_edge);
-  const int q = std::clamp(jxl_quality, 1, 100);
+  const int q = std::clamp(quality, 1, 100);
   const std::string id_dir = content_id_to_blob_dir(content_id);
 
   VipsImage* thumb = nullptr;
@@ -769,7 +772,7 @@ std::optional<LevelBlob> downscale_preview_jxl(const std::uint8_t* jxl_data,
   }
   g_object_unref(full);
 
-  LevelBlob b = encode_jxl_level(thumb, edge, id_dir, q);
+  LevelBlob b = encode_level(thumb, edge, id_dir, q);
   g_object_unref(thumb);
   if (b.bytes.empty()) return std::nullopt;
   return b;

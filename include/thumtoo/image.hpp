@@ -25,7 +25,7 @@ struct LevelBlob {
   int frame_idx = 0;
   int width = 0;
   int height = 0;
-  std::string codec;  // "jxl"
+  std::string codec;  // "jpeg", or "webp" with alpha
   int quality = 0;
   std::string relative_path;
   std::vector<std::uint8_t> bytes;
@@ -71,28 +71,28 @@ void image_library_init();
 /// proxy can downscale this level, or request_pixels with a smaller max_edge.
 [[nodiscard]] std::vector<LevelBlob> build_ladder(
     const std::filesystem::path& path, const std::string& content_id,
-    int jxl_quality, int max_edge_limit = 0);
+    int quality, int max_edge_limit = 0);
 
 [[nodiscard]] std::vector<LevelBlob> build_ladder_buffer(
     const std::uint8_t* data, std::size_t size, const std::string& content_id,
-    int jxl_quality, int max_edge_limit = 0);
+    int quality, int max_edge_limit = 0);
 
-/// Build JXL preview from contiguous RGB888 pixels (no alpha). Same single-edge
+/// Build a preview level from contiguous RGB888 pixels (no alpha). Same single-edge
 /// policy as build_ladder.
 [[nodiscard]] std::vector<LevelBlob> build_ladder_rgb(
     const std::uint8_t* rgb, int width, int height, const std::string& content_id,
-    int jxl_quality, int max_edge_limit = 0);
+    int quality, int max_edge_limit = 0);
 
-/// Encode one JXL level at an exact long-edge target (clamped to source).
+/// Encode one level at an exact long-edge target (clamped to source).
 /// Used for //pdfimage native storage keyed by source long edge.
 [[nodiscard]] std::optional<LevelBlob> build_level_rgb_at_edge(
     const std::uint8_t* rgb, int width, int height, const std::string& content_id,
-    int jxl_quality, int target_edge);
+    int quality, int target_edge);
 
-/// Downscale an already-cached JXL preview to a smaller policy edge (no source I/O).
-[[nodiscard]] std::optional<LevelBlob> downscale_preview_jxl(
-    const std::uint8_t* jxl_data, std::size_t jxl_size,
-    const std::string& content_id, int target_edge, int jxl_quality);
+/// Downscale an already-encoded preview level to a smaller policy edge (no source I/O).
+[[nodiscard]] std::optional<LevelBlob> downscale_preview_level(
+    const std::uint8_t* data, std::size_t size,
+    const std::string& content_id, int target_edge, int quality);
 
 [[nodiscard]] std::string sha256_file_hex(const std::filesystem::path& path);
 [[nodiscard]] std::string sha256_bytes_hex(const std::uint8_t* data,

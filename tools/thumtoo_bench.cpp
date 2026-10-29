@@ -47,7 +47,7 @@ double wall_s_now(std::chrono::steady_clock::time_point t0) {
 /// with several workers they can exceed the phase's wall time.
 struct Counters {
   double archive_extract_s = 0, image_load_s = 0, shrink_s = 0;
-  double jpeg_encode_s = 0, thumb_s = 0, jxl_encode_s = 0;
+  double jpeg_encode_s = 0, thumb_s = 0, level_encode_s = 0;
   std::uint64_t levels_encoded = 0, tiles_encoded = 0, archive_bytes = 0;
   std::uint64_t exif_thumb_hits = 0, probes_done = 0, pixel_jobs = 0, tile_jobs = 0;
 };
@@ -64,7 +64,7 @@ Counters snapshot_counters() {
   c.shrink_s = sec(s.shrink_ns);
   c.jpeg_encode_s = sec(s.jpeg_encode_ns);
   c.thumb_s = sec(s.thumb_ns);
-  c.jxl_encode_s = sec(s.jxl_encode_ns);
+  c.level_encode_s = sec(s.level_encode_ns);
   c.levels_encoded = n(s.levels_encoded);
   c.tiles_encoded = n(s.tiles_encoded);
   c.archive_bytes = n(s.archive_bytes);
@@ -119,7 +119,7 @@ void write_json(const RunInfo& run, const std::vector<PhaseResult>& phases) {
     w.field("shrink_s", c.shrink_s);
     w.field("jpeg_encode_s", c.jpeg_encode_s);
     w.field("thumb_s", c.thumb_s);
-    w.field("jxl_encode_s", c.jxl_encode_s);
+    w.field("level_encode_s", c.level_encode_s);
     w.field("levels_encoded", c.levels_encoded);
     w.field("tiles_encoded", c.tiles_encoded);
     w.field("archive_bytes", c.archive_bytes);
@@ -139,7 +139,7 @@ void write_json(const RunInfo& run, const std::vector<PhaseResult>& phases) {
 void write_csv(const RunInfo& run, const std::vector<PhaseResult>& phases, bool header) {
   gp::CsvWriter csv(std::cout,
                     {"phase", "wall_s", "workers", "images", "archive_extract_s", "image_load_s",
-                     "shrink_s", "jpeg_encode_s", "thumb_s", "jxl_encode_s", "levels_encoded",
+                     "shrink_s", "jpeg_encode_s", "thumb_s", "level_encode_s", "levels_encoded",
                      "tiles_encoded", "archive_bytes", "exif_thumb_hits", "probes_done",
                      "pixel_jobs", "tile_jobs"},
                     header);
@@ -148,7 +148,7 @@ void write_csv(const RunInfo& run, const std::vector<PhaseResult>& phases, bool 
     csv.row({ph.name, gp::csv_num(ph.wall_s), std::to_string(run.workers),
              std::to_string(run.uris), gp::csv_num(c.archive_extract_s),
              gp::csv_num(c.image_load_s), gp::csv_num(c.shrink_s), gp::csv_num(c.jpeg_encode_s),
-             gp::csv_num(c.thumb_s), gp::csv_num(c.jxl_encode_s), std::to_string(c.levels_encoded),
+             gp::csv_num(c.thumb_s), gp::csv_num(c.level_encode_s), std::to_string(c.levels_encoded),
              std::to_string(c.tiles_encoded), std::to_string(c.archive_bytes),
              std::to_string(c.exif_thumb_hits), std::to_string(c.probes_done),
              std::to_string(c.pixel_jobs), std::to_string(c.tile_jobs)});

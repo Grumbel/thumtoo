@@ -27,7 +27,7 @@ namespace thumtoo {
 void debug_overlay_rgb888(std::uint8_t* rgb, int width, int height,
                           const std::vector<std::string>& lines);
 
-/** Decode → stamp → re-encode a returned soft level (JXL/JPEG). No-op if disabled. */
+/** Decode → stamp → re-encode a returned soft level (JPEG/WebP). No-op if disabled. */
 void debug_overlay_pixel_level(PixelLevel& px, std::string_view uri_tail,
                                int request_edge);
 

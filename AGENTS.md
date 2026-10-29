@@ -48,7 +48,7 @@ Full session notes: top of [TODO.md](TODO.md).
 Prior: `//pdfimage:N` keep_obj fix; PDF dual backend; live PDF tiles rgb888.
 
 
-**Phase 1–2 done:** Client, prepare/status CLIs, system SQLite, libvips+JXL ladder,
+**Phase 1–2 done:** Client, prepare/status CLIs, system SQLite, libvips ladder (JPEG / WebP; was JXL),
 archive TOC + member extract, tags, PDF `//page:N`, biltoo INTEGRATION.md.
 
 **Phase 4 tiles done (library side):** 256² JPEG pyramid, Client get/request_tile,

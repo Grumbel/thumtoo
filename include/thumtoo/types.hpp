@@ -115,13 +115,13 @@ struct InterestItem {
   InterestRole role = InterestRole::Near;
 };
 
-/// Encoded ladder level from cache (JPEG-XL bytes by default).
+/// Encoded ladder level (JPEG bytes; WebP when the image has alpha).
 struct PixelLevel {
   int max_edge = 0;
   int frame_idx = 0;
   int width = 0;
   int height = 0;
-  std::string codec;  // "jxl"
+  std::string codec;  // "jpeg" or "webp"
   std::vector<std::uint8_t> bytes;
   PixelSource source = PixelSource::Unknown;
 };

@@ -842,7 +842,7 @@ std::optional<PixelLevel> Client::get_pixels_from_tiles(std::string_view uri,
   }
 
   auto levels = build_ladder_rgb(out_rgb.data(), out_w, out_h, meta->content_id,
-                                 /*jxl_quality=*/70, std::max(out_w, out_h));
+                                 /*quality=*/70, std::max(out_w, out_h));
   if (levels.empty()) return std::nullopt;
   PixelLevel px;
   px.max_edge = levels[0].max_edge;
@@ -4147,7 +4147,7 @@ void Client::handle_ensure_pixels_store(Job& job) {
                                      pdf->backend);
     if (raster && !raster->rgb.empty() && !content_id.empty()) {
       levels = build_ladder_rgb(raster->rgb.data(), raster->width, raster->height,
-                                content_id, kDefaultJxlQuality, edge_limit);
+                                content_id, kDefaultLevelQuality, edge_limit);
     }
   } else if (auto pimg = parse_pdf_image_uri(job.uri)) {
     auto sm = meta_from_store(job.uri);
@@ -4156,7 +4156,7 @@ void Client::handle_ensure_pixels_store(Job& job) {
                                                edge_limit);
     if (raster && !raster->rgb.empty() && !content_id.empty()) {
       levels = build_ladder_rgb(raster->rgb.data(), raster->width, raster->height,
-                                content_id, kDefaultJxlQuality, edge_limit);
+                                content_id, kDefaultLevelQuality, edge_limit);
     }
   } else if (auto dj = parse_djvu_uri(job.uri)) {
     auto sm = meta_from_store(job.uri);
@@ -4164,7 +4164,7 @@ void Client::handle_ensure_pixels_store(Job& job) {
     auto raster = djvu_rasterize_page(dj->djvu_path, dj->page, edge_limit);
     if (raster && !raster->rgb.empty() && !content_id.empty()) {
       levels = build_ladder_rgb(raster->rgb.data(), raster->width, raster->height,
-                                content_id, kDefaultJxlQuality, edge_limit);
+                                content_id, kDefaultLevelQuality, edge_limit);
     }
   } else if (auto ep = parse_epub_uri(job.uri)) {
     auto sm = meta_from_store(job.uri);
@@ -4173,7 +4173,7 @@ void Client::handle_ensure_pixels_store(Job& job) {
                                       edge_limit);
     if (raster && !raster->rgb.empty() && !content_id.empty()) {
       levels = build_ladder_rgb(raster->rgb.data(), raster->width, raster->height,
-                                content_id, kDefaultJxlQuality, edge_limit);
+                                content_id, kDefaultLevelQuality, edge_limit);
     }
   } else if (auto arch = parse_archive_uri(job.uri)) {
     if (!arch->member_path.empty()) {
@@ -4182,7 +4182,7 @@ void Client::handle_ensure_pixels_store(Job& job) {
       auto bytes = member_bytes(arch->archive_path, arch->member_path);
       if (bytes && !bytes->empty() && !content_id.empty()) {
         levels = build_ladder_buffer(bytes->data(), bytes->size(), content_id,
-                                     kDefaultJxlQuality, edge_limit);
+                                     kDefaultLevelQuality, edge_limit);
       }
     }
   } else if (is_http_uri(job.uri)) {
@@ -4191,14 +4191,14 @@ void Client::handle_ensure_pixels_store(Job& job) {
     auto bytes = fetch_http_cached(job.uri);
     if (bytes && !bytes->empty() && !content_id.empty()) {
       levels = build_ladder_buffer(bytes->data(), bytes->size(), content_id,
-                                   kDefaultJxlQuality, edge_limit);
+                                   kDefaultLevelQuality, edge_limit);
     }
   } else if (auto path = path_from_file_uri(job.uri)) {
     if (std::filesystem::is_regular_file(*path)) {
       const auto hex = sha256_file_hex(*path);
       if (!hex.empty()) {
         content_id = std::string(kContentIdSha256Prefix) + hex;
-        levels = build_ladder(*path, content_id, kDefaultJxlQuality, edge_limit);
+        levels = build_ladder(*path, content_id, kDefaultLevelQuality, edge_limit);
       }
     }
   }

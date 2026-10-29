@@ -112,7 +112,7 @@ int main() {
       called_px = true;
       expect(p.has_value(), "request_pixels data");
       expect(p && !p->bytes.empty(), "pixel bytes");
-      expect(p && p->codec == "jxl", "codec jxl");
+      expect(p && p->codec == "jpeg", "codec jpeg");
       expect(p && p->max_edge <= 128, "request edge");
     });
     client->drain();

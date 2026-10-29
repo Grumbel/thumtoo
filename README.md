@@ -51,7 +51,7 @@ nix build            # package
 nix run .#status -- --help
 ```
 
-**CMake** (needs libvips, libjxl, SQLite, libarchive; optional MuPDF, DjVu, curl,
+**CMake** (needs libvips, SQLite, libarchive; optional MuPDF, DjVu, curl,
 tesseract/leptonica, dbus):
 
 ```bash

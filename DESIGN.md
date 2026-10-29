@@ -159,7 +159,7 @@ Durable display pixels are **not** a full multi-edge ladder by default.
 | Layer | Durable? | Role |
 |-------|----------|------|
 | **Size / identity** | Yes | Layout, invalidation, content id |
-| **Single preview** (JXL, one long-edge ≤ request) | Yes | Fast first paint / filmstrip (`request_pixels`) |
+| **Single preview** (JPEG / WebP, one long-edge ≤ request) | Yes | Fast first paint / filmstrip (`request_pixels`) |
 | **Grid tiles** 256² JPEG | Yes (optional) | Smooth zoom for Galapix (`request_tile`) |
 | **Multi-edge ladder** (128+256+512+…) | No (on demand) | Derive by another `request_pixels` or downscale in the app |
 | **Original full-res** | No | Viewer decodes past max cached tile scale |
@@ -495,8 +495,8 @@ or an explicit cache wipe.
 |----------|--------|
 | `schema_version` | `1` |
 | Ladder long edges | `128, 256, 512, 1024, 2048` |
-| Default level codec | JPEG-XL (libvips) |
-| Default JXL quality | `80` |
+| Default level codec | JPEG (libvips); WebP when the image has alpha |
+| Default level quality | `80` |
 | Video still count | `16` (+ poster as `frame_idx` 0) |
 | Content hash | SHA-256, id form `sha256:<hex>` |
 | Provisional id | `prov:<uuid-v4>` |
@@ -602,7 +602,7 @@ Size probe is cache-only for LQIP (no source open).
 Stack for progressive paint:
 
 1. **LQIP** (content row) — instant soft color/structure
-2. **Levels** (`request_pixels` / JXL ladder in blobs) — readable soft preview
+2. **Levels** (`request_pixels` / JPEG / WebP ladder) — readable soft preview
 3. **Grid tiles** (`request_tile`) — zoom/pan detail
 
 API: `Client::get_lqip(uri)` (cache-only). See Galapix `ImageOverview` and
