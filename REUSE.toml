@@ -32,3 +32,10 @@ path = [
 ]
 SPDX-FileCopyrightText = "2026 Ingo Ruhnke <grumbel@gmail.com>"
 SPDX-License-Identifier = "GPL-3.0-or-later"
+
+# Benchmark baselines written by tools/capture_baselines.sh (JSON, no
+# comment syntax).
+[[annotations]]
+path = "docs/bench/baselines/**/*.json"
+SPDX-FileCopyrightText = "2026 Ingo Ruhnke <grumbel@gmail.com>"
+SPDX-License-Identifier = "GPL-3.0-or-later"
