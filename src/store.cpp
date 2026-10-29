@@ -846,7 +846,7 @@ std::int64_t Store::insert_blob(std::optional<std::int64_t> size,
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(index_,
                          "INSERT INTO blob(size, status, created_at, updated_at) "
-                         "VALUES(?1, ?2, ?3, ?4);",
+                         "VALUES(?1, ?2, ?3, ?4) RETURNING id;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     throw_sqlite(index_, "prepare insert_blob");
   }
@@ -858,12 +858,13 @@ std::int64_t Store::insert_blob(std::optional<std::int64_t> size,
   sqlite3_bind_int(stmt, 2, static_cast<int>(status));
   sqlite3_bind_int64(stmt, 3, now);
   sqlite3_bind_int64(stmt, 4, now);
-  if (sqlite3_step(stmt) != SQLITE_DONE) {
+  if (sqlite3_step(stmt) != SQLITE_ROW) {
     sqlite3_finalize(stmt);
     throw_sqlite(index_, "step insert_blob");
   }
+  const std::int64_t id = sqlite3_column_int64(stmt, 0);
   sqlite3_finalize(stmt);
-  return static_cast<std::int64_t>(sqlite3_last_insert_rowid(index_));
+  return id;
 }
 
 std::optional<Store::BlobRow> Store::find_blob(std::int64_t id) const {
@@ -1908,7 +1909,8 @@ std::int64_t Store::insert_media(std::int64_t blob_id, MediaKind kind,
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(index_,
                          "INSERT INTO media(blob_id, kind, width, height, "
-                         "status, updated_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6);",
+                         "status, updated_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6) "
+                         "RETURNING id;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     throw_sqlite(index_, "prepare insert_media");
   }
@@ -1926,12 +1928,13 @@ std::int64_t Store::insert_media(std::int64_t blob_id, MediaKind kind,
   }
   sqlite3_bind_int(stmt, 5, static_cast<int>(status));
   sqlite3_bind_int64(stmt, 6, now);
-  if (sqlite3_step(stmt) != SQLITE_DONE) {
+  if (sqlite3_step(stmt) != SQLITE_ROW) {
     sqlite3_finalize(stmt);
     throw_sqlite(index_, "step insert_media");
   }
+  const std::int64_t id = sqlite3_column_int64(stmt, 0);
   sqlite3_finalize(stmt);
-  return static_cast<std::int64_t>(sqlite3_last_insert_rowid(index_));
+  return id;
 }
 
 std::int64_t Store::ensure_image_media(std::int64_t blob_id,
@@ -2102,7 +2105,7 @@ std::int64_t Store::insert_region(std::int64_t media_id, RegionKind kind,
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(index_,
                          "INSERT INTO region(media_id, kind, key, ordinal) "
-                         "VALUES(?1, ?2, ?3, ?4);",
+                         "VALUES(?1, ?2, ?3, ?4) RETURNING id;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     throw_sqlite(index_, "prepare insert_region");
   }
@@ -2115,12 +2118,13 @@ std::int64_t Store::insert_region(std::int64_t media_id, RegionKind kind,
   } else {
     sqlite3_bind_null(stmt, 4);
   }
-  if (sqlite3_step(stmt) != SQLITE_DONE) {
+  if (sqlite3_step(stmt) != SQLITE_ROW) {
     sqlite3_finalize(stmt);
     throw_sqlite(index_, "step insert_region");
   }
+  const std::int64_t id = sqlite3_column_int64(stmt, 0);
   sqlite3_finalize(stmt);
-  return static_cast<std::int64_t>(sqlite3_last_insert_rowid(index_));
+  return id;
 }
 
 std::int64_t Store::ensure_region(std::int64_t media_id, RegionKind kind,
@@ -2918,7 +2922,7 @@ std::int64_t Store::ensure_tag_def(std::string_view name,
   if (sqlite3_prepare_v2(
           user_,
           "INSERT INTO tag_def(name, label, color, badge, created_at) "
-          "VALUES(?1,?2,?3,?4,?5);",
+          "VALUES(?1,?2,?3,?4,?5) RETURNING id;",
           -1, &stmt, nullptr) != SQLITE_OK) {
     throw_sqlite(user_, "prepare ensure_tag_def");
   }
@@ -2943,7 +2947,7 @@ std::int64_t Store::ensure_tag_def(std::string_view name,
     sqlite3_bind_null(stmt, 4);
   }
   sqlite3_bind_int64(stmt, 5, now);
-  if (sqlite3_step(stmt) != SQLITE_DONE) {
+  if (sqlite3_step(stmt) != SQLITE_ROW) {
     sqlite3_finalize(stmt);
     // Race: another writer may have inserted the same name.
     if (auto existing = find_tag_def_by_name(name)) {
@@ -2951,7 +2955,7 @@ std::int64_t Store::ensure_tag_def(std::string_view name,
     }
     throw_sqlite(user_, "step ensure_tag_def");
   }
-  const std::int64_t id = sqlite3_last_insert_rowid(user_);
+  const std::int64_t id = sqlite3_column_int64(stmt, 0);
   sqlite3_finalize(stmt);
   return id;
 }
@@ -3126,7 +3130,7 @@ std::int64_t Store::create_collection(std::optional<std::string_view> label,
   if (sqlite3_prepare_v2(
           user_,
           "INSERT INTO collection(label, color, created_at, updated_at) "
-          "VALUES(?1,?2,?3,?4);",
+          "VALUES(?1,?2,?3,?4) RETURNING id;",
           -1, &stmt, nullptr) != SQLITE_OK) {
     throw_sqlite(user_, "prepare create_collection");
   }
@@ -3144,11 +3148,11 @@ std::int64_t Store::create_collection(std::optional<std::string_view> label,
   }
   sqlite3_bind_int64(stmt, 3, now);
   sqlite3_bind_int64(stmt, 4, now);
-  if (sqlite3_step(stmt) != SQLITE_DONE) {
+  if (sqlite3_step(stmt) != SQLITE_ROW) {
     sqlite3_finalize(stmt);
     throw_sqlite(user_, "step create_collection");
   }
-  const std::int64_t id = sqlite3_last_insert_rowid(user_);
+  const std::int64_t id = sqlite3_column_int64(stmt, 0);
   sqlite3_finalize(stmt);
   return id;
 }
@@ -3356,7 +3360,7 @@ std::int64_t Store::create_bookmark(std::string_view target_ref,
   if (sqlite3_prepare_v2(
           user_,
           "INSERT INTO bookmark(target_ref, title, created_at, updated_at) "
-          "VALUES(?1,?2,?3,?4);",
+          "VALUES(?1,?2,?3,?4) RETURNING id;",
           -1, &stmt, nullptr) != SQLITE_OK) {
     throw_sqlite(user_, "prepare create_bookmark");
   }
@@ -3370,11 +3374,11 @@ std::int64_t Store::create_bookmark(std::string_view target_ref,
   }
   sqlite3_bind_int64(stmt, 3, now);
   sqlite3_bind_int64(stmt, 4, now);
-  if (sqlite3_step(stmt) != SQLITE_DONE) {
+  if (sqlite3_step(stmt) != SQLITE_ROW) {
     sqlite3_finalize(stmt);
     throw_sqlite(user_, "step create_bookmark");
   }
-  const std::int64_t id = sqlite3_last_insert_rowid(user_);
+  const std::int64_t id = sqlite3_column_int64(stmt, 0);
   sqlite3_finalize(stmt);
   return id;
 }
@@ -3537,7 +3541,7 @@ std::int64_t Store::add_link_edge(std::string_view from_ref,
   if (sqlite3_prepare_v2(
           user_,
           "INSERT INTO link_edge(from_ref, to_ref, rel, source, created_at) "
-          "VALUES(?1,?2,?3,?4,?5);",
+          "VALUES(?1,?2,?3,?4,?5) RETURNING id;",
           -1, &stmt, nullptr) != SQLITE_OK) {
     throw_sqlite(user_, "prepare add_link_edge");
   }
@@ -3553,11 +3557,11 @@ std::int64_t Store::add_link_edge(std::string_view from_ref,
   }
   sqlite3_bind_int(stmt, 4, source);
   sqlite3_bind_int64(stmt, 5, now);
-  if (sqlite3_step(stmt) != SQLITE_DONE) {
+  if (sqlite3_step(stmt) != SQLITE_ROW) {
     sqlite3_finalize(stmt);
     throw_sqlite(user_, "step add_link_edge");
   }
-  const std::int64_t id = sqlite3_last_insert_rowid(user_);
+  const std::int64_t id = sqlite3_column_int64(stmt, 0);
   sqlite3_finalize(stmt);
   return id;
 }
@@ -3649,7 +3653,7 @@ std::int64_t Store::create_annotation(std::string_view target_ref, int kind,
   if (sqlite3_prepare_v2(
           user_,
           "INSERT INTO annotation(target_ref, kind, body, geom, created_at, "
-          "updated_at) VALUES(?1,?2,?3,?4,?5,?6);",
+          "updated_at) VALUES(?1,?2,?3,?4,?5,?6) RETURNING id;",
           -1, &stmt, nullptr) != SQLITE_OK) {
     throw_sqlite(user_, "prepare create_annotation");
   }
@@ -3670,11 +3674,11 @@ std::int64_t Store::create_annotation(std::string_view target_ref, int kind,
   }
   sqlite3_bind_int64(stmt, 5, now);
   sqlite3_bind_int64(stmt, 6, now);
-  if (sqlite3_step(stmt) != SQLITE_DONE) {
+  if (sqlite3_step(stmt) != SQLITE_ROW) {
     sqlite3_finalize(stmt);
     throw_sqlite(user_, "step create_annotation");
   }
-  const std::int64_t id = sqlite3_last_insert_rowid(user_);
+  const std::int64_t id = sqlite3_column_int64(stmt, 0);
   sqlite3_finalize(stmt);
   return id;
 }
